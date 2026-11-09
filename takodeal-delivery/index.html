@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="takodeal-release" content="rider-protected-access-20261109">
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0f172a">
 <meta name="description" content="Join the TAKODEÁL rider fleet, track your application, and manage your deliveries.">
 <link rel="icon" type="image/jpeg" href="Delivery.jpg"><link rel="apple-touch-icon" href="Delivery.jpg"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="rider-mobile.css?v=rider-mobile-20261009">
@@ -49,7 +50,7 @@
 <button type="button" id="riderInstallButton" class="rider-button rider-install" hidden>Install Rider app</button>
 </div>
 <section id="incomingOrderPing" class="rider-ping" style="display:none" role="dialog" aria-modal="true" aria-labelledby="riderPingTitle"><div class="rider-ping-heading"><h2 id="riderPingTitle">New delivery request</h2><span id="pingTimer">15s</span></div><p class="ping-distance" id="pingDistance"></p><p>Pickup: <strong id="pingStore"></strong></p><p>Drop-off: <strong id="pingAddress"></strong></p><div class="rider-order-actions"><button type="button" class="rider-button secondary btn-reject" onclick="window.rejectPing()">Pass</button><button type="button" class="rider-button btn-accept" id="btnAcceptPing" onclick="window.acceptPing()">Accept delivery</button></div></section>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><script type="module" src="main.js?v=rider-mobile-20261009"></script>
-<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(registration=>window.dispatchEvent(new CustomEvent('rider-worker-ready',{detail:registration}))).catch(()=>{document.getElementById('riderConnectionStatus').textContent='App installation is unavailable. You can still use the browser online.';});});}</script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><script type="module" src="main.js?v=rider-protected-access-20261109"></script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(registration=>window.dispatchEvent(new CustomEvent('rider-worker-ready',{detail:registration}))).catch(()=>{document.getElementById('riderConnectionStatus').textContent='App installation is unavailable. You can still use the browser online.';});});}</script>
 </body>
 </html>

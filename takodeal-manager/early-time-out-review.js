@@ -40,7 +40,7 @@ export function createEarlyTimeOutReviewService(api,{timeoutMs=25000,now=()=>new
    // The source read is independent of HQ account loading, but no request is
    // exposed until fresh branch authority has been checked below.
    if(request)request.then(async snapshot=>{const row=snapshot.exists()?snapshot.data():null;if(row?.type!=='Early Time Out'||!validId(row.timeInLogId)||!validId(row.staffId)||!canReviewEarlyTimeOut(api,row.branch))return;const outId=await linkedTimeOutId(row.staffId,row.timeInLogId);guard();await Promise.all([
-    read(api.doc(api.db,'attendance_logs',row.timeInLogId)),read(api.doc(api.db,'cashiers',row.staffId)),read(api.doc(api.db,'attendance_logs',outId)),read(api.doc(api.db,'attendance_time_out_approvals',input.requestId)),read(api.doc(api.db,'attendance_shift_confirmations',row.timeInLogId))
+    read(api.doc(api.db,'attendance_logs',row.timeInLogId)),read(api.doc(api.db,'staff_directory',row.staffId)),read(api.doc(api.db,'attendance_logs',outId)),read(api.doc(api.db,'attendance_time_out_approvals',input.requestId)),read(api.doc(api.db,'attendance_shift_confirmations',row.timeInLogId))
    ]);}).catch(()=>{});
    const [accounts,grant]=await Promise.all([
     Promise.resolve().then(()=>retain(api.getDocsFromServer(api.query(api.collection(api.db,'hq_managers'),api.where('email','==',actor.email))))).then(snapshot=>fresh(snapshot,{strict:preview})),
@@ -48,7 +48,7 @@ export function createEarlyTimeOutReviewService(api,{timeoutMs=25000,now=()=>new
    ]);guard();
    let checked={profile:resolveHQAccount(accounts.docs.map(row=>({id:row.id,data:row.data()}))),grant:grant?.exists()?grant.data():null};authority(api,actor,checked.profile,checked.grant);
    if(preview){const snapshot=await request;guard();const row=snapshot.exists()?snapshot.data():null;if(!row||row.type!=='Early Time Out'||row.status!=='Pending')throw Error('This request is no longer pending. Refresh Request Inbox.');authority(api,actor,checked.profile,checked.grant,row.branch);entry.request={...row,id:input.requestId};for(const callback of entry.listeners)callback(entry.request);}
-   const protectedAPI={...api,runTransaction:preview?async(_db,callback)=>{
+   const protectedAPI={...api,staffProfileCollection:'staff_directory',runTransaction:preview?async(_db,callback)=>{
     // The core inspector is read-only. Keeping its existing resolver/link
     // checks while using server gets avoids a read-only Firestore transaction
     // and duplicate HQ reads. Every write below uses the real transaction.

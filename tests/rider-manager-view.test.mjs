@@ -6,13 +6,14 @@ import {installRiderManagementViews} from '../takodeal-manager/rider-management-
 import {createWorkspaceSession} from '../takodeal-manager/workspace-access-model.js';
 function fixture({branches=['All'],permissions=['riders']}={}){
     const h=firestoreHarness(),user={uid:'hq',email:'manager@example.test',emailVerified:true},saved={email:user.email,fullName:'Sample Manager',role:'Manager',assignedBranch:branches,permissions,pin:'1111',active:true};
-    h.put('hq_managers/hq',saved);h.put('riders/a',{name:"O'Brien <img src=x onerror=alert(1)>",phone:'09000000001',vehicle:'Motorcycle',plateNumber:'SAMPLE-A',status:'pending_approval',walletBalance:'123.45',licenseUrl:'https://example.invalid/license.jpg',orcrUrl:'javascript:alert(1)',selfieUrl:'https://user:pass@example.invalid/unsafe.jpg',joinedAt:{seconds:100},allowedBranches:['Maa']});
+    h.put('hq_managers/hq',saved);h.put('riders/a',{name:"O'Brien <img src=x onerror=alert(1)>",phone:'09000000001',vehicle:'Motorcycle',plateNumber:'SAMPLE-A',status:'pending_approval',walletBalance:'123.45',licenseUrl:'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Flicense.jpg?alt=media&token=test-token',orcrUrl:'javascript:alert(1)',selfieUrl:'https://user:pass@example.invalid/unsafe.jpg',joinedAt:{seconds:100},allowedBranches:['Maa']});
     h.put('riders/b',{name:'Other branch rider',phone:'09000000002',status:'active',allowedBranches:['Cabantian'],walletBalance:0});
     const nodes=new Map(),dialogs=[],reads=[];
     const node=id=>{if(!nodes.has(id))nodes.set(id,{id,innerHTML:'',textContent:'',querySelector(){return node(id+'-td');}});return nodes.get(id);};
     const api={...h.api,auth:{currentUser:user},sessionUser:createWorkspaceSession(user,saved),
         getDocFromServer:async ref=>{reads.push(ref.path);return {id:ref.id,exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.get(ref.path))};},
         Swal:{fire:async options=>{dialogs.push(options);return {isConfirmed:true};}}};
+    api.readRiderFleet=async mode=>{const result=await api.getDocsFromServer(mode==='fleet'?api.collection(api.db,'riders'):api.query(api.collection(api.db,'rider_topups'),api.where('status','==','pending')));return {rows:result.docs.map(row=>({...row.data(),id:row.id})),partial:false};};
     const original=api.getDocsFromServer;api.getDocsFromServer=async query=>{reads.push(query.table);return original(query);};configureRiderManagerAuthority(api);
     const document={getElementById:node};installRiderManagementViews(api,document);
     return {h,api,user,saved,node,nodes,dialogs,reads};
@@ -31,8 +32,8 @@ test('Fleet list honors explicit saved branch assignments and canonical duplicat
 });
 test('Top-up list reads only pending requests, rejects invalid rider links and escapes reference/name fields',async()=>{
     const f=fixture({branches:['Maa']});
-    f.h.put('rider_topups/topup',{riderId:'a',riderName:"O'Brien <script>literal</script>",reference:"123'<img onerror=alert(1)>",proofUrl:'https://example.invalid/proof.jpg',status:'pending'});
-    f.h.put('rider_topups/other',{riderId:'b',riderName:'Other branch rider',reference:'456',proofUrl:'https://example.invalid/other.jpg',status:'pending'});
+    f.h.put('rider_topups/topup',{riderId:'a',riderName:"O'Brien <script>literal</script>",reference:"123'<img onerror=alert(1)>",proofUrl:'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fproof.jpg?alt=media&token=test-token',status:'pending'});
+    f.h.put('rider_topups/other',{riderId:'b',riderName:'Other branch rider',reference:'456',proofUrl:'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fother.jpg?alt=media&token=test-token',status:'pending'});
     f.h.put('rider_topups/processed',{riderId:'a',riderName:'Already approved',reference:'789',status:'approved'});f.h.put('rider_topups/broken',{riderId:'bad/path',riderName:'Broken record',status:'pending'});
     assert.equal(await f.api.loadRiderTopUps(),true);const html=f.node('riderTopUpBody').innerHTML;
     assert.match(html,/O&#39;Brien &lt;script&gt;/);assert.doesNotMatch(html,/Other branch rider|Already approved|Broken record|<script>literal/);assert.equal(imageButtons(html).length,1);assert.doesNotMatch(f.reads.join(' '),/riders\/bad\/path/);
@@ -46,13 +47,13 @@ test('late Fleet query cannot overwrite a newer refresh or render another signed
     const pending=g.api.loadRiderManagement();while(!waiting)await Promise.resolve();g.api.auth.currentUser={...g.user,uid:'other-hq'};block.resolve();assert.equal(await pending,false);assert.doesNotMatch(g.node('riderFleetBody').innerHTML,/O&#39;Brien|Other branch rider/);
 });
 test('late Top-up rider lookup cannot replace a newer refresh or expose a stale account proof',async()=>{
-    const f=fixture();f.h.put('rider_topups/topup',{riderId:'a',riderName:'First old rider',reference:'123',proofUrl:'https://example.invalid/proof.jpg',status:'pending'});
+    const f=fixture();f.h.put('rider_topups/topup',{riderId:'a',riderName:'First old rider',reference:'123',proofUrl:'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fproof.jpg?alt=media&token=test-token',status:'pending'});
     const wait=defer(),original=f.api.getDocFromServer;let first=true;f.api.getDocFromServer=async ref=>{const result=await original(ref);if(ref.path==='riders/a' && first){first=false;await wait.promise;}return result;};
     const old=f.api.loadRiderTopUps();while(first)await Promise.resolve();f.h.put('rider_topups/topup',{...f.h.get('rider_topups/topup'),riderName:'Fresh rider name'});assert.equal(await f.api.loadRiderTopUps(),true);const latest=f.node('riderTopUpBody').innerHTML;wait.resolve();assert.equal(await old,false);assert.equal(f.node('riderTopUpBody').innerHTML,latest);
 });
 test('actual document buttons open a saved HTTPS image with text title',async()=>{
     const f=fixture();await f.api.loadRiderManagement();const encoded=imageButtons(f.node('riderFleetBody').innerHTML)[0];assert.ok(encoded);
-    await f.api.viewRiderApplicationDocument(encoded);const dialog=f.dialogs.at(-1);assert.equal(dialog.imageUrl,'https://example.invalid/license.jpg');assert.match(dialog.titleText,/O'Brien <img/);assert.equal(dialog.html,undefined);
+    await f.api.viewRiderApplicationDocument(encoded);const dialog=f.dialogs.at(-1);assert.equal(dialog.imageUrl,'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Flicense.jpg?alt=media&token=test-token');assert.match(dialog.titleText,/O'Brien <img/);assert.equal(dialog.html,undefined);
 });
 test('document viewer refuses signed-out, unverified, changed-permission and other-branch sessions',async()=>{
     for(const scenario of ['signed-out','unverified','revoked','scope']){
@@ -69,8 +70,8 @@ test('document viewer refuses unbound, unsafe, deleted or changed saved document
 });
 test('rendered document button carries only record binding and viewer uses the latest saved URL/name',async()=>{
     const f=fixture();await f.api.loadRiderManagement();const encoded=imageButtons(f.node('riderFleetBody').innerHTML)[0],binding=JSON.parse(decodeURIComponent(encoded));assert.deepEqual(binding,{kind:'license',id:'a'});
-    f.h.put('riders/a',{...f.h.get('riders/a'),name:'Current Rider name',licenseUrl:'https://example.invalid/current-license.jpg'});await f.api.viewRiderApplicationDocument(encoded);
-    assert.equal(f.dialogs.at(-1).imageUrl,'https://example.invalid/current-license.jpg');assert.equal(f.dialogs.at(-1).titleText,'Driver’s license · Current Rider name');
+    f.h.put('riders/a',{...f.h.get('riders/a'),name:'Current Rider name',licenseUrl:'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fcurrent-license.jpg?alt=media&token=test-token'});await f.api.viewRiderApplicationDocument(encoded);
+    assert.equal(f.dialogs.at(-1).imageUrl,'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fcurrent-license.jpg?alt=media&token=test-token');assert.equal(f.dialogs.at(-1).titleText,'Driver’s license · Current Rider name');
 });
 test('fresh authority recheck blocks scope/permission revocation or account changes during document reads',async()=>{
     for(const scenario of ['scope','permission','account']){
@@ -82,7 +83,7 @@ test('fresh authority recheck blocks scope/permission revocation or account chan
     }
 });
 test('top-up proof viewer resolves actual request and rider scope, never embedded URL or caller-supplied rider',async()=>{
-    const f=fixture({branches:['Maa']});f.h.put('rider_topups/topup',{riderId:'a',reference:'123',proofUrl:'https://example.invalid/proof.jpg',status:'pending'});await f.api.loadRiderTopUps();const encoded=imageButtons(f.node('riderTopUpBody').innerHTML)[0];assert.deepEqual(JSON.parse(decodeURIComponent(encoded)),{kind:'topup',id:'topup'});
-    await f.api.viewRiderApplicationDocument(encoded);assert.equal(f.dialogs.at(-1).imageUrl,'https://example.invalid/proof.jpg');assert.ok(f.reads.includes('rider_topups/topup'));
+    const f=fixture({branches:['Maa']});f.h.put('rider_topups/topup',{riderId:'a',reference:'123',proofUrl:'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fproof.jpg?alt=media&token=test-token',status:'pending'});await f.api.loadRiderTopUps();const encoded=imageButtons(f.node('riderTopUpBody').innerHTML)[0];assert.deepEqual(JSON.parse(decodeURIComponent(encoded)),{kind:'topup',id:'topup'});
+    await f.api.viewRiderApplicationDocument(encoded);assert.equal(f.dialogs.at(-1).imageUrl,'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/riders%2Fproof.jpg?alt=media&token=test-token');assert.ok(f.reads.includes('rider_topups/topup'));
     f.dialogs.length=0;f.h.put('rider_topups/topup',{...f.h.get('rider_topups/topup'),riderId:'b'});await f.api.viewRiderApplicationDocument(encoded);assert.equal(f.dialogs.some(dialog=>dialog.imageUrl),false);assert.equal(f.dialogs.at(-1).title,'Document unavailable');
 });

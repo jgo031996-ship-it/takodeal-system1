@@ -10,8 +10,8 @@ function setup(){
     classList:{contains:()=>id==='view-timeclock',add(){}},append(){},after(){},play:()=>Promise.resolve()});return nodes.get(id);};
   const video=node('clockVideo');Object.assign(video,{readyState:4,paused:false,ended:false,videoWidth:640,videoHeight:480});
   const document={hidden:false,getElementById:node,addEventListener:(name,fn)=>{const list=events.get(name)||[];list.push(fn);events.set(name,list);},createElement:type=>type==='canvas'?{width:0,height:0,getContext:()=>({drawImage(){}}),toDataURL:()=>{photos++;return 'data:image/jpeg;base64,sample-photo';}}:node('created-'+nodes.size)};
-  const window={addEventListener(){},switchView(){}},navigator={mediaDevices:{getUserMedia:async()=>{cameraStarts++;const track={readyState:'live',enabled:true,stop(){this.readyState='ended';}};return {getTracks:()=>[track],getVideoTracks:()=>[track]};}}};
-  const context=vm.createContext({window,document,navigator,installAttendanceCamera,createAttendanceStreamSession,console,
+  const window={addEventListener(){},switchView(){},readOperationalStaffDirectory:async()=>[{staffId:'sample-staff',cashierName:'Sample staff',branch:'Maa'}]},navigator={mediaDevices:{getUserMedia:async()=>{cameraStarts++;const track={readyState:'live',enabled:true,stop(){this.readyState='ended';}};return {getTracks:()=>[track],getVideoTracks:()=>[track]};}}};
+  const context=vm.createContext({window,document,navigator,installAttendanceCamera,createAttendanceStreamSession,console,escapeOperationalLabel:value=>String(value),
     query:()=>({}),collection:()=>({}),db:{},getDocs:async()=>({forEach:fn=>fn({id:'sample-staff',data:()=>({cashierName:'Sample staff'})})}),alert:message=>{throw Error(message);},
     el:node,page:()=>node('view-timeclock'),mountLegacy(){},businessDate:()=> '2026-10-13',startAttendance(){},paintAttendance(){}});
   const main=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),from=main.indexOf('installAttendanceCamera(window, document);'),until=main.indexOf('window.isProcessingAttendance = false;',from);

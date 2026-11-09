@@ -159,6 +159,7 @@ test('Profile history and contracts render without the removed public payroll fi
     h.document.getElementById=id=>removed.has(id)?null:h.node(id);
     const source=engine.slice(engine.indexOf('window.openProfile = async function'),engine.indexOf('window.saveProfileData = async function'));
     const context={...h,doc:()=>null,db:{},getDoc:async()=>({exists:()=>true,data:()=>({cashierName:'Sample Staff',role:'Crew'})}),console:{error:(...args)=>errors.push(args)}};
+    h.window.staffPrivateProfileEpoch=0;h.window.clearPrivateStaffProfile=()=>{h.window.staffPrivateProfileEpoch++;};h.window.readPrivateStaffProfile=async()=>context.getDoc();
     vm.runInNewContext(source,context);await h.window.openProfile();
     assert.deepEqual(errors,[]);assert.match(h.node('profRoleHistory').innerHTML,/Crew/);
     assert.match(h.node('profContracts').innerHTML,/No signed contracts/);
@@ -172,6 +173,7 @@ function punchHarness(fixes){
         writeBatch:()=>({set:(_,record)=>records.push(record),commit:async()=>writes++}),Date,console:{error(){}}};
     context.getDocFromServer=context.getDoc;
     Object.assign(window,{db:context.db,query:context.query,collection:context.collection,where:context.where,getDocs:context.getDocs,getDocsFromServer:context.getDocs,doc:context.doc,getDoc:context.getDoc,getDocFromServer:context.getDocFromServer});
+    window.readStaffDirectoryProfile=async(_staffId,{assertCurrent=()=>{}}={})=>{assertCurrent();return context.getDocFromServer();};
     const start=engine.indexOf('window.punchTime = async function'),end=engine.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);return {window,context,records,alerts,writes:()=>writes};
 }

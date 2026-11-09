@@ -29,7 +29,7 @@ export function installStaffRatePrivacy(api,d,storage,{now=()=>Date.now(),setInt
     async function open() {
         lock();profileId=identity();text('profileRateCongratulations','');if($('profileRateCongratulations'))$('profileRateCongratulations').hidden=true;
         const id=profileId,token=epoch;if(!id || !visible())return;
-        try{const row=await api.getDocFromServer(api.doc(api.db,'cashiers',id));if(epoch!==token || identity()!==id || !visible())return;if(row.exists())notice(row.data(),id);}
+        try{const row=await api.readPrivateStaffProfile(id,{assertCurrent:()=>{if(epoch!==token||identity()!==id||!visible())throw Error('Your private profile closed.');}});if(epoch!==token || identity()!==id || !visible())return;if(row.exists())notice(row.data(),id);}
         catch{if(epoch===token && identity()===id)text('profileRateState','Private · reconnect to verify your rate');}
     }
     function reveal(id,profile) {

@@ -10,7 +10,7 @@ async function fixture(){
  const h=firestoreHarness();h.api.auth={currentUser:{uid:'hq-manager',email,emailVerified:true}};h.api.sessionUser={uid:'hq-manager',email,role:'Manager',permissions:['inbox'],allowedBranches:[branch]};h.api.serverTimestamp=()=>new Date(clock);
  h.api.getDocFromServer=async reference=>({exists:()=>h.get(reference.path)!==undefined,data:()=>structuredClone(h.get(reference.path))});
  h.put('hq_managers/sample-manager',{email,role:'Manager',permissions:['inbox'],assignedBranch:branch,pin:'4829',active:true});h.put('hq_email_access/'+email,{active:true,permissions:['inbox'],allowedBranches:[branch]});
- h.put('cashiers/'+staffId,{cashierName:name,branch,pin:'7281',active:true});
+ h.put('cashiers/'+staffId,{cashierName:name,branch,pin:'7281',active:true});h.put('staff_directory/'+staffId,{staffId,cashierName:name,branch,active:true,profileRevision:'SYNTHETIC-REVISION'});
  const at=new Date('2030-01-10T09:00:00+08:00'),end=new Date('2030-01-10T17:00:00+08:00'),start={id:'sample-time-in',staffId,staffName:name,branch,type:'TIME IN',timestamp:at,scheduleSnapshot:{version:1,source:'clock-in',branch,staffName:name,clockInAt:at.toISOString(),expectedStartAt:at.toISOString(),expectedEndAt:end.toISOString(),shiftId:'day-slot',wasScheduled:true,needsScheduleReview:false,scheduleRevisionId:'sample-revision'}};
  h.put('attendance_logs/'+start.id,start);const service=createEarlyTimeOutService(h.api,{now:()=>new Date(clock),makeToken:()=> 'sample-request-token'}),request=await service.request({staffId,staffName:name,start,reason:'Medical appointment',pin:'7281'});
  return {...h,start,request,service,review:createEarlyTimeOutReviewService(h.api,{now:()=>new Date(clock)})};
@@ -18,6 +18,14 @@ async function fixture(){
 test('an assigned verified Manager saves the real protected early-time-out approval and a retry is idempotent',async()=>{
  const h=await fixture(),result=await h.review.review({requestId:h.request.id,decision:'Approved',reviewNote:'Approved for today'});assert.equal(result.decision,'Approved');
  const approval=h.get('attendance_time_out_approvals/'+h.request.id);assert.equal(approval.reviewedByUid,'hq-manager');assert.equal(approval.reviewedByEmail,email);assert.equal(approval.reviewNote,'Approved for today');assert.equal(h.get('staff_requests/'+h.request.id).status,'Approved');assert.equal((await h.review.review({requestId:h.request.id,decision:'Approved'})).alreadySaved,true);
+});
+test('inbox-only review reads safe directory identity and never requires the employee credential or wage record',async()=>{
+ const h=await fixture(),get=h.api.getDocFromServer,run=h.api.runTransaction,query=h.api.getDocsFromServer,fresh={fromCache:false,hasPendingWrites:false};
+ h.api.getDocFromServer=async ref=>{assert.equal(ref.path.startsWith('cashiers/'),false);return {...await get(ref),metadata:fresh};};
+ h.api.getDocsFromServer=async input=>{const result=await query(input);return {...result,metadata:fresh,docs:result.docs.map(row=>({...row,metadata:fresh}))};};
+ h.api.runTransaction=(db,callback)=>run(db,tx=>callback({...tx,get:ref=>{assert.equal(ref.path.startsWith('cashiers/'),false);return tx.get(ref);}}));
+ const preview=await h.review.inspect({requestId:h.request.id});assert.equal(preview.early,true);
+ await h.review.review({requestId:h.request.id,decision:'Approved'});assert.equal(h.get('staff_requests/'+h.request.id).status,'Approved');
 });
 test('an invented Manager session cannot bypass a missing, revoked or unrelated protected grant',async()=>{
  for(const change of [null,{active:false,permissions:['inbox'],allowedBranches:[branch]},{active:true,permissions:['history'],allowedBranches:[branch]},{active:true,permissions:['inbox'],allowedBranches:['Other Branch']}] ){

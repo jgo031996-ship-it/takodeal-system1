@@ -19,6 +19,7 @@ function actualStaffInbox(records){
  const source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),from=source.indexOf('window.loadInbox = async function()'),to=source.indexOf('window.currentSopRoles =',from);assert.ok(from>0&&to>from);
  const panel={innerHTML:'',textContent:''},root={append(){}},writes=[],calls=[],values={takodeal_staff_id:'sample-staff',takodeal_staff_name:'Sample Crew'},window={getStaffLeaveUI:()=>({list:async()=>[],details:()=>'',actions:()=>''})};
  const context={window,document:{getElementById:id=>id==='requestInboxPanel'?panel:id==='reqInboxList'?root:null},localStorage:{getItem:key=>values[key]},db:{},collection:(_db,table)=>table,where:(...args)=>args,query:(...args)=>args,getDocs:async reference=>{calls.push(reference);return{forEach:callback=>records.forEach((saved,index)=>callback({id:'request-'+index,data:()=>structuredClone(saved)}))};},doc:(_db,...parts)=>parts.join('/'),updateDoc:(...args)=>writes.push(args),timeOutRequestLabel,timeOutRequestDetailsHTML,Date,console};
+ window.readOperationalRecords=async(table,{assertCurrent=()=>{}}={})=>{assert.equal(table,'staff_requests');assertCurrent();return context.getDocs({privateOperationalBroker:true,staffId:values.takodeal_staff_id});};
  vm.runInNewContext(source.slice(from,to),context);return {window,panel,writes,calls};
 }
 

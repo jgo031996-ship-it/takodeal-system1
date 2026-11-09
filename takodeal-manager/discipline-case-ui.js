@@ -1,3 +1,4 @@
+import {uploadHQImage} from './hq-image-upload.js';
 import {activeStaffProfile,createStaffHistoryResolver} from './staff-lifecycle-model.js';
 import {OWNER_EMAIL} from './workspace-access-model.js';
 import {sanctionAuthority} from './sanction-actions.js';
@@ -84,7 +85,7 @@ export function installDisciplineCases(api=window,d=document){
         issueSaving=true;controls(byId('issueSanctionModal'),true);button.textContent='Saving notice…';
         try{
             sanctionAuthority(api,staff.branch);let evidencePhoto='';const file=operation.file;
-            if(file){if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>5*1024*1024)throw Error('Choose a JPG, PNG or WebP evidence photo up to 5 MB.');if(issueAttachment?.file===file)evidencePhoto=issueAttachment.url;else{const reference=api.ref(api.storage,'hr_evidence/'+operation.id);await api.uploadBytes(reference,file);evidencePhoto=await api.getDownloadURL(reference);if(current())issueAttachment={file,url:evidencePhoto};}}
+            if(file){if(issueAttachment?.file===file)evidencePhoto=issueAttachment.url;else{evidencePhoto=await uploadHQImage(api,file,{purpose:'discipline-evidence',sourceId:staff.id,assertCurrent:()=>{if(!current()||staff.id!==selectedStaff()?.id)throw Error('The signed-in account or selected staff member changed. Reopen the notice.');}});if(current())issueAttachment={file,url:evidencePhoto};}}
             if(!current()||staff.id!==selectedStaff()?.id)throw Error('The signed-in account or selected staff member changed. Reopen the notice.');
             const result=await issueDisciplineCase(api,{staffId:staff.id,staffName:staff.cashierName,branch:staff.branch,type,details,effectiveDate:operation.effectiveDate,evidencePhoto,proposedLevelId,expectedPolicyRevision:context.policy.revision},{id:operation.id});
             if(!current())return;

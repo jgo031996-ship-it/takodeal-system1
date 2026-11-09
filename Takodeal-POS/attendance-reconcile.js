@@ -39,6 +39,10 @@ export async function readStaffRecords(api,staffId,name,{fresh=true,table='atten
     if(typeof staffId!=='string'||!staffId||staffId.includes('/'))throw Error('Sign in to your staff account again.');
     const aliases=[...new Set([name,...names].filter(value=>typeof value==='string'&&value.trim()).map(value=>value.trim()))];
     if(!aliases.length)throw Error('Choose your staff account again.');
+    if(api.staffProfileCollection==='staff_directory'&&typeof api.readOperationalRecords==='function'){
+        assertCurrent();let timer;
+        try{const snapshot=await Promise.race([api.readOperationalRecords(table,{assertCurrent}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(Error('Attendance read deadline.'),{code:'attendance/read-timeout'})),timeoutMs);})]);assertCurrent();if(!snapshot||!Array.isArray(snapshot.docs)||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites)throw Object.assign(Error('Invalid verified attendance response.'),{code:'attendance/read-invalid'});return snapshot.docs.map(entry=>{const row=entry.data();if(row.staffId&&row.staffId!==staffId)throw Object.assign(Error('Foreign attendance identity.'),{code:'attendance/read-invalid'});return{...row,id:entry.id};});}catch(error){throw attendanceReadError(error,'private-operational-history');}finally{clearTimeout(timer);}
+    }
     const read=fresh?api.getDocsFromServer:api.getDocs,projected=fresh&&metadataOnly&&typeof api.readStaffMetadata==='function';
     if(typeof read!=='function'&&!projected)throw attendanceReadError(Object.assign(Error('Server read API unavailable.'),{code:'attendance/read-api'}),'setup');
     const deadline=Date.now()+(Number.isFinite(timeoutMs)&&timeoutMs>0?timeoutMs:25000);
@@ -66,7 +70,8 @@ export async function readStaffRecords(api,staffId,name,{fresh=true,table='atten
     // A name-only legacy row is safe only when the directory identifies one person.
     const legacyNames=[...new Set(rows.filter(row=>!row.staffId).map(row=>row.staffName))];
     for(const legacyName of legacyNames){
-        const directory=await confirmedRead(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',legacyName)),'legacy-staff-directory',{table:'cashiers',field:'cashierName',value:legacyName});
+        const table=api.staffProfileCollection==='staff_directory'?'staff_directory':'cashiers';
+        const directory=await confirmedRead(api.query(api.collection(api.db,table),api.where('cashierName','==',legacyName)),'legacy-staff-directory',{table,field:'cashierName',value:legacyName});
         const people=directory.docs;
         if(people.length!==1 || people[0].id!==staffId)throw Error('A legacy name-only record cannot be matched to one employee. Ask HQ to confirm the staff identity before continuing.');
     }

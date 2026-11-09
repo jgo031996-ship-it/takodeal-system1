@@ -1,3 +1,4 @@
+import {uploadHQImage} from './hq-image-upload.js';
 import {loadInventoryStockFormState,saveInventoryCreate,saveHqRestock,saveKitchenPrep} from './inventory-stock-form-actions.js';
 import {buildInventoryCreate,buildKitchenPrep,restockLine,mergeRestockLine,stockFormUnits,stockFormCost} from './inventory-stock-form-model.js';
 
@@ -74,7 +75,7 @@ export function installInventoryStockForms(w=window,d=document){
    input=draft();buildInventoryCreate(input,{items:states.add.items,branches:states.add.branches});const file=el('newInvPhoto').files?.[0];
    if(file&&(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024))throw Object.assign(Error('Choose a JPEG, PNG or WebP photo up to 5 MB.'),{field:'newInvPhoto'});
    lock('add',true);status('add','Saving the item and its stock history…');
-   if(file){let url=uploaded.get(file);if(!url){const reference=w.ref(w.storage,'inventory_images/new_'+crypto.randomUUID()+'.'+({"image/jpeg":'jpg',"image/png":'png',"image/webp":'webp'}[file.type]));url=await w.getDownloadURL((await w.uploadBytes(reference,file)).ref);uploaded.set(file,url);}input.image=url;}
+   if(file){const openedState=states.add,token=epochs.add;input.image=await uploadHQImage(w,file,{purpose:'inventory-photo',branch:input.branch,assertCurrent:()=>{if(states.add!==openedState||epochs.add!==token||value('newInvBranch')!==input.branch)throw Error('Reopen this inventory form before saving.');}});}
    const result=await saveInventoryCreate(w,states.add,input);lock('add',false);close('add');notify('Created '+result.name+' in '+result.created.length+' branch'+(result.created.length===1?'':'es')+'.');refresh();
   }catch(error){lock('add',false);status('add',error.message,true,error.field);}
  };

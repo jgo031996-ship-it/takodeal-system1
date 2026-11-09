@@ -55,6 +55,14 @@ test('unreserved typed credits remain protected when their old type would otherw
  for(const client of [db('staff'),db('manager'),db()]){await assertFails(updateDoc(doc(client,at),{type:'Performance Bonus'}));await assertFails(deleteDoc(doc(client,at)));}
 });
 
-test('the narrow credit guard preserves existing noncredit legacy bonus writes',async()=>{
- const staff=db('staff'),untyped='staff_bonuses/fictional-untyped';await assertSucceeds(setDoc(doc(staff,untyped),{amount:25,status:'Unpaid'}));await assertSucceeds(deleteDoc(doc(staff,untyped)));const at='staff_bonuses/fictional-performance';await assertSucceeds(setDoc(doc(staff,at),{type:'Performance Bonus',amount:25,status:'Unpaid'}));await assertSucceeds(updateDoc(doc(staff,at),{amount:30}));await assertSucceeds(deleteDoc(doc(staff,at)));
+test('the narrow credit guard preserves authorized noncredit legacy bonus writes while public Staff has no financial authority',async()=>{
+ const owner=db(),staff=db('staff'),untyped='staff_bonuses/fictional-untyped',row={branch:'Fictional Branch',amount:25,status:'Unpaid'};
+ await assertFails(setDoc(doc(staff,untyped),row));await assertSucceeds(setDoc(doc(owner,untyped),row));await assertFails(updateDoc(doc(staff,untyped),{amount:99}));await assertSucceeds(deleteDoc(doc(owner,untyped)));
+ const at='staff_bonuses/fictional-performance';await assertSucceeds(setDoc(doc(owner,at),{...row,type:'Performance Bonus'}));await assertSucceeds(updateDoc(doc(owner,at),{amount:30}));await assertFails(deleteDoc(doc(staff,at)));await assertSucceeds(deleteDoc(doc(owner,at)));
+});
+test('a version marker alone cannot bypass protected credit dispatch or be stripped by the Owner',async()=>{
+ const at='staff_bonuses/fictional-marker-only',row={...credit(),id:'fictional-marker-only',type:'Performance Bonus'};
+ await assertFails(setDoc(doc(db('staff'),at),row));await assertSucceeds(setDoc(doc(db(),at),row));
+ for(const patch of [{amount:999},{payrollAdjustmentVersion:deleteField()},{type:'Ordinary Bonus'}])await assertFails(updateDoc(doc(db(),at),patch));
+ await assertFails(deleteDoc(doc(db(),at)));
 });

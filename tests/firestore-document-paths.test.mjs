@@ -6,10 +6,10 @@ import {lowerFirestorePaths,assertPathLoweringEquivalent} from '../tools/firesto
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const wrap=body=>"rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { "+body+' } }';
 const changedProof=(proof,source)=>({...proof,loweredSha256:hash(source)});
-test('the reviewed policy lowers all98 paths, including eight deep staff-document paths, and independently reverses exactly',()=>{
+test('the reviewed policy lowers all122 paths, including eight deep staff-document paths, and independently reverses exactly',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestorePaths(original);
- assert.equal(result.proof.calls,98);assert.deepEqual(result.proof.depths,{2:90,4:8});
- assert.equal(result.proof.originalSha256,'c2feb217f0aa5a5b83bd92feeaf787e18bdbfa46b30252c60a5283767bacbcab');
+ assert.equal(result.proof.calls,122);assert.deepEqual(result.proof.depths,{2:114,4:8});
+ assert.equal(result.proof.originalSha256,'b68a4d1c3cea467e283562736383da8244d4e0e300e9d2ab3dc97bc9fc74cd0e');
  const start=original.indexOf('function staffPayslipPreview(data,id)'),end=original.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
  const publication=lowerFirestorePaths(wrap(original.slice(start,end)));assert.equal(publication.proof.calls,2);assert.deepEqual(publication.proof.depths,{2:2});assert.match(original.slice(start,end),/payroll_records\/\$\(payrollId\)/);assert.match(original.slice(start,end),/payroll_records\/\$\(refundId\)/);
  assert.equal(assertPathLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);

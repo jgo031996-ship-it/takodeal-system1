@@ -1,3 +1,4 @@
+import {uploadHQImage} from './hq-image-upload.js';
 import {loadInventoryEditorState,saveInventoryEditorSettings,saveInventoryStockCorrection} from './inventory-editor-actions.js';
 import {canOpenInventoryTab} from './workspace-access-model.js';
 import {canonicalDraft,buildInventoryItemEditPlan} from './inventory-item-edit-model.js';
@@ -93,7 +94,7 @@ export function installInventoryEditor(w=window,d=document){
    el('inventoryRestockPanel').open=true;for(const inputId of ['inventoryDetailsPanel','inventoryCorrectionPanel'])el(inputId).open=false;el('inventoryEditorLoadStatus').textContent='';overlay.querySelector('.inventory-editor-card').classList.remove('inventory-editor-loading');lock(false);updatePreview();w.calcEditVariance();el('editInvCycle').focus();
   }catch(cause){if(token===epoch){el('inventoryEditorLoadStatus').textContent='Item settings could not load.';error(cause.message);lock(false);el('btnSaveInvEdit').disabled=true;el('inventorySaveCorrection').disabled=true;}}
  };
- async function uploadPhoto(){const file=el('editInvPhoto').files?.[0];if(!file)return undefined;if(uploadedPhoto?.file===file)return uploadedPhoto.url;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('Choose a JPG, PNG or WebP photo no larger than 5 MB.');const extension=file.type==='image/jpeg'?'jpg':file.type==='image/png'?'png':'webp',ref=w.ref(w.storage,'inventory_images/'+state.original.id+'_'+crypto.randomUUID()+'.'+extension),url=await w.getDownloadURL((await w.uploadBytes(ref,file)).ref);uploadedPhoto={file,url};return url;}
+ async function uploadPhoto(){const file=el('editInvPhoto').files?.[0];if(!file)return undefined;if(uploadedPhoto?.file===file)return uploadedPhoto.url;const openedState=state,token=epoch,url=await uploadHQImage(w,file,{purpose:'inventory-photo',sourceId:openedState.original.id,assertCurrent:()=>{if(state!==openedState||token!==epoch||!can())throw Error('Reopen this item before saving.');}});uploadedPhoto={file,url};return url;}
  function showSaveError(cause){const message=cause.message||'Changes could not be saved.';let field=cause.field&&fieldMap[cause.field];if(!field){if(/conversion/i.test(message))field='editInvConversion';else if(/markup/i.test(message))field='franchiseMarkupPercent';else if(/cost/i.test(message))field='editInvPurchCost';else if(/name/i.test(message))field='editInvName';else if(/reason/i.test(message))field='editInvNote';else if(/count/i.test(message))field='editInvNewQtyPurch';}error(message,field);}
  w.saveInventoryEdit=async()=>{
   if(busy||!state||!can())return;error('');const token=epoch;

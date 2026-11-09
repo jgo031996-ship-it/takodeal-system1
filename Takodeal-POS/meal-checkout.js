@@ -34,8 +34,13 @@ export async function readStaffMealClaims(api,{staffName,start}){
     }
     return {docs};
 }
-export async function findMealIdentity(api,pin,level) {
+export async function findMealIdentity(api,pin,level,{saleId}={}) {
     if(String(pin).length<4)throw Error('Enter at least 4 characters for the PIN.');
+    if(typeof api.verifyMealIdentity==='function'){
+        const proof=await api.verifyMealIdentity({pin:String(pin),scope:saleId,mealLevelId:level.id});
+        if(!proof?.staffId||!proof.profile?.cashierName||!proof.verificationId||!['cashiers','hq_managers'].includes(proof.source)||!level.roles.includes(proof.mealRole))throw Error('This PIN is not allowed to use the selected meal level.');
+        return {id:proof.staffId,source:proof.source,role:proof.mealRole,cashierName:proof.profile.cashierName,staffPinVerificationId:proof.verificationId,staffPinExpiresAt:proof.expiresAt,saleId,mealDay:proof.day};
+    }
     const queries=[];
     // Staff-only levels use the public operational Staff profiles. A PIN-only
     // Cashier is not authorized to read the protected HQ directory, and that
@@ -67,6 +72,9 @@ export async function findMealIdentity(api,pin,level) {
     return identity;
 }
 export function installMealCheckout({window:w=window,document:d=document}={}) {
+    let reservation=null;
+    const reserve=()=>{const session=w.sessionUser,branch=w.localStorage.getItem('takodeal_device_branch'),mobileOrderCode=w.activeMobileOrderCode||null;if(!reservation||reservation.session!==session||reservation.branch!==branch||reservation.mobileOrderCode!==mobileOrderCode){if(typeof w.reserveCheckoutSaleId!=='function')throw Error('Checkout is starting. Reopen the meal after the Cashier app finishes loading.');reservation={session,branch,mobileOrderCode,saleId:w.reserveCheckoutSaleId({branch,mobileOrderCode})};}return reservation.saleId;};
+    w.mealCheckoutQueued=payload=>{if(reservation?.saleId===payload.saleId)reservation=null;};
     const settings=()=>w.masterPOSData?.settings||{};
     const read=async(source,field,value)=>{const snap=await bounded(w.getDocsFromServer(w.query(w.collection(w.db,source),w.where(field,'==',value))));return snap.docs.map(row=>({id:row.id,data:row.data()}));};
     w.isMealDiscount=isMealType;
@@ -87,29 +95,35 @@ export function installMealCheckout({window:w=window,document:d=document}={}) {
     };
     w.collectCustomCheckoutFields=()=>checkoutSelections(settings().customCheckoutFields||[],Object.fromEntries([...d.querySelectorAll('[data-checkout-field]')].map(node=>[node.dataset.checkoutField,node.value])));
     w.authorizeMealPin=async(pin,id,{refresh=false}={})=>{
+        const session=w.sessionUser,branch=w.localStorage?.getItem('takodeal_device_branch'),guard=()=>{if(w.sessionUser!==session||w.localStorage?.getItem('takodeal_device_branch')!==branch)throw Error('The cashier or branch changed. Reopen this meal checkout.');};
+        const api=typeof w.resolveCashierOperationalApi==='function'?await w.resolveCashierOperationalApi({assertCurrent:guard}):w;guard();
         if(refresh){
-            const snap=await bounded(w.getDocFromServer(w.doc(w.db,'settings','global_pos_config'))),data=snap.exists()?snap.data():{};
+            const snap=await bounded(api.getDocFromServer(api.doc(api.db,'settings','global_pos_config'))),data=snap.exists()?snap.data():{};guard();
             w.masterPOSData.settings={...settings(),...data};
         }
         const level=requireMealLevel(settings(),id);
         const deviceId=w.localStorage?.getItem('takodeal_device_id');
-        if(deviceId){const devices=await read('pos_devices','deviceId',deviceId);if(devices.some(row=>String(row.data.status||'').toLowerCase()==='blocked'))throw Error('This device is blocked. Ask HQ to review device access.');}
-        const identity=await findMealIdentity({read},String(pin),level);
+        if(deviceId&&!api.requireStaffLogin){const devices=await read('pos_devices','deviceId',deviceId);if(devices.some(row=>String(row.data.status||'').toLowerCase()==='blocked'))throw Error('This device is blocked. Ask HQ to review device access.');}
+        const identity=await findMealIdentity(api.requireStaffLogin?{verifyMealIdentity:input=>w.verifyMealIdentity({...input,assertCurrent:guard})}:{read},String(pin),level,{saleId:api.requireStaffLogin?reserve():undefined});guard();
         // Apply the staff daily limit to every level that permits Staff, even a custom level.
         if(identity.role==='staff'){
-            const start=new Date();start.setHours(0,0,0,0);
+            const start=api.requireStaffLogin?new Date(identity.mealDay+'T00:00:00+08:00'):new Date();if(!api.requireStaffLogin)start.setHours(0,0,0,0);
             const queued = await w.saleOutbox?.list?.() || [];
-            if(queued.some(row=>{const sale=row.payload;return sale.mealStaffName===identity.cashierName && sale.mealRole==='staff' && new Date(sale.localTimestamp)>=start;}))
+            guard();
+            if(queued.some(row=>{const sale=row.payload;return api.requireStaffLogin?sale.mealIdentityId===identity.id&&sale.mealIdentitySource===identity.source&&sale.mealDay===identity.mealDay&&sale.mealRole==='staff':sale.mealStaffName===identity.cashierName&&sale.mealRole==='staff'&&new Date(sale.localTimestamp)>=start;}))
                 throw Error('This staff member already has a meal awaiting synchronization today.');
+            // The fresh server proof already checks the canonical PH day and
+            // legacy claims. The sale transaction serializes the daily claim.
+            if(api.requireStaffLogin){guard();return {...identity,level};}
             let requests;
-            try{requests=await readStaffMealClaims(w,{staffName:identity.cashierName,start});}
+            try{requests=await readStaffMealClaims(api,{staffName:identity.cashierName,start});guard();}
             catch(error){
                 if(error?.code){const failure=Error('Meal verification could not finish. Your cart is unchanged and no meal was recorded. Check the connection and retry, or ask HQ to review access.');failure.code=error.code;failure.cause=error;throw failure;}
                 throw error;
             }
             if(requests.docs.some(row=>mealRequest(row.data())))throw Error('This staff member has already claimed one meal today.');
         }
-        return {...identity,level};
+        guard();return {...identity,level};
     };
     w.verifyStaffMealPin=async()=>{
         const pin=d.getElementById('checkoutStaffPin').value,id=d.getElementById('checkoutDiscountType').value,name=d.getElementById('finalCustomerName');

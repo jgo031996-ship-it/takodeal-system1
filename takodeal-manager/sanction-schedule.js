@@ -90,9 +90,14 @@ export function startPhilippineDayTimer(changed, {now=()=>new Date(),schedule=se
 export async function acknowledgeSanction(api,input,{identity}={}) {
     const captured=identity?.();
     if(!input.id || input.id.includes('/') || !captured?.staffName || captured.staffName!==input.staffName || String(input.reply || '').trim().length<15 || !input.signature)throw Error('Sign in and complete the explanation and signature.');
+    let legacyName=null;
+    if(typeof api.readOperationalRecords==='function'){
+        const verified=await api.readOperationalRecords('hr_sanctions',{assertCurrent:()=>{const current=identity();if(current.staffId!==captured.staffId||current.staffName!==captured.staffName)throw Error('Your staff identity changed.');}}),entry=verified.docs.find(row=>row.id===input.id),row=entry?.data();
+        if(!row||row.staffId&&row.staffId!==captured.staffId)throw Error('This notice no longer belongs to your verified Staff history.');if(!row.staffId)legacyName=row.staffName;
+    }
     return api.runTransaction(api.db,async tx=>{
         const ref=api.doc(api.db,'hr_sanctions',input.id),snap=await tx.get(ref);if(!snap.exists())throw Error('This notice no longer exists.');const row=snap.data(),current=identity();
-        if(current.staffName!==captured.staffName || current.staffId!==captured.staffId || row.staffName!==captured.staffName || captured.staffId && row.staffId && row.staffId!==captured.staffId)throw Error('Your staff identity changed. Open the correct notice again.');
+        if(current.staffName!==captured.staffName || current.staffId!==captured.staffId || (row.staffId?row.staffId!==captured.staffId:row.staffName!==captured.staffName&&row.staffName!==legacyName))throw Error('Your staff identity changed. Open the correct notice again.');
         if(row.status==='Replied' && row.staffReply===input.reply && row.signatureBase64===input.signature)return {alreadySaved:true};
         if(row.status!=='Pending Reply')throw Error('Management has already finished or cancelled this notice. Refresh before replying.');
         tx.update(ref,{staffReply:input.reply,signatureBase64:input.signature,status:'Replied',repliedAt:api.serverTimestamp(),replyByStaffId:captured.staffId || row.staffId || '',replyScheduleRevision:Number(row.scheduleRevision)||0});return {status:'Replied'};

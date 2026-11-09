@@ -4,14 +4,16 @@ import {readFileSync} from 'node:fs';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {claimDeliveryAtomic,acceptPingAtomic,pickupDeliveryAtomic,completeDeliveryAtomic,rejectPingAtomic,reviewRiderStatusAtomic,reviewRiderTopUpAtomic,requestRiderTopUpAtomic,setRiderAvailabilityAtomic,deliveryPaymentPlan,riderMoneyCents} from '../takodeal-delivery/rider-delivery-safety.js';
 import {captureRiderManagerActor,configureRiderManagerAuthority,installRiderManagementSafety} from '../takodeal-manager/rider-management.js';
+import {riderReceiptVerified} from '../functions/cash-remittance-review/rider-access-model.mjs';
 import {createWorkspaceSession} from '../takodeal-manager/workspace-access-model.js';
 const order={branch:'Maa',orderType:'Delivery',totalAmount:640,deliveryFee:50,paymentMode:'Cash',status:'ready',items:[{name:'Takoyaki',qty:1}],customerEmail:'sample@example.test',orderCode:'TKDL-SAMPLE'};
-const rider={status:'active',name:'Sample Rider',phone:'09000000000',plateNumber:'SAMPLE',walletBalance:2000,isAcceptingOrders:true};
+const rider={status:'active',name:'Sample Rider',phone:'09000000000',plateNumber:'SAMPLE',walletBalance:2000,isAcceptingOrders:true,riderPinManaged:true,riderAuthRevision:1};
 function fixture(){
     const h=firestoreHarness();h.put('incoming_orders/order',order);h.put('riders/a',rider);h.put('riders/b',{...rider,name:'Other Rider'});
-    const actor={authUid:'anonymous-a',riderId:'a',sessionEpoch:1},api={...h.api};let current={...actor};
+    const actor={authUid:'anonymous-a',riderId:'a',sessionEpoch:1,sessionId:'rider-session-a',riderAuthRevision:1},api={...h.api};let current={...actor};
     api.captureRiderActor=()=>({...current});api.assertRiderActor=value=>{assert.deepEqual(value,current,'Rider session changed');};
     api.getDocFromServer=async ref=>({id:ref.id,exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.get(ref.path))});
+    api.readRiderReceipt=async({orderId,assertCurrent})=>{assertCurrent();const row=h.get('incoming_orders/'+orderId),found=[...h.docs].filter(([path,r])=>path.startsWith('transactions/')&&r.branch===row.branch&&r.receiptId===(row.receiptId||row.orderCode));if(found.length!==1||!riderReceiptVerified(row,found[0][1],orderId))throw Error('The prepaid receipt is not HQ-verified.');return {id:found[0][0].split('/')[1],receiptId:found[0][1].receiptId,branch:found[0][1].branch};};
     return {h,api,actor,switchActor:value=>{current=value;}};
 }
 function managerFixture({permissions=['riders'],assignedBranch=['All'],role='Manager',email='hq@example.test'}={}){
@@ -20,6 +22,7 @@ function managerFixture({permissions=['riders'],assignedBranch=['All'],role='Man
     f.api.auth={currentUser:user};f.api.sessionUser=createWorkspaceSession(user,saved);configureRiderManagerAuthority(f.api);
     return {...f,user,saved,manager:captureRiderManagerActor(f.api)};
 }
+const proof=(actor,kind,record,operation,hash='a'.repeat(64))=>'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/'+encodeURIComponent((kind==='delivery'?'deliveries/proofs/':'riders/topups/')+actor.authUid+'/'+actor.sessionId+'/'+record+'/'+operation+'/'+hash+'.jpg')+'?alt=media&token=sample-token';
 const claim=f=>({orderId:'order',operationId:'claim-one',actor:f.actor});
 const topup=f=>({requestId:'topup',riderId:'a',operationId:'credit-one',actor:f.manager,decision:'approved',amount:500});
 test('shared Rider and Manager transaction code is byte-identical',()=>assert.equal(readFileSync(new URL('../takodeal-delivery/rider-delivery-safety.js',import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/rider-delivery-safety.js',import.meta.url),'utf8')));
@@ -29,7 +32,7 @@ test('cash claim atomically debits the existing whole total including delivery f
     for(const key of ['items','totalAmount','deliveryFee','branch','customerEmail','paymentMode'])assert.deepEqual(saved[key],order[key]);assert.equal(f.h.docs.size,3);
 });
 test('two riders racing to claim one ready order produce exactly one winner and one wallet debit',async()=>{
-    const f=fixture(),bActor={authUid:'anonymous-b',riderId:'b',sessionEpoch:1},bApi={...f.api,captureRiderActor:()=>bActor,assertRiderActor:value=>assert.deepEqual(value,bActor)};
+    const f=fixture(),bActor={authUid:'anonymous-b',riderId:'b',sessionEpoch:1,sessionId:'rider-session-b',riderAuthRevision:1},bApi={...f.api,captureRiderActor:()=>bActor,assertRiderActor:value=>assert.deepEqual(value,bActor)};
     const results=await Promise.allSettled([claimDeliveryAtomic(f.api,claim(f)),claimDeliveryAtomic(bApi,{orderId:'order',operationId:'claim-b',actor:bActor})]);
     assert.equal(results.filter(row=>row.status==='fulfilled').length,1);assert.equal(results.filter(row=>row.status==='rejected').length,1);
     assert.equal(f.h.get('riders/a').walletBalance+f.h.get('riders/b').walletBalance,3360);assert.ok(f.h.retries()>0);
@@ -57,7 +60,7 @@ function prepaid(f,patch={},receiptPatch={}){
 }
 test('exact HQ-verified prepaid receipt permits claim without any wallet debit',async()=>{
     const f=fixture();prepaid(f);const result=await claimDeliveryAtomic(f.api,claim(f));assert.equal(result.debited,0);assert.equal(f.h.get('riders/a').walletBalance,2000);assert.equal(f.h.get('incoming_orders/order').riderClaim.paymentKind,'prepaid');
-    const g=fixture();g.h.put('incoming_orders/delivery-sale',{...order,orderType:undefined,paymentMode:undefined,paymentMethod:'GCash',orderCode:'TKDL-SAMPLE'});g.h.put('transactions/receipt',{receiptId:'TKDL-SAMPLE',branch:'Maa',paymentMethod:'GCash',paymentVerified:true,status:'Paid'});
+    const g=fixture();g.h.put('incoming_orders/delivery-sale',{...order,orderType:'Delivery',paymentMode:undefined,paymentMethod:'GCash',orderCode:'TKDL-SAMPLE'});g.h.put('transactions/receipt',{receiptId:'TKDL-SAMPLE',branch:'Maa',paymentMethod:'GCash',paymentVerified:true,status:'Paid'});
     assert.equal((await claimDeliveryAtomic(g.api,{...claim(g),orderId:'delivery-sale'})).debited,0);
 });
 test('encoded-but-unverified, voided, ambiguous, missing or other-order prepaid receipts never permit claim',async()=>{
@@ -67,8 +70,8 @@ test('encoded-but-unverified, voided, ambiguous, missing or other-order prepaid 
         await assert.rejects(claimDeliveryAtomic(f.api,claim(f)),/receipt|paid|another order/);assert.equal(f.h.get('incoming_orders/order').status,'ready');assert.equal(f.h.get('riders/a').walletBalance,2000);
     }
 });
-test('receipt verification and rider approval are rechecked inside transaction, not trusted from preflight',async()=>{
-    for(const at of ['receipt','rider']){const f=fixture();prepaid(f);const original=f.api.runTransaction;f.api.runTransaction=(db,callback)=>{const path=at==='receipt'?'transactions/receipt':'riders/a';f.h.put(path,{...f.h.get(path),...(at==='receipt'?{paymentVerified:false}:{status:'banned'})});return original(db,callback);};await assert.rejects(claimDeliveryAtomic(f.api,claim(f)));assert.equal(f.h.get('incoming_orders/order').status,'ready');}
+test('rider approval is rechecked inside transaction after the private receipt preflight',async()=>{
+    const f=fixture();prepaid(f);const original=f.api.runTransaction;f.api.runTransaction=(db,callback)=>{f.h.put('riders/a',{...f.h.get('riders/a'),status:'banned'});return original(db,callback);};await assert.rejects(claimDeliveryAtomic(f.api,claim(f)));assert.equal(f.h.get('incoming_orders/order').status,'ready');
 });
 test('account changes or same-account re-login during a pending read cannot claim',async()=>{
     for(const different of [true,false]){const f=fixture(),original=f.api.getDocFromServer;f.api.getDocFromServer=async ref=>{const snap=await original(ref);f.switchActor(different?{...f.actor,riderId:'b'}:{...f.actor,sessionEpoch:2});return snap;};await assert.rejects(claimDeliveryAtomic(f.api,claim(f)),/session changed/);assert.equal(f.h.get('riders/a').walletBalance,2000);assert.equal(f.h.get('incoming_orders/order').status,'ready');}
@@ -82,12 +85,12 @@ test('ping rejection preserves previous declined riders and cannot clear a later
     const g=fixture();g.h.put('incoming_orders/order',{...order,status:'looking_for_rider',pingedRider:'b',declinedBy:['older']});await assert.rejects(rejectPingAtomic(g.api,claim(g)),/another rider/);assert.equal(g.h.get('incoming_orders/order').pingedRider,'b');assert.deepEqual(g.h.get('incoming_orders/order').declinedBy,['older']);
 });
 test('legacy owned ongoing delivery can complete once with proof without recalculating stock, receipts or wallet',async()=>{
-    const f=fixture();f.h.put('incoming_orders/order',{...order,status:'out_for_delivery',riderId:'a'});const input={...claim(f),operationId:'complete-one',proofUrl:'https://example.invalid/sample-proof.jpg'};
+    const f=fixture();f.h.put('incoming_orders/order',{...order,status:'out_for_delivery',riderId:'a'});const input={...claim(f),operationId:'complete-one',proofUrl:proof(f.actor,'delivery','order','complete-one')};
     f.h.loseNextAck();await assert.rejects(completeDeliveryAtomic(f.api,input),/Connection lost/);assert.equal((await completeDeliveryAtomic(f.api,input)).alreadySaved,true);assert.equal(f.h.get('incoming_orders/order').status,'completed');assert.equal(f.h.get('incoming_orders/order').proofOfDeliveryUrl,input.proofUrl);assert.equal(f.h.get('riders/a').walletBalance,2000);assert.equal(f.h.docs.size,3);
-    await assert.rejects(completeDeliveryAtomic(f.api,{...input,proofUrl:'https://example.invalid/changed.jpg'}),/different delivery change/);
+    await assert.rejects(completeDeliveryAtomic(f.api,{...input,proofUrl:proof(f.actor,'delivery','order','complete-one','b'.repeat(64))}),/different delivery change/);
 });
 test('completion refuses other rider, wrong stage, revoked rider, stale actor and missing/unsafe proof',async()=>{
-    for(const scenario of ['other','ready','banned','actor','proof']){const f=fixture();f.h.put('incoming_orders/order',{...order,status:scenario==='ready'?'ready':'out_for_delivery',riderId:scenario==='other'?'b':'a'});if(scenario==='banned')f.h.put('riders/a',{...rider,status:'banned'});if(scenario==='actor')f.switchActor({...f.actor,sessionEpoch:2});await assert.rejects(completeDeliveryAtomic(f.api,{...claim(f),proofUrl:scenario==='proof'?'javascript:alert(1)':'https://example.invalid/proof.jpg'}));assert.notEqual(f.h.get('incoming_orders/order').status,'completed');}
+    for(const scenario of ['other','ready','banned','actor','proof']){const f=fixture();f.h.put('incoming_orders/order',{...order,status:scenario==='ready'?'ready':'out_for_delivery',riderId:scenario==='other'?'b':'a'});if(scenario==='banned')f.h.put('riders/a',{...rider,status:'banned'});if(scenario==='actor')f.switchActor({...f.actor,sessionEpoch:2});await assert.rejects(completeDeliveryAtomic(f.api,{...claim(f),proofUrl:scenario==='proof'?'javascript:alert(1)':proof(f.actor,'delivery','order','claim-one')}));assert.notEqual(f.h.get('incoming_orders/order').status,'completed');}
 });
 test('optional pickup records metadata once while retaining out_for_delivery compatibility',async()=>{
     const f=fixture();f.h.put('incoming_orders/order',{...order,status:'out_for_delivery',riderId:'a'});await pickupDeliveryAtomic(f.api,claim(f));assert.equal((await pickupDeliveryAtomic(f.api,claim(f))).alreadySaved,true);assert.equal(f.h.get('incoming_orders/order').status,'out_for_delivery');assert.ok(f.h.get('incoming_orders/order').riderPickedUpAt);assert.equal(f.h.get('riders/a').walletBalance,2000);
@@ -136,10 +139,10 @@ test('Manager identity changes during pending reads cannot mutate approval or wa
     const f=managerFixture(),original=f.api.getDocsFromServer;f.api.getDocsFromServer=async query=>{const snap=await original(query);f.api.auth.currentUser={...f.user,uid:'other'};return snap;};await assert.rejects(reviewRiderTopUpAtomic(f.api,topup(f)));assert.equal(f.h.get('riders/a').walletBalance,2000);
 });
 test('stable rider top-up submission survives lost ACK without reopening a reviewed request',async()=>{
-    const f=fixture(),input={topupId:'request-ref',operationId:'request-one',actor:f.actor,reference:'REF-001',proofUrl:'https://example.invalid/proof.jpg'};
+    const f=fixture(),input={topupId:'request-ref',operationId:'request-one',actor:f.actor,reference:'REF-001',proofUrl:proof(f.actor,'topup','request-ref','request-one')};
     f.h.loseNextAck();await assert.rejects(requestRiderTopUpAtomic(f.api,input),/Connection lost/);assert.equal((await requestRiderTopUpAtomic(f.api,input)).alreadySaved,true);f.h.put('rider_topups/request-ref',{...f.h.get('rider_topups/request-ref'),status:'approved',amountAdded:500});
     assert.equal((await requestRiderTopUpAtomic(f.api,input)).status,'approved');assert.equal(f.h.get('rider_topups/request-ref').amountAdded,500);assert.equal(f.h.get('riders/a').walletBalance,2000);
-    await assert.rejects(requestRiderTopUpAtomic(f.api,{...input,proofUrl:'https://example.invalid/changed.jpg'}),/different request/);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('rider_topups/')).length,1);
+    await assert.rejects(requestRiderTopUpAtomic(f.api,{...input,proofUrl:proof(f.actor,'topup','request-ref','request-one','b'.repeat(64))}),/different request/);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('rider_topups/')).length,1);
 });
 test('availability updates only fresh approved rider and keeps displayed state unchanged on failed save',async()=>{
     const f=fixture();f.h.put('riders/a',{...rider,isAcceptingOrders:false});await setRiderAvailabilityAtomic(f.api,{actor:f.actor,isAcceptingOrders:true});assert.equal(f.h.get('riders/a').isAcceptingOrders,true);assert.equal((await setRiderAvailabilityAtomic(f.api,{actor:f.actor,isAcceptingOrders:true})).alreadySaved,true);
@@ -147,7 +150,7 @@ test('availability updates only fresh approved rider and keeps displayed state u
 });
 test('new cash and ping claims require fresh online availability; owned completion remains possible after going offline',async()=>{
     for(const ping of [false,true]){const f=fixture();f.h.put('riders/a',{...rider,isAcceptingOrders:false});if(ping)f.h.put('incoming_orders/order',{...order,status:'looking_for_rider',pingedRider:'a'});await assert.rejects((ping?acceptPingAtomic:claimDeliveryAtomic)(f.api,claim(f)),/Go online/);assert.equal(f.h.get('riders/a').walletBalance,2000);}
-    const f=fixture();f.h.put('riders/a',{...rider,isAcceptingOrders:false});f.h.put('incoming_orders/order',{...order,status:'out_for_delivery',riderId:'a'});await completeDeliveryAtomic(f.api,{...claim(f),proofUrl:'https://example.invalid/proof.jpg'});assert.equal(f.h.get('incoming_orders/order').status,'completed');
+    const f=fixture();f.h.put('riders/a',{...rider,isAcceptingOrders:false});f.h.put('incoming_orders/order',{...order,status:'out_for_delivery',riderId:'a'});await completeDeliveryAtomic(f.api,{...claim(f),proofUrl:proof(f.actor,'delivery','order','claim-one')});assert.equal(f.h.get('incoming_orders/order').status,'completed');
 });
 test('actual Manager review wrapper locks immediately, uses fresh rider name, cancels safely and rechecks actor after dialog',async()=>{
     const f=managerFixture(),dialogs=[];let resolveDialog;f.api.Swal={fire:async options=>{dialogs.push(options);if(options.showCancelButton)return new Promise(resolve=>{resolveDialog=resolve;});return {};}};f.api.crypto={randomUUID:()=> 'sample-id'};installRiderManagementSafety(f.api);
@@ -172,7 +175,7 @@ test('actual Manager top-up wrapper credits once and refuses a second review aft
     assert.equal(await f.api.approveTopUp('topup','a','ignored cached name'),true);assert.equal(f.h.get('riders/a').walletBalance,2500);assert.equal(await f.api.approveTopUp('topup','a'),false);assert.equal(f.h.get('riders/a').walletBalance,2500);assert.match(dialogs.at(-1).text,/already been reviewed/);
 });
 test('actor changes during transaction reads and rejected top-up submission cannot create stale requests',async()=>{
-    for(const scenario of ['actor','unapproved','commit']){const f=fixture(),original=f.api.runTransaction,input={topupId:'request',operationId:'request-one',actor:f.actor,reference:'REF-001',proofUrl:'https://example.invalid/proof.jpg'};
+    for(const scenario of ['actor','unapproved','commit']){const f=fixture(),original=f.api.runTransaction,input={topupId:'request',operationId:'request-one',actor:f.actor,reference:'REF-001',proofUrl:proof(f.actor,'topup','request','request-one')};
         if(scenario==='actor')f.api.runTransaction=(db,callback)=>original(db,tx=>callback({...tx,get:async ref=>{const snap=await tx.get(ref);f.switchActor({...f.actor,sessionEpoch:2});return snap;}}));
         if(scenario==='unapproved')f.h.put('riders/a',{...rider,status:'pending_approval'});if(scenario==='commit')f.h.failNextCommit();await assert.rejects(requestRiderTopUpAtomic(f.api,input));assert.equal(f.h.get('rider_topups/request'),undefined);
     }

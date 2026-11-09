@@ -15,7 +15,7 @@ export async function loadStaffSwapContext(api,{staffId,staffName,workDate,asser
  const date=scheduleDateKey(workDate),month=monthKey(date),day=Number(date.slice(-2));
  if(!clean(staffId)||/[\/\0]/.test(staffId))throw Error('Sign in to your staff account before requesting a swap.');
  assertCurrent();
- const snap=await api.getDocFromServer(api.doc(api.db,'cashiers',staffId));assertCurrent();
+ const snap=await api.readStaffDirectoryProfile(staffId,{assertCurrent});assertCurrent();
  if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Reconnect to confirm your staff account.');
  const profile=snap.data(),aliases=staffSwapAliases(profile);
  if(!activeStaffProfile(profile)||profile.scheduleEligible===false||!aliases.length||staffName&&!aliases.some(name=>key(name)===key(staffName)))throw Error('Your active staff identity could not be confirmed. Sign in again or ask HQ to review your profile.');

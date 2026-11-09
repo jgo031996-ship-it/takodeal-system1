@@ -2,6 +2,7 @@
 <html>
   
 <head>
+<meta name="takodeal-release" content="security-stock-loans-prep-20261109-r1">
 <link rel="stylesheet" href="./meal-checkout.css">
 <link rel="stylesheet" href="./cashier-schedule-proposals.css?v=20261025">
 <link rel="stylesheet" href="./sales-actions.css?v=tablet-attendance-stock-20261009-r1">
@@ -353,6 +354,7 @@
   <link rel="stylesheet" href="attendance-camera.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="cancelled-orders.css">
 <link rel="stylesheet" href="stock-count-ui.css">
+<link rel="stylesheet" href="low-ingredient-ui.css">
 <link rel="stylesheet" href="cash-remittance.css?v=20261026">
 <script src="cashier-appearance-boot.js"></script>
 <link rel="stylesheet" href="cashier-appearance.css">
@@ -463,6 +465,7 @@
       };
 
      async function submitLoginPin() {
+          if (window.cashierPinLoginPending) return;
           if (typeof window.verifyPin !== 'function') {
               alert("⏳ Please wait a moment. The POS engine is still starting up...");
               return;
@@ -475,10 +478,20 @@
 
           let btn = document.getElementById('btnSubmitPin'); 
           btn.innerText = "Verifying..."; btn.disabled = true;
+          window.cashierPinLoginPending = true;
+          const attempt = (window.cashierPinLoginEpoch || 0) + 1;
+          window.cashierPinLoginEpoch = attempt;
+          const originalSession = window.sessionUser, originalBranch = localStorage.getItem('takodeal_device_branch'), originalDevice = localStorage.getItem('takodeal_device_id'), controller = new AbortController();
+          let retired = false;
+          const assertCurrent = () => {
+              if (retired || window.cashierPinLoginEpoch !== attempt || window.sessionUser !== originalSession || passInput.value.trim() !== password || localStorage.getItem('takodeal_device_branch') !== originalBranch || localStorage.getItem('takodeal_device_id') !== originalDevice) throw Error('The account, branch or tablet changed. Reopen sign in.');
+          };
+          const cancelAttempt=()=>{retired=true;controller.abort();};window.cancelCashierPinLogin=cancelAttempt;
 
           // 🔥 ULTIMATE HANG FIX: Force unlock UI after 8 seconds if internet is dead!
           let forceUnlock = setTimeout(() => {
-              if (btn.innerText === "Verifying...") {
+              if (!retired && window.cashierPinLoginEpoch === attempt && btn.innerText === "Verifying...") {
+                  retired = true; controller.abort(); window.cashierPinLoginPending = false;
                   alert("⚠️ Network is slow or unstable. Please check your WiFi connection and try logging in again.");
                   passInput.value = ""; 
                   btn.innerText = "Secure Login"; 
@@ -488,7 +501,8 @@
           
           try {
               // Standard verify call
-              let identity = await window.verifyPin(password);
+              let identity = await window.verifyPin(password,{signal:controller.signal,assertCurrent});
+              assertCurrent();
               
               clearTimeout(forceUnlock); // Cancel the timeout if Firebase successfully responds!
               
@@ -498,8 +512,12 @@
               if (!identity) { 
                   alert("Invalid Password."); passInput.value = ""; btn.innerText = "Secure Login"; btn.disabled = false; return; 
               }
+              if (identity.branch !== originalBranch) throw Error('The confirmed staff login does not match this tablet branch. Check saved device approval.');
+              passInput.value = '';
+              retired = true;
 
-              sessionUser = identity;
+              if(typeof window.activateCashierOperationalContext==='function')window.activateCashierOperationalContext(identity,{assertCurrent});else sessionUser = identity;
+              const assertSignedInCurrent=()=>{if(window.cashierPinLoginEpoch!==attempt||window.sessionUser!==identity||localStorage.getItem('takodeal_device_branch')!==originalBranch||localStorage.getItem('takodeal_device_id')!==originalDevice)throw Error('The signed-in cashier or tablet changed. Reopen sign in.');};
 
               if (typeof window.requestWakeLock === 'function') window.requestWakeLock();
               if (!document.fullscreenElement) {
@@ -507,7 +525,7 @@
               }
               
               let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
-              if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
+              if (lockedDeviceBranch !== identity.branch) throw Error('The tablet branch changed. Reopen sign in.');
               localStorage.setItem('cashierName', identity.cashierName);
               
               let branchEl = document.getElementById('displayBranchText') || document.getElementById('displayBranch');
@@ -522,23 +540,31 @@
 
               if (typeof window.checkLoginShortage === 'function') window.checkLoginShortage(identity.cashierName);
               if (typeof window.updateActiveShiftCashier === 'function') window.updateActiveShiftCashier(identity.cashierName);
+              if (typeof window.checkActiveSanctions === 'function') window.checkActiveSanctions(identity.cashierName);
+              setTimeout(() => { if (window.sessionUser === identity) window.checkForAnnouncements?.(identity.cashierName); }, 1500);
               
               btn.innerText = "Loading POS..."; 
 
               // Background data loads
               if (typeof loadPOSData === 'function') await Promise.race([loadPOSData(), new Promise(r => setTimeout(r, 6000))]);
+              assertSignedInCurrent();
               if (typeof checkCurrentShift === 'function') await Promise.race([checkCurrentShift(), new Promise(r => setTimeout(r, 3000))]);
+              assertSignedInCurrent();
               if (typeof updateParkedBadge === 'function') updateParkedBadge(); 
               if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
               if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
 
           } catch (err) {
-              console.warn("Login Hang Prevented:", err);
               clearTimeout(forceUnlock);
-              alert("⚠️ Network is slow or unstable. Please check your WiFi connection and try logging in again.");
+              if (window.cashierPinLoginEpoch !== attempt) return;
+              if (!retired) alert(err?.message || 'HQ could not confirm this sign in. Check the connection and saved device approval. Your saved orders are kept.');
               passInput.value = ""; 
               btn.innerText = "Secure Login"; 
               btn.disabled = false;
+          } finally {
+              controller.abort();
+              if (window.cashierPinLoginEpoch === attempt) window.cashierPinLoginPending = false;
+              if(window.cancelCashierPinLogin===cancelAttempt)window.cancelCashierPinLogin=null;
           }
       }
   </script>
@@ -3633,6 +3659,10 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         mealRole: staffIdentity ? staffIdentity.role : null,
         mealIdentityId: staffIdentity ? staffIdentity.id : null,
         mealIdentitySource: staffIdentity ? staffIdentity.source : null,
+        ...(staffIdentity?.mealDay?{mealDay:staffIdentity.mealDay}:{}),
+        staffPinVerificationId: staffIdentity?.staffPinVerificationId || null,
+        staffPinInitialExpiresAt: staffIdentity?.staffPinExpiresAt || null,
+        ...(staffIdentity?.saleId?{saleId:staffIdentity.saleId}:{}),
         customCheckoutSelections,
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
@@ -4529,7 +4559,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=variance-timein-20261108-r1"></script>
+    <script type="module" src="main.js?v=security-stock-loans-prep-20261109-r1"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

@@ -33,15 +33,15 @@ export function riderStatusMessage(rider={},error='') {
         unknown:'Manager approval could not be confirmed for this account. Contact Manager before accepting deliveries.',
         unavailable:'Approval could not be checked. Reconnect and refresh your status before accepting deliveries.'};
     return {status,label:({active:'Approved',pending:'Awaiting approval',rejected:'Not approved',suspended:'Access suspended',unknown:'Approval required',unavailable:'Status unavailable'})[status],
-        message:messages[status]+(reason?' '+reason:'')};
+        message:(error==='Your protected Rider sign-in expired. Sign in again.'?error:messages[status])+(reason?' '+reason:'')};
 }
 export function riderSubmittedAt(value) {
     const millis=value?.toMillis?.() ?? (value?.seconds!=null?Number(value.seconds)*1000:value instanceof Date?value.getTime():Date.parse(value || ''));
     return Number.isFinite(millis)?new Date(millis).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'Submission date not recorded';
 }
 export function publicRiderAccount(id,data) {
-    const {pin,registrationFingerprint,registrationUid,...rider}=data;
-    return {...rider,id};
+    const fields=['name','phone','vehicle','plateNumber','licenseUrl','orcrUrl','selfieUrl','status','walletBalance','rating','totalDeliveries','joinedAt','fleetType','franchiseAccess','isAcceptingOrders','allowedBranches','branch','lastLat','lastLng','lastActive','approvalReason','statusReason','riderAuthRevision','riderPinManaged'];
+    return Object.fromEntries([['id',id],...fields.filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]])]);
 }
 export function validateRiderRegistration(values) {
     const name=String(values.name ?? '').trim(),vehicle=String(values.vehicle ?? '').trim(),plate=String(values.plate ?? '').trim().toUpperCase();

@@ -7,6 +7,7 @@ import {createScheduleRevision,assembleScheduleHistory} from '../takodeal-manage
 import {createEarlyTimeOutService} from '../takodeal-manager/early-time-out-actions.js';
 import {createEarlyTimeOutReviewService} from '../takodeal-manager/early-time-out-review.js';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
+import {putOperationalStaffFixture} from './helpers/operational-directory-fixture.mjs';
 
 const name='Synthetic Night Crew',branch='Cabantian',staffId='synthetic-night-staff';
 function commonNightFixture({startTime='18:30',endTime='03:00',timeIn='18:26',extraRules=[],workDate='2026-10-28'}={}){
@@ -108,7 +109,7 @@ function protectedCommonFixture(options={}){
  h.api.sessionUser={uid:'synthetic-night-reviewer',email,role:'Manager',permissions:['inbox'],allowedBranches:[branch]};
  h.put('hq_managers/night-reviewer',{email,role:'Manager',permissions:['inbox'],assignedBranch:branch,pin:'4829',active:true});
  h.put('hq_email_access/'+email,{active:true,permissions:['inbox'],allowedBranches:[branch]});
- h.put('cashiers/'+staffId,{cashierName:name,branch,pin:'7281',active:true});
+ putOperationalStaffFixture(h,staffId,{cashierName:name,branch,pin:'7281',active:true});
  h.put('payroll_records/frozen-paid',{status:'Paid',frozenData:{paidHours:80,netPay:4500}});
  h.put('settings/global_schedule',{...f.revision.snapshot,scheduleRevisionId:f.revision.revisionId,payrollHistoryEnforcedFrom:'2026-10-01'});
  h.put('settings/schedule_month_2026_10',{month:'2026-10',revisionIds:[f.revision.revisionId],latestRevisionId:f.revision.revisionId});

@@ -63,9 +63,10 @@ test('new sharing keeps budget-sensitive validators inline and full-policy user-
  }
  const numbers=built.selectorStages.find(stage=>stage.name==='bounded-numbers'),numberBefore=functionsOf(numbers.input),numberAfter=functionsOf(numbers.output);
  assert.ok(numbers.proof.sites.length>=30);for(const name of numbers.proof.excludedFunctions)assert.equal(numberAfter.get(name)?.raw,numberBefore.get(name)?.raw,name+' must not gain a numeric frame');
- for(const stage of [getters,numbers]){
-  const prior=functionsOf(stage.input),next=functionsOf(stage.output),hot=transitiveFunctionNames(stage.input,['selectorHrSanctionsUpdate','selectorPayrollRecordsCreate']);
+ for(const stage of [getters,numbers,built.selectorStages.find(stage=>stage.name==='bounded-text')]){
+  const prior=functionsOf(stage.input),next=functionsOf(stage.output),hot=transitiveFunctionNames(stage.input,['selectorHrSanctionsUpdate','selectorPayrollRecordsCreate','companyOperationalCreate','stockAuditCreate','companyMealProof','companyMealRequest','mealClaim']);
   assert.ok(hot.includes('disciplineScope'));assert.ok(hot.includes('cashShortagePayrollMetadata'));assert.ok(hot.includes('offlineOwner'));
+  assert.ok(hot.includes('companyClockCreate'));assert.ok(hot.includes('companyProfileActive'));
   for(const name of hot){assert.ok(stage.proof.excludedFunctions.includes(name),name+' must be covered transitively');assert.equal(next.get(name)?.raw,prior.get(name).raw,name+' must not gain an expression frame on either maximum-size path');}
  }
  assert.ok(maxFunctionDepth(built.loweredPolicy)<=maxFunctionDepth(policy)+1,'only one terminal selector frame is permitted');

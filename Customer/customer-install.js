@@ -75,7 +75,7 @@ if(typeof window!=='undefined') {
         // Network-only navigation fallback supports older install checks without
         // caching branch availability, customer sessions, receipts or order data.
         if('serviceWorker' in navigator && window.isSecureContext)
-            navigator.serviceWorker.register('./sw.js').catch(()=>{});
+            navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{});
     };
     if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 }

@@ -20,6 +20,7 @@ import {signOfferedContract,contractOfferFingerprint} from '../takodeal-staff/on
 import {confirmAttendanceAmendmentReview} from '../takodeal-manager/attendance-amendment-review.js';
 import {attendanceAmendmentReviewFingerprint} from '../takodeal-manager/attendance-amendment-review-model.js';
 import {captureAttendanceSchedule,resolveAttendanceShift} from '../takodeal-manager/payroll-safety.js';
+import {buildHQAccessIndex} from '../functions/cash-remittance-review/company-access-index.mjs';
 
 // These tests use real local Firebase Rules runtimes. They must not be silently
 // skipped when the runtime is missing, and cannot connect to production.
@@ -64,6 +65,19 @@ function bindingData(device = uid, employee = staffId, active = true) {
 }
 async function adminSet(path, data) {
     await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), path), data));
+}
+async function seedHQ(id,email,permissions,allowedBranches) {
+    const profile={email,role:'Manager',permissions,assignedBranch:allowedBranches,active:true,pin:'SYNTHETIC-HQ'};
+    await adminSet('hq_managers/'+id,profile);
+    await adminSet('hq_account_index/'+email,buildHQAccessIndex([{id,data:profile}])[0]);
+    await adminSet('hq_email_access/'+email,{active:true,permissions,allowedBranches});
+}
+async function seedStaffSession(employee=staffId,name='Sample Staff',device=uid) {
+    const revision='synthetic-profile-revision',deviceId='SYNTHETIC-PHONE',sessionId='synthetic-staff-session-1234';
+    await adminSet('staff_directory/'+employee,{staffId:employee,cashierName:name,branch,active:true,profileRevision:revision});
+    await adminSet('staff_name_claims/'+name,{name,uniqueStaffId:employee,ambiguous:false});
+    await adminSet('staff_login_sessions/'+device,{schemaVersion:1,uid:device,staffId:employee,deviceId,sessionId,app:'staff',branch,profileRevision:revision,expiresAt:Timestamp.fromMillis(Date.now()+3600000)});
+    return {uid:device,deviceId,sessionId,app:'staff'};
 }
 async function atomicUpload(ctx, operation, extra = {}) {
     const data = fileData(operation, extra), db = ctx.firestore(), batch = writeBatch(db);
@@ -127,9 +141,11 @@ test('other-employee and revoked bindings cannot read this employee’s metadata
         await assertFails(getBytes(ref(ctx.storage(), objectPath())));
     }
 });
-test('forged public PIN, owner role and branch fields cannot authorize the private vault', async () => {
+test('public PIN, owner role and branch forgeries are refused and cannot authorize the private vault', async () => {
     const ctx = anonymous('unapproved-forger');
-    await assertSucceeds(updateDoc(doc(ctx.firestore(), 'cashiers/public-profile'), {pin: '9999', role: 'Owner', permissions: ['all'], staffId, branch}));
+    await assertFails(updateDoc(doc(ctx.firestore(), 'cashiers/public-profile'), {pin: '9999', role: 'Owner', permissions: ['all'], staffId, branch}));
+    // A previously stored malicious legacy profile is still not a private grant.
+    await adminSet('cashiers/public-profile',{pin:'9999',role:'Owner',permissions:['all'],staffId,branch});
     await assertFails(getDoc(doc(ctx.firestore(), currentPath())));
     await assertFails(getBytes(ref(ctx.storage(), objectPath())));
     await assertFails(setDoc(doc(ctx.firestore(), 'staff_document_devices/unapproved-forger'), {uid: 'unapproved-forger', staffId, branch, active: true}));
@@ -368,11 +384,11 @@ test('disabling the policy prevents new requests, pending metadata and private-b
     const newCtx = anonymous('new-disabled');
     await assertFails(setDoc(doc(newCtx.firestore(), 'staff_document_requests/new-disabled'), {uid: 'new-disabled', staffId, deviceId: 'phone', deviceName: 'Phone', status: 'pending', requestedAt: serverTimestamp()}));
 });
-test('legacy operational transactions and non-private image uploads keep their preceding policy', async () => {
+test('unapproved public operational writes and legacy unscoped profile uploads are denied', async () => {
     const ctx = env.unauthenticatedContext();
-    await assertSucceeds(setDoc(doc(ctx.firestore(), 'transactions/legacy-demo-sale'), {branch, totalAmount: 123, status: 'paid'}));
-    await assertSucceeds(getDoc(doc(ctx.firestore(), 'transactions/legacy-demo-sale')));
-    await assertSucceeds(uploadBytes(ref(ctx.storage(), `staff_profiles/legacy-${nextOp()}.jpg`), bytes, {contentType: 'image/jpeg'}));
+    await assertFails(setDoc(doc(ctx.firestore(), 'transactions/legacy-demo-sale'), {branch, totalAmount: 123, status: 'paid'}));
+    await assertFails(getDoc(doc(ctx.firestore(), 'transactions/legacy-demo-sale')));
+    await assertFails(uploadBytes(ref(ctx.storage(), `staff_profiles/legacy-${nextOp()}.jpg`), bytes, {contentType: 'image/jpeg'}));
 });
 
 async function rateSetup() {
@@ -380,6 +396,7 @@ async function rateSetup() {
     await adminSet('hq_managers/rate-owner', {email:'jgo031996@gmail.com',role:'System Architect',permissions:['all'],assignedBranch:'All',pin:'1234'});
     await adminSet('hq_managers/rate-maa', {email:'rate-maa@example.test',role:'Manager',permissions:['payroll'],assignedBranch:branch,pin:'1234'});
     await adminSet('hq_email_access/rate-maa@example.test', {active:true,permissions:['payroll'],allowedBranches:[branch]});
+    await seedHQ('rate-maa','rate-maa@example.test',['payroll'],[branch]);
     await adminSet('payroll_records/rate-frozen', {staffName:'Sample Staff',status:'Paid',frozenData:{dailyRate:450,netPay:4500}});
 }
 function rateApi(ctx, id='owner-uid', email='jgo031996@gmail.com') {
@@ -411,6 +428,16 @@ test('actual verified branch-payroll HQ transaction succeeds independently of do
     await adminSet('hq_email_access/rate-maa@example.test',{active:false,permissions:['payroll'],allowedBranches:[branch]});
     await assertFails(getDoc(doc(ctx.firestore(),'staff_rate_changes/hq-payroll-raise')));
 });
+test('audited payroll-only HQ cannot combine wage changes with contact, PIN, role or lifecycle edits and stale source grants fail closed',async()=>{
+    await rateSetup();const ctx=google('rate-maa','rate-maa@example.test'),api=rateApi(ctx,'rate-maa','rate-maa@example.test');
+    for(const [field,value]of Object.entries({phone:'Unreviewed contact',pin:'9999',role:'Owner',active:false})){
+        await assertFails(saveStaffProfileAtomic(api,staffId,{...ratePayload(),[field]:value},{operationId:'wage-smuggle-'+field,expectedExists:true,expectedRate:450}));
+        assert.equal((await getDoc(doc(owner().firestore(),'staff_rate_changes/wage-smuggle-'+field))).exists(),false);
+    }
+    assert.equal((await getDoc(doc(owner().firestore(),'cashiers/'+staffId))).data().hourlyRate,450);
+    await adminSet('hq_managers/rate-maa',{email:'rate-maa@example.test',role:'Manager',permissions:[],assignedBranch:[branch],active:true,pin:'SYNTHETIC-HQ'});
+    await assert.rejects(rateSave(api,'wage-stale-index'),/permissions|access|workspace tabs/i);assert.equal((await getDoc(doc(owner().firestore(),'staff_rate_changes/wage-stale-index'))).exists(),false);
+});
 
 test('private rate audit reads and writes reject unauthenticated, anonymous, unverified, unpermitted and wrong-scope callers', async () => {
     await rateSetup();await rateSave(rateApi(owner()),'private-raise');
@@ -431,8 +458,9 @@ test('rate audit is immutable; existing audit cannot be reused to spoof a marker
     await assertFails(updateDoc(doc(ctx.firestore(),`cashiers/${staffId}`),{latestRateRaise:null}));
     await assertFails(updateDoc(doc(ctx.firestore(),`cashiers/${staffId}`),{staffRateAuditId:'old-reference'}));
     for(const actor of [ctx,env.unauthenticatedContext()])await assertFails(updateDoc(doc(actor.firestore(),`cashiers/${staffId}`),{rateHistory:[{fromDailyRate:450,toDailyRate:500}]}));
-    const publicDb=env.unauthenticatedContext().firestore();await assertSucceeds(updateDoc(doc(publicDb,`cashiers/${staffId}`),{phone:'Sample new contact',hourlyRate:510}));
-    const publicProfile=(await getDoc(doc(publicDb,`cashiers/${staffId}`))).data();assert.equal(publicProfile.phone,'Sample new contact');assert.equal(Object.hasOwn(publicProfile,'rateHistory'),false);
+    const publicDb=env.unauthenticatedContext().firestore();await assertFails(updateDoc(doc(publicDb,`cashiers/${staffId}`),{phone:'Sample new contact',hourlyRate:510}));
+    await assertFails(getDoc(doc(publicDb,`cashiers/${staffId}`)));
+    const protectedProfile=(await getDoc(doc(ctx.firestore(),`cashiers/${staffId}`))).data();assert.equal(protectedProfile.hourlyRate,500);assert.equal(Object.hasOwn(protectedProfile,'rateHistory'),false);
     await assertFails(setDoc(doc(ctx.firestore(),'cashiers/forged-new-profile'),{cashierName:'Fake',branch,hourlyRate:500,rateHistory:[]}));
 });
 
@@ -484,8 +512,9 @@ test('dated future salary preserves the current public wage, earlier cutoff and 
     assert.equal(staffRateForDate(profile, future), 500);
     assert.equal(audit.version, 2); assert.equal(audit.effectiveDate, future); assert.equal(audit.rateChange, true);
     assert.equal(audit.projectionDailyRate, 450); assert.equal(audit.fromDailyRate, 450);
-    const publicProfile = (await getDoc(doc(env.unauthenticatedContext().firestore(), `cashiers/${staffId}`))).data();
-    for (const field of ['rates', 'baselineDailyRate', 'salaryRateTimeline', 'rateHistory']) assert.equal(Object.hasOwn(publicProfile, field), false);
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), `cashiers/${staffId}`)));
+    const savedProfile=(await getDoc(doc(ctx.firestore(),`cashiers/${staffId}`))).data();
+    for (const field of ['rates', 'baselineDailyRate', 'salaryRateTimeline', 'rateHistory']) assert.equal(Object.hasOwn(savedProfile, field), false);
     assert.deepEqual((await getDoc(doc(api.db, 'payroll_records/rate-frozen'))).data().frozenData, {dailyRate: 450, netPay: 4500});
 });
 
@@ -612,7 +641,9 @@ async function earlyFixture() {
         scheduleSnapshot: {version: 1, source: 'clock-in', branch, staffName: 'Sample Staff', clockInAt: startAt.toISOString(), expectedStartAt: startAt.toISOString(), expectedEndAt: endAt.toISOString(), shiftId: 'early-saved-slot', wasScheduled: true, needsScheduleReview: false, scheduleRevisionId: 'early-original-schedule'}};
     const {id, ...source} = start;
     await adminSet('attendance_logs/' + id, source);
-    const staffApi = rateApi(env.unauthenticatedContext()); delete staffApi.auth; delete staffApi.sessionUser;
+    const actor=await seedStaffSession(),staffApi = rateApi(anonymous(uid),uid,'');
+    staffApi.staffProfileCollection='staff_directory';staffApi.staffPinActor=()=>actor;
+    staffApi.verifyStaffPin=async input=>{assert.equal(input.pin,'1111');const verificationId='synthetic-early-proof-'+nextOp();await adminSet('staff_pin_verifications/'+verificationId,{schemaVersion:1,...actor,staffId,branch,purpose:input.purpose,scope:input.scope,profileRevision:'synthetic-profile-revision',expiresAt:Timestamp.fromMillis(Date.now()+3600000)});return {staffId,verificationId};};
     let activeClock = null, token = 0;
     const options = {now: () => activeClock ? new Date(activeClock) : new Date(), makeToken: () => `early-synthetic-token-${++token}`};
     const staffService = createEarlyTimeOutService(staffApi, options), hqApi = rateApi(owner()), hqService = createEarlyTimeOutService(hqApi, options);
@@ -636,15 +667,16 @@ async function approvalBatch(ctx, requestId, {approval = {}, requestPatch = {}, 
 }
 
 async function finishBoundFixture() {
-    const f = await earlyFixture(), at = time => new Date(`2026-10-19T${time}:00+08:00`);
-    const plan = {currentYear: 2026, currentMonth: 10, branchConfig: {[branch]: [
-        {id: 'm1', name: 'Morning Staff 1', startTime: '09:00', endTime: '17:30', active: true},
-        {id: 'm2', name: 'Morning Staff 2', startTime: '09:30', endTime: '18:00', active: true}]},
-        currentSchedule: {19: {[branch]: {scheduled: {m1: 'Other Synthetic Crew', m2: 'UNFILLED'}, rest: ['Sample Staff'], unavailable: [], swaps: {}}}},
+    const f = await earlyFixture(),clock=new Date(Math.floor(Date.now()/60000)*60000),at = time => {const [h,m]=time.split(':').map(Number);return new Date(+clock+(h*60+m-(18*60+40))*60000);};
+    const workDate=staffRateDate(at('09:00')),month=workDate.slice(0,7),[year,monthNumber,day]=workDate.split('-').map(Number),phTime=date=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date);
+    const plan = {currentYear: year, currentMonth: monthNumber, branchConfig: {[branch]: [
+        {id: 'm1', name: 'Morning Staff 1', startTime: phTime(at('09:00')), endTime: phTime(at('17:30')), active: true},
+        {id: 'm2', name: 'Morning Staff 2', startTime: phTime(at('09:30')), endTime: phTime(at('18:00')), active: true}]},
+        currentSchedule: {[day]: {[branch]: {scheduled: {m1: 'Other Synthetic Crew', m2: 'UNFILLED'}, rest: ['Sample Staff'], unavailable: [], swaps: {}}}},
         employees: [{id: staffId, name: 'Sample Staff', branch}], unavailability: {}};
-    const revision = createScheduleRevision(plan, {revisionId: 'synthetic-maa-captured', effectiveFrom: '2026-10-01', savedAt: new Date('2026-10-01T07:00:00+08:00'), cutover: '2026-10-01'});
-    await adminSet('settings/global_schedule', {...revision.snapshot, scheduleRevisionId: revision.revisionId, payrollHistoryEnforcedFrom: '2026-10-01'});
-    await adminSet('settings/schedule_month_2026_10', {month: '2026-10', revisionIds: [revision.revisionId], latestRevisionId: revision.revisionId});
+    const revision = createScheduleRevision(plan, {revisionId: 'synthetic-maa-captured', effectiveFrom: month+'-01', savedAt: new Date(month+'-01T00:00:00+08:00'), cutover: month+'-01'});
+    await adminSet('settings/global_schedule', {...revision.snapshot, scheduleRevisionId: revision.revisionId, payrollHistoryEnforcedFrom: month+'-01'});
+    await adminSet('settings/schedule_month_'+month.replace('-','_'), {month, revisionIds: [revision.revisionId], latestRevisionId: revision.revisionId});
     await adminSet('settings/schedule_revision_' + revision.revisionId, revision);
     const start = {...f.start, timestamp: Timestamp.fromDate(at('08:49')), scheduleSnapshot: {
         version: 1, source: 'clock-in', branch, staffName: 'Sample Staff', clockInAt: at('08:49').toISOString(),
@@ -734,14 +766,15 @@ test('a small reviewer clock lead remains within the server expiry cap while lar
 
 test('public request status cannot manufacture early attendance authority, and unknown Staff cannot issue protected approvals', async () => {
     const f = await earlyFixture(), request = await f.request(), db = f.staffApi.db;
-    await assertSucceeds(updateDoc(doc(db, 'staff_requests/' + request.id), {status: 'Approved', processedBy: 'forged-owner'}));
+    await assertFails(updateDoc(doc(db, 'staff_requests/' + request.id), {status: 'Approved', processedBy: 'forged-owner'}));
+    await adminSet('staff_requests/'+request.id,{...(await getDoc(doc(db,'staff_requests/'+request.id))).data(),status:'Approved',processedBy:'forged-owner'});
     await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /Management approval/);
     await adminSet('staff_requests/' + request.id, {...(await getDoc(doc(db, 'staff_requests/' + request.id))).data(), status: 'Pending'});
     for (const ctx of [env.unauthenticatedContext(), anonymous(uid), google('unverified-owner', 'jgo031996@gmail.com', false), otherHQ(), google('no-permission', 'no-permission@example.test')]) {
         await assertFails(approvalBatch(ctx, request.id));
     }
     assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).exists(), false);
-    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
+    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('staffId','==',staffId), where('type', '==', 'TIME OUT')))).size, 0);
 });
 
 test('early approval and reviewed request must be atomic and exact; forged links, tokens, versions and review actors fail', async () => {
@@ -762,19 +795,36 @@ test('early approval and reviewed request must be atomic and exact; forged links
 test('scoped inbox HQ can review early attendance but revocation, approval listing and same-version rewrite are denied', async () => {
     const f = await earlyFixture(), request = await f.request();
     await adminSet('hq_email_access/early-inbox@example.test', {active: true, permissions: ['inbox'], allowedBranches: [branch]});
+    await seedHQ('early-inbox','early-inbox@example.test',['inbox'],[branch]);
     const ctx = google('early-inbox', 'early-inbox@example.test'), api = rateApi(ctx, 'early-inbox', 'early-inbox@example.test');
-    const service = createEarlyTimeOutService(api, {now: () => new Date(f.clock)});
-    await assertSucceeds(service.review({requestId: request.id, decision: 'Approved', reviewer: {uid: 'early-inbox', email: 'early-inbox@example.test'}, assertReviewAccess: () => true}));
+    api.auth.currentUser.providerData=[{providerId:'google.com'}];api.sessionUser={uid:'early-inbox',email:'early-inbox@example.test',role:'Manager',permissions:['inbox'],allowedBranches:[branch]};
+    const service = createEarlyTimeOutReviewService(api, {now: () => new Date(f.clock)});
+    await assertFails(getDoc(doc(ctx.firestore(),'cashiers/'+staffId)));
+    await assertSucceeds(service.inspect({requestId:request.id}));
+    await assertSucceeds(service.review({requestId: request.id, decision: 'Approved'}));
     const path = 'attendance_time_out_approvals/' + request.id;
-    await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), path)));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), path)));
+    await assertSucceeds(getDoc(doc(f.staffApi.db,path)));
     await assertFails(getDocs(collection(ctx.firestore(), 'attendance_time_out_approvals')));
     await assertFails(deleteDoc(doc(owner().firestore(), path)));
     const approval = (await getDoc(doc(ctx.firestore(), path))).data();
     await assertFails(setDoc(doc(ctx.firestore(), path), {...approval, reviewedAt: serverTimestamp()}));
     await f.staffService.cancel(f.input); await f.request();
     await adminSet('hq_email_access/early-inbox@example.test', {active: false, permissions: ['inbox'], allowedBranches: [branch]});
-    await assertFails(service.review({requestId: request.id, decision: 'Approved', reviewer: {uid: 'early-inbox', email: 'early-inbox@example.test'}, assertReviewAccess: () => true}));
-    assert.equal((await getDoc(doc(ctx.firestore(), path))).data().requestVersion, 1);
+    await assert.rejects(service.review({requestId: request.id, decision: 'Approved'}),/not granted Request Inbox approval/);
+    assert.equal((await getDoc(doc(owner().firestore(), path))).data().requestVersion, 1);
+});
+test('inbox-only safe-directory review cannot approve an inactive employee or cross its fresh saved branch scope',async()=>{
+    const f=await earlyFixture(),request=await f.request(),email='early-inbox@example.test';await seedHQ('early-inbox',email,['inbox'],[branch]);
+    const ctx=google('early-inbox',email),api=rateApi(ctx,'early-inbox',email);api.sessionUser={uid:'early-inbox',email,role:'Manager',permissions:['inbox'],allowedBranches:[branch]};
+    const service=createEarlyTimeOutReviewService(api,{now:()=>new Date(f.clock)});
+    assert.equal((await service.inspect({requestId:request.id})).early,true);
+    await adminSet('cashiers/'+staffId,{cashierName:'Sample Staff',branch,active:false,pin:'1111'});
+    await assertFails(service.review({requestId:request.id,decision:'Approved'}));
+    assert.equal((await getDoc(doc(owner().firestore(),'staff_requests/'+request.id))).data().status,'Pending');
+    await adminSet('cashiers/'+staffId,{cashierName:'Sample Staff',branch,active:true,pin:'1111'});await seedHQ('early-inbox',email,['inbox'],['Citygate']);
+    await assertFails(service.review({requestId:request.id,decision:'Approved'}));
+    assert.equal((await getDoc(doc(owner().firestore(),'attendance_time_out_approvals/'+request.id))).exists(),false);
 });
 
 test('cancel and re-request invalidates old approval; only a fresh version can close the original shift', async () => {
@@ -1006,6 +1056,8 @@ async function emergencyConfirmationFixture(){
     const outId=await linkedTimeOutId(employee,timeInId),requestId='early-'+outId.slice('time-out-'.length),request={schemaVersion:1,type:'Early Time Out',status:'Pending',staffId:employee,staffName:name,branch,timeInLogId:timeInId,timeInAt:begin.toISOString(),requestVersion:1,requestToken:'emergency-request-token',scheduleFingerprint:'unknown-saved-shift',scheduledEndAt:null,requestedDepartureAt:new Date().toISOString()};
     await adminSet('cashiers/'+employee,{cashierName:name,branch,pin:'1234',active:true});await adminSet('attendance_logs/'+timeInId,Object.fromEntries(Object.entries(start).filter(([key])=>key!=='id')));await adminSet('staff_requests/'+requestId,request);await adminSet('payroll_records/emergency-frozen',{status:'Paid',frozenData:{paidHours:80,netPay:4500}});
     await adminSet('hq_email_access/emergency-maa@example.test',{active:true,permissions:['inbox'],allowedBranches:[branch]});
+    await seedHQ('emergency-manager','emergency-maa@example.test',['inbox'],[branch]);
+    await seedStaffSession(employee,name);
     const base={schemaVersion:1,status:'Confirmed',version:1,staffId:employee,staffName:name,branch,timeInLogId:timeInId,timeInAt:Timestamp.fromDate(begin),expectedStartAt:Timestamp.fromDate(begin),expectedEndAt:Timestamp.fromDate(finish),workDate,shiftName:'Emergency covering shift',sourceFingerprint:emergencyShiftSourceFingerprint(start),reviewedByUid:'owner-uid',reviewedByEmail:'jgo031996@gmail.com',reviewedAt:serverTimestamp()};
     return {ctx,db,base,request,requestId,start,outId,timeInId,employee};
 }
@@ -1046,9 +1098,11 @@ test('emergency Rules reject forged reviewers, invalid source links, time ranges
     assert.equal((await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).exists(),false);await assertSucceeds(emergencyConfirmationBatch(f,f.ctx,emergencyOperation()));
 });
 
-test('emergency Rules keep known timing reads available but private reasons cannot be listed or read by Staff or foreign HQ',async()=>{
+test('emergency timing reads require exact Staff or branch authority and private reasons remain inaccessible to Staff or foreign HQ',async()=>{
     const f=await emergencyConfirmationFixture(),id=emergencyOperation();await assertSucceeds(emergencyConfirmationBatch(f,f.ctx,id));
-    for(const ctx of [env.unauthenticatedContext(),anonymous(uid),otherHQ()]){await assertSucceeds(getDoc(doc(ctx.firestore(),'attendance_shift_confirmations/'+f.timeInId)));await assertFails(getDoc(doc(ctx.firestore(),'attendance_shift_confirmation_events/'+id)));await assertFails(getDocs(collection(ctx.firestore(),'attendance_shift_confirmations')));}
+    await assertSucceeds(getDoc(doc(anonymous(uid).firestore(),'attendance_shift_confirmations/'+f.timeInId)));
+    for(const ctx of [env.unauthenticatedContext(),anonymous('foreign-phone'),otherHQ()])await assertFails(getDoc(doc(ctx.firestore(),'attendance_shift_confirmations/'+f.timeInId)));
+    for(const ctx of [env.unauthenticatedContext(),anonymous(uid),otherHQ()]){await assertFails(getDoc(doc(ctx.firestore(),'attendance_shift_confirmation_events/'+id)));await assertFails(getDocs(collection(ctx.firestore(),'attendance_shift_confirmations')));}
     await assertSucceeds(getDoc(doc(google('emergency-manager','emergency-maa@example.test').firestore(),'attendance_shift_confirmation_events/'+id)));await assertSucceeds(getDoc(doc(f.db,'attendance_shift_confirmation_events/missing-emergency-event')));await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(),'attendance_shift_confirmation_events/missing-emergency-event')));await assertFails(getDocs(collection(f.db,'attendance_shift_confirmation_events')));
 });
 
@@ -1132,9 +1186,9 @@ test('cash-backed paid payroll accepts one protected own-Staff PNG signature and
  await assertFails(updateDoc(doc(own,path),signed()));await assertFails(updateDoc(doc(own,path),{signatureBase64:png.replace('P8/x8','P8/y8')}));await assertFails(deleteDoc(doc(own,path)));for(const table of ['cash_shortage_reviews','staff_deductions','staff_deduction_notices'])assert.equal((await getDoc(doc(f.db,table+'/'+f.ids[0]))).data().status,'Paid');
 });
 
-test('cash-backed signed acknowledgment cannot use a revoked private Staff binding and leaves legacy payroll acknowledgment behavior intact',async()=>{
+test('cash-backed signed acknowledgment cannot use a revoked binding and ordinary payroll cannot bypass its private acknowledgment broker',async()=>{
  const f=await shortageFixture();await approveShortages(f);await assertSucceeds(cashPaymentBatch(f));const path='payroll_records/'+f.lastPayrollId,png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zr9kAAAAASUVORK5CYII=';await adminSet('staff_document_devices/'+uid,bindingData(uid,staffId,false));await assertFails(updateDoc(doc(anonymous(uid).firestore(),path),{acknowledged:true,acknowledgedAt:serverTimestamp(),signatureBase64:png}));assert.equal((await getDoc(doc(f.db,path))).data().acknowledged,false);
- await adminSet('payroll_records/legacy-ordinary-ack',{staffId,acknowledged:false,frozenData:{isPaid:true,netPay:1000}});await assertSucceeds(updateDoc(doc(env.unauthenticatedContext().firestore(),'payroll_records/legacy-ordinary-ack'),{acknowledged:true,acknowledgedAt:serverTimestamp(),signatureBase64:png}));await adminSet('payroll_records/refund-payroll-legacy-ack',{staffId,acknowledged:false,frozenData:{isPaid:true,netPay:1000}});await assertSucceeds(updateDoc(doc(env.unauthenticatedContext().firestore(),'payroll_records/refund-payroll-legacy-ack'),{acknowledged:true}));await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),'payroll_records/refund-payroll-legacy-ack'),{signatureBase64:png}));
+ await adminSet('payroll_records/legacy-ordinary-ack',{staffId,acknowledged:false,frozenData:{isPaid:true,netPay:1000}});await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),'payroll_records/legacy-ordinary-ack'),{acknowledged:true,acknowledgedAt:serverTimestamp(),signatureBase64:png}));await adminSet('payroll_records/refund-payroll-legacy-ack',{staffId,acknowledged:false,frozenData:{isPaid:true,netPay:1000}});await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),'payroll_records/refund-payroll-legacy-ack'),{acknowledged:true}));await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),'payroll_records/refund-payroll-legacy-ack'),{signatureBase64:png}));
 });
 test('actual private Staff signature service commits through real Rules and recovers a lost acknowledgment without replacing financials or signature',async()=>{
  const f=await shortageFixture();await approveShortages(f);await assertSucceeds(cashPaymentBatch(f));
@@ -1160,9 +1214,10 @@ test('public legacy creates cannot seed protected attendance or onboarding marke
   const db=ctx.firestore(),id=nextOp();for(const field of ['onboardingStartConfirmation','contractTerms'])await assertFails(setDoc(doc(db,'cashiers/'+id+'-'+field),{...protectedHRProfile(),[field]:{},role:'Owner',permissions:['all']}));
   await assertFails(setDoc(doc(db,'attendance_logs/'+id),{type:'TIME IN',staffId,staffName:'Sample Staff',branch,scheduleAmendmentReview:{version:1,lateMinutes:0}}));
  }
- await assertSucceeds(setDoc(doc(env.unauthenticatedContext().firestore(),'attendance_logs/ordinary-unchanged'),{type:'TIME IN',staffName:'Legacy Staff',branch}));
- await assertSucceeds(setDoc(doc(anonymous(uid).firestore(),'cashiers/ordinary-unchanged'),protectedHRProfile()));
- await assertSucceeds(deleteDoc(doc(owner().firestore(),'attendance_logs/ordinary-unchanged')));await assertSucceeds(deleteDoc(doc(anonymous(uid).firestore(),'cashiers/ordinary-unchanged')));
+ await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(),'attendance_logs/ordinary-unchanged'),{type:'TIME IN',staffName:'Legacy Staff',branch}));
+ await assertFails(setDoc(doc(anonymous(uid).firestore(),'cashiers/ordinary-unchanged'),protectedHRProfile()));
+ await adminSet('attendance_logs/ordinary-unchanged',{type:'TIME IN',staffName:'Legacy Staff',branch});await adminSet('cashiers/ordinary-unchanged',protectedHRProfile());
+ await assertSucceeds(deleteDoc(doc(owner().firestore(),'attendance_logs/ordinary-unchanged')));await assertFails(deleteDoc(doc(anonymous(uid).firestore(),'cashiers/ordinary-unchanged')));
 });
 
 test('only a verified Google Owner can atomically issue a matching attendance review, and every historical audit is immutable',async()=>{
@@ -1171,7 +1226,7 @@ test('only a verified Google Owner can atomically issue a matching attendance re
  const db=owner().firestore();await assertSucceeds(amendmentReviewBatch(owner()));const first=(await getDoc(doc(db,'attendance_amendment_reviews/amendment-hr-time-in-1'))).data();
  await assertSucceeds(amendmentReviewBatch(owner(),{revision:2}));const second=(await getDoc(doc(db,'attendance_amendment_reviews/amendment-hr-time-in-2'))).data();assert.deepEqual(second.previousReview,Object.fromEntries(Object.entries(first).filter(([key])=>!['attendanceId','staffId','staffName','branch','workDate','previousReview','previousDecision'].includes(key))));
  assert.equal((await getDoc(doc(db,'attendance_logs/hr-time-in'))).data().lateMinutes,59);for(const path of ['attendance_amendment_reviews/amendment-hr-time-in-1','attendance_amendment_reviews/amendment-hr-time-in-2']){await assertFails(updateDoc(doc(db,path),{reason:'Rewrite the history'}));await assertFails(deleteDoc(doc(db,path)));await assertFails(getDoc(doc(hqAll().firestore(),path)));}
- await assertFails(deleteDoc(doc(db,'attendance_logs/hr-time-in')));await assertSucceeds(updateDoc(doc(env.unauthenticatedContext().firestore(),'attendance_logs/hr-time-in'),{remarks:'An ordinary legacy field remains compatible.'}));
+ await assertFails(deleteDoc(doc(db,'attendance_logs/hr-time-in')));await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),'attendance_logs/hr-time-in'),{remarks:'A public actor cannot edit even an ordinary field.'}));
 });
 
 test('attendance markers require their exact new audit, revision, actor, identity and server time without altering the original punch',async()=>{
@@ -1208,6 +1263,17 @@ test('actual Staff contract acceptance preserves every issued date and audit mar
  await protectedHRSetup();const api=protectedHRApi(owner());await assertSucceeds(saveOwnerOnboardingAction(api,{staffId,operationId:'offered-initial',action:'initial-contract',startDate:'2026-01-01',reason:'Issue the initial contract for employee review.'}));const db=anonymous(uid).firestore(),before=(await getDoc(doc(db,'cashiers/'+staffId))).data(),png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zr9kAAAAASUVORK5CYII=';
  const staffApi={db,auth:{currentUser:{uid}},localStorage:{getItem:()=>staffId},doc,runTransaction},input={staffId,type:'Initial',signature:png,expectedFingerprint:contractOfferFingerprint(before,'Initial'),expectedDailyRate:450};await assertSucceeds(signOfferedContract(staffApi,input));const after=(await getDoc(doc(db,'cashiers/'+staffId))).data();assert.deepEqual(after.contractTerms,before.contractTerms);assert.equal(after.contractStatus,'Active');assert.equal(after.contractSignature,png);assert.ok(after.signedContracts.initial);await assert.rejects(saveOwnerOnboardingAction(api,{staffId,operationId:'replace-signed',action:'initial-contract',startDate:'2026-02-01',reason:'Cannot replace an already signed employee document.'}),/already exists/);
  for(const type of ['initial','extension','regularization']){const legacy={...protectedHRProfile(),signedContracts:{[type]:'January 3, 2026'}};await adminSet('cashiers/'+staffId,legacy);await assertFails(manualOnboardingBatch(owner(),{action:'initial-contract'}));await assert.rejects(saveOwnerOnboardingAction(api,{staffId,operationId:'replace-'+type,action:'initial-contract',startDate:'2026-02-01',reason:'Cannot replace an already signed employee document.'}),/already exists/);assert.deepEqual((await getDoc(doc(db,'cashiers/'+staffId))).data(),legacy);}
+});
+test('all three issued contract types require exact own private identity, one new signature key and unchanged salary and terms',async()=>{
+ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zr9kAAAAASUVORK5CYII=',db=anonymous(uid).firestore();
+ for(const [type,key,pending,next]of [['Initial','initial','Pending Initial Contract','Active'],['Extension','extension','Pending Renewal','Extended'],['Regularization','regularization','Pending Regularization','Regular']]){
+  const profile={...protectedHRProfile(),contractStatus:pending,contractTerms:{[key]:{startDate:'2026-01-01',endDate:'2026-07-01',auditId:'saved-offer-'+key}},signedContracts:{prior:'January 1, 2025'}};await adminSet('cashiers/'+staffId,profile);
+  const change={contractStatus:next,contractSignature:png,signedContracts:{...profile.signedContracts,[key]:'November 9, 2026'}};
+  for(const patch of [{...change,hourlyRate:999},{...change,contractTerms:{}},{...change,contractStatus:'Wrong transition'},{...change,contractSignature:'data:text/html;base64,unsafe'},{...change,signedContracts:{...change.signedContracts,prior:'Changed prior signature'}},{...change,signedContracts:{...change.signedContracts,unoffered:'November 9, 2026'}}])await assertFails(updateDoc(doc(db,'cashiers/'+staffId),patch));
+  await assertFails(updateDoc(doc(anonymous('other-employee').firestore(),'cashiers/'+staffId),change));await adminSet('staff_document_devices/'+uid,bindingData(uid,staffId,false));await assertFails(updateDoc(doc(db,'cashiers/'+staffId),change));await adminSet('staff_document_devices/'+uid,bindingData());
+  const api={db,auth:{currentUser:{uid}},localStorage:{getItem:()=>staffId},doc,runTransaction},input={staffId,type,signature:png,expectedFingerprint:contractOfferFingerprint(profile,type),expectedDailyRate:450};
+  await assertSucceeds(signOfferedContract(api,input));const signed=(await getDoc(doc(owner().firestore(),'cashiers/'+staffId))).data();assert.equal(signed.contractStatus,next);assert.equal(signed.contractSignature,png);assert.equal(signed.hourlyRate,450);assert.deepEqual(signed.contractTerms,profile.contractTerms);assert.equal(signed.signedContracts.prior,profile.signedContracts.prior);assert.equal(Object.keys(signed.signedContracts).length,2);assert.equal((await signOfferedContract(api,input)).alreadySaved,true);
+ }
 });
 
 test('actual Owner attendance-amendment service commits through Rules while original attendance and paid payroll stay saved',async()=>{

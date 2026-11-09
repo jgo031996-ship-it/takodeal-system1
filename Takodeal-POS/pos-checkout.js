@@ -47,9 +47,16 @@ export function installSaleSafety(api, environment = globalThis) {
     installCheckoutControls(w,environment.document);
     const ls = environment.localStorage;
     const outbox = createOutbox(environment.indexedDB || null);
-    const engine = createSaleEngine(api);
+    const originalEngine = createSaleEngine(api);
+    const engine = Object.fromEntries(['alreadyCommitted','prepare','commit','resumeAudit','voidSale','discardParked','setAuditMode'].map(method=>[method,async(...args)=>{
+        if(typeof api.resolveOperationalApi!=='function')return originalEngine[method](...args);
+        const selected=await api.resolveOperationalApi();selected.assertStaffOperationalCurrent?.();return createSaleEngine(selected)[method](...args);
+    }]));
     const owner = saleIdentity({}, environment.crypto);
     w.saleOutbox = outbox;
+    // A meal authorization can reserve its exact final identity before PIN
+    // verification without issuing a receipt or saving an order yet.
+    w.reserveCheckoutSaleId = input => saleIdentity(input,environment.crypto);
     w.isSyncing = false;
     w.isProcessingOrder = false;
     w.offlineQueue = [];
@@ -82,6 +89,7 @@ export function installSaleSafety(api, environment = globalThis) {
             if(wasPaused&&!w.isAuditModeActive) recoverInBackground(branch,{force:true});
         }, error => console.warn('Audit status is awaiting connection:', error));
     }
+    w.refreshSaleSafetyContext=context=>{stopAuditWatch?.();stopAuditWatch=null;watchedAuditBranch=undefined;api.db=context.db;api.auth=context.auth;watchAuditBranch();};
 
     function legacySales() {
         // The previous engine allowed partial commits. Preserve this source
@@ -156,23 +164,24 @@ export function installSaleSafety(api, environment = globalThis) {
             }
             payload.paymentVerified = String(payload.paymentMethod || 'Cash').toLowerCase() === 'cash';
             await w.parkedRecovery?.prepareCheckout(payload);
-            if (!payload.saleId) {
-                payload.saleId = saleIdentity(payload, environment.crypto);
+            if (!payload.saleId) payload.saleId = saleIdentity(payload, environment.crypto);
+            if(!payload.receiptId || !payload.localTimestamp || payload.saleVersion===undefined || !payload.recipeSnapshot&&!payload.inventoryMovements) {
                 const d = new Date();
                 const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-                const counter = (Number(ls.getItem('takodeal_offline_rcpt_count')) || 0) + 1;
-                ls.setItem('takodeal_offline_rcpt_count', String(counter));
-                payload.receiptId = payload.mobileOrderCode || `${date}-${String(counter).padStart(4, '0')}-${payload.saleId.slice(-8).toUpperCase()}`;
-                payload.localTimestamp = d.toISOString();
-                payload.saleVersion = SALE_VERSION;
-                payload.auditDeferred = payload.branch === watchedAuditBranch ? w.isAuditModeActive : localAuditMode(payload.branch);
-                if (w.recipeFeed?.capture) Object.assign(payload,await w.recipeFeed.capture());
+                if(!payload.receiptId){const counter = (Number(ls.getItem('takodeal_offline_rcpt_count')) || 0) + 1;
+                    ls.setItem('takodeal_offline_rcpt_count', String(counter));
+                    payload.receiptId = payload.mobileOrderCode || `${date}-${String(counter).padStart(4, '0')}-${payload.saleId.slice(-8).toUpperCase()}`;}
+                payload.localTimestamp ||= d.toISOString();
+                payload.saleVersion ??= SALE_VERSION;
+                payload.auditDeferred ??= payload.branch === watchedAuditBranch ? w.isAuditModeActive : localAuditMode(payload.branch);
+                if(!payload.recipeSnapshot&&!payload.inventoryMovements){if (w.recipeFeed?.capture) Object.assign(payload,await w.recipeFeed.capture());
                 else {
                     const bom = w.masterPOSData?.bom;
                     payload.recipeSnapshot = Array.isArray(bom) ? bom.map(r => ({ menuItem:r.menuItem,ingredientName:r.ingredientName,qty:r.qty })) : [];
                     payload.recipeSnapshotStatus = Array.isArray(bom) && bom.length ? 'cached' : 'unavailable';
-                }
+                }}
             }
+            if(payload.staffPinVerificationId&&payload.mealStaffName&&(!Number.isFinite(Date.parse(payload.staffPinInitialExpiresAt))||Date.parse(payload.staffPinInitialExpiresAt)<=Date.now()))throw Error('Meal confirmation expired before checkout was saved. Re-enter the meal PIN; your cart is kept.');
             // JSON clone also catches unserializable input before local commit.
             w.parkedRecovery?.linkCheckout(payload);
             saved = await outbox.enqueue(JSON.parse(JSON.stringify(payload)));
@@ -186,6 +195,7 @@ export function installSaleSafety(api, environment = globalThis) {
         // Once locally committed, optional UI/background work cannot turn a
         // safely queued sale into a failure and invite a second checkout.
         try {
+            w.mealCheckoutQueued?.(saved);
             resetCheckoutForNextOrder(w,environment.document);
             const split = environment.document.getElementById('splitPaymentContainer');
             if (split) split.style.display = 'none';
@@ -230,6 +240,9 @@ export function installSaleSafety(api, environment = globalThis) {
                     }
                     // Deletes only this ID. Concurrent new checkouts survive.
                     await outbox.acknowledge(payload.saleId);
+                    // Read-only stock reminders cannot turn a committed sale
+                    // into a retry or delay the durable outbox acknowledgement.
+                    void Promise.resolve().then(()=>w.cashierLowStock?.committedSale({saleId:payload.saleId,branch:payload.branch})).catch(()=>{});
                     uploadedBranches.set(payload.branch,uploadedBranches.get(payload.branch)||payload.auditDeferred===true);
                 } catch (error) {
                     syncError = error;

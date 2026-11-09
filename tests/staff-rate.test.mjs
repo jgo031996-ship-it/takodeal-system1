@@ -9,6 +9,7 @@ import {profileDailyRate,installStaffRatePrivacy} from '../takodeal-staff/staff-
 import {VaultSession,createPinVerifier,verifyPin,validVaultPin,validVerifier,attendanceHistory,escapeHtml} from '../takodeal-staff/staff-privacy.js';
 import {staffRateForDate} from '../takodeal-manager/staff-rate-model.js';
 import {normalizeStaffMessengerUrl} from '../takodeal-manager/staff-messenger-link.js';
+import {installStaffPrivateAPIFixture} from './helpers/staff-private-api-fixture.mjs';
 const manager=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const portal=readFileSync(new URL('../takodeal-staff/staff-portal.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/gm,'').replace('export function','function');
 function rateFixture() {
@@ -75,6 +76,7 @@ function uiFixture(profile={hourlyRate:450}) {
     const storage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)};
     const document={hidden:false,getElementById:node,querySelectorAll:()=>[],addEventListener:(type,handler)=>events.set(type,handler)};
     const api={db:{},doc:(_,table,id)=>({table,id}),getDocFromServer:async()=>{reads++;return {exists:()=>true,data:()=>structuredClone(profile)};},addEventListener:(type,handler)=>events.set(type,handler),onStaffRateLocked:()=>locked++};
+    installStaffPrivateAPIFixture(api,api,{staffId:'staff',staffName:'Sample Staff'});
     const control=installStaffRatePrivacy(api,document,storage,{now:()=>time,setIntervalFn:handler=>{tick=handler;return 0;}});api.openVaultPin=async()=>control.lock({preserveRequest:true});
     return {api,control,node,nodes,storage,stored,document,events,reads:()=>reads,locked:()=>locked,setTime:value=>{time=value;},tick:()=>tick(),profile};
 }
@@ -123,6 +125,7 @@ function portalFixture(profile) {
     const context={VaultSession,createPinVerifier,verifyPin,validVaultPin,validVerifier,attendanceHistory,escapeHtml,installStaffRatePrivacy,setInterval:()=>0,navigator:{},console,Date,
         localStorage:{getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},document:{hidden:false,getElementById:node,querySelectorAll:()=>[],querySelector:()=>({scrollTop:0}),addEventListener:(type,handler)=>events.set(type,handler)}};
     context.window={db:{},doc:()=>({}),getDocFromServer:async()=>({exists:()=>true,data:()=>({...read})}),updateDoc:async()=>{},addEventListener:(type,handler)=>events.set(type,handler),Swal:{close(){}},switchView(){},checkNormalLogin(){},loginStaff:async()=>{},logoutStaff(){},openProfile:async()=>{node('profileModal').style.display='flex';},loadPayslipVault:()=>loads++};
+    installStaffPrivateAPIFixture(context.window,context.window,{staffId:'staff',staffName:'Sample Staff'});
     vm.runInNewContext(portal+'\ninstallStaffPortal();',context);return {api:context.window,node,context,stored,events,loads:()=>loads,setProfile:value=>{read=value;}};
 }
 

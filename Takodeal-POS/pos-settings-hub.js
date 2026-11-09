@@ -26,6 +26,12 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
         return result;
     }
     async function confirmStaff(){const permit=authorize(),s=w.sessionUser;let rows;
+        if(typeof w.resolveCashierOperationalApi==='function'){
+            if(!s.staffId)throw Error('Sign in again to confirm your saved staff account.');
+            const api=await w.resolveCashierOperationalApi({assertCurrent:permit.assertCurrent});permit.assertCurrent();
+            if(typeof api.readStaffSessionProfile!=='function')throw Error('Secure staff confirmation is unavailable. Reopen the Cashier app.');
+            const staff=await api.readStaffSessionProfile({staffId:s.staffId,branch:permit.branch,name:s.cashierName,assertCurrent:permit.assertCurrent});permit.assertCurrent();return staff;
+        }
         if(s.staffId){const snap=await read(w,w.doc(w.db,'cashiers',s.staffId));rows=snap.exists()?[{...snap.data(),staffId:snap.id}]:[];}
         else {const snap=await read(w,w.query(w.collection(w.db,'cashiers'),w.where('cashierName','==',s.cashierName)),true,'staff:'+s.cashierName);rows=snap.docs.map(doc=>({...doc.data(),staffId:doc.id}));}
         permit.assertCurrent();const staff=rows.length===1?activePOSStaff(rows[0],s):null;if(!staff)throw Error('Your saved staff account changed. Sign in again before updating leave requests.');return staff;

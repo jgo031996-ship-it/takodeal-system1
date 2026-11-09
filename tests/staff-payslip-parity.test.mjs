@@ -8,6 +8,7 @@ import {validateRefundPayrollSnapshot} from '../takodeal-manager/refund-payroll.
 import {normalizeStaffPayslip,payslipSavedAmounts} from '../takodeal-staff/staff-payslip-snapshot.js';
 import {payslipDeductionBreakdown} from '../takodeal-staff/payroll-deduction-details.js';
 import {readStaffSavedPayslips,installStaffSavedPayslipViews} from '../takodeal-staff/staff-saved-payslips.js';
+import {createAccessPayrollReader} from '../functions/cash-remittance-review/access-payroll-store.mjs';
 const staffId='sample-crew',name='Synthetic Crew',branch='Maa',start='2030-01-01',end='2030-01-15',key=staffPayslipPreviewId(staffId,start,end),net=930.73;
 const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};
 function fixture(){
@@ -25,9 +26,16 @@ function fixture(){
 }
 function paid(data,extra={}){return {id:'paid-original',staffId,staffName:name,branch,startDate:start,endDate:end,finalNetPay:net,acknowledged:false,processedAt:{seconds:1893456000},frozenData:validateOrdinaryPayrollSnapshot(data,net),...extra};}
 async function privateReader(f,{binding={},privateError=null,beforeSharedRead,beforeExactRead,assertCurrent=()=>{}}={}){
-  const primaryQueries=[],privateQueries=[],exactReads=[],read=f.h.api.getDocsFromServer,readDoc=f.h.api.getDocFromServer;
-  const api={...f.h.api,getDocsFromServer:async q=>{primaryQueries.push(q);return read(q);},getDocFromServer:async ref=>{exactReads.push(ref);await beforeExactRead?.(ref,auth);return readDoc(ref);}};
-  const user={uid:'private-approved'},auth={currentUser:user};f.h.put('staff_document_devices/'+user.uid,{uid:user.uid,staffId,branch,active:true,...binding});
+  const primaryQueries=[],privateQueries=[],exactReads=[],read=f.h.api.getDocsFromServer;
+  const user={uid:'private-approved'},auth={currentUser:user};f.h.put('staff_document_config/current',{enabled:true,policyVersion:2,brokerEndpoint:'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'});f.h.put('staff_document_devices/'+user.uid,{uid:user.uid,staffId,deviceId:'DEV-SAMPLE-PHONE',branch,active:true,...binding});
+  const query=(table,filters=[],cap=Infinity)=>({table,filters,cap,_query:true,where:(key,op,value)=>query(table,[...filters,{key,op,value}],cap),limit:value=>query(table,filters,value),select(){return this;}});
+  const admin={doc:path=>{const slash=path.indexOf('/');return f.h.ref(path.slice(0,slash),path.slice(slash+1));},collection:table=>query(table),runTransaction:work=>f.h.api.runTransaction(f.h.api.db,async tx=>work({get:async ref=>{
+    if(ref._query){if(ref.filters.some(filter=>filter.op==='array-contains'))return{docs:[...f.h.docs].filter(([path,row])=>path.startsWith(ref.table+'/')&&ref.filters.every(filter=>filter.op==='array-contains'?Array.isArray(row[filter.key])&&row[filter.key].includes(filter.value):row[filter.key]===filter.value)).slice(0,ref.cap).map(([path,row])=>({id:path.slice(ref.table.length+1),data:()=>structuredClone(row)}))};const value=await read(ref);return{docs:value.docs.slice(0,ref.cap)};}
+    if(ref.path.startsWith('payroll_records/')){exactReads.push(ref);await beforeExactRead?.(ref,auth);}
+    const snapshot=await tx.get(ref);return{id:snapshot.id,exists:snapshot.exists(),data:snapshot.data};
+  }}))};
+  const privatePaid=createAccessPayrollReader(admin,{now:()=>Date.parse('2030-02-01T00:00:00Z')});
+  const api={...f.h.api,getDocsFromServer:async q=>{primaryQueries.push(q);throw Error('The Staff browser must not query full payroll/profile collections.');},readStaffPaidHistory:async input=>{const actor=auth.currentUser;input.assertCurrent?.();const value=await privatePaid({uid:actor.uid,staffId,deviceId:'DEV-SAMPLE-PHONE'});input.assertCurrent?.();if(auth.currentUser!==actor)throw Error('The private Staff account changed.');return value;}};
   const sdk={...f.h.api,getDocsFromServer:async q=>{privateQueries.push(q);if(privateError)throw privateError;await beforeSharedRead?.(q);return read(q);}};
   const state=await readStaffSavedPayslips(api,{staffId,staffName:name,profile:f.data.profile,createVault:async()=>({auth,db:{},sdk}),assertCurrent});
   return {state,primaryQueries,privateQueries,exactReads,auth};
@@ -92,7 +100,7 @@ test('random legacy paid IDs with frozen-only cutoffs and saved old aliases bloc
     await assert.rejects(f.publish({expectedRevision:1}),/saved payroll record/);assert.deepEqual([...f.h.docs],before);
     const result=await privateReader(f);assert.equal(result.state.shared.length,0,'a paid/held original blocks stale unpaid publication');
     if(idsPresent){assert.equal(result.state.paid.length,1);assert.equal(result.state.paid[0].data.name,'Previous Crew Name');assert.equal(result.state.paid[0].data.finalNetPay,net);}
-    else assert.equal(result.state.held.length,1,'a renamed name-only source needs unique identity confirmation, without inventing a replacement');
+    else {assert.equal(result.state.paid.length,1,'the private server confirms the exact unique saved alias before returning this legacy source');assert.equal(result.state.paid[0].data.finalNetPay,net);assert.equal(f.h.get('payroll_records/random-legacy').staffId,undefined,'identity proof never writes a replacement paid record');}
   }
 });
 test('unknown or overflowing owned payroll history fails closed before publication',async()=>{
@@ -147,7 +155,7 @@ test('a payment arriving after the final history union is caught by the exact or
 });
 test('an unconfirmed exact payment read holds a draft, and closing the vault during that read cannot return private figures',async()=>{
   const f=fixture();await f.publish();const blocked=await privateReader(f,{beforeExactRead:()=>{throw Error('Sample payment connection unavailable');}});
-  assert.equal(blocked.state.shared.length,0);assert.equal(blocked.state.held.length,1);assert.match(blocked.state.held[0].message,/payment status/);
+  assert.equal(blocked.state.shared.length,0);assert.equal(blocked.state.paidComplete,false);assert.match(blocked.state.errors.join(' '),/payment connection unavailable/);
   let current=true;await assert.rejects(privateReader(f,{beforeExactRead:()=>{current=false;},assertCurrent:()=>{if(!current)throw Error('Vault closed');}}),/Vault closed/);
 });
 test('private-auth replacement during the final paid check cannot publish the earlier private shared snapshot',async()=>{

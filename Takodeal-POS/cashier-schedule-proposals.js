@@ -86,7 +86,7 @@ export async function readScheduleProposalDirectory({auth,projectId,apiKey,branc
   let pageToken='';const rows=[];
   for(let page=0;page<20;page++){
    const params=new URLSearchParams({key:apiKey||'',pageSize:'100'});for(const field of ['cashierName','scheduleNickname','branch','status','active','blocked','archived'])params.append('mask.fieldPaths',field);if(pageToken)params.set('pageToken',pageToken);
-   const response=await fetcher(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashiers?${params}`,{method:'GET',headers:{Authorization:'Bearer '+token},signal,cache:'no-store',redirect:'error',credentials:'omit'});guard();
+   const response=await fetcher(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/staff_directory?${params}`,{method:'GET',headers:{Authorization:'Bearer '+token},signal,cache:'no-store',redirect:'error',credentials:'omit'});guard();
    const data=await response.json();guard();if(auth.currentUser!==user)throw Error('The tablet account changed. Reopen Branch Schedule.');if(!response.ok)throw Error('The staff list could not be confirmed. Reconnect and load the saved roster again.');
    for(const doc of data.documents||[]){const f=doc.fields||{},staffId=doc.name?.split('/').pop();if(!codeKey(staffId))throw Error('A staff account needs HQ review.');if(f.branch?.stringValue!==branch)continue;rows.push({staffId,name:f.cashierName?.stringValue||'',scheduleName:f.scheduleNickname?.stringValue||f.cashierName?.stringValue||'',branch,status:f.status?.stringValue||'',active:f.active?.booleanValue!==false,blocked:f.blocked?.booleanValue===true,archived:f.archived?.booleanValue===true});}
    pageToken=data.nextPageToken||'';if(!pageToken)return rows;

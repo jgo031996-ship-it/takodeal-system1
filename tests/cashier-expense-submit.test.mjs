@@ -36,7 +36,7 @@ function fixture({fundSource = 'Drawer', photo = false, photoFailure = false} = 
         expSearchInput: {value: ''}, expQtyInput: {value: ''}, expAmtInput: {value: ''},
         expUomSelect: {value: 'base'}, expUomContainer: {style: {}},
         expFundSource: {value: fundSource}, btnSubmitExpenseCart: {innerText: 'Submit All Expenses', disabled: false},
-        expenseReceiptPhoto: {files: photo ? [{name: 'fictional-receipt.jpg'}] : []},
+        expenseReceiptPhoto: {files: photo ? [{name: 'fictional-receipt.jpg',type:'image/jpeg',size:1234}] : []},
         expenseModal: {style: {display: 'flex'}}, expenseCartBody: {innerHTML: ''}, expenseCartTotal: {innerText: ''}
     };
     const alerts = [], errors = [], reads = [], stagedWrites = [], directWrites = [], uploads = [];
@@ -73,7 +73,7 @@ function fixture({fundSource = 'Drawer', photo = false, photoFailure = false} = 
             })).then(result => { afterCommit(); return result; });
         }
     };
-    const window = {...api, storage: {}};
+    const window = {...api, storage: {},auth:{currentUser:{uid:'synthetic-approved-device'}},sessionUser:{staffId:'synthetic-staff',cashierName:cashier,branch}};
     const context = {
         ...api, window, document: {getElementById: id => elements[id] || null},
         localStorage: {getItem: key => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value), removeItem: key => memory.delete(key)},
@@ -81,8 +81,8 @@ function fixture({fundSource = 'Drawer', photo = false, photoFailure = false} = 
         crypto: {randomUUID: () => 'fictional-expense-token-' + (++ids)},
         alert: value => alerts.push(String(value)), console: {error: (...args) => errors.push(args.map(String).join(' ')), warn() {}},
         ref: (_storage, path) => ({path}),
-        uploadBytes: async (reference, file) => {
-            uploads.push({reference, file});
+        uploadBytes: async (reference, file, metadata) => {
+            uploads.push({reference, file, metadata});assert.match(reference.path,/^staff_requests\/synthetic-approved-device\/synthetic-staff\/expense_/);assert.deepEqual(JSON.parse(JSON.stringify(metadata)),{contentType:'image/jpeg',customMetadata:{staffUploadUid:'synthetic-approved-device',staffId:'synthetic-staff'}});
             if (photoFailure) throw Error('Fictional optional photo failure');
             return {ref: reference};
         },

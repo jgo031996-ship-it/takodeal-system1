@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
+import {putOperationalStaffFixture} from './helpers/operational-directory-fixture.mjs';
 import {createEarlyTimeOutService} from '../takodeal-manager/early-time-out-actions.js';
 import {createEarlyTimeOutReviewService} from '../takodeal-manager/early-time-out-review.js';
 import {createScheduleRevision} from '../takodeal-manager/schedule-history.js';
@@ -16,7 +17,7 @@ function fixture({extraRules=[]}={}){
  h.api.sessionUser={uid:'maa-reviewer',email,role:'Manager',permissions:['inbox'],allowedBranches:[branch]};
  h.put('hq_managers/maa-reviewer',{email,role:'Manager',permissions:['inbox'],assignedBranch:branch,pin:'4829',active:true});
  h.put('hq_email_access/'+email,{active:true,permissions:['inbox'],allowedBranches:[branch]});
- h.put('cashiers/'+staffId,{cashierName:name,branch,pin:'7281',active:true});
+ putOperationalStaffFixture(h,staffId,{cashierName:name,branch,pin:'7281',active:true});
  h.put('payroll_records/frozen-paid',{status:'Paid',frozenData:{paidHours:80,netPay:4500}});
  const input={currentYear:2026,currentMonth:10,branchConfig:{[branch]:[
   {id:'m1',name:'Morning Staff 1',shiftType:'morning',startTime:'09:00',endTime:'17:30',active:true},
@@ -39,6 +40,19 @@ function fixture({extraRules=[]}={}){
 }
 const records=h=>structuredClone([...h.docs]);
 const attendance=h=>[...h.docs].filter(([path])=>path.startsWith('attendance_logs/'));
+
+test('Owner inspection and protected rejection use safe directory identity without employee credential reads or financial writes',async()=>{
+ const f=fixture();putOperationalStaffFixture(f.h,staffId,{...f.h.get('cashiers/'+staffId),hourlyRate:1234,payslipPin:'SYNTHETIC-PRIVATE-VALUE'});
+ const request=await f.request(),before=records(f.h),paths=[],get=f.h.api.getDocFromServer,run=f.h.api.runTransaction;
+ const directory=f.h.get('staff_directory/'+staffId);assert.equal(directory.pin,undefined);assert.equal(directory.hourlyRate,undefined);assert.equal(directory.payslipPin,undefined);assert.equal(f.h.api.staffProfileCollection,undefined);
+ const track=reference=>{paths.push(reference.path);assert.equal(reference.path.startsWith('cashiers/'),false,'Owner review must not depend on an employee credential or wage document');};
+ f.h.api.getDocFromServer=async reference=>{track(reference);return get(reference);};
+ f.h.api.runTransaction=(db,callback)=>run(db,tx=>callback({...tx,get:reference=>{track(reference);return tx.get(reference);}}));
+ const preview=await f.review.inspect({requestId:request.id});assert.equal(preview.request.id,request.id);assert.deepEqual(records(f.h),before);
+ assert.equal((await f.review.review({requestId:request.id,decision:'Rejected'})).decision,'Rejected');assert.ok(paths.includes('staff_directory/'+staffId));
+ for(const [path,value]of before)if(path!=='staff_requests/'+request.id)assert.deepEqual(f.h.get(path),value,path);
+ assert.equal(attendance(f.h).length,1);assert.equal([...f.h.docs.keys()].some(path=>/^(staff_deductions|cash_accounts|account_logs|expenses)\//.test(path)),false);
+});
 
 test('unassigned preserved punch permits normal close only after every plausible captured shift has ended',async()=>{
  const f=fixture(),raw=structuredClone(f.start),paid=structuredClone(f.h.get('payroll_records/frozen-paid'));

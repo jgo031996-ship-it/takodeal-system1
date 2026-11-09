@@ -20,6 +20,9 @@ export function createCashierDeviceAuthContext(w,{primaryAuth,primaryDb,firebase
    if(typeof w[method]!=='function')throw Error('Secure tablet setup is still loading. Reopen this action in a moment.');
    api[method]=(...args)=>w[method](...args);
   }
+  // Existing SDK imports, requested only by the corresponding operational
+  // action. Their database argument still belongs to this exact Auth app.
+  for(const method of ['getDoc','getDocs','addDoc','setDoc','deleteDoc','writeBatch','onSnapshot','updateDoc','orderBy','startAfter','increment'])if(typeof w[method]==='function')api[method]=(...args)=>w[method](...args);
   return api;
  };
  return {async resolve({assertCurrent=()=>{}}={}){

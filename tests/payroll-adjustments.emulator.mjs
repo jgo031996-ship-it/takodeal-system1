@@ -22,7 +22,7 @@ if (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST !
 }
 process.env.FIRESTORE_EMULATOR_HOST = endpoint;
 const root = fileURLToPath(new URL('../', import.meta.url));
-const tools = resolve(root, '../staff-nextlevel-tools');
+const tools = resolve(process.env.TAKODEAL_TEST_TOOLS || resolve(root, '../staff-nextlevel-tools'));
 const req = createRequire(resolve(tools, 'package.json'));
 const {initializeTestEnvironment} = req('@firebase/rules-unit-testing');
 const sdk = req('firebase/firestore');
@@ -80,7 +80,8 @@ async function fixture({paid=true}={}){
   await setDoc(doc(db,'hq_managers',UID),{email:EMAIL,role:'System Architect',permissions:['all'],assignedBranch:'All',pin:'fixture-only',active:true});
   await setDoc(doc(db,'cashiers',STAFF),{cashierName:NAME,branch:BRANCH,role:'Crew',hourlyRate:450,dateHired:'2020-01-01',pin:'fixture-only',active:true});
   await setDoc(doc(db,'cash_accounts',BANK),{name:'Fictional Payroll Bank',branch:BRANCH,balance:5000});
-  await setDoc(doc(db,'staff_document_devices','fictional-staff-phone'),{uid:'fictional-staff-phone',staffId:STAFF,active:true});
+  await setDoc(doc(db,'staff_document_config/current'),{enabled:true,policyVersion:2,brokerEndpoint:'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'});
+  await setDoc(doc(db,'staff_document_devices','fictional-staff-phone'),{uid:'fictional-staff-phone',staffId:STAFF,deviceId:'SYNTHETIC-PRIVATE-PHONE',branch:BRANCH,active:true});
   if(paid)await setDoc(doc(db,'payroll_records','original-paid'),original());
  });
  const db=env.authenticatedContext(UID,{email:EMAIL,email_verified:true,firebase:{sign_in_provider:'google.com'}}).firestore();let loseAck=false;
@@ -91,7 +92,7 @@ async function fixture({paid=true}={}){
 }
 async function state(){let result;await admin(async db=>{const rows=async table=>(await getDocsFromServer(collection(db,table))).docs.map(snap=>({id:snap.id,...snap.data()})).sort((a,b)=>a.id.localeCompare(b.id));result={accounts:await rows('cash_accounts'),payroll:await rows('payroll_records'),expenses:await rows('expenses'),credits:await rows('staff_bonuses'),reviews:await rows('owner_deduction_reviews'),deductions:await rows('staff_deductions'),notices:await rows('staff_deduction_notices')};});return result;}
 async function approvedRecovery(f){
- const prefill=await f.service.prepareRecovery(request({reason:'The earlier payroll included a duplicate allowance.'})),created=await f.reviews.create(prefill);await f.reply(created.id);
+ const prefill=await f.service.prepareRecovery(request({correctedNetPay:875,reason:'The earlier payroll included a duplicate allowance.'})),created=await f.reviews.create(prefill);await f.reply(created.id);
  await f.reviews.approve(created.id,{amount:125,effectiveDate:today,lawfulBasis:OWNER_DEDUCTION_BASES[0],authorityReference:'Fictional applicable authority reviewed for this test.',finding:'Fictional responsibility and payroll-limit review after the saved staff response.',responsibilityConfirmed:true,lawfulAuthorityConfirmed:true,weeklyLimitConfirmed:true,expectedRevision:1,expectedReplyRevision:1});
  f.data.ownerDeductions=125;f.data.ownerDeductionRows=[{id:created.id,amount:125}];return created.id;
 }

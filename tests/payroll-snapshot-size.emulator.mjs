@@ -13,6 +13,7 @@ import {finalizeOrdinaryPayroll, ordinaryPayrollId, PAYROLL_SETTLEMENT_LIMITS} f
 import {createScheduleRevision, assembleScheduleHistory} from '../takodeal-manager/schedule-history.js';
 import {payrollScheduleStamp, assertPayrollScheduleFresh} from '../takodeal-manager/payroll-schedule-freshness.js';
 import {createWorkspaceSession} from '../takodeal-manager/workspace-access-model.js';
+import {buildHQAccessIndex} from '../functions/cash-remittance-review/company-access-index.mjs';
 
 const host = '127.0.0.1', port = 8876, projectId = 'demo-payroll-snapshot-size';
 const endpoint = host + ':' + port;
@@ -21,13 +22,13 @@ if (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST !
 }
 process.env.FIRESTORE_EMULATOR_HOST = endpoint;
 const root = fileURLToPath(new URL('../', import.meta.url));
-const tools = resolve(root, '../staff-nextlevel-tools');
+const tools = resolve(process.env.TAKODEAL_TEST_TOOLS || resolve(root, '../staff-nextlevel-tools'));
 const req = createRequire(resolve(tools, 'package.json'));
-const {initializeTestEnvironment} = req('@firebase/rules-unit-testing');
+const {initializeTestEnvironment,assertSucceeds,assertFails} = req('@firebase/rules-unit-testing');
 const sdk = req('firebase/firestore');
 sdk.setLogLevel('silent');
 const {doc, setDoc, getDocFromServer, getDocsFromServer, collection, query, where, limit,
-    runTransaction, serverTimestamp, Timestamp} = sdk;
+    runTransaction, serverTimestamp, Timestamp,updateDoc,deleteDoc} = sdk;
 const java = JSON.parse(readFileSync(resolve(tools, 'runtime.json'))).java;
 const jar = resolve(tools, 'emulators/cloud-firestore-emulator-v1.22.0.jar');
 if (!existsSync(java) || !existsSync(jar)) throw Error('Local emulator runtime missing.');
@@ -101,15 +102,16 @@ const originalHistory = canonicalScheduleHistory();
 const originalStamp = payrollScheduleStamp(originalHistory, cutoff);
 const admin = callback => env.withSecurityRulesDisabled(context => callback(context.firestore()));
 
-async function fixture({loseAck = false} = {}) {
+async function fixture({loseAck = false,limited = false} = {}) {
     const profile = {cashierName: NAME, branch: BRANCH, role: 'Crew', hourlyRate: 450,
         dateHired: '2029-01-01', customDeductions: []};
     const actor = {uid: UID, email: EMAIL, emailVerified: true, providerData: [{providerId: 'google.com'}]};
     const manager = {email: EMAIL, fullName: 'Fictional Payroll Manager', role: 'Manager',
-        permissions: ['payroll'], assignedBranch: BRANCH, active: true};
+        permissions: ['payroll','accounts'], assignedBranch: limited ? BRANCH : 'All', active: true};
     await admin(async db => {
         await setDoc(doc(db, 'hq_managers', UID), manager);
-        await setDoc(doc(db, 'hq_email_access', EMAIL), {active: true, permissions: ['payroll'], allowedBranches: [BRANCH]});
+        await setDoc(doc(db, 'hq_account_index', EMAIL), buildHQAccessIndex([{id:UID,data:manager}])[0]);
+        await setDoc(doc(db, 'hq_email_access', EMAIL), {active: true, permissions: ['payroll','accounts'], allowedBranches: limited ? [BRANCH] : ['All']});
         await setDoc(doc(db, 'cashiers', STAFF), profile);
         await setDoc(doc(db, 'cash_accounts', ACCOUNT), {name: 'Fictional Payment Bank', branch: BRANCH, balance: 1000});
         for (const [id, amount, day] of [['synthetic-food-a', 40, '02'], ['synthetic-food-b', 15, '03']]) {
@@ -200,6 +202,18 @@ test('real SDK saves ordinary payroll with a canonical schedule stamp larger tha
     assert.equal(retry.finalNetPay, 400);
     assert.deepEqual(retry.frozenData, paid.frozenData);
     assert.deepEqual(await financialState(), committed, 'saved history wins without another debit or deduction');
+});
+test('a limited-branch Manager cannot pay without complete global prior-payroll authority or hide a foreign legacy overlap',async()=>{
+ const f=await fixture({limited:true});await admin(db=>setDoc(doc(db,'payroll_records/foreign-legacy-overlap'),{staffId:STAFF,staffName:NAME,branch:'Other Synthetic Branch',startDate:'2029-12-20',endDate:'2030-01-02',finalNetPay:50,frozenData:{staffId:STAFF,name:NAME,branch:'Other Synthetic Branch',isPaid:true,finalNetPay:50}}));
+ const before=await financialState();await assert.rejects(f.pay(),error=>error.code==='payroll-owner-history-required'&&/Owner must confirm complete payroll history/.test(error.message));assert.deepEqual(await financialState(),before);
+});
+test('limited payroll HQ cannot bypass Owner confirmation through direct paid-record create, update or history deletion',async()=>{
+ const f=await fixture({limited:true}),saved={staffId:STAFF,staffName:NAME,branch:BRANCH,startDate:'2029-12-16',endDate:'2029-12-31',finalNetPay:100,frozenData:{staffId:STAFF,name:NAME,branch:BRANCH,isPaid:true,finalNetPay:100},acknowledged:false};await admin(db=>setDoc(doc(db,'payroll_records/saved-ordinary-history'),saved));
+ const before=await financialState(),reference=doc(f.api.db,'payroll_records/saved-ordinary-history');await assertSucceeds(getDocFromServer(reference));
+ await assertFails(setDoc(doc(f.api.db,'payroll_records/forged-limited-payment'),{...saved,startDate:cutoff.start,endDate:cutoff.end}));await assertFails(updateDoc(reference,{finalNetPay:999}));await assertFails(updateDoc(reference,{acknowledged:true}));await assertFails(deleteDoc(reference));assert.deepEqual(await financialState(),before);
+});
+test('a globally authorized payroll HQ retains its preceding ordinary-history permission without gaining deletion of protected payroll',async()=>{
+ const f=await fixture(),saved={staffId:STAFF,staffName:NAME,branch:BRANCH,startDate:'2029-12-16',endDate:'2029-12-31',finalNetPay:100,frozenData:{staffId:STAFF,name:NAME,branch:BRANCH,isPaid:true,finalNetPay:100}};await admin(db=>setDoc(doc(db,'payroll_records/ordinary-global-history'),saved));await assertSucceeds(deleteDoc(doc(f.api.db,'payroll_records/ordinary-global-history')));assert.equal((await financialState()).accounts[0].balance,1000);
 });
 
 test('lost acknowledgement of the actual compact payroll commit retries without another debit or meal settlement', async () => {

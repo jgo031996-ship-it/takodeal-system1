@@ -5,7 +5,7 @@ import { installFirestoreHealth, guardFirestoreOperations } from './firestore-he
 import { initializeApp, onLog } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-storage.js";
+import { getStorage, ref, uploadBytes, getDownloadURL, getMetadata } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -40,7 +40,7 @@ window.getDocsFromServer = firestore.getDocsFromServer; window.getDocFromServer 
 window.updateDoc = firestore.updateDoc; window.deleteDoc = firestore.deleteDoc; window.doc = doc;
 window.setDoc = firestore.setDoc; window.serverTimestamp = serverTimestamp;
 window.increment = increment; window.orderBy = orderBy; window.limit = limit;
-window.ref = ref; window.uploadBytes = uploadBytes; window.getDownloadURL = getDownloadURL;
+window.ref = ref; window.uploadBytes = uploadBytes; window.getDownloadURL = getDownloadURL; window.getMetadata = getMetadata;
 window.writeBatch = firestore.writeBatch; window.onSnapshot = firestore.onSnapshot; window.startAfter = startAfter;
 window.runTransaction = firestore.runTransaction;
 window.enableNetwork = firestore.enableNetwork; window.disableNetwork = firestore.disableNetwork;

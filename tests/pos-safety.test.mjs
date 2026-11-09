@@ -23,6 +23,40 @@ function setup() {
 }
 const tableCount = (h, table) => [...h.docs.keys()].filter(k => k.startsWith(table + '/')).length;
 
+function authorizedMeal({saleId='meal-sale',role='staff',source='cashiers'}={}){
+    const f=setup();f.h.api.auth={currentUser:{uid:'approved-device'}};f.h.api.staffProfileCollection='staff_directory';f.engine=createSaleEngine(f.h.api);
+    Object.assign(f.payload,{saleId,mealStaffName:'Employee',mealIdentityId:'employee1',mealIdentitySource:source,mealRole:role,mealLevelId:'staff_meal',mealLevelName:'Staff Meal',globalDiscountType:'staff_meal',staffPinVerificationId:'proof-'+saleId,mealDay:'2026-10-02'});
+    f.h.put('staff_pin_verifications/proof-'+saleId,{schemaVersion:1,uid:'approved-device',app:'cashier',purpose:'meal',branch:f.payload.branch,scope:saleId,mealLevelId:'staff_meal',source,staffId:'employee1',profile:{cashierName:'Employee'},mealRole:role,day:'2026-10-02',expiresAt:new Date('2026-10-02T01:00:00Z')});return f;
+}
+test('secure meal upload uses the exact server day after expiry/overnight, with one atomic claim and immutable replay',async()=>{
+    const {h,engine,payload}=authorizedMeal(),prepared=await engine.prepare(payload,bom);h.loseNextAck();await assert.rejects(engine.commit(prepared));
+    const claim=h.get('staff_meal_daily_claims/2026-10-02_cashiers_employee1');assert.equal(claim.saleId,payload.saleId);assert.equal(claim.generation,1);assert.equal(claim.actorUid,'approved-device');
+    await engine.commit(prepared);assert.equal(tableCount(h,'staff_meal_daily_claims'),1);assert.equal(h.get('inventory/Cabantian-Batter').currentStock,88);assert.equal(h.get('staff_requests/meal-'+payload.saleId).staffPinVerificationId,payload.staffPinVerificationId);
+});
+test('two devices cannot commit a second receipt for one employee/day, including concurrent commits',async()=>{
+    const f=authorizedMeal(),first=await f.engine.prepare(f.payload,bom),second={...first,saleId:'second-meal',receiptId:'SECOND',staffPinVerificationId:'second-proof'};
+    f.h.put('staff_pin_verifications/second-proof',{...f.h.get('staff_pin_verifications/'+f.payload.staffPinVerificationId),scope:'second-meal'});
+    const results=await Promise.allSettled([f.engine.commit(first),f.engine.commit(second)]);assert.equal(results.filter(row=>row.status==='fulfilled').length,1);assert.equal(tableCount(f.h,'transactions'),1);assert.equal(tableCount(f.h,'staff_requests'),1);assert.equal(f.h.get('inventory/Cabantian-Batter').currentStock,88);
+});
+test('only a voided receipt AND matching voided meal record release a daily claim; generation then advances',async()=>{
+    const f=authorizedMeal(),first=await f.engine.prepare(f.payload,bom);await f.engine.commit(first);await f.engine.voidSale(first.receiptId,'Manager',first.branch);
+    const next={...first,saleId:'replacement-meal',receiptId:'REPLACEMENT',staffPinVerificationId:'replacement-proof'};f.h.put('staff_pin_verifications/replacement-proof',{...f.h.get('staff_pin_verifications/'+first.staffPinVerificationId),scope:next.saleId});
+    await assert.rejects(f.engine.commit(next),/already has a meal/);assert.equal(f.h.get('inventory/Cabantian-Batter').currentStock,100);
+    const previous=f.h.get('staff_requests/meal-'+first.saleId);f.h.put('staff_requests/meal-'+first.saleId,{...previous,status:'Voided'});await f.engine.commit(next);assert.equal(f.h.get('staff_meal_daily_claims/2026-10-02_cashiers_employee1').generation,2);assert.equal(f.h.get('inventory/Cabantian-Batter').currentStock,88);
+});
+test('secure meal proof mismatches or missing authorization never write receipts, movements or claims',async()=>{
+    for(const change of [{uid:'another-device'},{branch:'Maa'},{scope:'another-sale'},{staffId:'other'},{source:'hq_managers'},{mealLevelId:'other'},{day:'2026-02-31'},{profile:{cashierName:'Other'}}]){
+        const f=authorizedMeal(),proof=f.h.get('staff_pin_verifications/'+f.payload.staffPinVerificationId);f.h.put('staff_pin_verifications/'+f.payload.staffPinVerificationId,{...proof,...change});await assert.rejects(f.engine.commit(await f.engine.prepare(f.payload,bom)),/authorization/);assert.equal(tableCount(f.h,'transactions'),0);assert.equal(tableCount(f.h,'staff_meal_daily_claims'),0);assert.equal(f.h.get('inventory/Cabantian-Batter').currentStock,100);
+    }
+    const f=authorizedMeal();delete f.payload.staffPinVerificationId;await assert.rejects(f.engine.commit(await f.engine.prepare(f.payload,bom)),/no server authorization/);assert.equal(tableCount(f.h,'transactions'),0);
+});
+test('trusted HQ meal roles keep their existing non-Staff allowance and exact receipt proof',async()=>{
+    for(const role of ['manager','owner','co_owner','franchise_owner']){const f=authorizedMeal({role,source:'hq_managers'});await f.engine.commit(await f.engine.prepare(f.payload,bom));assert.equal(tableCount(f.h,'staff_meal_daily_claims'),0);assert.equal(tableCount(f.h,'staff_requests'),1);}
+});
+test('a canonical encoded HQ profile ID survives exact meal proof, sale and linked request without becoming a document path',async()=>{
+ const f=authorizedMeal({role:'manager',source:'hq_managers'}),hqId='hq_synthetic%40example.test';f.payload.mealIdentityId=hqId;const path='staff_pin_verifications/'+f.payload.staffPinVerificationId;f.h.put(path,{...f.h.get(path),staffId:hqId});await f.engine.commit(await f.engine.prepare(f.payload,bom));assert.equal(f.h.get('transactions/'+f.payload.saleId).mealIdentityId,hqId);assert.equal(f.h.get('staff_requests/meal-'+f.payload.saleId).staffId,hqId);assert.equal(tableCount(f.h,'staff_meal_daily_claims'),0);
+});
+
 test('20 sale retries write one transaction and deduct each ingredient once', async () => {
     const { h, engine, payload } = setup();
     const prepared = await engine.prepare(payload, bom);

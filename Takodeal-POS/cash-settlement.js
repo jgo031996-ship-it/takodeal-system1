@@ -17,6 +17,7 @@ export function assertShiftCloseIdentity(api,captured){
 }
 export async function resolveShiftCloseIdentity(api,captured){
  assertShiftCloseIdentity(api,captured);let staffId=captured.staffId;
+ if(api.readStaffSessionProfile){if(!staffId)throw Error('Sign in again to confirm the closing staff account.');await api.readStaffSessionProfile({staffId,branch:captured.branch,name:captured.staffName,assertCurrent:()=>assertShiftCloseIdentity(api,captured)});assertShiftCloseIdentity(api,captured);return {version:1,actorType:'staff',source:'pos-session',staffId,staffName:captured.staffName,authUid:captured.authUid,branch:captured.branch};}
  if(!staffId){
   if(!text(captured.sessionRef.pin))throw Error('Your saved login has no staff account ID. Sign in again before closing this shift.');
   const snap=await api.getDocsFromServer(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',captured.staffName)));
@@ -30,7 +31,7 @@ async function closeIdentity(tx,api,input,stamp){
  const closer=input.closer,guard=input.assertCurrent||(()=>{});guard();
  if(!closer)return {version:1,actorType:'unknown',source:'legacy-unknown',staffId:null,staffName:null,authUid:null,branch:input.branch,staffBranch:null,recordedAt:stamp};
  if(closer.version!==1||closer.actorType!=='staff'||closer.source!=='pos-session'||!staffKey(closer.staffId)||!text(closer.staffName)||closer.branch!==input.branch||(closer.authUid??null)!==(api.auth?.currentUser?.uid??null))throw Error('The closing staff account changed. Reopen this shift close review.');
- const snap=await tx.get(ref(api,'cashiers',closer.staffId));guard();const profile=snap.exists()?snap.data():null;
+ const profile=api.readStaffSessionProfile?await api.readStaffSessionProfile({staffId:closer.staffId,branch:input.branch,name:closer.staffName,transaction:tx,assertCurrent:guard}):await tx.get(ref(api,'cashiers',closer.staffId)).then(snap=>snap.exists()?snap.data():null);guard();
  if(!staffActive(profile)||String(profile.cashierName)!==closer.staffName||!text(profile.branch)||api.sessionUser?.pin!==undefined&&String(api.sessionUser.pin)!==String(profile.pin))throw Error('The saved closing staff account is inactive or changed. Sign in again before closing.');
  return {version:1,actorType:'staff',source:'pos-session',staffId:closer.staffId,staffName:closer.staffName,authUid:closer.authUid??null,branch:input.branch,staffBranch:profile.branch,recordedAt:stamp};
 }
@@ -52,6 +53,7 @@ export async function readMallOpeningCash(api, branch) {
 }
 export async function closeShiftAtomic(api, input) {
     input={...input,closer:input.closer?{...input.closer}:undefined};
+    if(typeof api.closeShiftTrusted==='function'){input.assertCurrent?.();return api.closeShiftTrusted(input);}
     const {shiftId,branch,cashier,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance} = input;
     input.assertCurrent?.();const policy = await readBranchPolicy(api,branch);input.assertCurrent?.();
     const accounts = await api.getDocs(api.query(api.collection(api.db,'cash_accounts'),api.where('branch','==','Main Office')));

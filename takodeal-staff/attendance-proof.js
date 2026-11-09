@@ -147,7 +147,7 @@ export function installAttendanceProofUploader(api, document, {
 }) {
     let active = null;
     const bytesLabel = bytes => Math.max(0, Math.round(bytes / 1024)) + ' KB';
-    api.uploadAttendanceProof = async ({file, path, assertCurrent = () => {}}) => {
+    api.uploadAttendanceProof = async ({file, path, metadata, assertCurrent = () => {}}) => {
         if (active) throw Error('A screenshot is already being prepared. Please wait or cancel it.');
         const operation = {cancelled: false, finished: false, upload: null};
         active = operation;
@@ -180,7 +180,7 @@ export function installAttendanceProofUploader(api, document, {
             Swal.update({title: 'Uploading screenshot…'});
             text('attendanceProofSize', bytesLabel(prepared.originalBytes) + ' reduced to ' + bytesLabel(prepared.uploadBytes) + '. Keep this screen open.');
             const reference = ref(api.storage || getStorage(api.db.app), path);
-            operation.upload = createUpload({uploadBytesResumable, getDownloadURL, reference, blob: prepared.blob, assertCurrent: current,
+            operation.upload = createUpload({uploadBytesResumable, getDownloadURL, reference, blob: prepared.blob, ...(metadata?{metadata}:{}),assertCurrent: current,
                 onProgress: progress => text('attendanceProofProgress', progress.stage === 'url' ? 'Upload complete. Confirming screenshot…' : 'Uploading: ' + progress.percent + '% · ' + bytesLabel(progress.bytesTransferred) + ' of ' + bytesLabel(progress.totalBytes))});
             const result = await operation.upload.promise;
             current();

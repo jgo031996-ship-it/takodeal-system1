@@ -1,3 +1,4 @@
+import {uploadHQImage} from './hq-image-upload.js';
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';
 import {projectWorkedShiftCorrections} from './worked-shift-reference.js';
 import {installPayrollAdjustmentRefresh,rememberPayslipInputs} from './payroll-adjustment-refresh.js';
@@ -12,11 +13,14 @@ import {resolveEmergencyShift} from './emergency-shift-model.js';
 import {installSecurityAlertLinks,escapeSecurityAlertText} from './security-alert-links.js';
 import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-approval.js';
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
+import {reviewOrdinaryStaffRequest} from './request-review-service.js';
+import {readBranchNetworkSettings,saveBranchNetworkSettings} from './branch-private-settings.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
 import {installPendingPaymentReader} from './pending-payment-reader.js';
 import {installOwnerContractPrinting,renderOwnerContractVault} from './owner-contract-print.js';
 import {installEmployeePhoto} from './employee-photo.js';
 import {installOwnerDispatchDetails} from './owner-dispatch-details.js';
+import {installOwnerPrep,ownerPrepHistoryAction} from './owner-prep-ui.js';
 import {installOwnerPayslipSharing} from './staff-payslip-publication-ui.js';
 import {reviewLateRequestWorkedShift,reviewLateRequestDatedAttendance} from './late-request-worked-shift-ui.js';
 import {installOwnerDeductionHistory,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow} from './owner-deduction-history.js';
@@ -33,7 +37,7 @@ import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
-runManagerDomReady(() => {installEmployeePhoto(window,document);installOwnerDispatchDetails(window,document);});
+runManagerDomReady(() => {installEmployeePhoto(window,document);installOwnerDispatchDetails(window,document);installOwnerPrep(window,document);});
 runManagerDomReady(() => installOwnerPayslipSharing(window,document,{actorKey:()=>payrollActorKey(window),assertFresh:data=>Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)])}));
 runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollAdjustmentRefresh(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
@@ -179,13 +183,17 @@ import { installRecipeReplacement } from './recipe-bulk.js';
 import { installCustomerHubSettings } from './customer-hub-settings.js';
 import {installRiderManagementSafety} from './rider-management.js';
 import {installRiderManagementViews} from './rider-management-view.js';
+import {installOwnerRiderAccess} from './owner-rider-access.js';
+import {installOwnerCustomerReviews} from './owner-customer-reviews.js';
+import {installOwnerPublicInquiries} from './owner-public-inquiries.js';
 import {renderStockRequestReview,stockRequestVarianceButton} from './stock-request-review.js';
 import {loadStockRequestDraft} from './dispatch-request-draft.js';
 import {installRecipeCostUI} from './recipe-cost-ui.js';
+import {installRecipeReviewUI} from './recipe-review.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan, inventoryDeletionConfirmation, inventoryDeletionPreflight } from './recipe-changes.js';
 
 import { legacyRemittanceDuplicates } from './remittance-review.js';
-import { OWNER_EMAIL,canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
+import { OWNER_EMAIL,canOpenWorkspacePage,canOpenInventoryTab,configuredPermissions } from './workspace-access-model.js';
 import {installGovernmentPermits} from './government-permits.js';
 import {installBookkeeperPayments} from './bookkeeper-payments.js';
 import { createLogisticsFeed } from './logistics-feed.js';
@@ -1580,23 +1588,30 @@ window.loadPrepBatchLogs = async function() {
     const tbody = document.getElementById('prepBatchLogsBody');
     const tabContainer = document.getElementById('prepBranchTabs');
     if (!tbody || !tabContainer) return;
+    if (!canOpenInventoryTab(window.sessionUser,'Prep')) { tbody.textContent = 'Prep history is not assigned to this account.'; return; }
+    const loadToken = window.ownerPrepHistoryEpoch = (window.ownerPrepHistoryEpoch || 0) + 1;
+    const loadUser = window.auth?.currentUser, loadSession = window.sessionUser;
+    if (!loadUser?.uid || loadSession?.uid !== loadUser.uid) { tbody.textContent = 'Sign in again to load saved prep history.'; return; }
+    const loadScope = JSON.stringify([loadSession?.permissions,loadSession?.allowedBranches]);
     
     // Inject Branch Tabs!
-    let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+    let branches = (window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"]).filter(branch => window.isBranchAllowed?.(branch) === true);
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     if (isFranchisee) branches = [window.sessionUser.branch];
+    const allBranchesAllowed = loadUser.email?.toLowerCase() === OWNER_EMAIL || loadSession.allowedBranches?.some(branch => String(branch).toLowerCase() === 'all');
+    if (!allBranchesAllowed && window.activePrepBranch === 'All') window.activePrepBranch = branches[0] || '';
 
     let allActive = window.activePrepBranch === 'All';
     let bHtml = `<div onclick="window.switchPrepBranch('All')" style="min-width: 120px; background: ${allActive ? '#f3e8ff' : 'white'}; border: 2px solid ${allActive ? '#a855f7' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${allActive ? '#7e22ce' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">🌐 All Branches</div>`;
     
-    if (isFranchisee) {
+    if (isFranchisee || !allBranchesAllowed) {
         bHtml = ''; 
-        window.activePrepBranch = window.sessionUser.branch;
+        if (isFranchisee) window.activePrepBranch = window.sessionUser.branch;
     }
 
     branches.forEach(b => {
         let isAct = window.activePrepBranch === b;
-        bHtml += `<div onclick="window.switchPrepBranch('${b}')" style="min-width: 120px; background: ${isAct ? '#f3e8ff' : 'white'}; border: 2px solid ${isAct ? '#a855f7' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${isAct ? '#7e22ce' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">📍 ${b}</div>`;
+        bHtml += `<div onclick="window.switchPrepBranch(decodeURIComponent('${encodeURIComponent(b).replace(/'/g,'%27')}'))" style="min-width: 120px; background: ${isAct ? '#f3e8ff' : 'white'}; border: 2px solid ${isAct ? '#a855f7' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${isAct ? '#7e22ce' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">📍 ${escapeStock(b)}</div>`;
     });
     tabContainer.innerHTML = bHtml;
 
@@ -1619,33 +1634,41 @@ window.loadPrepBatchLogs = async function() {
     
     let dateFilterEl = document.getElementById('prepDateFilter');
     let selectedDate = dateFilterEl ? dateFilterEl.value : "";
+    const selectedBranch = window.activePrepBranch;
+    const isCurrent = () => loadToken === window.ownerPrepHistoryEpoch && window.auth?.currentUser === loadUser && window.sessionUser === loadSession && JSON.stringify([loadSession?.permissions,loadSession?.allowedBranches]) === loadScope && canOpenInventoryTab(loadSession,'Prep') && window.activePrepBranch === selectedBranch && (document.getElementById('prepDateFilter')?.value || '') === selectedDate;
 
     try {
         let q;
+        const branchConstraints = selectedBranch === 'All' ? [] : [window.where('branch','==',selectedBranch)];
+        if (selectedBranch !== 'All' && window.isBranchAllowed?.(selectedBranch) !== true) throw Error('This branch is not assigned to this account.');
         if (selectedDate) {
-            let startOfDay = new Date(selectedDate + 'T00:00:00');
-            let endOfDay = new Date(selectedDate + 'T23:59:59');
+            let startOfDay = new Date(selectedDate + 'T00:00:00+08:00');
+            let endOfDay = new Date(startOfDay.getTime() + 86400000);
             q = window.query(window.collection(window.db, "stock_logs"), 
+                ...branchConstraints,
                 window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), 
                 window.where("timestamp", ">=", startOfDay), 
-                window.where("timestamp", "<=", endOfDay), 
-                window.orderBy("timestamp", "desc")
+                window.where("timestamp", "<", endOfDay),
+                window.orderBy("timestamp", "desc"), window.limit(101)
             );
         } else {
             q = window.query(window.collection(window.db, "stock_logs"), 
+                ...branchConstraints,
                 window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), 
                 window.orderBy("timestamp", "desc"), 
-                window.limit(100) // Increased limit so you can see more shifts!
+                window.limit(101)
             );
         }
 
-        const snap = await window.getDocs(q);
+        const snap = await window.getDocsFromServer(q);
+        if (!isCurrent()) return;
+        if (snap.metadata?.fromCache !== false || snap.metadata?.hasPendingWrites !== false) throw Error('Reconnect to load confirmed prep history.');
         
         let logs = [];
         snap.forEach(doc => {
             let d = doc.data();
-            if (window.activePrepBranch !== "All" && d.branch !== window.activePrepBranch) return;
-            logs.push({ id: doc.id, ...d });
+            if (selectedBranch !== "All" && d.branch !== selectedBranch || window.isBranchAllowed?.(d.branch) !== true) return;
+            logs.push({ ...d, id: doc.id });
         });
 
         logs.sort((a,b) => b.timestamp - a.timestamp); // Newest first
@@ -1653,14 +1676,14 @@ window.loadPrepBatchLogs = async function() {
         let html = '';
         let currentShiftGroup = '';
 
-        logs.forEach(log => {
+        logs.slice(0,100).forEach(log => {
             let timeObj = log.timestamp ? log.timestamp.toDate() : new Date();
             let timeStr = timeObj.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'});
             let dateStr = timeObj.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
             let pUom = log.purchUom || 'Batch';
             let pQty = log.purchQty ? log.purchQty : '-';
             let purchDisplay = log.purchQty ? `(${pQty} ${pUom}s)` : '';
-            let staffName = log.user || log.cashier || 'System';
+            let staffName = escapeStock(log.user || log.cashier || 'System');
 
             // 🔥 GROUP BY DATE AND CASHIER (THE SHIFT DIVIDER) 🔥
             let shiftKey = `${dateStr}_${staffName}`;
@@ -1679,22 +1702,24 @@ window.loadPrepBatchLogs = async function() {
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                     <td style="padding: 12px 15px; color: #64748b; font-size: 12px; padding-left: 25px;">${timeStr}</td>
-                    <td style="padding: 12px 15px;"><span class="badge badge-open">${log.branch}</span></td>
+                    <td style="padding: 12px 15px;"><span class="badge badge-open">${escapeStock(log.branch)}</span></td>
                     <td style="padding: 12px 15px; font-weight: bold; color: #334155;">👤 ${staffName}</td>
-                    <td style="padding: 12px 15px; font-weight: bold; color: #8b5cf6;">${log.item}</td>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #8b5cf6;">${escapeStock(log.item)}</td>
                     <td style="padding: 12px 15px;">
-                        <strong style="color: #10b981; font-size: 15px;">+${log.variance} ${log.uom}</strong><br>
-                        <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
+                        <strong style="color: #10b981; font-size: 15px;">+${escapeStock(log.variance)} ${escapeStock(log.uom)}</strong><br>
+                        <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${escapeStock(purchDisplay)}</span>
                     </td>
                     <td style="padding: 12px 15px;">
-                        <span style="font-size:11px;color:#64748b">Saved prep record. Review stock corrections separately.</span>
+                        ${ownerPrepHistoryAction(window,log)}
                     </td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No prep batches logged for this filter.</td></tr>';
+        if (!isCurrent()) return;
+        tbody.innerHTML = (html || '<tr><td colspan="6" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No prep batches logged for this filter.</td></tr>') + (snap.size > 100 ? '<tr><td colspan="6">Latest 100 records only. Narrow the branch or date to review more.</td></tr>' : '');
     } catch(e) {
+        if (!isCurrent()) return;
         console.error(e);
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #dc2626; padding: 40px; font-weight: bold;">Error loading history.</td></tr>';
     }
@@ -4332,116 +4357,8 @@ window.loadBatchItemsDropdown = async function () {
 // ========================================================
 // 🔥 THE KITCHEN BATCH PREP ENGINE (CONVERSION MATH FIX) 🔥
 // ========================================================
-window.executeBatchPrep = async function () {
-    let branch = document.getElementById('batchBranch').value;
-    let targetItem = document.getElementById('batchItem').value;
-    let prepQty = parseFloat(document.getElementById('batchQty').value);
-
-    if (!branch || !targetItem || isNaN(prepQty) || prepQty <= 0) {
-        window.ManagerUI.notify("Please fill all fields correctly."); return;
-    }
-
-    let btn = document.getElementById('btnExecuteBatch');
-    btn.innerText = "⏳ Checking Raw Materials..."; btn.disabled = true;
-
-    try {
-        // 1. Get the Recipe (BOM) for the item they want to make
-        const bomQ = query(collection(db, "bom"), where("menuItem", "==", targetItem));
-        const bomSnap = await getDocs(bomQ);
-
-        if (bomSnap.empty) {
-            window.ManagerUI.notify(`❌ Missing Recipe!\n\nYou haven't set up a recipe for "${targetItem}" in the Menu Costing & BOM tab yet.`);
-            btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-            return;
-        }
-
-        // 2. Build the exact requirement list and CHECK STOCK FIRST
-        let requirements = [];
-        for (let docSnap of bomSnap.docs) {
-            let recipeIngredient = docSnap.data();
-            let totalNeeded = recipeIngredient.qty * prepQty;
-
-            // Find this ingredient in the selected branch's inventory
-            const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", recipeIngredient.ingredientName));
-            const invSnap = await getDocs(invQ);
-
-            if (invSnap.empty) {
-                window.ManagerUI.notify(`❌ Missing Inventory Item!\n\nYour recipe requires "${recipeIngredient.ingredientName}", but it doesn't exist in the ${branch} warehouse.`);
-                btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-                return;
-            }
-
-            let invRef = invSnap.docs[0].ref;
-            let currentStock = invSnap.docs[0].data().currentStock || 0;
-
-            // ANTI-FRAUD: Check if they actually have enough raw materials to make this batch!
-            if (currentStock < totalNeeded) {
-                window.ManagerUI.notify(`❌ Insufficient Raw Materials!\n\nYou need ${totalNeeded} of ${recipeIngredient.ingredientName} to make this batch, but you only have ${currentStock} in stock at ${branch}.`);
-                btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-                return;
-            }
-
-            // Save the calculation for the actual deduction phase
-            requirements.push({ ref: invRef, newStock: currentStock - totalNeeded });
-        }
-
-        // 3. IF WE MADE IT HERE, WE HAVE ENOUGH OF EVERYTHING! LETS DEDUCT.
-        btn.innerText = "⏳ Mixing Batch...";
-        for (let req of requirements) {
-            await updateDoc(req.ref, { currentStock: req.newStock });
-        }
-
-        // 4. ADD the new prepared batch to the inventory (🔥 CONVERSION MATH FIX)
-        const targetQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", targetItem));
-        const targetSnap = await getDocs(targetQ);
-        let targetRef = targetSnap.docs[0].ref;
-        let targetData = targetSnap.docs[0].data(); 
-        let targetStock = targetData.currentStock || 0;
-        
-        // 🔥 Multiply the batches they prepared by the base conversion rate!
-        let convRate = parseFloat(targetData.conversionRate) || parseFloat(targetData.conversion) || 1;
-        let baseQtyToAdd = prepQty * convRate;
-
-        await updateDoc(targetRef, { currentStock: targetStock + baseQtyToAdd });
-
-        // 5. LOG TO HISTORY WITH PROPER UOM
-        let pUom = targetData.purchaseUom || "Batch";
-        let bUom = targetData.baseUom || targetData.uom || "units";
-
-        await addDoc(collection(db, "stock_logs"), {
-            branch: branch,
-            item: targetItem,
-            uom: bUom,
-            oldQty: targetStock,
-            newQty: targetStock + baseQtyToAdd,
-            variance: baseQtyToAdd,
-            type: "Manager Prep Batch",
-            note: `Prepared ${prepQty} ${pUom}(s) via Manager HQ`,
-            user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: new Date()
-        });
-
-        // Success!
-        Swal.fire({
-            title: '🥣 Kitchen Success!',
-            html: `Prepared <b>${prepQty} ${pUom}(s)</b> of ${targetItem}.<br>(Added +${baseQtyToAdd.toLocaleString()} ${bUom} to stock!)<br><br><span style="font-size: 13px; color: #64748b;">All raw ingredients were automatically deducted from ${branch}.</span>`,
-            icon: 'success',
-            confirmButtonColor: '#8b5cf6',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-        document.getElementById('batchModal').style.display = 'none';
-        
-        // Refresh the view you are currently on
-        if (document.getElementById('view-inventory') && document.getElementById('view-inventory').classList.contains('active')) {
-            if(typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
-            if(typeof window.loadInventoryData === 'function') window.loadInventoryData();
-        }
-
-    } catch (error) {
-        console.error(error); window.ManagerUI.notify("Failed to prepare batch.");
-    } finally {
-        btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
-    }
+window.executeBatchPrep = function () {
+    return installOwnerPrep(window,document).prepare();
 };
 
 // ==========================================
@@ -10166,58 +10083,15 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
         if (action === 'Approved' && fileInput && fileInput.files.length > 0) {
             btn.innerText = "⏳ Uploading Proof...";
             const file = fileInput.files[0];
-            const fileExt = file.name.split('.').pop();
-            const fileName = `proofs/${docId}_${Date.now()}.${fileExt}`;
-            
-            const storageReference = window.ref(window.storage, fileName);
-            const snapshot = await window.uploadBytes(storageReference, file);
-            proofUrl = await window.getDownloadURL(snapshot.ref);
+            proofUrl = await uploadHQImage(window,file,{purpose:'request-proof',sourceId:docId,
+                assertCurrent:()=>{if(window.auth?.currentUser!==replyUser||window.sessionUser!==replySession||document.getElementById('dynamicReplyModal')!==replyModal)throw Error('Your account or request window changed. Reopen this request.');}});
         }
 
         btn.innerText = "⏳ Saving to Database...";
 
-        // 🔥 1. FETCH ORIGINAL REQUEST DATE FIRST
-        const reqRef = window.doc(window.db, "staff_requests", docId);
-        const reqSnap = await tkOwnerDoc(reqRef);
-        
-        let originalDate = new Date();
-        let reqData = {};
-        
-        if (reqSnap.exists()) {
-            reqData = reqSnap.data();
-            if(reqData.type==='Schedule Declaration')throw Error('This is a staff shift statement. Reopen Review declaration; no ordinary approval or deduction was saved.');
-            if (reqData.timestamp) {
-                originalDate = reqData.timestamp.toDate ? reqData.timestamp.toDate() : new Date(reqData.timestamp);
-            }
-        }
-
-        // 2. Update the request status (We still record processedAt as 'now' for the manager's audit log)
-        await window.updateDoc(reqRef, {
-            status: action,
-            managerReply: replyMsg,
-            proofImageUrl: proofUrl,
-            processedAt: window.serverTimestamp(), 
-            processedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            penaltyCharged: penaltyAmt
-        });
-
-        // Waste reports are reviewed atomically in Live Inventory → Waste & Spoilage.
-
-        // 4. STANDARD DEDUCTIONS (Advances & Meals)
-        // 🔥 THE FIX: Uses .includes("Meal") so Manager Meals are successfully deducted from payroll!
-        if (action === "Approved" && (type === "Cash Advance" || type.includes("Meal"))) {
-            await window.addDoc(window.collection(window.db, "staff_deductions"), {
-                staffName: staffName,
-                type: type,
-                amount: amount,
-                requestId: docId,
-                branch: reqData.branch || '',
-                receiptId: reqData.receiptId || '',
-                item: reqData.item || '',
-                dateAdded: originalDate, // Logs on the exact day they took the cash/meal!
-                status: "Unpaid" 
-            });
-        }
+        await reviewOrdinaryStaffRequest(window,{id:docId,action,reply:replyMsg,proofUrl,
+            actor:window.sessionUser?.cashierName||'Manager',
+            assertCurrent:()=>{if(window.auth?.currentUser!==replyUser||window.sessionUser!==replySession||document.getElementById('dynamicReplyModal')!==replyModal)throw Error('Your account or request window changed. Reopen this request.');}});
 
         Swal.fire({
             title: `✅ Request ${action}`, 
@@ -16409,9 +16283,12 @@ window.removeLogo = function(event) {
     document.getElementById('logoUploader').style.display = 'block'; 
 };
 
-window.openBranchSettings = function(docId) {
+window.openBranchSettings = async function(docId) {
     let d = window.globalBranchData[docId];
     if (!d) return;
+    const user=window.auth?.currentUser,session=window.sessionUser,loadToken={id:docId,user,session};
+    window.branchNetworkSettingsLoad=loadToken;
+    window.branchNetworkSettingsExpected=null;
 
     document.getElementById('settingBranchId').value = docId;
     document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;
@@ -16419,7 +16296,8 @@ window.openBranchSettings = function(docId) {
     document.getElementById('settingContact').value = d.contact || '';
     document.getElementById('settingLat').value = d.lat || '';
     document.getElementById('settingLng').value = d.lng || '';
-    document.getElementById('settingWifi').value = d.wifi || '';
+    document.getElementById('settingWifi').value = '';
+    document.getElementById('settingWifi').disabled = true;
     
     // Default to 58mm to fix the squished text bug!
     document.getElementById('settingPrinterSize').value = d.printerSize || '58mm';
@@ -16441,6 +16319,13 @@ window.openBranchSettings = function(docId) {
     }
     if (document.getElementById('settingMallBranch')) document.getElementById('settingMallBranch').checked = d.isMallBranch || false;
     document.getElementById('branchSettingsModal').style.display = 'flex';
+    try{
+        const saved=await readBranchNetworkSettings(window,docId);
+        if(window.branchNetworkSettingsLoad!==loadToken||window.auth?.currentUser!==user||window.sessionUser!==session)return;
+        window.branchNetworkSettingsExpected=saved;
+        document.getElementById('settingWifi').value=saved.wifi??d.wifi??'';
+        document.getElementById('settingWifi').disabled=false;
+    }catch(error){if(window.branchNetworkSettingsLoad===loadToken)window.ManagerUI.notify('Private branch settings could not be loaded. Reopen this branch before saving.');}
 };
 
 window.saveBranchSettings = async function() {
@@ -16451,7 +16336,6 @@ window.saveBranchSettings = async function() {
     let payload = {
         address: document.getElementById('settingAddress').value.trim(),
         contact: document.getElementById('settingContact').value.trim(),
-        wifi: document.getElementById('settingWifi').value.trim(),
         printerSize: document.getElementById('settingPrinterSize').value,
         headerName: document.getElementById('settingHeaderName').value.trim(),
         footerMessage: document.getElementById('settingFooterMsg').value.trim(),
@@ -16465,7 +16349,10 @@ window.saveBranchSettings = async function() {
     };
 
     try {
-        await updateDoc(doc(db, "branches", docId), payload);
+        const load=window.branchNetworkSettingsLoad,expected=window.branchNetworkSettingsExpected;
+        if(!load||load.id!==docId||!expected)throw Error('Private branch settings are still loading. Reopen this branch before saving.');
+        await saveBranchNetworkSettings(window,{id:docId,branch:window.globalBranchData[docId]?.name,expected,wifi:document.getElementById('settingWifi').value.trim(),payload,
+            assertCurrent:()=>{if(window.branchNetworkSettingsLoad!==load||window.auth?.currentUser!==load.user||window.sessionUser!==load.session||document.getElementById('settingBranchId').value!==docId)throw Error('Your branch or account changed. Reopen these settings.');}});
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings Pushed to Cashier!', showConfirmButton: false, timer: 2000});
         document.getElementById('branchSettingsModal').style.display = 'none';
         window.loadBranchManager();
@@ -22859,48 +22746,8 @@ window.switchFranTab = function(tabName) {
     else if (tabName === 'Leads') { document.getElementById('franSecLeads').style.display = 'block'; window.loadFranchiseLeads(); }
 };
 
-window.loadFranchiseLeads = async function() {
-    let tbody = document.getElementById('franLeadsBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold;">Loading applications...</td></tr>';
-    try {
-        const q = window.query(window.collection(window.db, "franchise_leads"), window.orderBy("timestamp", "desc"));
-        const snap = await window.getDocs(q);
-        let html = '';
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
-            let isContacted = d.status === 'Contacted';
-            
-            // This is the variable we are defining
-            let statusBtn = isContacted 
-                ? `<button disabled style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: not-allowed;">✅ Contacted</button>`
-                : `<button onclick="window.markLeadContacted('${docSnap.id}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">Mark Contacted</button>`;
-
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9; background: ${isContacted ? '#f8fafc' : 'white'};">
-                    <td style="padding: 15px 20px; font-size: 13px; color: #64748b;">${dateStr}</td>
-                    <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 15px;">${d.name}</td>
-                    <td style="padding: 15px 20px; font-size: 13px; color: #334155;">📞 ${d.phone}<br>📧 ${d.email}</td>
-                    <td style="padding: 15px 20px; font-weight: bold; color: #d97706;">📍 ${d.location}</td>
-                    <td style="padding: 15px 20px; text-align: right;">${statusBtn}</td> <!-- 🔥 FIXED: Now properly uses statusBtn! -->
-                </tr>
-            `;
-        });
-        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8; font-style: italic;">No leads found yet.</td></tr>';
-    } catch(e) {
-        console.error(e); tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error loading leads.</td></tr>';
-    }
-};
-
-window.markLeadContacted = async function(docId) {
-    try {
-        Swal.fire({title: 'Updating...', didOpen: () => Swal.showLoading()});
-        await window.updateDoc(window.doc(window.db, "franchise_leads", docId), { status: "Contacted" });
-        Swal.close();
-        window.loadFranchiseLeads();
-    } catch(e) { console.error(e); }
-};
+window.loadFranchiseLeads = async function() { return installOwnerPublicInquiries(window,document).load(); };
+window.markLeadContacted = async function(id) { return installOwnerPublicInquiries(window,document).mark(id); };
 
 // ==========================================
 // 📊 TAB 1: FRANCHISEE PERFORMANCE (HQ ONLY)
@@ -25125,133 +24972,9 @@ window.switchCustomerAppTab = function(tabName) {
 };
 
 // 1. Load Reviews & Moderation
-window.loadManagerCustomerReviews = async function() {
-    let container = document.getElementById('managerCustomerReviewsList');
-    if (!container) return;
-    container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Loading customer reviews...</div>';
-
-    try {
-        // 🔥 FIXED: Pointing to "reviews" to match the Customer App!
-        const q = window.query(window.collection(window.db, "reviews"), window.orderBy("timestamp", "desc"));
-        const snap = await window.getDocs(q);
-        let html = '';
-
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
-            
-            let isPublished = d.isPublished || false;
-            let statusBadge = isPublished 
-                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; border: 1px solid #bbf7d0;">⭐ Published to Website</span>`
-                : `<span style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; border: 1px solid #cbd5e1;">🔒 Hidden (Pending Approval)</span>`;
-
-            // 🔥 FIXED: Pulling the exact text variables used by the Customer App
-            let reviewMsg = d.text || d.reviewText || 'No written feedback provided. (Rating only)';
-            let customerName = d.customer || d.customerName || 'Anonymous Customer';
-
-            html += `
-                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px;">
-                            <div>
-                                <strong style="font-size: 16px; color: #0f172a;">👤 ${customerName}</strong><br>
-                                <span style="font-size: 11px; color: #64748b; font-weight: bold;">Order: ${d.orderCode || d.orderId || 'N/A'} • ${dateStr}</span>
-                            </div>
-                            <div style="text-align: right;">
-                                ${statusBadge}
-                            </div>
-                        </div>
-                        <div style="font-size: 14px; color: #334155; font-style: italic; line-height: 1.5; margin-bottom: 15px;">
-                            "${reviewMsg}"
-                        </div>
-                    </div>
-                    <div style="border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: right;">
-                        <button onclick="window.toggleManagerReviewStatus('${docSnap.id}', ${isPublished})" style="background: ${isPublished ? '#fef2f2' : '#f0f9ff'}; border: 1px solid ${isPublished ? '#fca5a5' : '#bae6fd'}; color: ${isPublished ? '#dc2626' : '#0284c7'}; padding: 8px 15px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-                            ${isPublished ? 'Hide from Website' : 'Approve & Publish'}
-                        </button>
-                    </div>
-                </div>
-            `;
-        });
-
-        container.innerHTML = html || '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No reviews submitted yet.</div>';
-    } catch (e) {
-        console.error("Reviews Error:", e);
-        container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #dc2626; font-weight: bold;">Error loading reviews. Check Firebase Rules!</div>';
-    }
-};
-
-window.toggleManagerReviewStatus = async function(docId, currentState) {
-    try {
-        Swal.fire({title: 'Updating Website...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        
-        // 🔥 FIXED: Pointing to "reviews" and updating the loyalty status!
-        await window.updateDoc(window.doc(window.db, "reviews", docId), { 
-            isPublished: !currentState,
-            status: !currentState ? "Approved" : "Hidden" // This tells the Customer App to grant a loyalty stamp!
-        });
-        
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success', 
-            title: !currentState ? 'Review Published!' : 'Review Hidden!', 
-            showConfirmButton: false, timer: 1500
-        });
-        
-        window.loadManagerCustomerReviews(); 
-    } catch(e) {
-        Swal.fire('Error', 'Failed to update review.', 'error');
-    }
-};
-
-// 2. Load Loyal Customer CRM (VIP Identification)
-window.loadLoyalCustomersCRM = async function() {
-    let tbody = document.getElementById('loyalCustomersTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Analyzing customer frequency...</td></tr>';
-
-    try {
-        // 🔥 FIXED: Pointing to "reviews"
-        const q = window.query(window.collection(window.db, "reviews"));
-        const snap = await window.getDocs(q);
-        
-        let customerStats = {};
-        snap.forEach(doc => {
-            let d = doc.data();
-            let cName = (d.customer || d.customerName || 'Anonymous').trim();
-            if (!customerStats[cName]) customerStats[cName] = { count: 0, reviews: [] };
-            customerStats[cName].count++;
-            customerStats[cName].reviews.push(d);
-        });
-
-        let html = '';
-        let sortedCustomers = Object.keys(customerStats).sort((a,b) => customerStats[b].count - customerStats[a].count);
-
-        sortedCustomers.forEach(name => {
-            let stats = customerStats[name];
-            let isVip = stats.count >= 2; 
-            
-            let statusBadge = isVip 
-                ? `<span style="background: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 11px; border: 1px solid #fcd34d;">👑 VIP / Loyal Customer</span>`
-                : `<span style="background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; border: 1px solid #cbd5e1;">Standard Customer</span>`;
-
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${name}</td>
-                    <td style="padding: 15px 25px; font-weight: bold; color: #0284c7;">${stats.count} Feedback Submitted</td>
-                    <td style="padding: 15px 25px;">${statusBadge}</td>
-                    <td style="padding: 15px 25px; text-align: right;">
-                        <button onclick="Swal.fire('Customer Note', 'Give ${name} a free takoyaki voucher on their next order as a thank you gift!', 'info')" style="background: #10b981; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">🎁 Give Promo Gift</button>
-                    </td>
-                </tr>
-            `;
-        });
-
-        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No customer records found.</td></tr>';
-    } catch(e) {
-        console.error(e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red; padding: 40px;">Error loading CRM. Check Firebase Rules!</td></tr>';
-    }
-};
+window.loadManagerCustomerReviews = async function() { return installOwnerCustomerReviews(window,document).load(); };
+window.toggleManagerReviewStatus = async function(id) { return installOwnerCustomerReviews(window,document).review(id); };
+window.loadLoyalCustomersCRM = async function() { return installOwnerCustomerReviews(window,document).crm(); };
 
 // 3. Storefront Categories & POS Sync (Per-Branch)
 window.loadStorefrontCategorySyncUI = async function() {
@@ -27080,6 +26803,7 @@ installSopChecklistExport(window,document);
 installCustomerHubSettings(window,document);
 
 installRiderManagementSafety(window);
+installOwnerRiderAccess(window);
 installRiderManagementViews(window,document);
 
 installOnlineRefunds(window,document,{readComparisonData:createPlatformComparisonReader(window)});
@@ -27098,6 +26822,7 @@ installCashRemittanceReview(window,document);
 
 // Explicit store/HQ cost basis replaces the legacy highest-branch cost scan.
 installRecipeCostUI({window,document,setCosts:costs=>{globalInventoryCosts=costs;}});
+installRecipeReviewUI(window,document);
 
 // The Board has its own owner gate and server-authorized read-only endpoint.
 import {installAIBoard} from './ai-board.js';
