@@ -54,6 +54,7 @@ function harness({late=true}={}) {
         async verifyAttendanceFace(){events.push('camera');if(h.camera)return h.camera();return {photoBase64:'data:image/jpeg;base64,c3ludGhldGlj',faceCheck:{policyVersion:'attendance-photo-v2',capturedAt:new Date(clockMs).toISOString()}};},
         assertAttendanceFaceFresh(result){events.push('fresh');if(h.fresh)h.fresh(result);},
         captureOptionalAttendancePhoto:()=>'',loadMyAttendance:()=>events.push('refresh'),
+        async authorizeAttendanceUpload({staffId,attendanceId,assertCurrent}){assertCurrent();return{path:`staff_requests/synthetic-auth/${staffId}/late_${attendanceId}.jpg`,metadata:{contentType:'image/jpeg',customMetadata:{staffUploadUid:'synthetic-auth',staffId}},assertCurrent};},
         async uploadAttendanceProof(request){events.push('proof:start');uploadCalls.push(request);request.assertCurrent();const result=h.upload?await h.upload(request):{url:proofUrl};events.push('proof:done');return result;}};
     class ClockDate extends Date {constructor(...args){super(...(args.length?args:[clockMs]));}static now(){return clockMs;}}
     const Swal={async fire(...args){alerts.push(args);const options=args[0];if(options?.title==='Review your assigned hours'){events.push('schedule:preview');return {isConfirmed:h.cancelPreview!==true,value:h.swapChoice?'swap':'assigned'};}if(options?.title==='Declare an unrequested shift swap'){options.didOpen?.();node('attendanceSwapCoworker').value=h.swapChoice.coworker;node('attendanceSwapCoworker').onchange();node('attendanceSwapShift').value=h.swapChoice.key;node('attendanceSwapExplanation').value='We agreed to cover the saved later shift; please check this declaration with HQ.';const value=options.preConfirm();return {isConfirmed:!!value,value};}if(options?.title?.includes('You are Late')){
@@ -113,7 +114,7 @@ test('a pending proof holds the real click lock and stable attendance-specific p
     const pending=h.punch('TIME IN');await waitFor(()=>h.uploadCalls.length,'The actual handler must reach the injected proof uploader.');
     assert.equal(h.window.staffPunchBusy,true);assert.equal(h.node('btnTimeIn').disabled,true);assert.equal(h.node('btnTimeOut').disabled,true);
     await h.punch('TIME IN');assert.equal(h.uploadCalls.length,1);assert.equal(h.writes.length,0);
-    assert.equal(h.uploadCalls[0].file,screenshot);assert.equal(h.uploadCalls[0].path,'staff_requests/late_auto-1.jpg');
+    assert.equal(h.uploadCalls[0].file,screenshot);assert.equal(h.uploadCalls[0].path,'staff_requests/synthetic-auth/staff-id/late_auto-1.jpg');assert.deepEqual(h.uploadCalls[0].metadata.customMetadata,{staffUploadUid:'synthetic-auth',staffId:'staff-id'});
     gate.reject(Error('Proof upload cancelled.'));await pending;assertNoAttendance(h);
 });
 
@@ -188,7 +189,7 @@ test('failed upload keeps the screenshot and reason for an explicit same-employe
     const h=harness();h.upload=async()=>{throw Error('Proof upload timed out.');};await h.punch('TIME IN');assertNoAttendance(h);
     assert.equal(h.window.staffLateProofDraft.file,screenshot);assert.equal(h.window.staffLateProofDraft.reason,h.lateForm.reason);
     h.upload=null;h.lateForm={reason:null,file:null};await h.punch('TIME IN');
-    assert.equal(h.uploadCalls.length,2);assert.equal(h.uploadCalls[1].file,screenshot);assert.equal(h.uploadCalls[1].path,'staff_requests/late_auto-3.jpg');
+    assert.equal(h.uploadCalls.length,2);assert.equal(h.uploadCalls[1].file,screenshot);assert.equal(h.uploadCalls[1].path,'staff_requests/synthetic-auth/staff-id/late_auto-3.jpg');
     assert.equal(h.batches.length,1);assert.equal(h.writes.length,2);assert.match(h.node('lateProofKept').textContent,/synthetic-proof\.png/);
     assert.equal(h.window.staffLateProofDraft,null);
 });

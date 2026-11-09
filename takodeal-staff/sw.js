@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v49-vault-payslip-20261108';
+const CACHE_NAME = 'takodeal-staff-v49-entry-recovery-20261109-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./worked-shift-reference.js');
@@ -12,6 +12,7 @@ SHELL.push('./time-out-request-display.js');
 SHELL.push('./online-refund-pay.js');
 SHELL.push('./payroll-deduction-details.js');
 SHELL.push('./attendance-reconcile.js','./attendance-proof.js');
+SHELL.push('./clock-upload-access.js','./staff-access.js');
 SHELL.push('./staff-document-broker.js');
 SHELL.push('./payroll-attendance.js');
 SHELL.push('./staff-payroll-reader.js');

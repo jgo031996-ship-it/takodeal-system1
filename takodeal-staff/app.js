@@ -26,6 +26,7 @@ import {readStaffPayrollRecoveryHistory} from './payroll-adjustment-history.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
+import {createClockUploadAccess} from './clock-upload-access.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, sopCoversShift, closeAttendanceShift} from './attendance-reconcile.js';
 import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
@@ -1283,6 +1284,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 
 installAttendanceCamera(window, document);
 installAttendanceProofUploader(window, document, {uploadBytesResumable, getDownloadURL, ref, getStorage});
+window.authorizeAttendanceUpload=createClockUploadAccess({auth:staffPrimaryAuth,deviceId:()=>localStorage.getItem('takodeal_device_id'),Swal,fetcher:window.fetch.bind(window)});
 window.punchTime = async function(type) {
     if (!['TIME IN', 'TIME OUT'].includes(type)) return Swal.fire('Attendance not saved', 'Choose Time In or Time Out using the attendance buttons.', 'warning');
     let staffName = localStorage.getItem('takodeal_staff_name');
@@ -1431,9 +1433,12 @@ window.punchTime = async function(type) {
 
                         window.staffLateProofDraft = {staffId:punchStaffId, branch:closestBranch, reason:lateForm.reason, file:lateForm.file, staffShiftChoice:lateForm.staffShiftChoice, savedAt:Date.now()};
                         pendingStaffShiftChoice=lateForm.staffShiftChoice;
+                        const uploadAccess=await window.authorizeAttendanceUpload({staffId:punchStaffId,attendanceId:attendanceRef.id,assertCurrent:assertPunchIdentity});
+                        if(!uploadAccess)return;
                         const proof = await window.uploadAttendanceProof({
-                            file:lateForm.file, path:`staff_requests/late_${attendanceRef.id}.jpg`,
+                            file:lateForm.file, path:uploadAccess.path,metadata:uploadAccess.metadata,
                             assertCurrent:()=>{
+                                uploadAccess.assertCurrent();
                                 if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again before uploading or recording attendance.');
                             }
                         });
