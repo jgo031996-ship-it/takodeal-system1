@@ -32,6 +32,7 @@ export function installStaffPortal() {
         rate.lock({preserveRequest:preserveRateRequest});
         session.lock(); modalEpoch++; busy = false; wipeInputs();
         window.clearStaffSavedPayslips?.();
+        window.clearStaffLoanLedger?.();
         window.closeVaultRecovery?.();
         $('vaultPinModal').style.display = 'none';
         // Remove values and encoded payroll actions rather than merely covering them.
@@ -63,8 +64,8 @@ export function installStaffPortal() {
             if (data.payslipPin && !validVerifier(data.payslipPin)) throw new Error('Your PIN settings need a review by HQ.');
             modalMode = data.payslipPin ? mode : 'setup';
             const editing = modalMode !== 'unlock';
-            $('vaultPinTitle').textContent = modalMode === 'setup' ? 'Create your Payslip PIN' : editing ? 'Change your Payslip PIN' : target==='rate'?'Unlock daily rate':'Unlock Payslip Vault';
-            $('vaultPinIntro').textContent = modalMode === 'setup' ? 'Verify your staff login PIN, then choose a separate 6–8 digit PIN for your pay.' : editing ? 'Enter your current Payslip PIN and choose a new one.' : target==='rate'?'Enter your separate Payslip PIN to view your daily rate for two minutes.':'Enter your separate Payslip PIN to see your earnings and records.';
+            $('vaultPinTitle').textContent = modalMode === 'setup' ? 'Create your Payslip PIN' : editing ? 'Change your Payslip PIN' : target==='rate'?'Unlock daily rate':target==='loans'?'Unlock My loans':'Unlock Payslip Vault';
+            $('vaultPinIntro').textContent = modalMode === 'setup' ? 'Verify your staff login PIN, then choose a separate 6–8 digit PIN for your pay.' : editing ? 'Enter your current Payslip PIN and choose a new one.' : target==='rate'?'Enter your separate Payslip PIN to view your daily rate for two minutes.':target==='loans'?'Enter your separate Payslip PIN to view your private loan records.':'Enter your separate Payslip PIN to see your earnings and records.';
             $('vaultCurrentLabel').textContent = modalMode === 'setup' ? 'Staff login PIN' : 'Payslip PIN';
             $('vaultNewFields').hidden = !editing;
             $('vaultSubmit').textContent = editing ? 'Save Payslip PIN' : 'Unlock vault';
@@ -102,6 +103,7 @@ export function installStaffPortal() {
             window.closeVaultPin(true);
             if(modalTarget==='rate'){await rate.reveal(id,data);return;}
             session.unlock(id); refreshVault();
+            if(modalTarget==='loans'){await window.loadMyLoanLedger?.();return;}
             // PIN editing from Profile does not reveal pay behind another screen.
             if (!$('view-payslip').classList.contains('active')) { window.lockPayslipVault(); return; }
             window.loadPayslipVault();

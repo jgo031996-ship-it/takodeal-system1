@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-vault-payslip-20261108">
+    <meta name="takodeal-release" content="staff-private-loans-20261109">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="leave-ui.css">
 <link rel="stylesheet" href="onboarding.css?v=20261021">
 <link rel="stylesheet" href="staff-setup.css?v=20261025">
+    <link rel="stylesheet" href="staff-loan-ledger.css">
 </head>
 <body>
  
@@ -231,11 +232,12 @@
     </div>
 
     <!-- 💳 LOANS MODAL -->
-    <div id="loansModal" class="overlay" style="display: none; z-index: 10005;">
+    <div id="loansModal" class="overlay" role="dialog" aria-modal="true" aria-labelledby="staffMyLoansTitle" style="display: none; z-index: 10005;">
         <div class="modal-card" style="max-height: 85vh; display: flex; flex-direction: column; max-width: 500px; width: 90%;">
-            <h2 style="margin-top: 0; color: #b45309; flex-shrink: 0; text-align: left; border-bottom: 2px solid #fde68a; padding-bottom: 10px;">💳 My Company Loans</h2>
+            <h2 id="staffMyLoansTitle" style="margin-top: 0; color: #b45309; flex-shrink: 0; text-align: left; border-bottom: 2px solid #fde68a; padding-bottom: 10px;">💳 My Company Loans</h2>
+            <p id="staffMyLoansStatus" role="status" aria-live="polite"></p>
             <div id="staffMyLoansContent" style="flex: 1; overflow-y: auto; text-align: left; padding-right: 5px; margin-top: 10px;"></div>
-            <button class="btn-cancel" onclick="document.getElementById('loansModal').style.display='none'" style="width: 100%; margin-top: 15px; padding: 12px; font-weight: bold;">Close</button>
+            <div class="loan-footer"><button type="button" id="staffMyLoansRefresh">Refresh / retry</button><button type="button" id="staffMyLoansClose" class="btn-cancel">Close &amp; lock</button></div>
         </div>
     </div>
 
@@ -664,6 +666,6 @@
         import {installStaffAppUpdate} from "./staff-phone.js";
         installStaffAppUpdate();
       </script>
-      <script type="module" src="app.js?v=staff-vault-payslip-20261108"></script>
+      <script type="module" src="app.js?v=staff-private-loans-20261109"></script>
 </body>
 </html>
