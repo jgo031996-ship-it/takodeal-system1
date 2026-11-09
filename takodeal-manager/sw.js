@@ -36,6 +36,7 @@ CORE_ASSETS.push('./recipe-bulk-model.js','./recipe-bulk.js','./recipe-changes.j
 CORE_ASSETS.push('./audit-modal.css','./audit-modal-layout.js','./manager-mobile.css');
 CORE_ASSETS.push('./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');
 CORE_ASSETS.push('./owner-stock-audits.js','./stock-audit-model.js','./stock-audit-reader.js','./stock-audit-ui.js','./stock-audit-ui.css','./payment-reconciliation-model.js','./payment-reconciliation-service.js','./payment-reconciliation-ui.js','./payment-reconciliation-ui.css','./payment-statement-file.js','./payment-statement-worker.js','./pending-payment-reader.js');
+CORE_ASSETS.push('./gcash-reconciliation-client.js');
 const VENDORS = [
     ...['app','auth','firestore','storage'].map(name => `https://www.gstatic.com/firebasejs/13.1.0/firebase-${name}.js`),
     'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
