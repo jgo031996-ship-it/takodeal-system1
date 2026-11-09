@@ -5,6 +5,7 @@ import {webcrypto,randomUUID} from 'node:crypto';
 import {firestoreHarness} from './firestore-harness.mjs';
 import {installRiderAccount} from '../../takodeal-delivery/rider-account.js';
 import {riderAccessBridge} from './rider-access-bridge.mjs';
+import {riderCommandBridge} from './rider-command-bridge.mjs';
 import {renderRiderDispatch,riderMoney,escapeRiderText} from '../../takodeal-delivery/rider-dispatch-view.js';
 import * as safety from '../../takodeal-delivery/rider-delivery-safety.js';
 import {uploadRiderPhoto} from '../../takodeal-delivery/rider-photo-upload.js';
@@ -41,6 +42,7 @@ export function riderRuntime({savedId,online=true}={}) {
         localStorage:{getItem:key=>saved.get(key)||null,removeItem:key=>saved.delete(key),setItem:(key,value)=>{if(key==='takodeal_rider_id'||/pin|password/i.test(key))throw Error('Cannot persist unverified account credentials');saved.set(key,String(value));}}};
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}}};
+    window.riderCommands=riderCommandBridge(window);
     api.riderAccess=window.riderAccess=riderAccessBridge(api,backend);
     const context={...api,...safety,window,document:{getElementById:node,visibilityState:'visible',querySelectorAll:()=>[],addEventListener},
         installRiderAccount,uploadRiderPhoto,renderRiderDispatch,riderMoney,escapeRiderText,installRiderLayout(){},TextEncoder,URL,Date,

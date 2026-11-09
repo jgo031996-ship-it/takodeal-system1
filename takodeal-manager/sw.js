@@ -148,7 +148,7 @@ self.addEventListener('fetch', event => {
     })());
 });
 
-CORE_ASSETS.push('./rider-delivery-safety.js','./rider-management.js','./rider-management-view.js','./rider-management.css');
+CORE_ASSETS.push('./rider-delivery-safety.js','./rider-command-client.js','./rider-management.js','./rider-management-view.js','./rider-management.css');
 CORE_ASSETS.push('./menu-options-model.js','./menu-options-service.js','./menu-options-ui.js','./menu-options.css','./product-editor-layout.js','./product-editor-layout.css','./product-options-draft.js');
 CORE_ASSETS.push('./bundle-category-model.js','./bundle-category-ui.js','./bundle-category.css');
 

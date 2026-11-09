@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rider-app-v4-protected-access-20261109';
+const CACHE_NAME = 'rider-app-v5-command-broker-20261109';
 const urlsToCache = [
   './',
   './index.html',
@@ -10,7 +10,8 @@ const urlsToCache = [
   './rider-account-model.js',
   './rider-account.js',
   './rider-dispatch-view.js',
-  './rider-delivery-safety.js'
+  './rider-delivery-safety.js',
+  './rider-command-client.js'
 ];
 
 // Install the service worker and cache the files

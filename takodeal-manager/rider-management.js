@@ -1,4 +1,5 @@
 import {reviewRiderStatusAtomic,reviewRiderTopUpAtomic,riderMoneyCents} from './rider-delivery-safety.js';
+import {riderCommandsFor} from './rider-command-client.js';
 import {resolveHQAccount} from './hq-account-model.js';
 import {canOpenWorkspacePage,createWorkspaceSession,OWNER_EMAIL} from './workspace-access-model.js';
 const normalized=value=>String(value || '').trim().toLowerCase();
@@ -46,7 +47,7 @@ export function installRiderManagementSafety(api=window){
     api.updateRiderStatus=async(riderId,status)=>{
         if(busy)return false;busy=true;
         try{
-            const actor=captureRiderManagerActor(api),rows=await fresh(actor),snap=await api.getDocFromServer(api.doc(api.db,'riders',riderId));api.assertRiderManagerAuthority(actor,rows,[]);
+            const actor=captureRiderManagerActor(api),recovered=await riderCommandsFor(api).recover('review-status',{riderId,actor});if(recovered){assertManagerSession(api,actor);await api.Swal.fire({title:'Earlier review confirmed',text:'The original saved Rider decision was confirmed. Refresh the Fleet before making another decision.',icon:'success'});assertManagerSession(api,actor);reload();return true;}const rows=await fresh(actor),snap=await api.getDocFromServer(api.doc(api.db,'riders',riderId));api.assertRiderManagerAuthority(actor,rows,[]);
             if(!snap.exists())throw Error('This rider no longer exists.');const rider=snap.data();api.assertRiderManagerAuthority(actor,rows,Array.isArray(rider.allowedBranches)&&rider.allowedBranches.length?rider.allowedBranches:['All']);
             const label=status==='active'?'Approve / restore':status==='banned'?'Suspend':status==='rejected'?'Reject':null;if(!label)throw Error('Choose an explicit rider review action.');
             const result=await api.Swal.fire({title:`${label} rider?`,text:`${rider.name || 'This rider'} is currently ${rider.status || 'unreviewed'}. Save this Manager decision?`,icon:'warning',showCancelButton:true,confirmButtonText:label});
@@ -60,8 +61,9 @@ export function installRiderManagementSafety(api=window){
         try{
             const actor=captureRiderManagerActor(api),rows=await fresh(actor),requestSnap=await api.getDocFromServer(api.doc(api.db,'rider_topups',requestId));api.assertRiderManagerAuthority(actor,rows,[]);
             if(!requestSnap.exists())throw Error('The top-up request is missing.');const request=requestSnap.data();
-            if(request.status!=='pending')throw Error('This top-up has already been reviewed. No additional money was added.');
             if(riderId && riderId!==request.riderId)throw Error('This request belongs to a different rider.');riderId=request.riderId;
+            const recovered=await riderCommandsFor(api).recover('review-topup',{riderId,requestId,actor});if(recovered){assertManagerSession(api,actor);await api.Swal.fire({title:'Earlier top-up review confirmed',text:'The original review was saved once. Refresh the requests and current wallet before any new review.',icon:'success'});assertManagerSession(api,actor);reload();return true;}
+            if(request.status!=='pending')throw Error('This top-up has already been reviewed. No additional money was added.');
             const riderSnap=await api.getDocFromServer(api.doc(api.db,'riders',riderId));api.assertRiderManagerAuthority(actor,rows,[]);
             if(!riderSnap.exists())throw Error('This rider is missing.');const rider=riderSnap.data();api.assertRiderManagerAuthority(actor,rows,Array.isArray(rider.allowedBranches)&&rider.allowedBranches.length?rider.allowedBranches:['All']);
             const options=decision==='approved'?{title:'Credit Rider wallet',text:`Enter the exact amount received for ${rider.name || 'this rider'}. Reference: ${request.reference || 'not recorded'}.`,input:'number',inputAttributes:{min:'0.01',step:'0.01'},showCancelButton:true,confirmButtonText:'Credit wallet',inputValidator:value=>{try{if(riderMoneyCents(value)<=0)return 'Enter a positive amount.';}catch(error){return error.message;}}}:
