@@ -25201,7 +25201,7 @@ window.openArchiveSalesModal = async function(scope = 'all') {
         // 🛑 ASK FOR PURGE PERMISSION
         const purgeConfirm = await Swal.fire({
             title: '✅ Excel Downloaded!',
-            html: `You have successfully downloaded <b>${totalDocs}</b> total operational records into a multi-tab spreadsheet.<br><br>Do you want to zip this data to Cold Storage and delete the expensive database rows?`,
+            html: `You have successfully downloaded <b>${totalDocs}</b> total operational records into a multi-tab spreadsheet.<br><br>Do you want to zip this data to Cold Storage and delete eligible database rows? Protected payment records and shifts are kept live.`,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Yes, Purge Database 🗄️',
@@ -25235,25 +25235,29 @@ window.openArchiveSalesModal = async function(scope = 'all') {
         });
 
         // 🧹 DELETE EVERYTHING SAFELY IN CHUNKS
-        let removed = 0;
+        let removed = 0, retainedPaymentRecords = 0;
         const pendingDeletes = Object.entries(deleteIds).flatMap(([collection,ids])=>ids.map(id=>({collection,id})));
         // Reads precede writes and each small transaction is awaited.
         for (let offset=0;offset<pendingDeletes.length;offset+=40) {
             const chunk = pendingDeletes.slice(offset,offset+40);
-            removed += await window.runTransaction(window.db,async tx=> {
+            const result = await window.runTransaction(window.db,async tx=> {
                 const rows=[];
+                let retained = 0;
                 for (const row of chunk) {
                     const reference=window.doc(window.db,row.collection,row.id), snapshot=await tx.get(reference);
                     if (!snapshot.exists()) continue;
+                    if (row.collection==='transactions' && ['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'].some(key=>Object.prototype.hasOwnProperty.call(snapshot.data(),key))) { retained++; continue; }
                     if (row.collection==='shifts' && !archiveableShift({...snapshot.data(),id:row.id},{latestId:latestByBranch.get(snapshot.data().branch)})) continue;
                     rows.push(reference);
                 }
                 for (const reference of rows) tx.delete(reference);
-                return rows.length;
+                return {removed:rows.length,retainedPaymentRecords:retained};
             });
+            removed += result.removed;
+            retainedPaymentRecords += result.retainedPaymentRecords;
         }
 
-        Swal.fire('Archived!', `${removed} records archived and removed. Protected shifts were retained. The backup is available in your archive list.`, 'success');
+        Swal.fire('Archived!', `${removed} records removed from the live database after backup. ${retainedPaymentRecords} protected payment records kept live. Protected shifts were retained. The backup is available in your archive list.`, 'success');
         
         window.loadArchiveDropdown();
         window.loadSalesHistoryTab();
