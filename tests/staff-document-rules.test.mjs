@@ -136,7 +136,7 @@ test('legacy operational authority remains while new rate metadata is protected'
     const flatGrants = grants(flatLegacy), treeGrants = grants(treeLegacy);
     assert.deepEqual(flatGrants.map(text => /^allow (\w+) :/.exec(text)?.[1]).sort(), ['create','delete','read','update']);
     assert.equal(treeGrants.length, 1);
-    const literalNames = [...new Set([...flatGrants, ...treeGrants].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
+    const literalNames = [...new Set([...flatGrants, ...treeGrants].flatMap(text => [...text.matchAll(/\b(?:legacyCollection|legacyTree) in \[([^\]]+)\]/g)]
         .flatMap(list => [...list[1].matchAll(/'([^']+)'/g)].map(name => name[1]))))].sort();
     assert.equal(expectedLegacyNames.length, 36);
     assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 36 non-remittance/non-count legacy roots may enter these literal clauses');
@@ -175,12 +175,13 @@ test('legacy operational authority remains while new rate metadata is protected'
     for (const [method, expected] of Object.entries(countGuards))
         assert.equal(new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(counts)?.[1], expected);
     for (const method of ['read', 'create', 'update', 'delete']) {
-        const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
+        const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1]?.replace(/\s+/g, ' ');
         assert.ok(expression, `Missing legacy ${method} policy`);
         const setupGuard = method === 'read' ? '' : method === 'create'
             ? 'staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && '
             : `staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),${method === 'delete' ? '{}' : 'newData()'}) && `;
-        const prefix = 'legacyCandidate(legacyCollection) && ' + setupGuard + '(';
+        const networkGuard = ['create', 'update'].includes(method) ? "(legacyCollection != 'branches' || !newData().keys().hasAny(['wifi'])) && " : '';
+        const prefix = 'legacyCandidate(legacyCollection) && ' + networkGuard + setupGuard + '(';
         assert.ok(expression.startsWith(prefix) && expression.endsWith(')'), 'Every legacy method must retain the exact deny-only prefix');
         const union = expression.slice(prefix.length, -1);
         const clause = /\(legacyCollection in \[([^\]]+)\](?: && (isHQUser|isOwner)\(\))?\)/g;

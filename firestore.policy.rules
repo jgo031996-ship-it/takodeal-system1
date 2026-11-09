@@ -3,7 +3,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isSignedIn() { return request.auth != null; }
     function isOwner() {
-      return isSignedIn() && reqEmail() == 'jgo031996@gmail.com';
+      return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
+        && reqVerified() == true && reqProvider() == 'google.com';
     }
     function transactionBefore(id) { return get(/databases/$(database)/documents/transactions/$(id)).data; }
     function transactionAfter(id) { return getAfter(/databases/$(database)/documents/transactions/$(id)).data; }
@@ -24,8 +25,7 @@ service cloud.firestore {
     function legacyCandidate(root) { return root.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_logs|suppliers|yield_logs)$'); }
     function isHQUser() { return isSignedIn(); }
     function offlineOwner() {
-      return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
-        && request.auth.token.get('email_verified', false) == true;
+      return isOwner();
     }
     function offlineGate(branch) {
       return branch is string
@@ -230,6 +230,18 @@ service cloud.firestore {
     match /shift_metric_commits/{id} { allow read: if offlineOwner(); allow write: if false; }
 
     match /hq_managers/{managerId} { allow read: if isSignedIn(); allow write: if isOwner(); }
+    // Network credentials are separate from the publicly readable branch record.
+    match /branch_private_settings/{id} {
+      allow read: if isOwner();
+      allow create, update: if isOwner()
+        && newData().keys().hasOnly(['branchId','branch','wifi','updatedAt','updatedByUid']) && newData().size() == 5
+        && newData().branchId == id && newData().branch == nextData('branches',id).name
+        && newData().branch is string && newData().branch.size() > 0 && newData().branch.size() <= 128
+        && !nextData('branches',id).keys().hasAny(['wifi'])
+        && newData().wifi is string && newData().wifi.size() <= 256
+        && newData().updatedAt == request.time && newData().updatedByUid == reqUid()
+        && (resource == null || oldData().branchId == id && oldData().branch == newData().branch);
+    }
     match /settings/{docId} {
       function cashierAppearanceWrite(data, priorRevision) {
         let look = data.appearance;
@@ -441,10 +453,12 @@ service cloud.firestore {
 
       allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && isHQUser()));
-      allow create: if legacyCandidate(legacyCollection) && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow create: if legacyCandidate(legacyCollection) && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))
+        && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));
-      allow update: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow update: if legacyCandidate(legacyCollection) && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))
+        && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons'] && isOwner()));
       allow delete: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),{}) && ((legacyCollection in ['branches','parked_orders'])

@@ -61,7 +61,8 @@ function aV() { return ['blocked','inactive','disabled','revoked','terminated','
 
     function aY() { return request.auth != null; }
     function aZ() {
-      return aY() && bg() == 'jgo031996@gmail.com';
+      return aY() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
+        && bl() == true && bk() == 'google.com';
     }
     function ba(a) { return get(/databases/$(database)/documents/transactions/$(a)).data; }
     function bb(a) { return getAfter(/databases/$(database)/documents/transactions/$(a)).data; }
@@ -82,8 +83,7 @@ function aV() { return ['blocked','inactive','disabled','revoked','terminated','
     function bo(a) { return a.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_logs|suppliers|yield_logs)$'); }
     function bp() { return aY(); }
     function bq() {
-      return aY() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
-        && request.auth.token.get('email_verified', false) == true;
+      return aZ();
     }
     function br(a) {
       return a is string
@@ -287,6 +287,18 @@ function aV() { return ['blocked','inactive','disabled','revoked','terminated','
     match /shift_metric_commits/{id} { allow read: if bq();     }
 
     match /hq_managers/{managerId} { allow read: if aY(); allow write: if aZ(); }
+    // Network credentials are separate from the publicly readable branch record.
+    match /branch_private_settings/{id} {
+      allow read: if aZ();
+      allow create, update: if aZ()
+        && aR((bi()),(['branchId','branch','wifi','updatedAt','updatedByUid'])) && bi().size() == 5
+        && bi().branchId == id && bi().branch == be('branches',id).name
+        && bi().branch is string && bi().branch.size() > 0 && bi().branch.size() <= 128
+        && !be('branches',id).keys().hasAny(['wifi'])
+        && bi().wifi is string && bi().wifi.size() <= 256
+        && bi().updatedAt == request.time && bi().updatedByUid == bf()
+        && (resource == null || bj().branchId == id && bj().branch == bi().branch);
+    }
     match /settings/{docId} {
       function bI(a, b) {
         let c = a.appearance;
@@ -498,10 +510,12 @@ function aV() { return ['blocked','inactive','disabled','revoked','terminated','
 
       allow read: if bo(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && bp()));
-      allow create: if bo(legacyCollection) && bV(legacyCollection,legacyDocument,bi()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow create: if bo(legacyCollection) && (legacyCollection != 'branches' || !bi().keys().hasAny(['wifi']))
+        && bV(legacyCollection,legacyDocument,bi()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && bp())
         || (legacyCollection in ['bom','global_addons','menu'] && aZ()));
-      allow update: if bo(legacyCollection) && bW(legacyCollection,legacyDocument,bj(),bi()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow update: if bo(legacyCollection) && (legacyCollection != 'branches' || !bi().keys().hasAny(['wifi']))
+        && bW(legacyCollection,legacyDocument,bj(),bi()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && bp())
         || (legacyCollection in ['bom','global_addons'] && aZ()));
       allow delete: if bo(legacyCollection) && bW(legacyCollection,legacyDocument,bj(),{}) && ((legacyCollection in ['branches','parked_orders'])

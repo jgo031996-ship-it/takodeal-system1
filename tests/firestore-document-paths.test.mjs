@@ -9,7 +9,7 @@ const changedProof=(proof,source)=>({...proof,loweredSha256:hash(source)});
 test('the reviewed policy lowers all98 paths, including eight deep staff-document paths, and independently reverses exactly',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestorePaths(original);
  assert.equal(result.proof.calls,98);assert.deepEqual(result.proof.depths,{2:90,4:8});
- assert.equal(result.proof.originalSha256,'c2feb217f0aa5a5b83bd92feeaf787e18bdbfa46b30252c60a5283767bacbcab');
+ assert.equal(result.proof.originalSha256,'e8346ffd82e8b35f555cc7a97d5b3e442628dc25a0a16c3d63ede294debda728');
  const start=original.indexOf('function staffPayslipPreview(data,id)'),end=original.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
  const publication=lowerFirestorePaths(wrap(original.slice(start,end)));assert.equal(publication.proof.calls,2);assert.deepEqual(publication.proof.depths,{2:2});assert.match(original.slice(start,end),/payroll_records\/\$\(payrollId\)/);assert.match(original.slice(start,end),/payroll_records\/\$\(refundId\)/);
  assert.equal(assertPathLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);

@@ -21,7 +21,7 @@ if (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST !
 }
 process.env.FIRESTORE_EMULATOR_HOST = endpoint;
 const root = fileURLToPath(new URL('../', import.meta.url));
-const tools = resolve(root, '../staff-nextlevel-tools');
+const tools = resolve(process.env.TAKODEAL_TEST_TOOLS || resolve(root, '../staff-nextlevel-tools'));
 const req = createRequire(resolve(tools, 'package.json'));
 const {initializeTestEnvironment} = req('@firebase/rules-unit-testing');
 const sdk = req('firebase/firestore');
