@@ -139,6 +139,21 @@ function portalHarness(initialPin) {
     vm.runInNewContext(source+'\ninstallStaffPortal();',context);
     return {context,node,listeners,writes:()=>writes,loads:()=>loads,staff:()=>staff};
 }
+
+test('My loans unlock uses the existing financial PIN without opening Pay or changing ordinary sign-in', async () => {
+    const h=portalHarness(await createPinVerifier('246810'));let loans=0,cleared=0;
+    h.node('view-payslip').classList.contains=()=>false;
+    h.context.window.loadMyLoanLedger=async()=>{assert.equal(h.context.window.staffVaultSession.allows('demo'),true);loans++;};
+    h.context.window.clearStaffLoanLedger=()=>{cleared++;};
+    await h.context.window.openVaultPin('unlock','loans');
+    assert.match(h.node('vaultPinTitle').textContent,/My loans/);
+    h.node('vaultCurrentPin').value='1111';await h.context.window.submitVaultPin();
+    assert.equal(loans,0);assert.equal(h.loads(),0);assert.equal(h.writes(),0);
+    h.node('vaultCurrentPin').value='246810';await h.context.window.submitVaultPin();
+    assert.equal(loans,1);assert.equal(h.loads(),0);assert.equal(h.writes(),0);
+    h.context.window.lockPayslipVault();
+    assert.equal(h.context.window.staffVaultSession.allows('demo'),false);assert.ok(cleared>=2);
+});
 test('Pay entry without a PIN directs staff to Profile without creating or unlocking one', async () => {
     const h=portalHarness(); let opened=0;
     h.context.window.openProfile=()=>opened++;
