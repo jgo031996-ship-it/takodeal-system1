@@ -43,7 +43,8 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v135-staff-vault-payslip-20261108/);
     for(const file of ['schedule-calendar.js','schedule-leave-markers.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule repair is available after app update');
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
-    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v49-vault-payslip-20261108/);
+    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v49-entry-recovery-20261109-r1/);
+    for(const file of ['clock-upload-access.js','staff-access.js'])assert.ok(assets('takodeal-staff','SHELL').includes(file),'Staff recovery caches '+file);
     for(const file of ['employee-photo.js','owner-dispatch-details.js','staff-payslip-publication.js','staff-payslip-publication-ui.js','staff-payslip-snapshot.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Owner update includes '+file);
     for(const file of ['staff-vault-recovery.js','staff-vault-recovery-ui.js','staff-payslip-snapshot.js','staff-saved-payslips.js'])assert.ok(assets('takodeal-staff','SHELL').includes(file),'Staff update includes '+file);
     for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('time-out-request-display.js'),app+' caches schedule-review labels');
