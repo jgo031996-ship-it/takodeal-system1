@@ -2,14 +2,14 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {lowerFirestoreMapMethods,assertMapMethodLoweringEquivalent}from'../tools/firestore-selector-sharing/map-methods.mjs';
 const wrap=body=>"rules_version='2'; service cloud.firestore { match /databases/{database}/documents { "+body+' } }';
 const hash=value=>createHash('sha256').update(value).digest('hex'),changed=(proof,source)=>({...proof,loweredSha256:hash(source)});
-test('reviewed policy factors123 eligible chains and independently restores every original byte',()=>{
+test('reviewed policy factors116 eligible chains and independently restores every original byte',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestoreMapMethods(original);
- assert.equal(result.proof.calls,123);assert.deepEqual(result.proof.counts,{affectedKeys:61,changedKeys:1,addedKeys:1,removedKeys:1,keysOnly:62});
+ assert.equal(result.proof.calls,116);assert.deepEqual(result.proof.counts,{affectedKeys:61,changedKeys:1,addedKeys:1,removedKeys:1,keysOnly:55});
  const privateStart=original.indexOf('    // Network credentials are separate from the publicly readable branch record.\n'),privateEnd=original.indexOf('    match /settings/{docId} {',privateStart);assert.ok(privateStart>=0&&privateEnd>privateStart);
  const privateNetwork=lowerFirestoreMapMethods(wrap('function newData() { return request.resource.data; }\n'+original.slice(privateStart,privateEnd)),{minimumUses:1});assert.equal(privateNetwork.proof.calls,1);assert.equal(privateNetwork.proof.counts.keysOnly,1,'the private network schema adds exactly one key whitelist');
  const start=original.indexOf('function staffPayslipPreview(data,id)'),end=original.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
  const publication=lowerFirestoreMapMethods(wrap(original.slice(start,end)),{minimumUses:1});assert.equal(publication.proof.calls,1);assert.equal(publication.proof.counts.keysOnly,1,'publication has one new exact-key whitelist');
- const managed="&& (before.get('payslipPinManaged',false) != true || !data.diff(before).affectedKeys().hasAny(['payslipPin']))";assert.ok(original.includes(managed));const previousCensus=lowerFirestoreMapMethods((original.slice(0,start)+original.slice(end)).replace(managed,'').replace(original.slice(privateStart,privateEnd),''));assert.equal(previousCensus.proof.calls,120,'publication keys, managed-PIN and private network guards explain all three new chains');
+ const managed="&& (before.get('payslipPinManaged',false) != true || !data.diff(before).affectedKeys().hasAny(['payslipPin']))";assert.ok(original.includes(managed));const previousCensus=lowerFirestoreMapMethods((original.slice(0,start)+original.slice(end)).replace(managed,'').replace(original.slice(privateStart,privateEnd),''));assert.equal(previousCensus.proof.calls,113,'publication keys, managed-PIN and private network guards still explain exactly three chains');
  assert.equal(assertMapMethodLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);
  assert.equal(fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),original);
 });

@@ -34,7 +34,7 @@ const projectId = 'demo-staff-document-vault';
 const brokerEndpoint = 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
 const vaultConfig = (enabled = true) => ({enabled, policyVersion: 2, brokerEndpoint});
 const uid = 'approved-device', staffId = 'employee-1', branch = 'Maa';
-const bytes = Uint8Array.from([255, 216, 255, 224, 1]);
+const bytes = Uint8Array.from([255, 216, 255, 224, 0, 1]);
 const sha = 'a'.repeat(64);
 const currentPath = (kind = 'valid_id') => `staff_private_documents/${staffId}/files/${kind}`;
 const versionPath = operation => `staff_private_documents/${staffId}/versions/${operation}`;
@@ -236,11 +236,14 @@ test('even Owner cannot create a private binding without its matching pending ap
         audit: {'unlinked-approval': {active: true, actorUid: 'owner-uid', recordedAt: stamp}}};
     await assertFails(setDoc(doc(owner().firestore(), `staff_document_devices/${device}`), data));
 });
-test('atomic pending upload succeeds and a metadata-only or history-only upload fails', async () => {
+test('even an approved Staff atomic metadata upload is broker-only and cannot bypass through either document', async () => {
     const ctx = anonymous(uid), op = nextOp(), data = fileData(op, {version: 2});
     await assertFails(setDoc(doc(ctx.firestore(), currentPath()), data));
     await assertFails(setDoc(doc(ctx.firestore(), versionPath(op)), data));
-    await assertSucceeds(atomicUpload(ctx, op, {version: 2}));
+    await assertFails(atomicUpload(ctx, op, {version: 2}));
+    assert.equal((await getDoc(doc(ctx.firestore(), currentPath()))).data().version,1);
+    // Synthetic trusted-server seed proves existing SDK reads remain available.
+    await env.withSecurityRulesDisabled(admin=>atomicUpload(admin,op,{version:2}));
     assert.deepEqual((await getDoc(doc(ctx.firestore(), currentPath()))).data(), (await getDoc(doc(ctx.firestore(), versionPath(op)))).data());
 });
 test('Staff cannot self-approve, forge paths/branches/timestamps, add URLs, or skip versions', async () => {
@@ -252,19 +255,21 @@ test('Staff cannot self-approve, forge paths/branches/timestamps, add URLs, or s
     }
     assert.equal((await getDoc(doc(ctx.firestore(), currentPath()))).data().version, 1);
 });
-test('clearance upload requires NBI or POLICE and matching immutable history', async () => {
+test('clearance publication is broker-only and exact saved clearance history remains readable', async () => {
     const ctx = anonymous(uid);
     for (const clearanceType of ['', 'OTHER']) {
         const op = nextOp();
         await assertFails(atomicUpload(ctx, op, {group: 'clearance', clearanceType, storagePath: objectPath(op, uid, staffId, 'clearance')}));
     }
     const op = nextOp();
-    await assertSucceeds(atomicUpload(ctx, op, {group: 'clearance', clearanceType: 'POLICE', storagePath: objectPath(op, uid, staffId, 'clearance')}));
+    const record={group:'clearance',clearanceType:'POLICE',storagePath:objectPath(op,uid,staffId,'clearance')};
+    await assertFails(atomicUpload(ctx,op,record));await env.withSecurityRulesDisabled(admin=>atomicUpload(admin,op,record));
+    for(const reader of [ctx,owner(),hqBranch()])assert.equal((await assertSucceeds(getDoc(doc(reader.firestore(),currentPath('clearance'))))).data().clearanceType,'POLICE');
 });
-test('HQ review requires matching version-history and immutable review audit in the same commit', async () => {
+test('even an otherwise atomic Owner review is broker-only while exact saved head/history/audit stays readable', async () => {
     await assertFails(atomicReview(owner(), 'approved', {}, false));
     await assertFails(atomicReview(owner(), 'approved', {}, true, false));
-    await assertSucceeds(atomicReview(owner()));
+    await assertFails(atomicReview(owner()));await env.withSecurityRulesDisabled(admin=>atomicReview(admin));
     const db = owner().firestore(), current = (await getDoc(doc(db, currentPath()))).data();
     assert.equal(current.status, 'approved'); assert.equal(current.version, 2);
     const audit = (await getDoc(doc(db, `staff_private_documents/${staffId}/reviews/${current.reviewId}`))).data();
@@ -272,10 +277,10 @@ test('HQ review requires matching version-history and immutable review audit in 
     await assertFails(updateDoc(doc(db, `staff_private_documents/${staffId}/reviews/${current.reviewId}`), {note: 'altered'}));
     await assertFails(deleteDoc(doc(db, `staff_private_documents/${staffId}/reviews/${current.reviewId}`)));
 });
-test('reviewers cannot change original upload intent or review another branch', async () => {
+test('no reviewer can directly publish metadata and a trusted saved review retains branch privacy', async () => {
     await assertFails(atomicReview(owner(), 'approved', {size: 1}));
     const branchCtx = hqBranch(); branchCtx.authenticatedUid = 'hq-maa';
-    await assertSucceeds(atomicReview(branchCtx));
+    await assertFails(atomicReview(branchCtx));await env.withSecurityRulesDisabled(admin=>atomicReview(admin));
     await assertFails(atomicReview(otherHQ(), 'approved', {reviewedByUid: 'hq-city'}));
 });
 test('private metadata/history cannot be deleted or its original upload replaced by Staff', async () => {

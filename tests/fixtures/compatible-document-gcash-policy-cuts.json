@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "base": "3ff4e54f8a791c0d635fb8be64e42c4f69e2f206",
+  "beforeSha256": "e8346ffd82e8b35f555cc7a97d5b3e442628dc25a0a16c3d63ede294debda728",
+  "afterSha256": "4991047fbcd9a23b86730c8fe614eaa84ff694fa6ced9d4cf10d9b02888c2a53",
+  "acceptedSourceSha256": "1f39bd181fc3c8c37eefed1bc49ed2b998b9691927552aeb31ce5cee408b9506",
+  "selectedAcceptedEditIndexes": [
+    3,
+    4,
+    5,
+    6,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ],
+  "documentBrokerCommit": "8fb171c436017a95fe7ad17e512f4bd9d4420f91",
+  "gcashBrokerCommit": "4310eb1c7ab295a38a76ee85b45cc01d3a96d358",
+  "removedDocFunctions": [
+    "docVaultUpload",
+    "docVaultReview",
+    "docVaultFileCreate",
+    "docVaultFileUpdate",
+    "docVaultVersionCreate",
+    "docVaultVersionUpdate",
+    "docVaultAuditCreate",
+    "docVaultKind"
+  ],
+  "edits": [
+    {
+      "label": "SDK receipts cannot forge reconciliation markers",
+      "at": 47626,
+      "before": "      allow create: if selectorTransactionsCreate(newData());",
+      "after": "      allow create: if !newData().keys().hasAny(['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])\n        && selectorTransactionsCreate(newData());",
+      "acceptedEditIndex": 3
+    },
+    {
+      "label": "Reconciled receipt evidence is immutable; ordinary manual verification stays compatible",
+      "at": 48320,
+      "before": "      allow update: if selectorTransactionsUpdate(newData(),resource == null ? null : oldData());",
+      "after": "      allow update: if !newData().diff(oldData()).affectedKeys().hasAny(['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])\n        && (!oldData().keys().hasAny(['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])\n          || !newData().diff(oldData()).affectedKeys().hasAny(['paymentVerified','verifiedBy','verifiedAt']))\n        && selectorTransactionsUpdate(newData(),resource == null ? null : oldData());",
+      "acceptedEditIndex": 4
+    },
+    {
+      "label": "SDK cannot delete reconciliation evidence",
+      "at": 49085,
+      "before": "      allow delete: if selectorTransactionsDelete(resource == null ? null : oldData());",
+      "after": "      allow delete: if !oldData().keys().hasAny(['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])\n        && selectorTransactionsDelete(resource == null ? null : oldData());",
+      "acceptedEditIndex": 5
+    },
+    {
+      "label": "Reconciliation writes use trusted broker",
+      "at": 66502,
+      "before": "    match /payment_reconciliation_settings/{id} {\n      function reconciliationProvider(data) {\n        return data.keys().hasOnly(['orderPrefixes','referencePrefixes','timeToleranceMinutes'])\n          && data.orderPrefixes is list && data.orderPrefixes.size() <= 10 && data.referencePrefixes is list && data.referencePrefixes.size() <= 10\n          && data.timeToleranceMinutes is int && data.timeToleranceMinutes >= 0 && data.timeToleranceMinutes <= 120;\n      }\n\n      function reconciliationSettings(data,before) {\n        return id == 'main' && protectedHROwner() && data.keys().hasOnly(['schemaVersion','revision','branchAliases','providers','updatedAt','updatedByUid','updatedByEmail'])\n          && data.schemaVersion == 1 && data.revision is int && data.revision == before.get('revision',0) + 1\n          && data.branchAliases is list && data.branchAliases.size() <= 60 && data.providers is map && data.providers.keys().hasOnly(['GCash','Grab','Foodpanda'])\n          && reconciliationProvider(data.providers.GCash) && reconciliationProvider(data.providers.Grab) && reconciliationProvider(data.providers.Foodpanda)\n          && data.updatedAt == reqTime() && data.updatedByUid == reqUid() && data.updatedByEmail == reqEmail();\n      }\n      allow get: if id == 'main' && protectedHROwner();\n      allow create, update: if reconciliationSettings(newData(),resource == null ? {} : oldData());\n      allow list, delete: if false;\n    }\n    match /payment_reconciliation_imports/{id} {\n      function reconciliationImportHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }\n\n      allow read: if protectedHROwner();\n      allow create: if protectedHROwner() && reconciliationImportHash(id) && newData().keys().hasOnly(['schemaVersion','fileSha256','rowCount','createdAt','createdByUid','createdByEmail'])\n        && newData().schemaVersion == 1 && newData().fileSha256 == id && newData().rowCount is int && newData().rowCount > 0 && newData().rowCount <= 5000\n        && newData().createdAt == reqTime() && newData().createdByUid == reqUid() && newData().createdByEmail == reqEmail();\n      allow update, delete: if false;\n    }\n    match /payment_reconciliation_receipts/{id} {\n      function reconciliationReceiptHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }\n\n      function reconciliationReceipt(data,id) {\n        let before = transactionBefore(id);\n        let after = transactionAfter(id);\n        let settings = readData('payment_reconciliation_settings','main');\n        let imported = nextData('payment_reconciliation_imports',data.fileSha256);\n        let day = data.day.split('-');\n        let midnight = timestamp.date(int(day[0]),int(day[1]),int(day[2])) - duration.value(8,'h');\n        return protectedHROwner() && protectedHRId(id) && data.transactionId == id && reconciliationReceiptHash(data.claimId) && reconciliationReceiptHash(data.fileSha256)\n          && data.keys().hasOnly(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail'])\n          && data.schemaVersion == 1 && data.provider in ['GCash','Grab','Foodpanda'] && reconciliationReceiptHash(data.sourceFingerprint)\n          && data.settingsRevision == settings.revision && imported.schemaVersion == 1 && imported.fileSha256 == data.fileSha256\n          && !exists(/databases/$(database)/documents/payment_reconciliation_rows/$(data.claimId)) && nextData('payment_reconciliation_rows',data.claimId) == data\n          && data.verifiedAt == reqTime() && data.verifiedByUid == reqUid() && data.verifiedByEmail == reqEmail()\n          && before.get('paymentVerified',false) != true && before.branch == data.branch && before.timestamp == data.sourceAt\n          && before.netTotal is number && before.netTotal > 0 && data.grossCents is int && data.grossCents == int(before.netTotal * 100 + 0.5)\n          && before.netTotal == data.grossCents / 100.0 && (data.provider == 'Foodpanda' ? before.paymentMethod.trim().lower() in ['foodpanda','food panda','panda'] : before.paymentMethod.trim().lower() == data.provider.lower())\n          && before.get('status','').trim().lower() in ['paid','complete','completed','settled','received']\n          && (before.get('paymentStatus',null) == null || before.paymentStatus.trim().lower() in ['paid','complete','completed','settled','received']) && before.get('isPendingSync',false) != true\n          && before.get('cancelledFoodSourceId','') == '' && before.get('preparedCancellation',null) == null\n          && before.get('cancelled',false) != true && before.get('canceled',false) != true && before.get('refunded',false) != true && before.get('refundAmount',0) <= 0\n          && (before.get('splitDetails',null) == null || before.splitDetails is list && before.splitDetails.size() == 0)\n          && (!exists(/databases/$(database)/documents/online_order_incidents/$('online-refund-' + id))\n            || readData('online_order_incidents','online-refund-' + id).status == 'Dismissed')\n          && data.statementAt is timestamp && data.sourceAt is timestamp && protectedHRDate(data.day)\n          && data.sourceAt >= midnight && data.sourceAt < midnight + duration.value(1,'d') && data.statementAt >= midnight && data.statementAt < midnight + duration.value(1,'d')\n          && data.statementAt >= data.sourceAt - duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')\n          && data.statementAt <= data.sourceAt + duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')\n          && after.diff(before).affectedKeys().hasOnly(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])\n          && after.paymentVerified == true && after.verifiedBy == reqEmail() && after.verifiedAt == reqTime()\n          && after.paymentReconciliationVersion == 1 && after.paymentReconciliationId == data.claimId && after.paymentReconciliationFile == data.fileSha256;\n      }\n\n      allow read: if protectedHROwner();\n      allow create: if reconciliationReceipt(newData(),id);\n      allow update, delete: if false;\n    }\n    match /payment_reconciliation_rows/{id} {\n      function reconciliationRowHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }\n\n      allow read: if protectedHROwner();\n      // A fresh reciprocal receipt invokes its full validation in this request.\n      allow create: if protectedHROwner() && reconciliationRowHash(id) && newData().claimId == id\n        && !exists(/databases/$(database)/documents/payment_reconciliation_receipts/$(newData().transactionId))\n        && nextData('payment_reconciliation_receipts',newData().transactionId) == newData();\n      allow update, delete: if false;\n    }\n",
+      "after": "    match /payment_reconciliation_settings/{id} {\n      allow get: if id == 'main' && protectedHROwner();\n      allow list, create, update, delete: if false; // Trusted reconciliation service only.\n    }\n    match /payment_reconciliation_imports/{id} {\n      allow read: if protectedHROwner();\n      allow create, update, delete: if false; // Trusted reconciliation service only.\n    }\n    match /payment_reconciliation_receipts/{id} {\n      allow read: if protectedHROwner();\n      allow create, update, delete: if false; // Trusted reconciliation service only.\n    }\n    match /payment_reconciliation_rows/{id} {\n      allow read: if protectedHROwner();\n      allow create, update, delete: if false; // Trusted reconciliation service only.\n    }\n",
+      "acceptedEditIndex": 6
+    },
+    {
+      "label": "Retired document metadata helper docVaultKind",
+      "at": 191230,
+      "before": "    function docVaultKind(value) { return value in ['valid_id', 'health_card', 'clearance']; }\n",
+      "after": "",
+      "acceptedEditIndex": 11
+    },
+    {
+      "label": "Retired document metadata helper docVaultUpload",
+      "at": 193701,
+      "before": "    function docVaultUpload(staffId, kind, data) {\n      return docVaultEnabled() && docVaultOwn(staffId) && docVaultKind(kind)\n        && data.keys().hasOnly(['staffId', 'branch', 'group', 'uploadId', 'uploadedByUid',\n          'storagePath', 'contentType', 'size', 'sha256', 'clearanceType', 'expiresOn', 'status',\n          'reviewNote', 'version', 'uploadedAt', 'updatedAt'])\n        && data.staffId == staffId\n        && data.branch == readData('staff_document_devices',reqUid()).branch && data.group == kind\n        && docVaultId(data.uploadId) && data.uploadedByUid == reqUid()\n        && data.storagePath == 'staff_private_documents/' + reqUid() + '/' + staffId + '/' + kind + '/' + data.uploadId + '.jpg'\n        && data.contentType == 'image/jpeg' && data.size is int && data.size > 0 && data.size <= 2097152\n        && data.sha256 is string && data.sha256.matches('^[a-f0-9]{64}$')\n        && data.clearanceType is string\n        && ((kind == 'clearance' && data.clearanceType in ['NBI', 'POLICE'])\n          || (kind != 'clearance' && data.clearanceType == ''))\n        && data.expiresOn is string && (data.expiresOn == '' || data.expiresOn.matches('^\\\\d{4}-\\\\d{2}-\\\\d{2}$'))\n        && data.status == 'pending_review' && data.reviewNote == ''\n        && data.version is int && data.version > 0\n        && data.uploadedAt == reqTime() && data.updatedAt == reqTime();\n    }\n",
+      "after": "",
+      "acceptedEditIndex": 12
+    },
+    {
+      "label": "Retired document metadata helper docVaultReview",
+      "at": 193701,
+      "before": "    function docVaultReview(staffId, kind, before, after) {\n      let audit = getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/reviews/$(after.reviewId)).data;\n      return docVaultHQ(before.branch) && docVaultKind(kind)\n        && before.staffId == staffId && before.group == kind\n        && after.diff(before).affectedKeys().hasOnly(['status', 'reviewId', 'reviewNote',\n          'reviewedByUid', 'reviewedAt', 'updatedAt', 'version'])\n        && after.status in ['approved', 'rejected'] && docVaultId(after.reviewId)\n        && after.reviewNote is string && after.reviewNote.size() <= 300\n        && (after.status != 'rejected' || after.reviewNote.size() >= 3)\n        && after.reviewedByUid == reqUid() && after.reviewedAt == reqTime()\n        && after.updatedAt == reqTime() && after.version == before.version + 1\n        && audit.staffId == staffId && audit.branch == before.branch && audit.group == kind\n        && audit.uploadId == before.uploadId && audit.recordVersion == after.version\n        && audit.status == after.status && audit.note == after.reviewNote\n        && audit.actorUid == reqUid() && audit.recordedAt == reqTime();\n    }\n",
+      "after": "",
+      "acceptedEditIndex": 13
+    },
+    {
+      "label": "Retired document metadata helper docVaultFileCreate",
+      "at": 199441,
+      "before": "        function docVaultFileCreate(data) {\n          return docVaultUpload(staffId, kind, data)\n            && data.version == 1\n            && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(data.uploadId)).data == data;\n        }\n",
+      "after": "",
+      "acceptedEditIndex": 14
+    },
+    {
+      "label": "Document broker-only docVaultFileCreate",
+      "at": 199441,
+      "before": "        allow create: if docVaultFileCreate(newData());",
+      "after": "        allow create: if false; // Private metadata broker only.",
+      "acceptedEditIndex": 15
+    },
+    {
+      "label": "Retired document metadata helper docVaultFileUpdate",
+      "at": 199506,
+      "before": "        function docVaultFileUpdate(data,before) {\n          return (docVaultUpload(staffId, kind, data)\n              && data.version == before.version + 1 && data.uploadId != before.uploadId\n              && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(data.uploadId)).data == data)\n            || (docVaultReview(staffId, kind, before, data)\n              && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(before.uploadId)).data == data);\n        }\n",
+      "after": "",
+      "acceptedEditIndex": 16
+    },
+    {
+      "label": "Document broker-only docVaultFileUpdate",
+      "at": 199506,
+      "before": "        allow update: if docVaultFileUpdate(newData(),resource == null ? null : oldData());",
+      "after": "        allow update: if false; // Private metadata broker only.",
+      "acceptedEditIndex": 17
+    },
+    {
+      "label": "Retired document metadata helper docVaultVersionCreate",
+      "at": 199776,
+      "before": "        function docVaultVersionCreate(data) {\n          return docVaultUpload(staffId, data.group, data)\n            && uploadId == data.uploadId\n            && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(data.group)).data == data;\n        }\n",
+      "after": "",
+      "acceptedEditIndex": 18
+    },
+    {
+      "label": "Document broker-only docVaultVersionCreate",
+      "at": 199776,
+      "before": "        allow create: if docVaultVersionCreate(newData());",
+      "after": "        allow create: if false; // Private metadata broker only.",
+      "acceptedEditIndex": 19
+    },
+    {
+      "label": "Retired document metadata helper docVaultVersionUpdate",
+      "at": 199841,
+      "before": "        function docVaultVersionUpdate(data,before) {\n          return docVaultReview(staffId, before.group, before, data)\n            && uploadId == before.uploadId\n            && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(before.group)).data == data;\n        }\n",
+      "after": "",
+      "acceptedEditIndex": 20
+    },
+    {
+      "label": "Document broker-only docVaultVersionUpdate",
+      "at": 199841,
+      "before": "        allow update: if docVaultVersionUpdate(newData(),resource == null ? null : oldData());",
+      "after": "        allow update: if false; // Private metadata broker only.",
+      "acceptedEditIndex": 21
+    },
+    {
+      "label": "Retired document metadata helper docVaultAuditCreate",
+      "at": 200110,
+      "before": "        function docVaultAuditCreate(data) {\n          let eligible = docVaultId(reviewId)\n            && data.keys().hasOnly(['staffId', 'branch', 'recordVersion', 'group', 'uploadId', 'status', 'note', 'actorUid', 'recordedAt']) && data.size() == 9\n            && data.staffId == staffId && docVaultHQ(data.branch)\n            && docVaultKind(data.group) && docVaultId(data.uploadId)\n            && data.status in ['approved', 'rejected']\n            && data.note is string && data.note.size() <= 300\n            && data.actorUid == reqUid() && data.recordedAt == reqTime();\n          let saved = eligible ? getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(data.group)).data : {};\n          return eligible && saved.reviewId == reviewId\n            && saved.version == data.recordVersion\n            && saved.branch == data.branch\n            && saved.uploadId == data.uploadId;\n        }\n",
+      "after": "",
+      "acceptedEditIndex": 22
+    },
+    {
+      "label": "Document broker-only docVaultAuditCreate",
+      "at": 200110,
+      "before": "        allow create: if docVaultAuditCreate(newData());",
+      "after": "        allow create: if false; // Private metadata broker only.",
+      "acceptedEditIndex": 23
+    }
+  ]
+}

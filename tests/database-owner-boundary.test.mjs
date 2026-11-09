@@ -10,7 +10,12 @@ function helper(source,name){const code=tokenizeRules(source).filter(t=>!['comme
 // Pin the exact cebdd/live baseline without depending on Git history in shallow CI.
 function restoreBaseline(){
  const owner="function isOwner() {\n      return isSignedIn() && reqEmail() == 'jgo031996@gmail.com';\n    }",offline="function offlineOwner() {\n      return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'\n        && request.auth.token.get('email_verified', false) == true;\n    }";
- let restored=policy.replace(helper(policy,'isOwner'),owner).replace(helper(policy,'offlineOwner'),offline);
+ // Compose the exact reviewed broker-cut inverse before proving the original
+ // Owner/WiFi boundary against the historical live baseline.
+ const cuts=JSON.parse(read('tests/fixtures/compatible-document-gcash-policy-cuts.json'));let stage=policy;
+ for(const edit of [...cuts.edits].reverse()){assert.equal(stage.slice(edit.at,edit.at+edit.after.length),edit.after);stage=stage.slice(0,edit.at)+edit.before+stage.slice(edit.at+edit.after.length);}
+ assert.equal(sha(stage),'e8346ffd82e8b35f555cc7a97d5b3e442628dc25a0a16c3d63ede294debda728');
+ let restored=stage.replace(helper(stage,'isOwner'),owner).replace(helper(stage,'offlineOwner'),offline);
  const start=restored.indexOf('    // Network credentials are separate from the publicly readable branch record.\n'),end=restored.indexOf('    match /settings/{docId} {',start);assert.ok(start>=0&&end>start);restored=restored.slice(0,start)+restored.slice(end);
  const gate=" && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))\n        &&";assert.equal(restored.split(gate).length-1,2);restored=restored.replaceAll(gate,' &&');
  return restored;
