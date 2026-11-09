@@ -7,7 +7,9 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {spawn} from 'node:child_process';
 import {createConnection} from 'node:net';
-import * as safety from '../takodeal-delivery/rider-delivery-safety.js';
+// This legacy-policy regression deliberately drives the same server model via
+// the local SDK so existing paired-write guards remain independently exercised.
+import * as safety from '../functions/cash-remittance-review/rider-command-model.mjs';
 import {transitionMobileOrder} from '../Takodeal-POS/mobile-order-actions.js';
 import {installCustomerReviews} from '../Customer/customer-reviews.js';
 const host='127.0.0.1',port=8835,projectId='demo-rider-incoming-security',endpoint=host+':'+port;

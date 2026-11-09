@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
-import {claimDeliveryAtomic,acceptPingAtomic,pickupDeliveryAtomic,completeDeliveryAtomic,rejectPingAtomic,reviewRiderStatusAtomic,reviewRiderTopUpAtomic,requestRiderTopUpAtomic,setRiderAvailabilityAtomic,deliveryPaymentPlan,riderMoneyCents} from '../takodeal-delivery/rider-delivery-safety.js';
+import {claimDeliveryAtomic,acceptPingAtomic,pickupDeliveryAtomic,completeDeliveryAtomic,rejectPingAtomic,reviewRiderStatusAtomic,reviewRiderTopUpAtomic,requestRiderTopUpAtomic,setRiderAvailabilityAtomic,deliveryPaymentPlan,riderMoneyCents} from '../functions/cash-remittance-review/rider-command-model.mjs';
+import{riderCommandBridge}from'./helpers/rider-command-bridge.mjs';
 import {captureRiderManagerActor,configureRiderManagerAuthority,installRiderManagementSafety} from '../takodeal-manager/rider-management.js';
 import {riderReceiptVerified} from '../functions/cash-remittance-review/rider-access-model.mjs';
 import {createWorkspaceSession} from '../takodeal-manager/workspace-access-model.js';
@@ -19,7 +20,7 @@ function fixture(){
 function managerFixture({permissions=['riders'],assignedBranch=['All'],role='Manager',email='hq@example.test'}={}){
     const f=fixture(),user={uid:'hq-user',email,emailVerified:true},saved={email,role,fullName:'Sample Manager',permissions,assignedBranch,pin:'1111',active:true};
     f.h.put('hq_managers/hq',saved);f.h.put('rider_topups/topup',{riderId:'a',riderName:'Sample Rider',reference:'REF-SAMPLE',proofUrl:'https://example.invalid/proof.jpg',status:'pending'});
-    f.api.auth={currentUser:user};f.api.sessionUser=createWorkspaceSession(user,saved);configureRiderManagerAuthority(f.api);
+    f.api.auth={currentUser:user};f.api.sessionUser=createWorkspaceSession(user,saved);configureRiderManagerAuthority(f.api);f.api.riderCommands=riderCommandBridge(f.api);
     return {...f,user,saved,manager:captureRiderManagerActor(f.api)};
 }
 const proof=(actor,kind,record,operation,hash='a'.repeat(64))=>'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/'+encodeURIComponent((kind==='delivery'?'deliveries/proofs/':'riders/topups/')+actor.authUid+'/'+actor.sessionId+'/'+record+'/'+operation+'/'+hash+'.jpg')+'?alt=media&token=sample-token';
@@ -139,7 +140,7 @@ test('Manager identity changes during pending reads cannot mutate approval or wa
     const f=managerFixture(),original=f.api.getDocsFromServer;f.api.getDocsFromServer=async query=>{const snap=await original(query);f.api.auth.currentUser={...f.user,uid:'other'};return snap;};await assert.rejects(reviewRiderTopUpAtomic(f.api,topup(f)));assert.equal(f.h.get('riders/a').walletBalance,2000);
 });
 test('stable rider top-up submission survives lost ACK without reopening a reviewed request',async()=>{
-    const f=fixture(),input={topupId:'request-ref',operationId:'request-one',actor:f.actor,reference:'REF-001',proofUrl:proof(f.actor,'topup','request-ref','request-one')};
+    const f=fixture(),input={topupId:'request-ref',operationId:'request-one',actor:f.actor,reference:'123456',proofUrl:proof(f.actor,'topup','request-ref','request-one')};
     f.h.loseNextAck();await assert.rejects(requestRiderTopUpAtomic(f.api,input),/Connection lost/);assert.equal((await requestRiderTopUpAtomic(f.api,input)).alreadySaved,true);f.h.put('rider_topups/request-ref',{...f.h.get('rider_topups/request-ref'),status:'approved',amountAdded:500});
     assert.equal((await requestRiderTopUpAtomic(f.api,input)).status,'approved');assert.equal(f.h.get('rider_topups/request-ref').amountAdded,500);assert.equal(f.h.get('riders/a').walletBalance,2000);
     await assert.rejects(requestRiderTopUpAtomic(f.api,{...input,proofUrl:proof(f.actor,'topup','request-ref','request-one','b'.repeat(64))}),/different request/);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('rider_topups/')).length,1);
@@ -175,7 +176,7 @@ test('actual Manager top-up wrapper credits once and refuses a second review aft
     assert.equal(await f.api.approveTopUp('topup','a','ignored cached name'),true);assert.equal(f.h.get('riders/a').walletBalance,2500);assert.equal(await f.api.approveTopUp('topup','a'),false);assert.equal(f.h.get('riders/a').walletBalance,2500);assert.match(dialogs.at(-1).text,/already been reviewed/);
 });
 test('actor changes during transaction reads and rejected top-up submission cannot create stale requests',async()=>{
-    for(const scenario of ['actor','unapproved','commit']){const f=fixture(),original=f.api.runTransaction,input={topupId:'request',operationId:'request-one',actor:f.actor,reference:'REF-001',proofUrl:proof(f.actor,'topup','request','request-one')};
+    for(const scenario of ['actor','unapproved','commit']){const f=fixture(),original=f.api.runTransaction,input={topupId:'request',operationId:'request-one',actor:f.actor,reference:'123456',proofUrl:proof(f.actor,'topup','request','request-one')};
         if(scenario==='actor')f.api.runTransaction=(db,callback)=>original(db,tx=>callback({...tx,get:async ref=>{const snap=await tx.get(ref);f.switchActor({...f.actor,sessionEpoch:2});return snap;}}));
         if(scenario==='unapproved')f.h.put('riders/a',{...rider,status:'pending_approval'});if(scenario==='commit')f.h.failNextCommit();await assert.rejects(requestRiderTopUpAtomic(f.api,input));assert.equal(f.h.get('rider_topups/request'),undefined);
     }

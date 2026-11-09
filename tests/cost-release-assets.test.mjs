@@ -81,7 +81,7 @@ test('Rider static updates use the network before the current offline cache', as
 test('Rider offline fallback reads only the current version and tolerates the app version query', async () => {
   const worker = riderWorker({ offline: true });
   assert.equal(await (await worker.request('https://rider.example/main.js?v=new')).text(), 'current app');
-  assert.equal(worker.calls[0][1], 'rider-app-v4-protected-access-20261109');
+  assert.equal(worker.calls[0][1], 'rider-app-v5-command-broker-20261109');
   assert.equal(worker.calls.find(call => call[0] === 'match')[2].ignoreSearch, true);
 });
 
