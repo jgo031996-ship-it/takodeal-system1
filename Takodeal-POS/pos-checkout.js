@@ -230,6 +230,9 @@ export function installSaleSafety(api, environment = globalThis) {
                     }
                     // Deletes only this ID. Concurrent new checkouts survive.
                     await outbox.acknowledge(payload.saleId);
+                    // Optional reminders start after the durable sale ACK and
+                    // cannot delay it or turn a committed sale into a retry.
+                    void Promise.resolve().then(()=>w.cashierLowStock?.committedSale({saleId:payload.saleId,branch:payload.branch})).catch(()=>{});
                     uploadedBranches.set(payload.branch,uploadedBranches.get(payload.branch)||payload.auditDeferred===true);
                 } catch (error) {
                     syncError = error;

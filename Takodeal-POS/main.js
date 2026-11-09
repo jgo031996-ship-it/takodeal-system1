@@ -5,6 +5,7 @@ import {installCashierDeviceSetup} from './cashier-device-setup.js';
 import {createCashierBranchRecovery,beginCashierOwnerPreview,refreshCashierBranchLabel,cashierStartupBusy,hasCashierOwnerPreview} from './cashier-startup.js';
 import {installCashierAppearance} from './cashier-appearance.js';
 import {installCycleCounts} from './stock-count-ui.js';
+import {installCashierLowIngredients} from './low-ingredient-ui.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
 import {installPOSLeaveRequests} from './leave-request-ui.js';
@@ -4355,10 +4356,7 @@ window.closeAndNextOrder = function() {
     document.getElementById('receiptModal').style.display = 'none';
     
     // 2. Check if the alarm was tripped during checkout
-    if (window.pendingLowStockAlarm) {
-        alert("⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.");
-        window.pendingLowStockAlarm = false; // Reset the alarm
-    }
+    window.cashierLowStock?.receiptClosed();
 };
 
 window.openGrabEarningsModal = function() {
@@ -6155,6 +6153,7 @@ window.hasSignedNTE = false;
 
 
 window.logoutCashier = function() {
+    window.cashierLowStock?.reset();
     localStorage.removeItem('cashierName');
     localStorage.removeItem('cashierBranch');
     localStorage.removeItem('cashierPermissions');
@@ -6588,7 +6587,7 @@ window.loadKitchenPrepHistory = async function() {
                         <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
                     </td>
                     <td style="padding: 12px;">
-                        <button onclick="window.undoKitchenPrep('${log.id}', '${log.item}', ${log.variance})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">✖ Undo</button>
+                        <button onclick="window.undoKitchenPrep()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">Owner review</button>
                     </td>
                 </tr>
             `;
@@ -6601,77 +6600,8 @@ window.loadKitchenPrepHistory = async function() {
     }
 };
 
-window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
-    if(!confirm(`⚠️ Are you sure you want to UNDO the prep batch for ${itemName}?\n\nThis will subtract ${varianceAmount} from prepared stock AND securely return the raw ingredients back to your vault.`)) return;
-    
-    try {
-        let branch = localStorage.getItem('takodeal_device_branch');
-        
-        // 1. Fetch the exact log so we know exactly how many batches they made!
-        const logRef = doc(db, "stock_logs", logId);
-        const logSnap = await getDoc(logRef);
-        
-        if (!logSnap.exists()) {
-            return Swal.fire('Error', 'This log has already been deleted.', 'error');
-        }
-        
-        let logData = logSnap.data();
-        let purchQtyToReturn = logData.purchQty || 1; // Grab the batch multiplier
-
-        // 2. Deduct the finished product from the shelf
-        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
-        const snap = await getDocs(q);
-        
-        if(!snap.empty) {
-            let itemRef = snap.docs[0].ref;
-            let currentStock = parseFloat(snap.docs[0].data().currentStock) || 0;
-            await updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
-        }
-
-        // 3. 🔥 THE UPGRADE: Auto-replenish Raw Ingredients using the BOM!
-        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
-        const bomSnap = await getDocs(bomQ);
-
-        if (!bomSnap.empty) {
-            for (let bomDoc of bomSnap.docs) {
-                let recipe = bomDoc.data();
-                let rawIngredient = recipe.ingredientName;
-                let amountToReturn = (recipe.qty || 0) * purchQtyToReturn;
-
-                const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
-                const rawSnap = await getDocs(rawQ);
-
-                if (!rawSnap.empty) {
-                    let rawRef = rawSnap.docs[0].ref;
-                    let rawData = rawSnap.docs[0].data();
-                    let currentRawStock = parseFloat(rawData.currentStock) || 0;
-
-                    // Add it back to the vault!
-                    await updateDoc(rawRef, { currentStock: currentRawStock + amountToReturn });
-
-                    // Log the replenishment in the ledger for the Manager
-                    await addDoc(collection(db, "stock_logs"), {
-                        branch: branch, inventoryId: rawRef.id, item: rawIngredient, uom: rawData.uom || 'units',
-                        oldQty: currentRawStock, newQty: currentRawStock + amountToReturn,
-                        variance: amountToReturn,
-                        type: "Kitchen Prep Undone",
-                        note: `Returned raw ingredients from voided ${purchQtyToReturn} batch(es) of ${itemName}`,
-                        user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
-                    });
-                }
-            }
-        }
-
-        // 4. Delete the old log
-        await deleteDoc(logRef); 
-        
-        Swal.fire({ title: '✅ Undone!', text: 'Prep batch reversed and raw ingredients returned to the vault.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
-        window.loadKitchenPrepHistory(); // Refresh table
-        
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to undo prep batch. Check connection.', 'error');
-    }
+window.undoKitchenPrep = async function() {
+    return Swal.fire({titleText:'Owner review required',text:'This saved prep history stays on file. Ask the Owner to review the exact batch. Older batches without verified ingredient movements cannot be safely undone from the current recipe; HQ must review a documented stock correction.',icon:'info',confirmButtonText:'Keep saved history'});
 };
 
 // ========================================================
@@ -9629,6 +9559,7 @@ installCashierDeviceSetup(window,document,{deviceContext:cashierDeviceContext,si
 installCashierAppearance(window,document,{getDocFromServer,doc,db});
 (hasCashierOwnerPreview(window)?window.restoreCashierPhysicalBranch():Promise.resolve()).catch(()=>{}).finally(()=>{refreshCashierBranchLabel(window,document);window.cashierStartupReady=true;const button=document.getElementById('btnSubmitPin');if(button){button.disabled=hasCashierOwnerPreview(window);button.removeAttribute('aria-busy');}document.querySelectorAll('[data-cashier-startup-lock]').forEach(control=>{control.disabled=false;});const note=document.getElementById('cashierStartupStatus');if(note){note.hidden=!hasCashierOwnerPreview(window);note.textContent=note.hidden?'':'Reconnect to end the Owner branch preview before staff sign in. Owner Access remains available.';}});
 installCycleCounts(window,document);
+installCashierLowIngredients(window,document,{primaryAuth:auth});
 installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')
