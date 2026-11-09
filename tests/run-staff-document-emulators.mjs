@@ -14,7 +14,7 @@ mkdirSync(resolve(tools, 'config'), {recursive: true});
 const configPath = resolve(tools, 'staff-document-emulators.json');
 writeFileSync(configPath, JSON.stringify({
     firestore: {rules: resolve(root, 'firestore.rules')},
-    storage: {rules: resolve(root, 'docs/staff-document-storage.rules.snippet')},
+    storage: {rules: resolve(process.env.STAFF_DOCUMENT_STORAGE_RULES || resolve(root, 'docs/staff-document-storage.rules.snippet'))},
     emulators: {firestore: {host: '127.0.0.1', port: 8787}, storage: {host: '127.0.0.1', port: 9797},
         hub: {host: '127.0.0.1', port: 4797}, logging: {host: '127.0.0.1', port: 4897}, ui: {enabled: false}, singleProjectMode: true}
 }, null, 2));
