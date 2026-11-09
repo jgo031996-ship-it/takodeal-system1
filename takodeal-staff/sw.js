@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v51-activated-attendance-20261109-r1';
+const CACHE_NAME = 'takodeal-staff-v52-doc-metadata-20261109-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./worked-shift-reference.js');
@@ -16,6 +16,7 @@ SHELL.push('./clock-upload-access.js','./staff-access.js');
 SHELL.push('./staff-document-broker.js');
 SHELL.push('./staff-loan-ledger-client.js','./staff-loan-ledger-model.js','./staff-loan-ledger-ui.js','./staff-loan-ledger.css');
 SHELL.push('./private-phone-identity.js');
+SHELL.push('./document-metadata-client.js');
 SHELL.push('./payroll-attendance.js');
 SHELL.push('./staff-payroll-reader.js');
 SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js','./attendance-camera.js','./attendance-camera.css');
