@@ -38,10 +38,19 @@ export function installStaffAppUpdate(w=window,d=document,nav=navigator) {
         for(const button of buttons){button.disabled=true;button.textContent='Checking for app updates…';button.setAttribute?.('aria-busy','true');}
         status('Checking app files. Your device registration and saved data will stay here.');
         try {
+            const approvedDraft=w.staffLateProofDraft?.file?w.staffLateProofDraft:null;
+            if(approvedDraft){
+                if(typeof w.Swal?.fire!=='function')return await explain('Unsent screenshot kept','Finish your Time In before updating, or reopen with a dialog-capable browser. Your reason and screenshot are still selected.','info');
+                const answer=await w.Swal.fire({title:'Update with an unsent screenshot?',text:'Your attendance is not saved. Updating will reload the app, so you will need to enter the reason and choose the screenshot again. Cancel to keep them selected.',icon:'warning',showCancelButton:true,confirmButtonText:'Update and choose again',cancelButtonText:'Keep my screenshot',allowOutsideClick:false});
+                if(!answer?.isConfirmed)return false;
+                const pendingWork=protectedWork();if(pendingWork)return await explain(...pendingWork,'info');
+                if(w.staffLateProofDraft!==approvedDraft)return await explain('Time In changed','Your selected attendance details changed. Finish or cancel that Time In before updating.','info');
+            }
             const registration=await updateRegistration(nav.serviceWorker);
             await waitForAppUpdate(registration);
             // Work may have started while the update was downloading.
             const pendingWork=protectedWork();if(pendingWork)return await explain(...pendingWork,'info');
+            if(w.staffLateProofDraft?.file&&w.staffLateProofDraft!==approvedDraft)return await explain('Unsent screenshot kept','Your reason or screenshot changed while the update was downloading. Finish or cancel that Time In, then check again.','info');
             if(!nav.onLine)return await explain('Connection needed','The connection was lost. Reconnect and check for app updates again.','info');
             status('Reloading the Staff app…');
             // Reload only the shell; never reset auth, PINs, registration or saved attendance.

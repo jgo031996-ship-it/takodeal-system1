@@ -1,13 +1,176 @@
-// CANDIDATE: publish with the private document broker after local Rules tests.
+// Publish only after the isolated Firestore + Storage security suites pass.
 // The Firebase download-token route bypasses signed-in Storage Rules. Private
-// files must therefore be created/read only by the trusted, token-free broker.
+// staff documents therefore use only the trusted, token-free broker. Business
+// evidence intentionally retains the existing SDK bearer-link model below.
 // This is a full replacement; an overlapping public wildcard is unsafe.
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function signed() { return request.auth != null; }
+    function owner() {
+      return signed() && request.auth.token.get('email','') == 'jgo031996@gmail.com'
+        && request.auth.token.get('email_verified',false) == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function image() {
+      return resource == null && request.resource != null && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType in ['image/jpeg','image/png','image/webp'];
+    }
+    function registrationImage() {
+      return resource == null && request.resource != null && request.resource.size > 0 && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType in ['image/jpeg','image/png','image/webp'];
+    }
+    function companyHQ() {
+      let email = signed() ? request.auth.token.get('email','').lower() : '__missing__';
+      let index = firestore.get(/databases/(default)/documents/hq_account_index/$(email)).data;
+      let profile = firestore.get(/databases/(default)/documents/hq_managers/$(index.sourceProfileId)).data;
+      return signed() && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.get('email_verified',false) == true && index.schemaVersion == 1 && index.active == true
+        && profile.get('email','').lower() == email && profile.get('active',true) != false && profile.get('isActive',true) != false
+        && profile.get('blocked',false) != true && profile.get('archived',false) != true && profile.get('isArchived',false) != true
+        && profile.get('deleted',false) != true && profile.get('isDeleted',false) != true && profile.get('revoked',false) != true
+        && profile.get('disabled',false) != true && !(profile.get('pin','') in ['REVOKED','BLOCKED'])
+        && !(profile.get('securityPin','') in ['REVOKED','BLOCKED'])
+        && profile.get('offboarded',false) != true && profile.get('resigned',false) != true && profile.get('terminated',false) != true
+        && !(string(profile.get('status','')).lower() in ['resigned','terminated','inactive','disabled','revoked','archived','blocked','deleted','offboarded','offboard','finished contract','contract ended','end of contract'])
+        && !(string(profile.get('employmentStatus','')).lower() in ['resigned','terminated','inactive','disabled','revoked','archived','blocked','deleted','offboarded','offboard','finished contract','contract ended','end of contract'])
+        && !(string(profile.get('contractStatus','')).lower() in ['resigned','terminated','revoked','offboarded'])
+        && index.permissions is list && index.permissions.hasAny(['all']) && index.allowedBranches is list && index.allowedBranches.hasAny(['All'])
+        && index.sourceAccess == {'email':profile.get('email',null),'role':profile.get('role',null),'permissions':profile.get('permissions',null),'assignedBranch':profile.get('assignedBranch',null),'active':profile.get('active',null),'isActive':profile.get('isActive',null),'blocked':profile.get('blocked',null),'status':profile.get('status',null),'disabled':profile.get('disabled',null),'archived':profile.get('archived',null),'isArchived':profile.get('isArchived',null),'deleted':profile.get('deleted',null),'isDeleted':profile.get('isDeleted',null),'revoked':profile.get('revoked',null),'offboarded':profile.get('offboarded',null),'resigned':profile.get('resigned',null),'terminated':profile.get('terminated',null),'employmentStatus':profile.get('employmentStatus',null),'contractStatus':profile.get('contractStatus',null)};
+    }
+    function operationalUploader() {
+      let uid = signed() ? request.auth.uid : '__missing__';
+      let binding = firestore.get(/databases/(default)/documents/pos_bindings/$(uid)).data;
+      let mirror = firestore.get(/databases/(default)/documents/pos_devices/$(binding.legacyDeviceDocId)).data;
+      return signed() && request.auth.token.firebase.sign_in_provider == 'anonymous' && binding.uid == uid
+        && binding.status == 'Active' && mirror.status == 'Active' && mirror.deviceId == binding.deviceId
+        && mirror.branch == binding.branch && mirror.get('appType','') != 'Staff';
+    }
+    function ownStaff(uid, staffId) {
+      let session = firestore.get(/databases/(default)/documents/staff_login_sessions/$(uid)).data;
+      let eligible = signed() && request.auth.uid == uid && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && session.schemaVersion == 1 && session.uid == uid && session.staffId == staffId
+        && session.expiresAt > request.time && session.get('sessionId','').size() >= 16;
+      let profile = eligible ? firestore.get(/databases/(default)/documents/cashiers/$(staffId)).data : {};
+      return eligible && profile.get('active',true) != false && profile.get('isActive',true) != false
+        && profile.get('archived',false) != true && profile.get('isArchived',false) != true && profile.get('blocked',false) != true
+        && profile.get('deleted',false) != true && profile.get('isDeleted',false) != true && profile.get('revoked',false) != true
+        && profile.get('offboarded',false) != true && profile.get('terminated',false) != true && profile.get('resigned',false) != true
+        && profile.get('disabled',false) != true
+        && !(string(profile.get('status','')).lower() in ['inactive','disabled','blocked','archived','deleted','revoked','resigned','terminated','offboarded'])
+        && !(string(profile.get('employmentStatus','')).lower() in ['inactive','disabled','blocked','archived','deleted','revoked','resigned','terminated','offboarded'])
+        && !(profile.get('pin','') in ['REVOKED','BLOCKED']);
+    }
+    function ownClock(uid, staffId) {
+      let proof = firestore.get(/databases/(default)/documents/staff_pin_contexts/$(uid + '_time-clock')).data;
+      return signed() && request.auth.uid == uid && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && proof.uid == uid && proof.staffId == staffId && proof.purpose == 'time-clock' && proof.expiresAt > request.time;
+    }
+    // Personal-code activation authorizes operational evidence only. It does
+    // not create a private document, payroll, or loan approval. Exactly two
+    // cross-service reads: the protected phone binding and current employee.
+    function ownActivatedAttendance(uid, staffId, file, uploading) {
+      let binding = firestore.get(/databases/(default)/documents/staff_app_bindings/$(uid)).data;
+      let eligible = signed() && request.auth.uid == uid && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && binding.protocolVersion == 1 && binding.uid == uid && binding.staffId == staffId && binding.status == 'Active'
+        && binding.deviceId is string && binding.deviceId.matches('^DEV-[A-Z0-9-]{6,80}$')
+        && binding.branch is string && binding.branch.size() > 0 && binding.branch.size() <= 128;
+      let profile = eligible ? firestore.get(/databases/(default)/documents/cashiers/$(staffId)).data : {};
+      let target = uploading ? request.resource : resource;
+      return eligible && file.matches('^activated_late_[A-Za-z0-9_-]{1,128}[.]jpg$')
+        && target.metadata.staffUploadUid == uid && target.metadata.staffId == staffId
+        && target.metadata.staffUploadDeviceId == binding.deviceId && target.metadata.staffUploadAuthority == 'phone-activation'
+        && (!uploading || target.metadata.keys().hasOnly(['staffUploadUid','staffId','staffUploadDeviceId','staffUploadAuthority']))
+        && profile.branch.trim() == binding.branch && profile.get('active',true) != false && profile.get('isActive',true) != false
+        && profile.get('archived',false) != true && profile.get('isArchived',false) != true && profile.get('blocked',false) != true
+        && profile.get('deleted',false) != true && profile.get('isDeleted',false) != true && profile.get('revoked',false) != true
+        && profile.get('offboarded',false) != true && profile.get('terminated',false) != true && profile.get('resigned',false) != true
+        && profile.get('disabled',false) != true
+        && !(string(profile.get('status','')).trim().lower() in ['inactive','disabled','blocked','archived','deleted','revoked','resigned','terminated','offboarded','finished contract','contract ended','end of contract'])
+        && !(string(profile.get('employmentStatus','')).trim().lower() in ['inactive','disabled','blocked','archived','deleted','revoked','resigned','terminated','offboarded','finished contract','contract ended','end of contract'])
+        && !(string(profile.get('contractStatus','')).trim().lower() in ['resigned','terminated','revoked','offboarded'])
+        && !(string(profile.get('pin','')).trim().upper() in ['REVOKED','BLOCKED']);
+    }
+    function ownRider(uid, sessionId) {
+      let session = firestore.get(/databases/(default)/documents/rider_login_sessions/$(uid)).data;
+      let rider = firestore.get(/databases/(default)/documents/riders/$(session.riderId)).data;
+      return signed() && request.auth.uid == uid && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && session.schemaVersion == 1 && session.uid == uid && session.sessionId == sessionId && session.expiresAt > request.time
+        && session.get('revoked',false) != true && rider.get('status','').lower() in ['active','approved']
+        && rider.get('active',true) != false && rider.get('blocked',false) != true && rider.get('archived',false) != true
+        && rider.get('deleted',false) != true
+        && rider.riderPinManaged == true && rider.riderAuthRevision == session.riderAuthRevision;
+    }
+    function hqBusinessFile(uid, grantId, file, uploading) {
+      let grant = firestore.get(/databases/(default)/documents/hq_upload_grants/$(grantId)).data;
+      let target = uploading ? request.resource : resource;
+      return signed() && request.auth.uid == uid && request.auth.token.get('email_verified',false) == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && grant.schemaVersion == 1 && grant.uid == uid
+        && grant.path == 'hq_business_files/' + uid + '/' + grantId + '/' + file
+        && grant.purpose in ['request-proof','discipline-evidence','inventory-photo','waste-proof']
+        && grant.branch is string && grant.branch.size() > 0 && grant.branch.size() <= 120
+        && grant.mime in ['image/jpeg','image/png','image/webp'] && grant.size is int && grant.size > 0 && grant.size <= 5 * 1024 * 1024
+        && grant.sha256.matches('^[a-f0-9]{64}$') && grant.expiresAt is timestamp
+        && grant.expiresAt > request.time && grant.expiresAt <= request.time + duration.value(5,'m')
+        && (target == null && !uploading || target.contentType == grant.mime && target.size == grant.size
+          && target.metadata.hqUploadUid == uid && target.metadata.hqUploadGrantId == grantId && target.metadata.sha256 == grant.sha256
+          && (!uploading || target.metadata.keys().hasOnly(['hqUploadUid','hqUploadGrantId','sha256'])));
+    }
     match /{topLevel}/{rest=**} {
-      // Preserve the existing legacy policy outside the reserved private prefix.
-      allow read, write: if topLevel != 'staff_private_documents';
+      allow read: if !(topLevel in ['staff_private_documents','riders','deliveries','staff_requests','staff_profiles','hq_business_files'])
+        && (topLevel in ['menu_images','inventory_images','storefronts'] || owner());
+      allow create: if resource == null && !(topLevel in ['staff_private_documents','riders','deliveries','staff_requests','staff_profiles','hq_business_files'])
+        && (owner() || image() && (topLevel in ['menu_images','inventory_images','storefronts'] && companyHQ()
+          || topLevel in ['expenses','waste_proofs','sop_proofs'] && operationalUploader()));
+      allow update, delete: if false;
+    }
+    match /hq_business_files/{uid}/{grantId}/{file} {
+      // The trusted service freshly checks HQ source/index/bridge and exact
+      // purpose/branch before issuing this five-minute, one-object grant.
+      // Storage GET includes bytes as well as lost-ack metadata; it is not a
+      // metadata-only permission. No generic Owner wildcard bypass applies.
+      // Existing download links remain bearer capabilities after grant expiry;
+      // this namespace must never hold private staff financial/document files.
+      allow get: if hqBusinessFile(uid,grantId,file,false);
+      allow create: if image() && hqBusinessFile(uid,grantId,file,true);
+      allow list, update, delete: if false;
+    }
+    match /staff_requests/{uid}/{staffId}/{file} {
+      allow read: if owner() || (file.matches('^activated_.*$') ? ownActivatedAttendance(uid,staffId,file,false) : ownStaff(uid,staffId) || ownClock(uid,staffId));
+      allow create: if image() && request.resource.metadata.staffUploadUid == uid && request.resource.metadata.staffId == staffId
+        && (file.matches('^activated_.*$') ? ownActivatedAttendance(uid,staffId,file,true) : owner() || ownStaff(uid,staffId) || ownClock(uid,staffId));
+      allow update, delete: if false;
+    }
+    match /staff_profiles/{uid}/{staffId}/{file} {
+      allow read: if owner() || ownStaff(uid,staffId);
+      allow create: if image() && request.resource.metadata.staffUploadUid == uid && request.resource.metadata.staffId == staffId
+        && (owner() || ownStaff(uid,staffId));
+      allow update, delete: if false;
+    }
+    match /riders/{kind}/{registrationFile} {
+      allow create: if kind in ['licenses','orcr','selfies'] && registrationImage() && signed()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && request.resource.metadata.riderRegistrationUid == request.auth.uid
+        && request.resource.metadata.riderRegistrationId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && registrationFile in [request.resource.metadata.riderRegistrationId + '.jpg',request.resource.metadata.riderRegistrationId + '.png',request.resource.metadata.riderRegistrationId + '.webp']
+        && request.resource.metadata.sha256.matches('^[a-f0-9]{64}$');
+      allow read: if owner() || signed() && resource.metadata.riderRegistrationUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /riders/topups/{uid}/{sessionId}/{rest=**} {
+      allow read: if owner() || ownRider(uid,sessionId);
+      allow create: if image() && ownRider(uid,sessionId) && request.resource.metadata.riderUploadUid == uid
+        && request.resource.metadata.riderSessionId == sessionId
+        && request.resource.metadata.riderId == firestore.get(/databases/(default)/documents/rider_login_sessions/$(uid)).data.riderId;
+      allow update, delete: if false;
+    }
+    match /deliveries/proofs/{uid}/{sessionId}/{rest=**} {
+      allow read: if owner() || ownRider(uid,sessionId);
+      allow create: if image() && ownRider(uid,sessionId) && request.resource.metadata.riderUploadUid == uid
+        && request.resource.metadata.riderSessionId == sessionId
+        && request.resource.metadata.riderId == firestore.get(/databases/(default)/documents/rider_login_sessions/$(uid)).data.riderId;
+      allow update, delete: if false;
     }
     match /staff_private_documents/{rest=**} {
       // No direct SDK uploads, metadata, token regeneration, downloads or lists,

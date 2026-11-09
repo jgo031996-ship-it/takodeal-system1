@@ -44,10 +44,16 @@ test('only explicit saved fields are projected and every visible name, branch an
 function transport(options={}){
  let selectedId=info.staffId,selectedDevice='DEV-SAMPLE-PHONE',calls=0,watch;
  const user={uid:'private-phone-a',isAnonymous:true,getIdToken:async()=>'SAMPLE_TOKEN'},auth={currentUser:user};
- const api={auth,sdk:{onAuthStateChanged(_auth,fn){watch=fn;return()=>{watch=null;};}}};
- const client=createStaffLoanLedgerClient({createPrivateClient:async()=>api,identity:()=>selectedId,deviceId:()=>selectedDevice,fetcher:async(url,request)=>{calls++;assert.equal(url,STAFF_LOAN_LEDGER_ENDPOINT);assert.equal(request.method,'POST');assert.equal(request.cache,'no-store');assert.equal(request.credentials,'omit');assert.equal(request.redirect,'error');assert.deepEqual(JSON.parse(request.body),{staffId:info.staffId,deviceId:selectedDevice});return{ok:true,url,json:async()=>snapshot()};},...options});
- return{client,user,auth,api,get calls(){return calls;},changeId(value){selectedId=value;},changeDevice(value){selectedDevice=value;},changeAuth(value){auth.currentUser=value;watch?.(value);}};
+ const binding={uid:user.uid,staffId:info.staffId,deviceId:selectedDevice,branch:info.branch,active:true};
+ const api={auth,db:{},sdk:{doc:(_db,table,id)=>({table,id}),getDocFromServer:async ref=>{assert.equal(ref.table,'staff_document_devices');assert.equal(ref.id,user.uid);return{metadata:{fromCache:false,hasPendingWrites:false},exists:()=>true,data:()=>({...binding})};},onAuthStateChanged(_auth,fn){watch=fn;return()=>{watch=null;};}}};
+ const client=createStaffLoanLedgerClient({createPrivateClient:async()=>api,identity:()=>selectedId,deviceId:()=>selectedDevice,fetcher:async(url,request)=>{calls++;assert.equal(url,STAFF_LOAN_LEDGER_ENDPOINT);assert.equal(request.method,'POST');assert.equal(request.cache,'no-store');assert.equal(request.credentials,'omit');assert.equal(request.redirect,'error');assert.deepEqual(JSON.parse(request.body),{staffId:info.staffId,deviceId:binding.deviceId});return{ok:true,url,json:async()=>snapshot()};},...options});
+ return{client,user,auth,api,binding,get calls(){return calls;},changeId(value){selectedId=value;},changeDevice(value){selectedDevice=value;},changeAuth(value){auth.currentUser=value;watch?.(value);}};
 }
+test('private loan identity stays with the fresh approved private binding after operational activation changes the global device ID',async()=>{const h=transport();h.changeDevice('DEV-NEW-OPERATIONAL');assert.equal((await h.client.read()).ledger.remainingBalance,750.15);assert.equal(h.binding.deviceId,'DEV-SAMPLE-PHONE');assert.equal(h.calls,1);h.client.invalidate();});
+test('revoked/foreign private grants and binding changes during token lookup never fall back to the operational ID',async()=>{
+ for(const patch of [{active:false},{uid:'foreign'},{staffId:'foreign'},{deviceId:'invalid'}]){const h=transport();Object.assign(h.binding,patch);await assert.rejects(h.client.read(),{code:'loan-ledger-denied'});assert.equal(h.calls,0);h.client.invalidate();}
+ const h=transport(),token=deferred();h.user.getIdToken=()=>token.promise;const pending=h.client.read();await tick();h.binding.deviceId='DEV-CHANGED-PRIVATE';token.resolve('SAMPLE_TOKEN');await assert.rejects(pending,{code:'loan-ledger-account-changed'});assert.equal(h.calls,0);h.client.invalidate();
+});
 test('private transport uses only the pinned read-only route and approved named anonymous account',async()=>{
  const h=transport();assert.equal((await h.client.read()).ledger.remainingBalance,750.15);assert.equal(h.calls,1);h.client.invalidate();
  const wrong=transport({createPrivateClient:async()=>({auth:{currentUser:{uid:'public',isAnonymous:false,getIdToken:async()=>'token'}}})});await assert.rejects(wrong.client.read(),{code:'loan-ledger-denied'});assert.equal(wrong.calls,0);

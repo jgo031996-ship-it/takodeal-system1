@@ -50,6 +50,7 @@
                 <label for="staffSetupCode">Personal setup code</label>
                 <input id="staffSetupCode" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="10-digit code" aria-describedby="staffSetupHelp">
                 <p id="staffSetupHelp" class="setup-help">Use the personal code the Owner gave you. A correct code activates this phone automatically. Then sign in with your normal Staff login PIN.</p>
+                <button type="button" id="cancelPersonalSetup" hidden>Back to existing device access</button>
             </div>
             <div id="legacyBranchFields"><label class="field-label" for="deviceBranchInput">Your branch</label><select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
                 <option value="Auto">📍 Auto-Detect Branch via GPS</option>
@@ -59,7 +60,7 @@
                 <option value="Main Office">🏢 Main Office / Roving</option>
             </select></div>
 
-            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
+            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><button type="button" class="btn-outline" id="usePersonalSetupCode">Activate with my personal code</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
 
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
             <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-registration">Check for app updates</button><p id="staffUpdateHelp-registration" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
@@ -70,6 +71,7 @@
             <p id="devicePendingText" role="status" aria-live="polite">Connecting to HQ.</p>
             <p id="devicePendingId" class="device-registration-id"></p>
             <button class="btn-primary" id="deviceRetryButton" onclick="window.retryDeviceRegistration()" hidden>Check again</button>
+            <button type="button" class="btn-outline" id="usePersonalSetupCodePending">Activate with my personal code</button>
             <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-pending">Check for app updates</button><p id="staffUpdateHelp-pending" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
@@ -87,6 +89,7 @@
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
             
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM LOGIN -->
+            <button type="button" class="btn-outline" id="usePersonalSetupCodeLogin">Activate with my personal code</button>
             <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-login">Check for app updates</button><p id="staffUpdateHelp-login" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
@@ -666,6 +669,6 @@
         import {installStaffAppUpdate} from "./staff-phone.js";
         installStaffAppUpdate();
       </script>
-      <script type="module" src="app.js?v=staff-private-loans-20261109"></script>
+      <script type="module" src="app.js?v=staff-activated-attendance-20261109-r1"></script>
 </body>
 </html>

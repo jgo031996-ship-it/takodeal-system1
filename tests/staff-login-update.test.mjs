@@ -34,6 +34,13 @@ async function timers(body){
     return withGlobals({setTimeout(fn,delay){const id=++next;pending.set(id,{fn,delay});return id;},clearTimeout(id){pending.delete(id);}},()=>body({pending,expire(delay){const found=[...pending].find(([,timer])=>timer.delay===delay);assert.ok(found,`A ${delay}ms deadline must exist.`);pending.delete(found[0]);found[1].fn();}}));
 }
 
+test('an unsent screenshot needs explicit reload consent; cancellation and failed updates keep the exact draft',async()=>{
+ const h=harness(),draft={file:{name:'Synthetic.jpg'},reason:'Synthetic unsent reason'};h.w.staffLateProofDraft=draft;assert.equal(await h.check(),false);assert.equal(h.calls.lookup,0);assert.equal(h.calls.reload,0);assert.equal(h.w.staffLateProofDraft,draft);h.restored();h.intact();
+ h.w.Swal.fire=async()=>({isConfirmed:true});h.registration.update=async()=>{throw Error('Synthetic connection lost');};assert.equal(await h.check(),false);assert.equal(h.calls.reload,0);assert.equal(h.w.staffLateProofDraft,draft);h.intact();h.registration.update=async()=>{};assert.equal(await h.check(),true);assert.equal(h.calls.reload,1);h.intact();
+});
+test('a new draft or active punch during update download prevents reload even after earlier screenshot consent',async()=>{
+ for(const kind of ['draft','punch']){const h=harness(),installing=worker();h.w.staffLateProofDraft={file:{name:'First.jpg'}};h.w.Swal.fire=async()=>({isConfirmed:true});h.registration.installing=installing;const pending=h.check();await flush();if(kind==='draft')h.w.staffLateProofDraft={file:{name:'Second.jpg'}};else h.w.staffPunchBusy=true;installing.change('activated');assert.equal(await pending,false);assert.equal(h.calls.reload,0);h.restored();h.intact();}
+});
 test('Staff login entry installs the lean update action before Firebase and removes the employee-profile copy',()=>{
     const html=readFileSync(new URL('../takodeal-staff/index.html',import.meta.url),'utf8');
     const install=html.indexOf('installStaffAppUpdate()'),business=html.indexOf('src="app.js?');

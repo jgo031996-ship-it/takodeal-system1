@@ -16,12 +16,12 @@ function fixture({locked=false,response=()=>({ok:true,status:200,json:async()=>s
  const nodes=new Map(),storage=new Map([['takodeal_staff_id','employee'],['takodeal_device_id','DEV-SYNTHETIC-PHONE']]),events=new Map(),calls=[];
  const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',textContent:'',style:{display:'none'},disabled:false,setAttribute(){},replaceChildren(){this.innerHTML='';},addEventListener(type,fn){events.set(id+':'+type,fn);}});return nodes.get(id);};
  const user={uid:'approved-private-phone',isAnonymous:true,getIdToken:async()=>'SYNTHETIC_PRIVATE_TOKEN'},primary={uid:'ordinary-login-unchanged'};
- const privateClient={auth:{currentUser:user},sdk:{onAuthStateChanged(){return()=>{};}}};
+ const privateBinding={uid:user.uid,staffId:'employee',deviceId:'DEV-SYNTHETIC-PHONE',branch:'Synthetic Branch',active:true},privateClient={auth:{currentUser:user},db:{},sdk:{doc:(_db,table,id)=>({table,id}),getDocFromServer:async ref=>{assert.equal(ref.table,'staff_document_devices');assert.equal(ref.id,user.uid);return{metadata:{fromCache:false,hasPendingWrites:false},exists:()=>true,data:()=>({...privateBinding})};},onAuthStateChanged(){return()=>{};}}};
  const w={auth:{currentUser:primary},localStorage:{getItem:key=>storage.get(key)||null},staffVaultSession:{epoch:1,allows:id=>!locked&&id==='employee'},openVaultPin:async(...args)=>calls.push(['pin',...args]),lockPayslipVault(){locked=true;w.clearStaffLoanLedger();},switchView(){},stopStaffLiveListeners(){},logoutStaff(){},addEventListener(type,fn){events.set('window:'+type,fn);},setInterval(){return 0;}};
  const d={hidden:false,getElementById:node,addEventListener(type,fn){events.set('document:'+type,fn);}};
  const context={window:w,document:d,localStorage:w.localStorage,firebaseConfig:{projectId:'synthetic-only'},installStaffLoanLedger,createStaffLoanLedgerClient:options=>createStaffLoanLedgerClient({...options,fetcher:async(url,request)=>{calls.push(['http',url,request]);return response();}}),createStaffDocumentFirebase:async(config,identity)=>{assert.equal(config.projectId,'synthetic-only');assert.equal(identity(),'employee');calls.push(['private']);return privateClient;}};
  assert.ok(factory);assert.ok(entryAt>=0);vm.runInNewContext(factory+'\n'+entry,context);
- return{w,d,node,storage,events,calls,primary,privateClient};
+ return{w,d,node,storage,events,calls,primary,privateClient,privateBinding};
 }
 
 test('actual stable app Loans entry and installed factory use only the existing private account and read-only endpoint',async()=>{
@@ -42,6 +42,7 @@ test('actual Loans entry never exposes its modal or sends a request before the e
  assert.equal(h.node('loansModal').style.display,'none');assert.equal(h.node('staffMyLoansContent').innerHTML,'');
  assert.equal(h.w.auth.currentUser,h.primary);
 });
+test('actual installed Loans factory preserves the approved private ID when personal setup replaces only the operational ID',async()=>{const h=fixture();h.storage.set('takodeal_device_id','DEV-NEW-OPERATIONAL');await h.w.openReqForm('Loans');const http=h.calls.find(row=>row[0]==='http');assert.ok(http);assert.deepEqual(JSON.parse(http[2].body),{staffId:'employee',deviceId:'DEV-SYNTHETIC-PHONE'});assert.match(h.node('staffMyLoansContent').innerHTML,/₱750\.00/);assert.equal(h.w.auth.currentUser,h.primary);h.w.clearStaffLoanLedger();});
 
 test('unapproved private phone shows an honest hold without a zero balance, raw Firestore fallback or ordinary-login change',async()=>{
  const h=fixture({response:()=>({ok:false,status:403,json:async()=>({code:'staff-loans/approval',message:'PRIVATE_SOURCE_NOT_FOR_UI'})})});
@@ -57,7 +58,7 @@ test('loan assets are installed in the stable shell and its worker still bypasse
   assert.ok(worker.includes('./'+asset));assert.ok(readFileSync(new URL('../takodeal-staff/'+asset,import.meta.url)).length);
  }
  assert.match(html,/staffMyLoansStatus/);assert.match(html,/staffMyLoansClose/);assert.match(html,/staffMyLoansRefresh/);
- assert.match(html,/staff-private-loans-20261109/);assert.match(worker,/takodeal-staff-v50-private-loans-20261109-r1/);
+ assert.match(html,/staff-activated-attendance-20261109-r1/);assert.match(worker,/takodeal-staff-v51-activated-attendance-20261109-r1/);assert.ok(worker.includes('./private-phone-identity.js'));
  assert.match(worker,/event\.request\.method !== 'GET' \|\| url\.origin !== self\.location\.origin/);
  assert.doesNotMatch(app,/from '\.\/staff-(?:operational-records|private-profile)\.js'/);
 });
