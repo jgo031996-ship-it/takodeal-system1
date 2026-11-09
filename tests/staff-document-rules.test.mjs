@@ -63,6 +63,8 @@ function expandVerifiedAliases(source) {
     return expanded;
 }
 const fn = name => expandVerifiedAliases(body(vault, `function ${name}(`));
+const publicationCuts=JSON.parse(readFileSync(new URL('./fixtures/compatible-document-gcash-policy-cuts.json',import.meta.url),'utf8'));
+const retiredFn=name=>{const edit=publicationCuts.edits.find(row=>row.label==='Retired document metadata helper '+name);assert.ok(edit,name);assert.equal(edit.after,'');return expandVerifiedAliases(body(edit.before,`function ${name}(`));};
 
 test('private vault has explicit nonoverlapping collection blocks and no public wildcard', () => {
     assert.notEqual(firestore.indexOf(marker), -1);
@@ -281,8 +283,8 @@ test('only Owner/HQ-All may approve bindings; UID, employee and branch are immut
     assert.match(fn('docVaultBinding'), /audit.values\(\).hasAny\(\[\{'active': data.active, 'actorUid': request.auth.uid, 'recordedAt': request.time\}\]\)/);
 });
 
-test('staff metadata must match binding, exact path, SHA, pending status, bytes and timestamp', () => {
-    const upload = fn('docVaultUpload');
+test('retired Staff publication contract preserves binding, path, SHA, bytes and timestamps in the broker handoff', () => {
+    const upload = retiredFn('docVaultUpload');
     assert.match(upload, /docVaultEnabled\(\)/); assert.match(upload, /docVaultOwn\(staffId\)/);
     assert.match(upload, /data.branch == get\([\s\S]*staff_document_devices[\s\S]*data.branch/); assert.match(upload, /data.uploadedByUid == request.auth.uid/);
     assert.match(upload, /data.storagePath == 'staff_private_documents\/'/);
@@ -293,14 +295,11 @@ test('staff metadata must match binding, exact path, SHA, pending status, bytes 
     assert.match(upload, /keys\(\).hasOnly/);
 });
 
-test('current/history uploads and HQ reviews are atomic with version checks and no deletes', () => {
-    const files = rule('/files/{kind}'), versions = rule('/versions/{uploadId}'), review = fn('docVaultReview'), audits = rule('/reviews/{reviewId}');
-    const fileCreate = fn('docVaultFileCreate'), fileUpdate = fn('docVaultFileUpdate'), versionCreate = fn('docVaultVersionCreate'), versionUpdate = fn('docVaultVersionUpdate'), auditCreate = fn('docVaultAuditCreate');
-    assert.match(files, /allow create: if docVaultFileCreate\(request\.resource\.data\);/);
-    assert.match(files, /allow update: if docVaultFileUpdate\(request\.resource\.data,\s*resource == null \? null : resource\.data\);/);
-    assert.match(versions, /allow create: if docVaultVersionCreate\(request\.resource\.data\);/);
-    assert.match(versions, /allow update: if docVaultVersionUpdate\(request\.resource\.data,\s*resource == null \? null : resource\.data\);/);
-    assert.match(audits, /allow create: if docVaultAuditCreate\(request\.resource\.data\);/);
+test('file/history/review SDK writes are denied while their exact atomic revision contract stays recorded', () => {
+    const files = rule('/files/{kind}'), versions = rule('/versions/{uploadId}'), review = retiredFn('docVaultReview'), audits = rule('/reviews/{reviewId}');
+    const fileCreate = retiredFn('docVaultFileCreate'), fileUpdate = retiredFn('docVaultFileUpdate'), versionCreate = retiredFn('docVaultVersionCreate'), versionUpdate = retiredFn('docVaultVersionUpdate'), auditCreate = retiredFn('docVaultAuditCreate');
+    for(const block of [files,versions]){assert.match(block,/allow create: if false;/);assert.match(block,/allow update: if false;/);assert.match(block,/allow (?:get, list|read): if docVaultOwn\(staffId\)/);}
+    assert.match(audits,/allow create: if false;/);assert.match(audits,/allow read: if docVaultOwn\(staffId\)/);
     assert.match(fileCreate, /docVaultUpload\(staffId, kind, data\)/); assert.match(fileCreate, /data.version == 1/);
     assert.match(fileUpdate, /data.version == before.version \+ 1/); assert.match(fileUpdate, /data.uploadId != before.uploadId/);
     assert.match(fileUpdate, /docVaultReview\(staffId, kind, before, data\)/);
