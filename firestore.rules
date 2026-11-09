@@ -212,9 +212,17 @@ function be() { return ['paymentVerified','verifiedBy','verifiedAt','paymentReco
       return bC(['all','branches','payroll','feed','ledger'],a.get('branch',(ai((a))).get('branch','')));
     }
     function bL(a,b) {
-      let c = a.get('branch',(ai((a))).get('branch',''));
-      let d = b.get('branch',(ai((b))).get('branch',''));
-      return bK(a) && (c == d || bK(b));
+      let c = bj();
+      let d = !c && bi() && bu() == 'google.com' && bv() == true;
+      let e = d ? bA() : {};
+      let f = a.get('branch',(ai((a))).get('branch',''));
+      let g = b.get('branch',(ai((b))).get('branch',''));
+      return c || (d && e.active == true && e.permissions is list
+        && e.permissions.hasAny(['all','branches','payroll','feed','ledger']) && e.allowedBranches is list
+        && e.allowedBranches.hasAny(['All',f]) && (f == g || e.allowedBranches.hasAny(['All',g]))
+        && (!e.bridgeRequired || e.bridgePermissions is list && e.bridgePermissions.hasAny(['all','branches','payroll','feed','ledger'])
+          && e.bridgeBranches is list && e.bridgeBranches.hasAny(['All',f])
+          && (f == g || e.bridgeBranches.hasAny(['All',g]))));
     }
     function bM(a) {
       return hy() && hB(a) && bD(bn('cashiers',a));

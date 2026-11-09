@@ -27,21 +27,33 @@ test('business permission dispatch delegates once with exactly the original perm
  }
 });
 
-test('same-branch HR updates reuse immutable authority while changed branches retain both original checks',()=>{
- const fixture=vm.createContext({enabled:true,allowed:['All'],calls:[]});
+test('one fresh HR authority snapshot preserves both branch scopes and every permission/bridge intersection',()=>{
+ const fixture=vm.createContext({owner:false,eligible:true,grant:null,reads:0});
  const actual=javascript('companyHRReadPair');assert.equal((actual.match(/\.get\(/g)||[]).length,6);
- const adapted=actual.replace(/(before|after)\.get\('branch',\1\.get\('frozenData',\{\}\)\.get\('branch',''\)\)/g,(_,name)=>"read("+name+",'branch',read(read("+name+",'frozenData',{}),'branch',''))");assert.doesNotMatch(adapted,/\.get\(/);
- vm.runInContext(`function read(map,key,fallback){if(map===null||typeof map!=='object'||Array.isArray(map))throw Error('Invalid Rules map');return Object.hasOwn(map,key)?map[key]:fallback;}
-  function companyHRRead(data){const branch=read(data,'branch',read(read(data,'frozenData',{}),'branch',''));calls.push(branch);return enabled&&(allowed.includes('All')||allowed.includes(branch));}
+ assert.equal((actual.match(/companyHQAccess\(/g)||[]).length,1);
+ const types=text=>text.replace(/(\w+(?:\.\w+)*) is list/g,'Array.isArray($1)');
+ const adapted=types(actual).replace(/(before|after)\.get\('branch',\1\.get\('frozenData',\{\}\)\.get\('branch',''\)\)/g,(_,name)=>"read("+name+",'branch',read(read("+name+",'frozenData',{}),'branch',''))");assert.doesNotMatch(adapted,/\.get\(/);
+ vm.runInContext(`Array.prototype.hasAny=function(other){return this.some(value=>other.includes(value));};
+  function read(map,key,fallback){if(map===null||typeof map!=='object'||Array.isArray(map))throw Error('Invalid Rules map');return Object.hasOwn(map,key)?map[key]:fallback;}
+  function isOwner(){return owner;}function isSignedIn(){return eligible;}function reqProvider(){return 'google.com';}function reqVerified(){return true;}function companyHQAccess(){reads++;return grant;}
+  ${types(javascript('companyHQCan'))}
+  function companyHRRead(data){return companyHQCan(['all','branches','payroll','feed','ledger'],read(data,'branch',read(read(data,'frozenData',{}),'branch','')));}
   function original(before,after){return companyHRRead(before)&&companyHRRead(after);}
   ${adapted}
+  const branches=['Maa','Citygate','All',''];const perms=[[],['all'],['branches'],['payroll'],['feed'],['ledger'],['inventory'],['payroll','inventory']];const scopes=[[],['All'],['Maa'],['Citygate'],['Maa','Citygate']];
+  const grants=perms.flatMap(permissions=>scopes.map(allowedBranches=>({active:true,permissions,allowedBranches,bridgeRequired:false,bridgePermissions:[],bridgeBranches:[]})));
+  let comparisons=0;
+  for(const primary of grants)for(const bridge of grants){grant={...primary,bridgeRequired:true,bridgePermissions:bridge.permissions,bridgeBranches:bridge.allowedBranches};for(const first of branches)for(const second of branches){if(companyHRReadPair({branch:first},{branch:second})!==original({branch:first},{branch:second}))throw Error('Permission/bridge mismatch');comparisons++;}}
+  for(const g of grants)for(const active of [true,false])for(const own of [true,false])for(const valid of [true,false]){owner=own;eligible=valid;grant={...g,active};for(const first of branches)for(const second of branches){if(companyHRReadPair({branch:first},{frozenData:{branch:second}})!==original({branch:first},{frozenData:{branch:second}}))throw Error('Actor mismatch');comparisons++;}}
+  globalThis.comparisons=comparisons;
   const records=[{}, {branch:'Maa'}, {branch:'Citygate'}, {branch:''}, {branch:null},
    {frozenData:{branch:'Maa'}},{frozenData:{branch:'Citygate'}},{branch:'Maa',frozenData:{branch:'Citygate'}},
    {branch:'Maa',frozenData:null},{frozenData:42}];
-  function invoke(fn,first,second){calls=[];let allowed=false;try{allowed=fn(records[first],records[second])===true;}catch{}return{allowed,calls:calls.length};}`,fixture);
- for(const allowed of [['All'],['Maa'],['Citygate'],[]])for(const enabled of [true,false])for(let before=0;before<10;before++)for(let after=0;after<10;after++){
-  fixture.allowed=allowed;fixture.enabled=enabled;const original=fixture.invoke(fixture.original,before,after),actual=fixture.invoke(fixture.companyHRReadPair,before,after);
-  assert.equal(actual.allowed,original.allowed,JSON.stringify({allowed,enabled,before,after}));assert.ok(actual.calls<=original.calls);
+  function invoke(fn,first,second){reads=0;let allowed=false;try{allowed=fn(records[first],records[second])===true;}catch{}return{allowed,reads};}
+  grant={active:true,permissions:['payroll'],allowedBranches:['Maa'],bridgeRequired:false};eligible=true;owner=false;`,fixture);
+ assert.equal(fixture.comparisons,30720);
+ for(const owner of [true,false])for(let before=0;before<10;before++)for(let after=0;after<10;after++){
+  fixture.owner=owner;assert.equal(fixture.invoke(fixture.companyHRReadPair,before,after).allowed,fixture.invoke(fixture.original,before,after).allowed,JSON.stringify({owner,before,after}));
  }
- fixture.enabled=true;fixture.allowed=['Maa'];assert.equal(fixture.invoke(fixture.companyHRReadPair,1,5).calls,1);assert.equal(fixture.invoke(fixture.companyHRReadPair,1,2).allowed,false);assert.equal(fixture.invoke(fixture.companyHRReadPair,1,2).calls,2);
+ fixture.owner=false;assert.equal(fixture.invoke(fixture.companyHRReadPair,1,5).reads,1);assert.equal(fixture.invoke(fixture.companyHRReadPair,1,2).allowed,false);assert.equal(fixture.invoke(fixture.companyHRReadPair,1,2).reads,1);
 });

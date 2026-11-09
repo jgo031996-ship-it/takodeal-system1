@@ -144,9 +144,17 @@ service cloud.firestore {
       return companyHQCan(['all','branches','payroll','feed','ledger'],data.get('branch',data.get('frozenData',{}).get('branch','')));
     }
     function companyHRReadPair(before,after) {
+      let owner = isOwner();
+      let eligible = !owner && isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true;
+      let access = eligible ? companyHQAccess() : {};
       let first = before.get('branch',before.get('frozenData',{}).get('branch',''));
       let second = after.get('branch',after.get('frozenData',{}).get('branch',''));
-      return companyHRRead(before) && (first == second || companyHRRead(after));
+      return owner || (eligible && access.active == true && access.permissions is list
+        && access.permissions.hasAny(['all','branches','payroll','feed','ledger']) && access.allowedBranches is list
+        && access.allowedBranches.hasAny(['All',first]) && (first == second || access.allowedBranches.hasAny(['All',second]))
+        && (!access.bridgeRequired || access.bridgePermissions is list && access.bridgePermissions.hasAny(['all','branches','payroll','feed','ledger'])
+          && access.bridgeBranches is list && access.bridgeBranches.hasAny(['All',first])
+          && (first == second || access.bridgeBranches.hasAny(['All',second]))));
     }
     function companyPrivateProfile(id) {
       return docVaultEnabled() && docVaultOwn(id) && companyProfileActive(readData('cashiers',id));
