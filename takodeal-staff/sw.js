@@ -16,6 +16,7 @@ SHELL.push('./clock-upload-access.js','./staff-access.js');
 SHELL.push('./staff-document-broker.js');
 SHELL.push('./staff-loan-ledger-client.js','./staff-loan-ledger-model.js','./staff-loan-ledger-ui.js','./staff-loan-ledger.css');
 SHELL.push('./private-phone-identity.js');
+SHELL.push('./document-metadata-client.js');
 SHELL.push('./payroll-attendance.js');
 SHELL.push('./staff-payroll-reader.js');
 SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js','./attendance-camera.js','./attendance-camera.css');
