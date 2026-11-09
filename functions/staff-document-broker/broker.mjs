@@ -45,9 +45,10 @@ function validateObject(meta,details,size) {
 export function createPrivateDocumentBroker({verifyToken,read,objects,allowedOrigins=[]}) {
     const origins=new Set(allowedOrigins);
     if([...origins].some(origin=>{try{const url=new URL(origin);return url.protocol!=='https:' || url.origin!==origin || url.username || url.password;}catch{return true;}}))throw Error('Broker origins must be exact HTTPS origins.');
-    async function authorize(token,body,upload) {
+    async function authorize(token,body,upload,{hqOnly=false}={}) {
         let actor;try{actor=await verifyToken(token,true);}catch{reject(401,'invalid-auth','Sign in again before using private documents.');}
         if(!id(actor?.uid) || !actor.firebase)reject(401,'invalid-auth','Sign in again before using private documents.');
+        if(hqOnly && (actor.firebase.sign_in_provider!=='google.com' || actor.email_verified!==true))reject(403,'scope-denied','Use a verified HQ Google account for this review.');
         const policy=await read('staff_document_config/current');
         if(policy?.enabled!==true || policy.policyVersion!==2 || policy.brokerEndpoint!==BROKER_ENDPOINT)reject(503,'vault-disabled','Private documents are not enabled.');
         const scope=await read(`staff_private_documents/${body.staffId}`);
@@ -112,11 +113,36 @@ export function createPrivateDocumentBroker({verifyToken,read,objects,allowedOri
         if(current.uploadId!==body.uploadId || current.version!==body.version || current.sha256!==body.sha256 || current.storagePath!==path)reject(409,'version-changed','This document changed. Refresh its profile.');
         return bytes;
     }
+    // Read-only proof for the metadata writer. This service never obtains
+    // Firestore write IAM and never accepts a client-selected URL or path.
+    async function attest(token,body) {
+        const upload=body?.purpose==='upload',review=body?.purpose==='review';
+        const keys=upload?['purpose','staffId','group','uploadId','expectedVersion','sha256','size','clearanceType','expiresOn']:['purpose','staffId','group','uploadId','version','sha256'];
+        if(!object(body)||(!upload&&!review)||Object.keys(body).length!==keys.length||keys.some(key=>!Object.hasOwn(body,key)))reject(400,'invalid-request','The document verification reference is invalid.');
+        if(upload){schema({staffId:body.staffId,group:body.group,uploadId:body.uploadId,expectedVersion:body.expectedVersion,sha256:body.sha256,clearanceType:body.clearanceType,expiresOn:body.expiresOn,base64:''},true);if(!Number.isSafeInteger(body.size)||body.size<6||body.size>MAX_BYTES)reject(400,'invalid-size','The private photo size is invalid.');}
+        else schema({staffId:body.staffId,group:body.group,uploadId:body.uploadId,version:body.version,sha256:body.sha256},false);
+        const access=await authorize(token,body,upload,{hqOnly:review});
+        async function state(){
+            const fresh=await authorize(token,body,upload,{hqOnly:review});if(fresh.uid!==access.uid||fresh.branch!==access.branch)reject(403,'scope-changed','Private document access changed.');
+            if(review){const record=await committedRecord(body,access.branch);if(record.uploadId!==body.uploadId||record.version!==body.version||record.sha256!==body.sha256)reject(409,'version-changed','Refresh the document before reviewing it.');return record;}
+            const record=await read(recordPath(body)),version=await read(`staff_private_documents/${body.staffId}/versions/${body.uploadId}`),path=filePath(access.uid,body);
+            if(record)currentRecord(record,body,access.branch);
+            if(record?.uploadId===body.uploadId){currentRecord(version,body,access.branch);if(!sameIntent(record,body,access.uid,path,body.size,access.branch)||canonical(record)!==canonical(version))reject(409,'retry-mismatch','Retry the exact original document.');}
+            else if((record?.version||0)!==body.expectedVersion||version)reject(409,'version-changed','Refresh before replacing this document.');
+            return{staffId:body.staffId,branch:access.branch,group:body.group,uploadId:body.uploadId,uploadedByUid:access.uid,storagePath:path,contentType:'image/jpeg',size:body.size,sha256:body.sha256,clearanceType:body.clearanceType,expiresOn:body.expiresOn};
+        }
+        const original=await state(),path=original.storagePath,meta=await objects.metadata(path);
+        validateObject(meta,objectDetails(original,original.uploadedByUid,access.branch),original.size);
+        const bytes=await objects.bytes(path,String(meta.generation),MAX_BYTES);jpeg(bytes,original.sha256);if(bytes.length!==original.size)reject(409,'object-mismatch','The saved private photo size changed.');
+        const fresh=await state();if(canonical(fresh)!==canonical(original))reject(409,'version-changed','The private document changed during verification.');
+        const fields=['staffId','branch','group','uploadId','uploadedByUid','storagePath','contentType','size','sha256','clearanceType','expiresOn'];
+        return{purpose:upload?'upload':'review',...Object.fromEntries(fields.map(key=>[key,original[key]])),generation:String(meta.generation)};
+    }
     return async request=> {
         const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
         try {
             if(!origins.has(request.origin))reject(403,'origin-denied','This app origin is not approved.');headers['Access-Control-Allow-Origin']=request.origin;
-            if(!['/upload','/download'].includes(request.path) || request.query && Object.keys(request.query).length)reject(404,'not-found','Route unavailable.');
+            if(!['/upload','/download','/attest'].includes(request.path) || request.query && Object.keys(request.query).length)reject(404,'not-found','Route unavailable.');
             if(request.method==='OPTIONS') {
                 if(request.preflightMethod!=='POST' || String(request.preflightHeaders || '').split(',').filter(Boolean).some(header=>!['authorization','content-type'].includes(header.trim().toLowerCase())))reject(403,'preflight-denied','This document request is not approved.');
                 return {status:204,headers:{...headers,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type','Access-Control-Max-Age':'300'},body:null};
@@ -126,6 +152,7 @@ export function createPrivateDocumentBroker({verifyToken,read,objects,allowedOri
             if(typeof request.authorization!=='string' || !/^Bearer [A-Za-z0-9_.-]{20,8192}$/.test(request.authorization))reject(401,'invalid-auth','Sign in again before using private documents.');
             const token=request.authorization.slice(7);
             if(request.path==='/upload')return {status:200,headers:{...headers,'Content-Type':'application/json'},body:await upload(token,request.body)};
+            if(request.path==='/attest')return {status:200,headers:{...headers,'Content-Type':'application/json'},body:await attest(token,request.body)};
             return {status:200,headers:{...headers,'Content-Type':'image/jpeg','Content-Disposition':`attachment; filename="${request.body?.group || 'document'}.jpg"`},body:await download(token,request.body)};
         }catch(error){const known=error instanceof BrokerError;return {status:known?error.status:503,headers:{...headers,'Content-Type':'application/json'},body:{error:{code:known?error.code:'temporarily-unavailable',message:known?error.message:'Private documents are temporarily unavailable. Try again later.'}}};}
     };

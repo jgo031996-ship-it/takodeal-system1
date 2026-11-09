@@ -116,7 +116,7 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
         const token=++policyEpoch,key=actorKey(api);policy=null;pendingPolicy=null;policyBusy=false;policyControls();
         if(!isSetupOwner(api.auth?.currentUser)){text('staffSetupPolicyStatus','Only the verified Owner can change the Staff app setup requirement.');return;}
         text('staffSetupPolicyStatus','Checking Staff app setup requirements…');
-        try{const result=await request('config',{});if(token!==policyEpoch||key!==actorKey(api))return;if(!policyStatus(result))throw Error('HQ returned an invalid setup policy.');policy=result;text('staffSetupPolicyStatus',result.enabled?'Required · staff activate their own phone with their personal setup code.':'Preparation mode · issue and distribute codes before requiring one setup check on all phones.');}
+        try{const result=await request('config',{});if(token!==policyEpoch||key!==actorKey(api))return;if(!policyStatus(result))throw Error('HQ returned an invalid setup policy.');policy=result;text('staffSetupPolicyStatus',result.enabled?'Required · staff activate their own phone with their personal setup code.':'Optional activation · valid personal codes activate phones automatically. Existing phones remain usable.');}
         catch(error){if(token===policyEpoch&&key===actorKey(api))text('staffSetupPolicyStatus',error.message||'Setup service is unavailable. The requirement has not been changed.');}
         finally{if(token===policyEpoch&&key===actorKey(api))policyControls();}
     }
@@ -126,7 +126,7 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
         try{
             if(!pendingPolicy){if(!await confirm(enabled?'Require personal setup codes?':'Pause the setup requirement?',enabled?'Confirm you have issued and privately distributed a code to every active staff member. Existing phones will need one setup-code check; new or reset phones activate automatically after the correct code.':'Unenrolled phones will use the legacy approval flow. Activated phones and individually blocked phones keep their protected device status.',enabled?'Codes distributed · require setup':'Pause requirement'))return;if(token!==policyEpoch||key!==actorKey(api))return;pendingPolicy={enabled,expectedRevision:policy.revision,operationId:operationID(cryptoAPI)};}
             const result=await request('policy',pendingPolicy);if(token!==policyEpoch||key!==actorKey(api))return;if(!policyStatus(result)||result.enabled!==pendingPolicy.enabled||result.revision!==pendingPolicy.expectedRevision+1)throw Error('HQ has not confirmed this policy change. Retry the same action.');
-            policy=result;pendingPolicy=null;text('staffSetupPolicyStatus',result.enabled?'Required · correct personal codes activate staff phones automatically.':'Preparation mode · legacy approval remains for unenrolled phones. Existing protected phones keep their status.');
+            policy=result;pendingPolicy=null;text('staffSetupPolicyStatus',result.enabled?'Required · correct personal codes activate staff phones automatically.':'Optional activation · valid personal codes activate phones automatically. Existing phones remain usable.');
         }catch(error){if(token===policyEpoch&&key===actorKey(api)){if(error.status===409){pendingPolicy=null;await loadPolicy();}else text('staffSetupPolicyStatus',error.message||'No setup requirement change was confirmed.');}}
         finally{if(token===policyEpoch&&key===actorKey(api)){policyBusy=false;policyControls();}}
     }

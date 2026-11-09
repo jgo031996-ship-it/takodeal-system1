@@ -1,7 +1,8 @@
-const CACHE_NAME = 'takodeal-manager-core-v136-security-stock-loans-prep-20261109';
+const CACHE_NAME = 'takodeal-manager-core-v137-document-gcash-20261109';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
+    './document-metadata-client.js',
   'staff-deduction-history.js', 'staff-deduction-history.css', 'deduction-authority-draft.js', 'payroll-bonus-review-hint.js','./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
 CORE_ASSETS.push('./manual-attendance-review.js','./payroll-confirmed-shifts.js');
 CORE_ASSETS.push('./ai-board.js','./ai-board-model.js','./ai-board.css');
@@ -36,6 +37,7 @@ CORE_ASSETS.push('./recipe-bulk-model.js','./recipe-bulk.js','./recipe-changes.j
 CORE_ASSETS.push('./audit-modal.css','./audit-modal-layout.js','./manager-mobile.css');
 CORE_ASSETS.push('./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');
 CORE_ASSETS.push('./owner-stock-audits.js','./stock-audit-model.js','./stock-audit-reader.js','./stock-audit-ui.js','./stock-audit-ui.css','./payment-reconciliation-model.js','./payment-reconciliation-service.js','./payment-reconciliation-ui.js','./payment-reconciliation-ui.css','./payment-statement-file.js','./payment-statement-worker.js','./pending-payment-reader.js');
+CORE_ASSETS.push('./gcash-reconciliation-client.js');
 const VENDORS = [
     ...['app','auth','firestore','storage'].map(name => `https://www.gstatic.com/firebasejs/13.1.0/firebase-${name}.js`),
     'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
