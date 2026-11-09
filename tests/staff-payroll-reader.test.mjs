@@ -22,6 +22,8 @@ import {readStaffPayrollRecoveryHistory} from '../takodeal-staff/payroll-adjustm
 import {loadStaffPayrollShiftConfirmations} from '../takodeal-staff/payroll-confirmed-shifts.js';
 import {attendanceAmendmentReviewFingerprint} from '../takodeal-staff/attendance-amendment-review-model.js';
 import {amendmentFixture} from './helpers/attendance-amendment-fixture.mjs';
+import {buildStaffLoanLedgerSnapshot} from '../takodeal-staff/staff-loan-ledger-model.js';
+import {installStaffPrivateAPIFixture} from './helpers/staff-private-api-fixture.mjs';
 
 const base='projects/sample-project/databases/(default)/documents/attendance_logs/';
 const readTime='2026-10-27T10:00:00.000Z';
@@ -131,8 +133,9 @@ function runVault(logs,{legacy=false,read,clock='2026-10-08T12:00:00+08:00',staf
  const match=(row,filters)=>filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value);
  const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),getDocFromServer:async ref=>({id:ref.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>ref.table==='cashiers'||ref.table==='settings'&&ref.id==='global_schedule'&&!!publishedSchedule,data:()=>ref.table==='settings'&&ref.id==='global_schedule'?publishedSchedule:({hourlyRate:450,cashierName:staffName,scheduleNickname:'TEST',branch:'Maa',nightDiffRate:0,...profile})}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>match(row,ref.filters)).sort((a,b)=>Buffer.compare(Buffer.from(a.id),Buffer.from(b.id))):[]);}};
  api.getDocsFromServer=api.getDocs;
- const context={...api,...savedPayslipViews,...snapshotAmounts,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,readStaffPayrollRecoveryHistory,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,createPayrollBonusHistoryStore:scheduleFactory,Date:FixedDate,console:{error:(...error)=>errors.push(error)},window:{...api,readStaffPayrollAttendance:read,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?staffId:staffName},document:{getElementById:node}};
+ const context={...api,...savedPayslipViews,...snapshotAmounts,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,readStaffPayrollRecoveryHistory,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,createPayrollBonusHistoryStore:scheduleFactory,Date:FixedDate,console:{error:(...error)=>errors.push(error)},window:{...api,readMyLoanLedgerSnapshot:async()=>buildStaffLoanLedgerSnapshot({staffId,staffName,branch:'Maa',asOf:'2026-11-09T00:00:00.000Z'}),readStaffPayrollAttendance:read,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?staffId:staffName},document:{getElementById:node}};
  context.window.localStorage=context.localStorage;
+ installStaffPrivateAPIFixture(context.window,api,{staffId,staffName});
  vm.runInNewContext((legacy?legacyVault:vault).replace('let prevData = analyzeCutoff(', 'window.actualCutoffForTest=currentData;\n        let prevData = analyzeCutoff('),context);
  return {node,errors,queries,load:()=>context.window.loadPayslipVault(),context,result:()=>Object.fromEntries([...nodes].map(([key,value])=>[key,{text:value.innerText,html:value.innerHTML}]))};
 }

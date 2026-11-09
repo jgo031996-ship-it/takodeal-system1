@@ -7,12 +7,12 @@ const branch='Maa',staffId='sample-staff',name='Sample Staff',start='2030-01-01'
 const paymentId=ordinaryPayrollId(staffId,start,end),refundPaymentId='refund-payroll-'+staffId+'-'+start+'-'+end;
 const at=day=>new Date(`2030-01-${String(day).padStart(2,'0')}T12:00:00+08:00`);
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture({manager=false}={}){
- const h=firestoreHarness(),uid=manager?'sample-manager':'sample-owner',email=manager?'payroll@example.test':'jgo031996@gmail.com';
+function fixture({manager=false,global=false}={}){
+ const h=firestoreHarness(),uid=manager?'sample-manager':'sample-owner',email=manager?'payroll@example.test':'jgo031996@gmail.com',permissions=manager&&global?['payroll','accounts']:['payroll'];
  h.api.auth={currentUser:{uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]}};
- h.api.sessionUser={uid,email,isOwner:!manager,isFranchisee:false,role:manager?'Manager':'Owner',permissions:['payroll'],allowedBranches:manager?[branch]:['All']};
- h.put('hq_managers/'+uid,{email,cashierName:'Sample HQ',pin:'1234',role:manager?'Manager':'System Architect',permissions:['payroll'],assignedBranch:manager?branch:'All'});
- h.put('hq_email_access/'+email,{active:true,permissions:['payroll'],allowedBranches:manager?[branch]:['All']});
+ h.api.sessionUser={uid,email,isOwner:!manager,isFranchisee:false,role:manager?'Manager':'Owner',permissions,allowedBranches:manager&&!global?[branch]:['All']};
+ h.put('hq_managers/'+uid,{email,cashierName:'Sample HQ',pin:'1234',role:manager?'Manager':'System Architect',permissions,assignedBranch:manager&&!global?branch:'All'});
+ h.put('hq_email_access/'+email,{active:true,permissions,allowedBranches:manager&&!global?[branch]:['All']});
  const profile={staffId,cashierName:name,branch,role:'Crew',hourlyRate:450,dateHired:'2029-01-01',pin:'PRIVATE PIN',phone:'PRIVATE PHONE',bankAccount:'PRIVATE BANK'};
  h.put('cashiers/'+staffId,profile);h.put('cash_accounts/cash',{name:'Sample Cash',branch:manager?branch:'Main Office',balance:5000});
  h.api.getDocFromServer=async ref=>({id:ref.id,ref,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.get(ref.path))});
@@ -207,10 +207,17 @@ test('partial legacy expense, duplicate saved payments and malformed frozen iden
  }
 });
 
-test('a fresh protected grant is required for Manager employee and account branches',async()=>{
- const f=fixture({manager:true});assert.equal((await f.pay()).alreadyPaid,false);
- const g=fixture({manager:true});g.h.put('cash_accounts/cash',{name:'HQ Cash',branch:'Main Office',balance:5000});await assert.rejects(g.pay(),/outside/);assert.equal(g.h.get('cash_accounts/cash').balance,5000);
- const k=fixture({manager:true});afterPreflight(k,()=>k.h.put('hq_email_access/payroll@example.test',{active:false,permissions:['payroll'],allowedBranches:[branch]}));await assert.rejects(k.pay(),/access/);assert.equal(paths(k.h,'payroll_records').length,0);
+test('global payroll HQ requires both fresh complete-history grants; narrowing or revocation before commit prevents every financial write',async()=>{
+ const f=fixture({manager:true,global:true});assert.equal((await f.pay()).alreadyPaid,false);
+ const g=fixture({manager:true,global:true});afterPreflight(g,()=>g.h.put('hq_email_access/payroll@example.test',{active:true,permissions:['payroll'],allowedBranches:[branch]}));await assert.rejects(g.pay(),error=>error.code==='payroll-owner-history-required');assert.equal(g.h.get('cash_accounts/cash').balance,5000);assert.equal(paths(g.h,'payroll_records').length,0);assert.equal(paths(g.h,'expenses').length,0);
+ const k=fixture({manager:true,global:true});afterPreflight(k,()=>k.h.put('hq_email_access/payroll@example.test',{active:false,permissions:['payroll'],allowedBranches:['All']}));await assert.rejects(k.pay(),/access/);assert.equal(paths(k.h,'payroll_records').length,0);
+});
+test('limited payroll HQ must ask Owner to confirm complete history before payment, including foreign legacy overlaps, without any read or financial write',async()=>{
+ const f=fixture({manager:true});f.h.put('payroll_records/foreign-legacy-overlap',savedRecord(f,{branch:'Citygate',startDate:'2029-12-20',endDate:'2030-01-02'}));const before=structuredClone([...f.h.docs]);let reads=0,transactions=0;f.h.api.getDocsFromServer=async()=>{reads++;throw Error('Limited settlement must hold before querying private global history.');};f.h.api.runTransaction=async()=>{transactions++;throw Error('Limited settlement must not enter a payment transaction.');};
+ await assert.rejects(f.pay(),error=>error.code==='payroll-owner-history-required'&&/Owner must confirm complete payroll history/.test(error.message));assert.equal(reads,0);assert.equal(transactions,0);assert.deepEqual([...f.h.docs],before);
+});
+test('global payroll-only access can check saved history but cannot post bank or expense changes without explicit accounts permission',async()=>{
+ const f=fixture({manager:true,global:true});for(const source of [f.h.api.sessionUser,f.h.get('hq_managers/sample-manager'),f.h.get('hq_email_access/payroll@example.test')])source.permissions=['payroll'];f.h.put('payroll_records/'+paymentId,savedRecord(f));const before=structuredClone([...f.h.docs]);assert.equal((await checkSavedPayrollPayment(f.h.api,{data:f.data})).status,'paid');await assert.rejects(f.pay(),error=>error.code==='payroll-owner-account-required');assert.deepEqual([...f.h.docs],before);
 });
 
 test('account switching and forged session-only permissions stop payment before a write',async()=>{

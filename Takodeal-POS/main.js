@@ -5,6 +5,15 @@ import {installCashierDeviceSetup} from './cashier-device-setup.js';
 import {createCashierBranchRecovery,beginCashierOwnerPreview,refreshCashierBranchLabel,cashierStartupBusy,hasCashierOwnerPreview} from './cashier-startup.js';
 import {installCashierAppearance} from './cashier-appearance.js';
 import {installCycleCounts} from './stock-count-ui.js';
+import {installCashierLowIngredients} from './low-ingredient-ui.js';
+import {createCashierStaffAccess,createCashierDirectoryReader,createCashierOperationalApi} from './cashier-staff-access.js';
+import {escapeStock as escapeOperationalLabel} from './stock-cycle.js';
+import {readOperationalStaffSession} from './staff-operational-session.js';
+import {createCashierAttendanceHistoryReader,readCashierOperationalHistory,operationalRecordsSnapshot} from './cashier-operational-history.js';
+import {createCashierOwnOperations} from './cashier-own-operations.js';
+import {closeCashierShiftTrusted} from './cashier-shift-close-client.js';
+import {createCashierOperationLifecycle,bindCashierPrompt} from './cashier-operation-lifecycle.js';
+import {installCashierPrep} from './cashier-prep.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
 import {installPOSLeaveRequests} from './leave-request-ui.js';
@@ -39,17 +48,13 @@ import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowle
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, collection as firebaseCollection, addDoc as firebaseAddDoc, getDocs as firebaseGetDocs, query as firebaseQuery, where as firebaseWhere, serverTimestamp as firebaseServerTimestamp, doc as firebaseDoc, getDoc as firebaseGetDoc, updateDoc as firebaseUpdateDoc, limit as firebaseLimit, orderBy as firebaseOrderBy, deleteDoc as firebaseDeleteDoc, onSnapshot as firebaseOnSnapshot, increment as firebaseIncrement, setDoc as firebaseSetDoc, runTransaction as firebaseRunTransaction, getDocsFromServer as firebaseGetDocsFromServer, getDocFromServer as firebaseGetDocFromServer, startAfter as firebaseStartAfter, writeBatch as firebaseWriteBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity, receiptIngredientBurn } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import { getStorage, ref, uploadBytes as firebaseUploadBytes, getDownloadURL as firebaseGetDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-window.onSnapshot = onSnapshot;
-window.orderBy = orderBy;
-window.limit = limit;
-window.startAfter = startAfter;
  
 const firebaseConfig = {
   apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -62,8 +67,14 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const cashierOperationLifecycle=createCashierOperationLifecycle({collection:firebaseCollection,addDoc:firebaseAddDoc,getDocs:firebaseGetDocs,query:firebaseQuery,where:firebaseWhere,serverTimestamp:firebaseServerTimestamp,doc:firebaseDoc,getDoc:firebaseGetDoc,updateDoc:firebaseUpdateDoc,limit:firebaseLimit,orderBy:firebaseOrderBy,deleteDoc:firebaseDeleteDoc,onSnapshot:firebaseOnSnapshot,increment:firebaseIncrement,setDoc:firebaseSetDoc,runTransaction:firebaseRunTransaction,getDocsFromServer:firebaseGetDocsFromServer,getDocFromServer:firebaseGetDocFromServer,startAfter:firebaseStartAfter,writeBatch:firebaseWriteBatch},{scope:()=>[window.sessionUser,window.sessionUser?.staffId,window.sessionUser?.cashierName,window.sessionUser?.branch,window.sessionUser?.staffLoginSessionId,auth.currentUser,window.cashierOperationalConnection,window.cashierOperationalConnection?.auth?.currentUser,localStorage.getItem('takodeal_device_branch'),localStorage.getItem('takodeal_device_id')]});
+const {collection,addDoc,getDocs,query,where,serverTimestamp,doc,getDoc,updateDoc,limit,orderBy,deleteDoc,onSnapshot,increment,setDoc,runTransaction,getDocsFromServer,getDocFromServer,startAfter,writeBatch}=cashierOperationLifecycle.sdk;
+window.onSnapshot=onSnapshot;window.orderBy=orderBy;window.limit=limit;window.startAfter=startAfter;
+const uploadBytes=(...args)=>cashierOperationLifecycle.run(()=>firebaseUploadBytes(...args)),getDownloadURL=(...args)=>cashierOperationLifecycle.run(()=>firebaseGetDownloadURL(...args));
+if(typeof window.Swal?.fire==='function')window.Swal.fire=bindCashierPrompt(window.Swal.fire,()=>cashierOperationLifecycle.capture());
+for(const name of ['confirm','prompt'])if(typeof window[name]==='function'){const original=window[name];window[name]=function(...args){const guard=cashierOperationLifecycle.capture(),result=original.apply(this,args);guard();return result;};}
 
-window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
+window.mobileOrderFirebaseUid = () => window.cashierOperationalConnection?.auth?.currentUser?.uid || auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
 window.installPOSSettings = () => {
     window.posLeaveRequests ||= installPOSLeaveRequests(window,document,{primaryAuth:auth});
@@ -100,10 +111,11 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 const storage = getStorage(app); // 🔥 Turn on the engine
 
 // 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
-const db = initializeFirestore(app, {
+const primaryDb = initializeFirestore(app, {
   localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
+let db=primaryDb;
 window.storage = storage; 
 window.db = db;
 window.query = query;
@@ -114,15 +126,35 @@ window.getDocsFromServer = getDocsFromServer;
 window.readStaffMetadata=createAttendanceMetadataReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth,fetch:typeof window.fetch==='function'?window.fetch.bind(window):null});
 window.getDocFromServer = getDocFromServer;
 window.runTransaction = runTransaction;
+window.addDoc = addDoc;
+window.writeBatch = writeBatch;
 window.deleteDoc = deleteDoc;
 window.doc = doc;
 window.updateDoc = updateDoc;
 window.getDoc = getDoc;
 window.setDoc = setDoc;
 // Device approvals use their own matching auth/database context when Google is signed in.
-const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+const cashierStaffAccess=createCashierStaffAccess({primaryAuth:auth,primaryDb,deviceContext:cashierDeviceContext,storage:localStorage,getSession:()=>window.sessionUser,online:()=>navigator.onLine!==false,fetcher:window.fetch.bind(window)});
+window.verifyStaffPin=input=>cashierStaffAccess.verify({...input,...(window.sessionUser?.staffLoginSessionId?{sessionId:window.sessionUser.staffLoginSessionId}:{})});
+window.verifyMealIdentity=input=>cashierStaffAccess.mealIdentity({...input,...(window.sessionUser?.staffLoginSessionId?{sessionId:window.sessionUser.staffLoginSessionId}:{})});
+window.resolveCashierOperationalApi=createCashierOperationalApi(window,{primaryAuth:auth,primaryDb,deviceContext:cashierDeviceContext,readStaffSessionProfile:readOperationalStaffSession,closeShiftTrusted:(api,input)=>closeCashierShiftTrusted(api,input,{fetcher:window.fetch.bind(window)}),readOperationalRecords:async(api,table,options={})=>operationalRecordsSnapshot(await readCashierOperationalHistory(api,{staffId:api.sessionUser?.staffId,table,fetcher:window.fetch.bind(window),...options})),flushLogout:()=>cashierStaffAccess.flushLogout()});
+window.readOperationalStaffDirectory=createCashierDirectoryReader(window,{resolveApi:window.resolveCashierOperationalApi});
+window.cashierOwnOperations=createCashierOwnOperations(window);
+window.captureCashierOperationalAction=async({readOnly=false}={})=>readOnly?window.resolveCashierOperationalApi():(await window.cashierOwnOperations.capture()).api;
+window.activateCashierOperationalContext=function(identity,{assertCurrent=()=>{}}={}){
+    assertCurrent();const connection=cashierStaffAccess.takeOperationalContext(identity);assertCurrent();
+    cashierOperationLifecycle.invalidate();window.stopShiftSalesFeed?.();window.recipeFeed?.stop?.();window.stopMobileOrdersListener?.();window.stopCashierSanctions?.();
+    db=connection.db;window.db=db;window.auth=connection.auth;window.storage=getStorage(connection.auth.app);window.sessionUser=identity;window.cashierOperationalConnection=connection;
+    window.rebindCashierOperationalFeeds?.();window.refreshSaleSafetyContext?.(connection);
+    window.startCashierGlobalDeliveryFeed?.();window.startCashierBranchStatusFeed?.();window.startCashierDispatchFeed?.();window.startUnverifiedListener?.();window.startSmartReorderListener?.();
+};
+// Retire only the former plaintext employee roster. Orders, Auth, device
+// registration and both durable receipt/remittance queues are preserved.
+try{localStorage.removeItem('takodeal_cashier_cache');}catch{}
 window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
-window.ensureStockAuditDevice = createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
+const resolveStockAuditDevice=createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
+window.ensureStockAuditDevice = async options=>{await cashierStaffAccess.flushLogout();return resolveStockAuditDevice(options);};
 
 // =======================================================
 // 🧠 TAKODEAL INVENTORY CACHE - BRANCH SAFE
@@ -266,6 +298,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 🚀 SMART DEVICE REGISTRATION (GOOGLE AUTH BYPASS)
 // ========================================================
 window.smartDeviceRegistration = async function() {
+    const db=primaryDb;
     try {
         // 1. Trigger Google Login
         const result = await signInWithPopup(auth, provider);
@@ -335,6 +368,7 @@ window.smartDeviceRegistration = async function() {
 };
 
 window.lockDeviceToBranch = async function () {
+    const db=primaryDb;
   let selectedBranch = document.getElementById('setupBranchSelect').value;
   let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1' or 'Dianne Phone'):", "New Device");
   if (!deviceName) return; 
@@ -362,86 +396,9 @@ window.lockDeviceToBranch = async function () {
   }
 };
 
-// 🔥 THE LOCAL OFFLINE CACHE FOR PINS
-setTimeout(async () => {
-    try {
-        const snap = await getDocs(collection(db, "cashiers"));
-        let cashiers = [];
-        snap.forEach(d => cashiers.push({...d.data(),staffId:d.id}));
-        if(cashiers.length > 0) localStorage.setItem('takodeal_cashier_cache', JSON.stringify(cashiers));
-    } catch(e) {}
-}, 5000);
-
-// --- THE SMART FIREBASE PIN SEARCHER ---
-window.verifyPin = async function (pin) {
-  try {
-    // 🚨 1. NEW DEVICE SECURITY CHECK 🚨
-    let deviceId = localStorage.getItem('takodeal_device_id');
-    if (deviceId) {
-        const devQ = query(collection(db, "pos_devices"), where("deviceId", "==", deviceId));
-        const devSnap = await getDocs(devQ);
-        
-        if (!devSnap.empty) {
-            let devStatus = devSnap.docs[0].data().status;
-            if (devStatus === 'Pending') {
-                alert("⏳ DEVICE PENDING APPROVAL\n\nThe Manager has not approved this device yet. Please ask them to approve it in the Device Fleet tab.");
-                return "BLOCKED"; 
-            }
-            if (devStatus === 'Blocked') {
-                alert("🚫 DEVICE BLOCKED\n\nThis device has been blocked by the Manager.");
-                return "BLOCKED"; 
-            }
-        } else {
-            // 🔥 THE AUTO-RESET FIX: Wipes ONLY the broken device registration, not your whole browser!
-            alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. The system will now reset so you can securely re-register.");
-            
-            localStorage.removeItem('takodeal_device_id');
-            localStorage.removeItem('takodeal_device_branch');
-            localStorage.removeItem('takodeal_device_name');
-            
-            window.location.reload(true);
-            return "BLOCKED";
-        }
-    }
-
-    // 🔥 2. THE INSTANT LOGIN FIX: Check local cache first!
-    let cachedCashiers = JSON.parse(localStorage.getItem('takodeal_cashier_cache')) || [];
-    let staffData = cachedCashiers.find(c => String(c.pin) === String(pin));
-    
-    // If we found them in memory, let them in instantly! No waiting for Firebase!
-    if (staffData && cachedCashiers.length > 0) {
-        if (typeof window.checkActiveSanctions === 'function') window.checkActiveSanctions(staffData.cashierName);
-        setTimeout(() => { window.checkForAnnouncements(staffData.cashierName); }, 1500);
-        return staffData;
-    }
-
-    // Fallback: If cache is empty, check Cloud
-    const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
-    const snapStr = await window.getDocs(qStr);
-
-    if (!snapStr.empty) {
-        staffData = {...snapStr.docs[0].data(),staffId:snapStr.docs[0].id};
-    } else {
-        let pinNum = parseInt(pin);
-        if (!isNaN(pinNum)) {
-            const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
-            const snapNum = await window.getDocs(qNum);
-            if (!snapNum.empty) staffData = {...snapNum.docs[0].data(),staffId:snapNum.docs[0].id};
-        }
-    }
-
-    if (!staffData) return null; // PIN is genuinely wrong
-
-    if (typeof window.checkActiveSanctions === 'function') window.checkActiveSanctions(staffData.cashierName);
-    if (staffData) setTimeout(() => { window.checkForAnnouncements(staffData.cashierName); }, 1500);
-    
-    return staffData; 
-
-  } catch (error) {
-    console.error("Database error:", error);
-    return null;
-  }
-};
+// PINs are checked by the authenticated service; no public credential query or
+// offline credential fallback can unlock a staff session.
+window.verifyPin = (pin,options) => cashierStaffAccess.login(pin,options);
 
 // --- 🔥 INSTANT-BOOT & LIVE REAL-TIME MENU ENGINE ---
 window.processRawItemsIntoMenu = function(rawItems) {
@@ -1274,6 +1231,7 @@ window.checkShiftStatus = async function (branch) {
 // ==========================================
 window.updateActiveShiftCashier = async function(newCashierName) {
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         let branch = localStorage.getItem('takodeal_device_branch');
         if (!branch || !newCashierName) return;
 
@@ -1309,13 +1267,13 @@ window.recipeFeed = createRecipeFeed({db,doc,collection,getDocFromServer,getDocs
         window.masterPOSData.recipeVersion=snapshot.version; window.masterPOSData.recipeRevisionId=snapshot.revisionId;},
     report:error=>console.warn('Recipe refresh is awaiting connection:',error)
 });
-installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot });
-const shiftSalesFeed = createShiftSalesFeed({db, collection, query, where, onSnapshot}, rows => {
+installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot,resolveOperationalApi:()=>window.resolveCashierOperationalApi() });
+let shiftSalesFeed = createShiftSalesFeed({db, collection, query, where, onSnapshot}, rows => {
     if (document.getElementById('view-sales')?.classList.contains('active') && window.sessionUser && window.currentShift) {
         return window.loadSalesDashboard?.(rows);
     }
 });
-const parkedSalesFeed=createParkedOrdersFeed({db,collection,query,where,onSnapshot},()=>{
+let parkedSalesFeed=createParkedOrdersFeed({db,collection,query,where,onSnapshot},()=>{
     if(document.getElementById('view-sales')?.classList.contains('active')&&window.sessionUser&&window.currentShift){
         const rows=shiftSalesFeed.rows(window.sessionUser.branch,window.currentShift.startTime,window.currentShift.shiftId);
         if(rows!==null)return window.loadSalesDashboard?.(rows);
@@ -1323,6 +1281,13 @@ const parkedSalesFeed=createParkedOrdersFeed({db,collection,query,where,onSnapsh
 });
 window.startShiftSalesFeed = (...args) => shiftSalesFeed.start(...args);
 window.stopShiftSalesFeed = () => {shiftSalesFeed.stop();parkedSalesFeed.stop();};
+window.rebindCashierOperationalFeeds=()=>{
+    window.recipeFeed?.stop?.();shiftSalesFeed.stop();parkedSalesFeed.stop();
+    window.menuListenerUnsubscribe?.();window.menuListenerUnsubscribe=null;
+    window.recipeFeed=createRecipeFeed({db,doc,collection,getDocFromServer,getDocsFromServer,onSnapshot},{storage:localStorage,online:()=>navigator.onLine!==false,onChange:snapshot=>{window.masterPOSData||={};window.masterPOSData.bom=snapshot.rows;window.masterPOSData.recipeVersion=snapshot.version;window.masterPOSData.recipeRevisionId=snapshot.revisionId;},report:error=>console.warn('Recipe refresh is awaiting connection:',error)});
+    shiftSalesFeed=createShiftSalesFeed({db,collection,query,where,onSnapshot},rows=>{if(document.getElementById('view-sales')?.classList.contains('active')&&window.sessionUser&&window.currentShift)return window.loadSalesDashboard?.(rows);});
+    parkedSalesFeed=createParkedOrdersFeed({db,collection,query,where,onSnapshot},()=>{if(document.getElementById('view-sales')?.classList.contains('active')&&window.sessionUser&&window.currentShift){const rows=shiftSalesFeed.rows(window.sessionUser.branch,window.currentShift.startTime,window.currentShift.shiftId);if(rows!==null)return window.loadSalesDashboard?.(rows);}});
+};
 window.getParkedShiftSales = branch => parkedSalesFeed.start(branch);
 window.mergeParkedShiftSales = mergeParkedOrders;
 window.refreshVisibleShiftSales = () => {
@@ -1406,19 +1371,15 @@ window.getLiveShiftDetails = async function (branch) {
   } catch (e) { console.error(e); return null; }
 };
 
-window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
-  try {
-    const captured=captureShiftCloseIdentity(window,branch),closer=await resolveShiftCloseIdentity(window,captured);
-    await closeLegacyShiftAtomic(window,{branch,shiftId,actualCash,expectedCash,diff,closer,assertCurrent:()=>assertShiftCloseIdentity(window,captured)});
-    return true;
-  } catch (e) { console.error(e); throw e; }
+window.closeShift = async function () {
+    return window.MASTER_CloseShift();
 };
-
 // --- EXPENSE ENGINE ---
 window.getBranchInventoryForExpense = async function (branch) { return []; }; // Placeholder until Inventory Phase
 
 window.processPettyCashExpense = async function (payload) {
   try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
     await addDoc(collection(db, "expenses"), { ...payload, timestamp: serverTimestamp() });
     return "Expense recorded successfully!";
   } catch (e) { console.error(e); throw e; }
@@ -1540,7 +1501,8 @@ window.submitInventoryCheck = async function () {
     let btn = document.getElementById('btnSubmitInvCheck'); 
     btn.innerText = "Submitting..."; btn.disabled = true;
     
-    try { 
+    try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await window.addDoc(window.collection(window.db, "stock_counts"), {
             branch: sessionUser.branch,
             cashier: sessionUser.cashierName,
@@ -1560,6 +1522,7 @@ window.submitInventoryCheck = async function () {
 // --- PARKED ORDERS ENGINE ---
 window.parkOrderToDB = async function (payload, assertCurrent = () => {}) {
   try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
     assertCurrent();
     const recovery=await window.parkedRecovery?.preparePark(payload);
     assertCurrent();
@@ -1598,6 +1561,7 @@ window.getParkedOrders = async function (branch) {
 
 window.deleteParkedOrder = async function (docId, assertCurrent = () => {}) {
   try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
     assertCurrent();
     const recovery=window.parkedRecovery?.pendingResume(docId);
     const removed=await runTransaction(db,async tx=>{
@@ -1617,7 +1581,7 @@ window.deleteParkedOrder = async function (docId, assertCurrent = () => {}) {
 // --- RECEIPT DETAILS ENGINE ---
 window.getReceiptDetails = async function (receiptId) {
   try {
-    const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
+    const q = query(collection(db, "transactions"), where('branch','==',localStorage.getItem('takodeal_device_branch')),where("receiptId", "==", receiptId));
     const snap = await getDocs(q);
     if (snap.empty) return null;
     return snap.docs[0].data();
@@ -2034,345 +1998,8 @@ window.calculateGrandTotalCash = function() {
 // 🛑 SUBMIT COMPREHENSIVE SHIFT CLOSE (WITH MALL LEDGER)
 // ========================================================
 window.submitComprehensiveCloseShift = async function () {
-    let confirmBtn = document.querySelector('#endShiftModal .btn-place:last-child') || document.querySelector('button[onclick*="MASTER_CloseShift"]');
-    if (confirmBtn && confirmBtn.disabled) return; 
-
-    let origText = confirmBtn ? confirmBtn.innerText : '🛑 Confirm & End Shift';
-    if (confirmBtn) { 
-        confirmBtn.innerText = "⏳ Verifying Count..."; 
-        confirmBtn.disabled = true; 
-    }
-
-    try {
-        // 0. GATHER AND VALIDATE BLIND COUNT (Must be done before locking the button!)
-        let physicalStockCount = [];
-        let missingBlindCounts = false;
-        
-        if (window.currentBlindCountItems && window.currentBlindCountItems.length > 0) {
-            window.currentBlindCountItems.forEach(item => {
-                // Grab both inputs using the exact classes from the HTML!
-                let purchInput = document.querySelector(`.blind-count-purch[data-name="${item.name.replace(/"/g, '\\"')}"]`);
-                let baseInput = document.querySelector(`.blind-count-base[data-name="${item.name.replace(/"/g, '\\"')}"]`);
-                
-                let pValStr = purchInput ? purchInput.value.trim() : "0";
-                let bValStr = baseInput ? baseInput.value.trim() : ""; 
-                
-                // Reject if they left both boxes blank
-                if (bValStr === "" && (!purchInput || pValStr === "")) {
-                    missingBlindCounts = true;
-                } else {
-                    let pQty = parseFloat(pValStr) || 0;
-                    let bQty = parseFloat(bValStr) || 0;
-                    
-                    // 🧠 DUAL MATH: Combine Packs and Grams into the final base quantity!
-                    let totalBaseQty = (pQty * item.convRate) + bQty;
-
-                    physicalStockCount.push({
-                        name: item.name,
-                        systemExpected: item.systemExpected,
-                        actualCount: totalBaseQty,
-                        baseCost: item.baseCost,
-                        uom: item.uom,
-                        purchUom: item.purchUom || item.uom,
-                        convRate: item.convRate || 1,
-                        rawPurchCount: pQty,
-                        rawBaseCount: bQty
-                    });
-                }
-            });
-            
-            if (missingBlindCounts) {
-                Swal.fire('⛔ INCOMPLETE COUNT', `You must physically count and enter the quantity for ALL mandatory items before ending your shift.`, 'error');
-                if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
-                return;
-            }
-        }
-        // 1. Read Cash Drawer Securely
-        let declaredCash = 0;
-        let cashBreakdown = {};
-        
-        document.querySelectorAll('.denom-input').forEach(input => {
-            let val = parseInt(input.getAttribute('data-val'));
-            let pcs = parseInt(input.value) || 0;
-            if (pcs > 0) {
-                cashBreakdown["₱" + val] = pcs;
-                declaredCash += (val * pcs);
-            }
-        });
-
-        // 2. Identify Shift Safely
-        let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
-        if (!shiftId) throw new Error("No active shift found to close.");
-        
-        let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
-        
-        let startTime = new Date();
-        if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
-            startTime = activeShiftDetails.startTime;
-            if (startTime.toDate) startTime = startTime.toDate(); 
-        } else {
-            startTime.setHours(0,0,0,0);
-        }
-
-        // 3. Crunch Transactions
-        let totalCashSales = 0; let totalDigitalSales = 0;
-        let digitalBreakdown = {}; let shiftIngredientBurn = {}; 
-
-        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
-        const txSnap = await getDocs(txQ);
-
-        txSnap.forEach(docSnap => {
-            let tx = docSnap.data();
-            if (tx.status !== 'Voided') {
-                
-                // 🚨 CHECK IF MANAGER HAS VERIFIED DIGITAL PAYMENTS
-                if (tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
-                    unverifiedDigitalCount++;
-                }
-
-                for (const [name,quantity] of Object.entries(receiptIngredientBurn(tx))) {
-                    shiftIngredientBurn[name]=(shiftIngredientBurn[name]||0)+quantity;
-                }
-
-                if (tx.splitDetails) {
-                    tx.splitDetails.forEach(split => {
-                        if (split.method === 'Cash') totalCashSales += split.amount;
-                        else {
-                            totalDigitalSales += split.amount;
-                            digitalBreakdown[split.method] = (digitalBreakdown[split.method] || 0) + split.amount;
-                        }
-                    });
-                } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                    totalCashSales += tx.netTotal;
-                } else {
-                    totalDigitalSales += tx.netTotal;
-                    digitalBreakdown[tx.paymentMethod] = (digitalBreakdown[tx.paymentMethod] || 0) + tx.netTotal;
-                }
-            }
-        });
-
-        // 4. Crunch Expenses
-        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
-        const expSnap = await getDocs(expQ);
-        let cashOut = 0;
-        expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
-
-        let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
-        let expectedCash = startingCash + totalCashSales - cashOut;
-
-        if (expectedCash > 0 && declaredCash === 0) {
-            Swal.fire('⛔ SECURITY LOCKOUT', `The system has logged cash sales for this shift.<br><br>You cannot submit a blank or zero physical cash count. Please recount your drawer and enter the actual physical bills.`, 'error');
-            if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
-            return;
-        }
-
-        // 5. THE VARIANCE SWEETALERT
-        let variance = declaredCash - expectedCash;
-        if (Math.abs(variance) > 2) {
-            let isOver = variance > 0;
-            let alertTitle = isOver ? '📈 Cash Overage Detected' : '🚨 Cash Shortage Detected';
-            let alertHtml = isOver 
-                ? `Your declared cash is <b>MORE</b> than the system expects.<br><br>Do not remove any overage. Submit the full physical amount for HQ review.<br><br>Do you want to permanently submit this Z-Reading?`
-                : `Your declared cash is <b>SHORT</b> of the system expectation.<br><br>You will be required to submit a Reason Letter to HQ immediately after closing.<br><br>Do you want to permanently submit this Z-Reading?`;
-
-            const result = await Swal.fire({
-                title: alertTitle,
-                html: alertHtml,
-                icon: isOver ? 'info' : 'warning',
-                showCancelButton: true,
-                confirmButtonText: 'Yes, End Shift',
-                cancelButtonText: 'No, Re-count Cash',
-                confirmButtonColor: isOver ? '#d97706' : '#dc2626',
-                cancelButtonColor: '#64748b',
-                customClass: { popup: 'rounded-2xl shadow-2xl' }
-            });
-
-            if (!result.isConfirmed) {
-                if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
-                return; 
-            }
-            
-            await addDoc(collection(db, "manager_alerts"), {
-                type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
-                expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
-                message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
-                explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
-                timestamp: serverTimestamp(), isRead: false
-            });
-        }
-
-        confirmBtn.innerText = "⏳ Saving to Cloud...";
-        
-        // 6. FIREBASE: CLOSE SHIFT
-        await updateDoc(doc(db, "shifts", shiftId), {
-            active: false,
-            endTime: serverTimestamp(),
-            declaredCash: declaredCash,
-            expectedCash: expectedCash,
-            totalCashSales: totalCashSales, 
-            totalDigitalSales: totalDigitalSales,
-            digitalBreakdown: digitalBreakdown,
-            cashBreakdown: cashBreakdown, 
-            physicalStockCount: physicalStockCount,
-            status: "Closed"
-        });
-
-        // 7. FIREBASE: AUTO-SWEEP DIGITAL PAYMENTS
-        for (let method in digitalBreakdown) {
-            if (method.toLowerCase() === "gcash") continue; 
-            let amountToDeposit = digitalBreakdown[method];
-            if (amountToDeposit > 0) {
-                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
-                const accSnap = await getDocs(accQ);
-                if (!accSnap.empty) {
-                    let accDoc = accSnap.docs[0];
-                    let currentBal = accDoc.data().balance || 0;
-                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
-                    await addDoc(collection(db, "account_logs"), {
-                        accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
-                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: serverTimestamp(), note: `From ${branchName}`
-                    });
-                } else {
-                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
-                    await addDoc(collection(db, "account_logs"), {
-                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account Generated)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
-                    });
-                }
-            }
-        }
-
-        // ========================================================
-        // 💳 7.7 FRANCHISE BILLING ENGINE (AUTO-SYNC)
-        // ========================================================
-        try {
-            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
-            const bSnap = await getDocs(bQ);
-            let isFranchise = false;
-            let royaltyPct = 0;
-            
-            if (!bSnap.empty) {
-                // Assume it's a franchise if the royalty is greater than 0
-                isFranchise = bSnap.docs[0].data().isFranchise === true || parseFloat(bSnap.docs[0].data().royaltyPercent) > 0;
-                royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
-            }
-
-            if (isFranchise) {
-                // DEBIT: Franchisee owes HQ for the Royalty Fee
-                // Calculated against BOTH Cash and Digital Sales since the Franchisee keeps all the money!
-                let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
-                let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
-                
-                if (royaltyAmount > 0) {
-                    await addDoc(collection(db, "franchise_ledger"), {
-                        branch: branchName,
-                        type: "Charge", // "Charge" means they owe HQ money
-                        category: "Daily Franchise Royalty",
-                        amount: royaltyAmount,
-                        description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
-                        loggedBy: "System Z-Reading",
-                        timestamp: serverTimestamp()
-                    });
-                }
-            }
-        } catch(e) { console.error("Franchise Billing Engine Error:", e); }
-
-        // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
-        try {
-            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
-            const bSnap = await getDocs(bQ);
-            let isMallBranch = false;
-            if (!bSnap.empty) {
-                isMallBranch = bSnap.docs[0].data().isMallBranch === true;
-            }
-
-            if (isMallBranch) {
-                // Net Cash = Declared Physical Cash - Starting Float
-                let netCashEarned = declaredCash - startingCash;
-                
-                if (netCashEarned !== 0) {
-                    const accQ = query(collection(db, "cash_accounts"), where("branch", "==", branchName), where("name", "==", "Manager Fund"));
-                    const accSnap = await getDocs(accQ);
-                    
-                    if (!accSnap.empty) {
-                        let accDoc = accSnap.docs[0];
-                        let currentBal = parseFloat(accDoc.data().balance) || 0;
-                        let newBal = currentBal + netCashEarned;
-                        
-                        await updateDoc(accDoc.ref, { balance: newBal });
-                        await addDoc(collection(db, "account_logs"), {
-                            accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
-                            amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
-                        });
-                    } else {
-                        const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: serverTimestamp() });
-                        await addDoc(collection(db, "account_logs"), {
-                            accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
-                            amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
-                        });
-                    }
-                }
-            }
-        } catch(e) { console.error("Mall Branch Deposit Error:", e); }
-        
-        // 🚨 STOCK VARIANCE ALERTS FOR MANAGER
-        for (let item of physicalStockCount) {
-            let variance = item.actualCount - item.systemExpected;
-            if (variance < 0) {
-                let valueLost = Math.abs(variance) * item.baseCost;
-                await addDoc(collection(db, "manager_alerts"), {
-                    type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
-                    message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
-                    timestamp: serverTimestamp(), isRead: false
-                });
-            }
-        }
-        // 8. Deduct Ingredient Burn
-        for (let ingName in shiftIngredientBurn) {
-            let totalBurn = shiftIngredientBurn[ingName];
-            if (totalBurn > 0) {
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
-                    variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
-                    user: cashierName, timestamp: serverTimestamp()
-                });
-            }
-        }
-
-        // 9. Memory Wipe & UI Reset
-        localStorage.removeItem('currentShiftId');
-        localStorage.removeItem('takodeal_sop_progress');
-        if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
-        if (typeof currentShift !== 'undefined') currentShift = null;
-
-        let endModal = document.getElementById('endShiftModal');
-        if (endModal) endModal.style.display = 'none';
-
-        let topBtn = document.getElementById('btnTopShift');
-        let lock = document.getElementById('shiftLockout');
-        let placeBtn = document.getElementById('btnMainPlaceOrder');
-        if (topBtn) topBtn.innerText = "🔴 Shift Closed";
-        if (lock) lock.style.display = "flex";
-        if (placeBtn) placeBtn.disabled = true;
-
-        Swal.fire({
-            title: '✅ Shift Closed!',
-            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-
-        if (typeof checkCurrentShift === 'function') await checkCurrentShift();
-        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
-
-    } catch (error) {
-        console.error("Error closing shift:", error);
-        Swal.fire('❌ Error', 'Failed to close shift: ' + error.message, 'error');
-    } finally {
-        if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
-    }
+    return window.MASTER_CloseShift();
 };
-
 window.safeSubmitComprehensiveCloseShift = window.submitComprehensiveCloseShift;
 
 // Ensure HTML correctly points to this new master function!
@@ -2605,6 +2232,7 @@ window.submitExpenseCart = function() {
         const priorAttempt = window.expenseCartAttempt;
         let attempted = false;
         try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
             if (!window.expenseCart.length) { alert('Cart is empty!'); return; }
             if (!activeShiftDetails?.logId) throw Error('No active shift found to attach these expenses to.');
             const branch = localStorage.getItem('takodeal_device_branch');
@@ -2641,9 +2269,9 @@ window.submitExpenseCart = function() {
             if (!photoUrl && fileInput?.files?.length) {
                 if (btn) btn.innerText = '⏳ Uploading Photo...';
                 try {
-                    const file = fileInput.files[0], fileExt = file.name.split('.').pop();
-                    const storageRef = ref(window.storage, `expenses/${branch}_${attempt.id}.${fileExt}`);
-                    const snapshot = await uploadBytes(storageRef, file);
+                    const file = fileInput.files[0], fileExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];if(!fileExt||file.size<1||file.size>5*1024*1024)throw Error('Use a JPG, PNG or WebP receipt up to 5 MB.');
+                    const storageRef = ref(window.storage, `staff_requests/${window.auth.currentUser.uid}/${session.staffId}/expense_${attempt.id}_${crypto.randomUUID()}.${fileExt}`);
+                    const snapshot = await uploadBytes(storageRef, file,{contentType:file.type,customMetadata:{staffUploadUid:window.auth.currentUser.uid,staffId:session.staffId}});
                     photoUrl = await getDownloadURL(snapshot.ref);
                     attempt.photoUrl = photoUrl;
                 } catch (error) {
@@ -2791,6 +2419,7 @@ window.submitReasonLetter = async function() {
     if (!message) { alert("You must type a detailed explanation."); return; }
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await updateDoc(doc(db, "manager_alerts", alertId), {
             explanationCause: cause,
             explanationMessage: message,
@@ -2948,31 +2577,9 @@ window.switchRemittanceTab = function(tab) {
 };
 
 window.loadHqAccountsForRemittance = async function() {
-    let select = document.getElementById('remitChannel');
-    select.innerHTML = '<option value="">Loading HQ Accounts...</option>';
-    try {
-        // 🔥 ONLY pull accounts assigned to the Main Office
-        const q = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"));
-        const snap = await getDocs(q);
-        
-        // 🛡️ Use a "Set" to automatically prevent any accidental duplicate names
-        let uniqueAccounts = new Set();
-        snap.forEach(docSnap => { 
-            if (docSnap.data().name) uniqueAccounts.add(docSnap.data().name); 
-        });
-        
-        let html = '<option value="">-- Select Transfer Method --</option>';
-        uniqueAccounts.forEach(accountName => { 
-            html += `<option value="${accountName}">${accountName}</option>`; 
-        });
-        html += '<option value="Physical Handover">Physical Handover (Cash)</option>';
-        
-        select.innerHTML = html;
-    } catch (e) { 
-        console.error("Error loading accounts:", e); 
-    }
+    window.installCashRemittance?.();
+    return [];
 };
-
 const remittanceAttempts = createRemittanceAttemptStore(localStorage);
 let remittanceSubmitFlight = null;
 window.submitRemittance = function() {
@@ -3088,18 +2695,10 @@ window.openTimeClockModal = async function() {
     select.innerHTML = '<option value="">Loading Staff...</option>';
     
     try {
-        // 🔥 ALL STAFF FETCH: No branch limits. Anyone can log in here!
-        const q = query(collection(db, "cashiers"));
-        const snap = await getDocs(q);
-        
-        currentBranchStaffCache = [];
+        const rows = await window.readOperationalStaffDirectory({assertCurrent:()=>{if(modalEpoch!==attendanceModalEpoch)throw Error('Time Clock changed. Reopen it before choosing a staff account.');}});
+        currentBranchStaffCache = rows.filter(row=>row.active!==false&&row.isActive!==false&&!['blocked','archived','isArchived','isDeleted','deleted','revoked','offboarded','resigned','terminated','disabled'].some(key=>row[key]===true)&&!['status','employmentStatus','contractStatus'].some(key=>/^(blocked|revoked|terminated|resigned|inactive|disabled|archived|deleted|ended|expired|offboarded)$/i.test(String(row[key]||'').trim())));
         let html = '<option value="">-- Select Your Name --</option>';
-        
-        snap.forEach(docSnap => {
-            let data = {...docSnap.data(),id:docSnap.id,staffId:docSnap.id};
-            currentBranchStaffCache.push(data); 
-            html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
-        });
+        currentBranchStaffCache.forEach(data=>{html += `<option value="${escapeOperationalLabel(data.staffId)}">${escapeOperationalLabel(data.cashierName)} · ${escapeOperationalLabel(data.branch)}</option>`;});
         if (modalEpoch !== attendanceModalEpoch) return;
         window.currentBranchStaffCache = currentBranchStaffCache;
         select.innerHTML = html;
@@ -3134,8 +2733,12 @@ window.submitAttendance = async function(type) {
         if (b.innerText === type) b.innerText = "⏳ Syncing..."; 
     });
 
-    const staffName = document.getElementById('clockStaffName').value;
+    const selectedStaffId = document.getElementById('clockStaffName').value;
+    const selectedPeople = (window.currentBranchStaffCache || []).filter(row=>row.staffId===selectedStaffId);
+    const staffName = selectedPeople.length===1?selectedPeople[0].cashierName:'';
     const inputPin = document.getElementById('clockStaffPin').value.trim();
+    const verificationEpoch=attendanceModalEpoch,verificationBranch=localStorage.getItem('takodeal_device_branch');
+    const assertVerificationCurrent=()=>{if(attendanceModalEpoch!==verificationEpoch||document.getElementById('clockStaffName').value!==selectedStaffId||document.getElementById('clockStaffPin').value.trim()!==inputPin||document.getElementById('timeClockModal').style.display!=='flex'||localStorage.getItem('takodeal_device_branch')!==verificationBranch)throw Error('The selected Time Clock account or branch changed. Reopen Time Clock.');};
 
     // Helper function to safely unlock the UI if something fails
     const unlockUI = () => {
@@ -3162,43 +2765,20 @@ window.submitAttendance = async function(type) {
         return;
     }
 
-    const cachedMatches = type === 'TIME OUT' ? (window.currentBranchStaffCache || []).filter(row=>row.cashierName===staffName && row.id) : [];
-    let staffProfile = cachedMatches.length === 1 ? cachedMatches[0] : null;
-    
-    if (!staffProfile) {
-        try {
-            const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
-            const staffSnap = type === 'TIME IN' ? await getDocsFromServer(staffQ) : await getDocs(staffQ);
-            
-            if (staffSnap.docs.length === 1) {
-                staffProfile = {...staffSnap.docs[0].data(),id:staffSnap.docs[0].id,staffId:staffSnap.docs[0].id};
-            } else {
-                alert(`❌ Error: ${staffName}'s profile could not be found in the database. Please contact the Manager.`);
-                unlockUI();
-                return;
-            }
-        } catch (e) {
-            console.error("Staff Fetch Error:", e);
-            alert("❌ Error connecting to the cloud to verify your profile. Please check the tablet's internet connection.");
-            unlockUI();
-            return;
-        }
-    }
-    
-    // PIN verifies identity; the Time In photo check never replaces it.
-    if (!inputPin || String(staffProfile.pin || '') !== inputPin) {
-        alert('Incorrect PIN for ' + staffName + '. Enter your own staff PIN.');
-        document.getElementById('clockStaffPin').value = '';
-        unlockUI(); return;
-    }
+    let staffProfile,staffPinProof;
+    try{assertVerificationCurrent();staffPinProof=await window.verifyStaffPin({pin:inputPin,staffId:selectedStaffId,purpose:'time-clock',assertCurrent:assertVerificationCurrent});assertVerificationCurrent();if(staffPinProof.profile.cashierName!==staffName)throw Error('This staff name changed. Reload Time Clock before recording attendance.');staffProfile={...staffPinProof.profile,id:staffPinProof.staffId};}
+    catch(error){alert(error.message||'HQ could not confirm this staff PIN. Reconnect and try again.');document.getElementById('clockStaffPin').value='';unlockUI();return;}
+    let clockApi;try{clockApi=await window.resolveCashierOperationalApi({assertCurrent:assertVerificationCurrent});assertVerificationCurrent();}catch(error){alert(error.message);unlockUI();return;}
+    const {db,doc,collection,query,where,getDoc,getDocs,getDocFromServer,getDocsFromServer,addDoc,writeBatch,serverTimestamp,updateDoc}=clockApi;
+    const readClockMetadata=createCashierAttendanceHistoryReader(clockApi,{staffId:selectedStaffId,assertCurrent:assertVerificationCurrent,fetcher:window.fetch.bind(window)});
+    clockApi.readStaffMetadata=readClockMetadata;
 
     // ==========================================
     // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
     // ==========================================
     if (type === 'TIME IN') try {
-        const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName));
-        const nteSnap = await getDocsFromServer(nteQ);
-        const restriction = clockInRestriction(nteSnap.docs.map(entry=>({...entry.data(),id:entry.id})).filter(row=>!row.staffId || row.staffId===staffProfile.id));
+        const notices=await readCashierOperationalHistory(clockApi,{staffId:selectedStaffId,table:'hr_sanctions',assertCurrent:assertVerificationCurrent,fetcher:window.fetch.bind(window)});assertVerificationCurrent();
+        const restriction = clockInRestriction(notices);
         if (restriction) {
             let nteData = restriction.notice;
             
@@ -3230,8 +2810,8 @@ window.submitAttendance = async function(type) {
     // 📩 PROCESSED REQUEST INTERCEPTOR (APPROVED & REJECTED)
     // ==========================================
     try {
-        const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName));
-        const reqSnap = await getDocs(reqQ);
+        const requestRecords=await readCashierOperationalHistory(clockApi,{staffId:selectedStaffId,table:'staff_requests',assertCurrent:assertVerificationCurrent,fetcher:window.fetch.bind(window)});assertVerificationCurrent();
+        const reqSnap={forEach:callback=>requestRecords.forEach(({id,...row})=>callback({id,data:()=>row}))};
         
         let unreadRequest = null;
         let unreadReqId = null;
@@ -3254,15 +2834,13 @@ window.submitAttendance = async function(type) {
                     unreadReqId = docSnap.id;
                 } else {
                     // Silently clear out ancient requests in the background so they don't pile up!
-                    updateDoc(doc(db, "staff_requests", docSnap.id), { staffAcknowledged: true }).catch(e => console.log("Silently cleared old request."));
+                    // Historical decisions stay unchanged. Only a displayed,
+                    // explicitly acknowledged decision is updated below.
                 }
             }
         });
 
         if (unreadRequest) {
-            let clockModal = document.getElementById('timeClockModal');
-            if (clockModal) clockModal.style.display = 'none';
-
             let reqDetails = unreadRequest.amount ? `₱${unreadRequest.amount.toLocaleString()}` : (unreadRequest.item || unreadRequest.leaveType || unreadRequest.explanationCause || "Request");
             
             let isApproved = unreadRequest.status === "Approved";
@@ -3291,7 +2869,7 @@ window.submitAttendance = async function(type) {
 
             if (result.isConfirmed) {
                 Swal.fire({title: 'Clearing Alert...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                await updateDoc(doc(db, "staff_requests", unreadReqId), { staffAcknowledged: true });
+                assertVerificationCurrent();await updateDoc(doc(db, "staff_requests", unreadReqId), { staffAcknowledged: true });
                 
                 Swal.fire({
                     title: 'Unlocked',
@@ -3318,9 +2896,9 @@ window.submitAttendance = async function(type) {
     let activeTimeIn = null;
     let userLogs = [];
     const clockReadEpoch=typeof attendanceModalEpoch==='number'?attendanceModalEpoch:null,clockReadBranch=localStorage.getItem('takodeal_device_branch');
-    const clockStillSelected=()=>document.getElementById('clockStaffName')?.value===staffName&&document.getElementById('clockStaffPin')?.value.trim()===inputPin&&document.getElementById('timeClockModal')?.style.display==='flex'&&localStorage.getItem('takodeal_device_branch')===clockReadBranch&&(clockReadEpoch===null||attendanceModalEpoch===clockReadEpoch);
+    const clockStillSelected=()=>document.getElementById('clockStaffName')?.value===selectedStaffId&&document.getElementById('clockStaffPin')?.value.trim()===inputPin&&document.getElementById('timeClockModal')?.style.display==='flex'&&localStorage.getItem('takodeal_device_branch')===clockReadBranch&&(clockReadEpoch===null||attendanceModalEpoch===clockReadEpoch);
     try {
-        const records = await readStaffRecords({db,collection,query,where,getDocs,getDocsFromServer,readStaffMetadata:window.readStaffMetadata},staffProfile.id,staffName,{metadataOnly:true,assertCurrent:()=>{if(!clockStillSelected())throw Error('The selected Time Clock account changed. Choose the staff account again.');}});
+        const records = await readStaffRecords({...clockApi,readStaffMetadata:readClockMetadata},staffProfile.id,staffName,{metadataOnly:true,assertCurrent:()=>{if(!clockStillSelected())throw Error('The selected Time Clock account changed. Choose the staff account again.');}});
         const latest = latestAttendance(records,staffProfile.id,staffName);
         if(latest)userLogs=[latest];
     } catch(error) {
@@ -3365,11 +2943,13 @@ window.submitAttendance = async function(type) {
 
                     let autoOutTime = new Date(lastTime.getTime() + (9 * 60 * 60 * 1000));
                     
-                    pendingAttendanceRecords.push({ref:doc(collection(db, 'attendance_logs')),data:{
+                    pendingAttendanceRecords.push({ref:doc(db,'attendance_logs','auto-time-out-'+userLogs[0].id),data:{
                         staffName: staffName, 
                         staffId: staffProfile.id,
+                        staffPinVerificationId:staffPinProof.verificationId,
                         branch: userLogs[0].branch, 
                         type: "AUTO TIME OUT (Penalty)", 
+                        timeInLogId:userLogs[0].id,timeInAt:lastTime,
                         timestamp: autoOutTime, 
                         locationLat: userLogs[0].locationLat || 0, 
                         locationLng: userLogs[0].locationLng || 0, 
@@ -3467,8 +3047,8 @@ window.submitAttendance = async function(type) {
             
             // 1. Ask Firebase for the live GPS coordinates from the Manager App
             try {
-                const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", deviceBranch));
-                const bSnap = await window.getDocs(bQ);
+                const bQ = query(collection(db, "branches"), where("name", "==", deviceBranch));
+                const bSnap = await getDocsFromServer(bQ);assertVerificationCurrent();
                 if (!bSnap.empty) {
                     let bData = bSnap.docs[0].data();
                     if (bData.lat && bData.lng) {
@@ -3521,11 +3101,12 @@ window.submitAttendance = async function(type) {
                 window.assertAttendanceFaceFresh(faceResult);
                 if (Date.now() - gpsReceivedAt > 15000) throw Error('Location verification expired during the camera check. Keep Clock open and try Time In again.');
             }
-            if (document.getElementById('clockStaffName').value !== staffName || document.getElementById('clockStaffPin').value.trim() !== inputPin || (localStorage.getItem('takodeal_device_branch') || 'Unknown') !== deviceBranch || document.getElementById('timeClockModal').style.display !== 'flex') throw Error('The Time Clock or selected account changed. Open Clock and record attendance again.');
+            if (document.getElementById('clockStaffName').value !== selectedStaffId || document.getElementById('clockStaffPin').value.trim() !== inputPin || (localStorage.getItem('takodeal_device_branch') || 'Unknown') !== deviceBranch || document.getElementById('timeClockModal').style.display !== 'flex') throw Error('The Time Clock or selected account changed. Open Clock and record attendance again.');
             let earlyClockOut=null,timeOutResult=null;
-            const assertClockCurrent=()=>{if(document.getElementById('clockStaffName').value!==staffName || document.getElementById('clockStaffPin').value.trim()!==inputPin || document.getElementById('timeClockModal').style.display!=='flex' || localStorage.getItem('takodeal_device_branch')!==deviceBranch)throw Error('The Time Clock account changed. Record attendance again.');};
+            const assertClockCurrent=()=>{clockApi.assertStaffOperationalCurrent();if(document.getElementById('clockStaffName').value!==selectedStaffId || document.getElementById('clockStaffPin').value.trim()!==inputPin || document.getElementById('timeClockModal').style.display!=='flex' || localStorage.getItem('takodeal_device_branch')!==deviceBranch||Date.now()>=Date.parse(staffPinProof.expiresAt))throw Error('The Time Clock account changed or its PIN confirmation expired. Record attendance again.');};
+            assertClockCurrent();
             if(type==='TIME OUT'){
-                earlyClockOut=await prepareEarlyTimeOut(window,{start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,assertCurrent:assertClockCurrent});
+                earlyClockOut=await prepareEarlyTimeOut({...window,...clockApi},{start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,assertCurrent:assertClockCurrent});
                 if(!earlyClockOut.proceed)return;
                 assertClockCurrent();if(Date.now()-gpsReceivedAt>60000)throw Error('Location verification expired. Tap Time Out again to refresh your location.');
             }
@@ -3534,6 +3115,7 @@ window.submitAttendance = async function(type) {
             const attendance = {
                 staffName: staffName, 
                 staffId:staffProfile.id || '',
+                staffPinVerificationId:staffPinProof.verificationId,
                 branch: finalBranch, 
                 type: type, 
                 sourceApp:'cashier', recordedBy:staffName, recordedByStaffId:staffProfile.id || '',
@@ -3559,12 +3141,13 @@ window.submitAttendance = async function(type) {
                 assertClockCurrent();
             } else if (pendingAttendanceRecords.length || attendance.scheduleDeclaration) {
                 const batch=writeBatch(db);
-                pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data));
                 const attendanceRef=doc(collection(db,'attendance_logs'));
+                pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data.type==='AUTO TIME OUT (Penalty)'?{...row.data,replacementTimeInLogId:attendanceRef.id}:row.data));
                 if(attendance.scheduleDeclaration){
                     const requestRef=doc(collection(db,'staff_requests'));
                     attendance.scheduleDeclarationRequestId=requestRef.id;
                     const request=clockInDeclarationRequest({declaration:attendance.scheduleDeclaration,attendanceLogId:attendanceRef.id,lateMinutes:attendance.lateMinutes??attendance.scheduleSnapshot.lateMinutes,timestamp:serverTimestamp()});
+                    request.staffPinVerificationId=staffPinProof.verificationId;
                     const proposal=clockInDeclarationSavedProposal(schedule,{start:{id:attendanceRef.id,type:'TIME IN',staffId:staffProfile.id,staffName,branch:finalBranch,timestamp:attendanceAt},staffId:staffProfile.id,staffName},attendance.scheduleDeclaration);
                     if(proposal)request.staffShiftProposal=proposal;
                     batch.set(requestRef,request);
@@ -3624,12 +3207,12 @@ window.loadStaffPersonalInbox = async function() {
     container.innerHTML = "<div style='padding:20px; text-align:center; color:#666;'>Loading your records...</div>";
     
     try {
-        const q = query(collection(db, "staff_requests"), where("staffName", "==", safeCashierName), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
+        const scope=await window.cashierOwnOperations.capture(),records=await window.cashierOwnOperations.read('staff_requests',scope);scope.assertCurrent();
+        const snap={forEach:callback=>records.sort((a,b)=>attendanceMillis(b.timestamp)-attendanceMillis(a.timestamp)).forEach(({id,...row})=>callback({id,data:()=>row}))};
         
         let html = '';
         snap.forEach(docSnap => {
-            let d = docSnap.data(); 
+            let d = docSnap.data();d={...d,type:escapeOperationalLabel(d.type),item:escapeOperationalLabel(d.item||''),leaveType:escapeOperationalLabel(d.leaveType||''),managerReply:escapeOperationalLabel(d.managerReply||''),amount:typeof d.amount==='number'&&Number.isFinite(d.amount)?d.amount:null,proofImageUrl:typeof d.proofImageUrl==='string'&&/^https:\/\//.test(d.proofImageUrl)?escapeOperationalLabel(d.proofImageUrl):''};
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent';
             
             let statusBadge = `<span style="background: #fef9c3; color: #d97706; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Pending Review</span>`;
@@ -3667,7 +3250,7 @@ window.loadStaffPersonalInbox = async function() {
                 </div>`;
         });
         
-        container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
+        scope.assertCurrent();container.innerHTML = html || '<div style="padding:20px; text-align:center; color:#64748b;">No requests found.</div>';
     } catch (e) { 
         console.error(e); 
         container.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Error checking inbox.</div>'; 
@@ -3675,11 +3258,13 @@ window.loadStaffPersonalInbox = async function() {
 };
 
 window.submitStaffRequest = async function(requestType) {
+    let own;try{own=await window.cashierOwnOperations.capture();}catch(error){alert(error.message);return;}
     // 🛡️ Bulletproof name and branch grabbers!
-    let safeCashierName = localStorage.getItem('cashierName') || 'Unknown Staff';
-    let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown Branch';
+    let safeCashierName = own.session.cashierName;
+    let safeBranch = own.branch;
     
-    let payload = { type: requestType, staffName: safeCashierName, branch: safeBranch, status: "Pending", timestamp: new Date() };
+    if(!['Cash Advance','Leave','Staff Meal','Reason Letter'].includes(requestType))return alert('Choose a supported staff request.');
+    let payload = { type: requestType, staffId:own.session.staffId,staffName: safeCashierName, branch: safeBranch, status: "Pending", timestamp: own.api.serverTimestamp() };
     
     if (requestType === "Cash Advance") {
         payload.amount = parseFloat(document.getElementById('reqAdvAmount').value); 
@@ -3703,14 +3288,14 @@ window.submitStaffRequest = async function(requestType) {
                 let btns = document.querySelectorAll('#formReqMeal button');
                 if(btns.length > 0) btns[0].innerText = "Uploading proof...";
                 
-                const fileExt = imageFile.name.split('.').pop();
-                const fileName = `staff_requests/meal_${Date.now()}.${fileExt}`;
-                const storageRef = ref(window.storage, fileName); 
-                const snapshot = await uploadBytes(storageRef, imageFile);
-                payload.proofImageUrl = await getDownloadURL(snapshot.ref);
-            } catch (e) { console.error("Upload failed", e); }
+                const fileExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[imageFile.type];if(!fileExt||imageFile.size>5*1024*1024||imageFile.size<1)throw Error('Use a JPG, PNG or WebP image up to 5 MB.');
+                own.assertCurrent();const fileName=`staff_requests/${own.api.auth.currentUser.uid}/${own.session.staffId}/meal_${crypto.randomUUID()}.${fileExt}`;
+                const storageRef = ref(getStorage(own.api.auth.app), fileName);
+                const snapshot = await uploadBytes(storageRef, imageFile,{contentType:imageFile.type,customMetadata:{staffUploadUid:own.api.auth.currentUser.uid,staffId:own.session.staffId}});own.assertCurrent();
+                payload.proofImageUrl = await getDownloadURL(snapshot.ref);own.assertCurrent();
+            } catch (e) { alert(e.message||'The proof image could not be uploaded. Your request was not submitted.');return; }
         }
-    } else if (type === 'Reason Letter') {
+    } else if (requestType === 'Reason Letter') {
         let cause = document.getElementById('explainCause').value;
         let msg = document.getElementById('explainMessage').value.trim(); 
         if (!msg) return Swal.fire('Error', 'Please provide a detailed explanation.', 'error');
@@ -3718,7 +3303,7 @@ window.submitStaffRequest = async function(requestType) {
     }
     
     try {
-        await addDoc(collection(db, "staff_requests"), payload);
+        own.assertCurrent();await own.api.addDoc(own.api.collection(own.api.db, "staff_requests"), payload);own.assertCurrent();
         alert(`✅ Success! ${requestType} submitted.`);
         
         // Clean up the forms
@@ -3752,30 +3337,7 @@ window.hasLoadedMobileOrdersOnce = false; // Memory to track logins
 window.isMobileOrderingActive = true; // Defaults to accepting
 
 // Listens silently to see if another tablet already turned it off
-setTimeout(() => {
-    let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch) return;
-
-    onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
-        let btn = document.getElementById('btnMobileKillSwitch');
-        if (docSnap.exists()) {
-            let data = docSnap.data();
-            window.isMobileOrderingActive = data.mobileOrdersActive !== false; // Defaults to true if undefined
-        } else {
-            window.isMobileOrderingActive = true;
-        }
-
-        if (btn) {
-            if (window.isMobileOrderingActive) {
-                btn.style.background = "#16a34a"; // Green
-                btn.innerHTML = "🟢 Accepting";
-            } else {
-                btn.style.background = "#b91c1c"; // Dark Red
-                btn.innerHTML = "🔴 PAUSED";
-            }
-        }
-    });
-}, 3000);
+// Branch status is attached below and rebound to the verified Cashier connection.
 
 
 
@@ -4223,6 +3785,7 @@ window.filterMenuToggle = function() {
 // --- THE SMART BRANCH-SPECIFIC TOGGLE ---
 window.toggleItemStatus = async function(docId, makeAvailable) {
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         
         // 🔥 FIX: Removed "window." prefixes so it correctly uses the imported Firebase functions!
@@ -4318,7 +3881,7 @@ window.rejectMobileOrder = async function(docId) {
 window.deliveryEnabled = true;
 
 // Listens to the cloud to see if delivery is currently on or off
-onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+window.startCashierGlobalDeliveryFeed=function(){window.cashierGlobalDeliveryStop?.();window.cashierGlobalDeliveryStop=onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
     if (docSnap.exists()) {
         window.deliveryEnabled = docSnap.data().enabled;
     } else {
@@ -4333,12 +3896,15 @@ onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
         btnEl.style.background = window.deliveryEnabled ? "#10b981" : "#ef4444"; // Green for ON, Red for OFF
     }
 });
+};
+window.startCashierGlobalDeliveryFeed();
 
 window.toggleGlobalDelivery = async function() {
     let newState = !window.deliveryEnabled;
     if (!confirm(`Are you sure you want to turn Delivery ${newState ? 'ON' : 'OFF'} for all customers across all branches?`)) return;
     
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await setDoc(doc(db, "settings", "global_delivery"), { 
             enabled: newState,
             lastChangedBy: localStorage.getItem('cashierName') || 'Cashier',
@@ -4354,11 +3920,7 @@ window.closeAndNextOrder = function() {
     // 1. Close the modal
     document.getElementById('receiptModal').style.display = 'none';
     
-    // 2. Check if the alarm was tripped during checkout
-    if (window.pendingLowStockAlarm) {
-        alert("⚠️ LOW STOCK ALERT\n\nSome ingredients used in the last order are running low. Please notify the Manager to check the Live Inventory dashboard.");
-        window.pendingLowStockAlarm = false; // Reset the alarm
-    }
+    window.cashierLowStock?.receiptClosed();
 };
 
 window.openGrabEarningsModal = function() {
@@ -4382,6 +3944,7 @@ window.submitGrabEarnings = async function() {
     btn.innerText = "Saving..."; btn.disabled = true;
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await addDoc(collection(db, "grab_payouts"), {
             dateStr: dateVal, amount: amount, branch: branch, cashier: cashier, timestamp: serverTimestamp()
         });
@@ -4417,6 +3980,7 @@ window.toggleBusyMode = async function() {
 
     // Save to Firebase so the Customer App can see it!
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await window.setDoc(window.doc(window.db, "settings", "status_" + branch), { 
             busyMode: window.isBusyMode,
             lastUpdated: window.serverTimestamp()
@@ -4511,11 +4075,11 @@ window.renderMixMatchList = function() {
 // ========================================================
 window.incomingDeliveriesList = [];
 
-setTimeout(() => {
+window.startCashierDispatchFeed=function(){window.cashierDispatchStop?.();
     let safeBranch = localStorage.getItem('takodeal_device_branch');
     if (!safeBranch) return;
 
-    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "in", ["In Transit", "Arrived"])), (snap) => {
+    window.cashierDispatchStop=onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "in", ["In Transit", "Arrived"])), (snap) => {
         window.incomingDeliveriesList = [];
         snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
@@ -4553,7 +4117,8 @@ setTimeout(() => {
              if (typeof window.renderDeliveriesTab === 'function') window.renderDeliveriesTab();
         }
     });
-}, 3000);
+};
+setTimeout(()=>window.startCashierDispatchFeed(),3000);
 
 window.renderDeliveriesTab = function() {
     let container = document.getElementById('deliveriesContainer');
@@ -4703,6 +4268,7 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
     if (!confirm.isConfirmed) return;
     if (button) {button.disabled=true;button.innerText='Receiving shipment…';}
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await receiveDispatch(window,{branch:localStorage.getItem('takodeal_device_branch'),actor:localStorage.getItem('cashierName') || 'Cashier',items:values});
         window.invalidateCache?.('inventory');await window.loadStockRequestUI?.();
         Swal.fire('Shipment received','Stock and the delivery record were saved together.','success');
@@ -5012,6 +4578,7 @@ window.submitWasteCart = async function() {
     let cashier = localStorage.getItem('cashierName') || 'Staff';
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         window.wasteSubmissionId ||= 'waste_' + saleIdentity({}, crypto);
         let totalValueLost = 0;
         let uploadedItems = [];
@@ -5020,11 +4587,11 @@ window.submitWasteCart = async function() {
         for (let item of window.wasteCart) {
             let photoUrl = "";
             if (item.file) {
-                const fileExt = item.file.name.split('.').pop();
-                const fileName = `waste_proofs/${branch}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const fileExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[item.file.type];if(!fileExt||item.file.size<1||item.file.size>5*1024*1024)throw Error('Use a JPG, PNG or WebP waste photo up to 5 MB.');
+                const fileName = `staff_requests/${window.auth.currentUser.uid}/${window.sessionUser.staffId}/waste_${crypto.randomUUID()}.${fileExt}`;
                 
                 const storageReference = window.ref(window.storage, fileName);
-                const snapshot = await window.uploadBytes(storageReference, item.file);
+                const snapshot = await window.uploadBytes(storageReference, item.file,{contentType:item.file.type,customMetadata:{staffUploadUid:window.auth.currentUser.uid,staffId:window.sessionUser.staffId}});
                 photoUrl = await window.getDownloadURL(snapshot.ref);
             }
 
@@ -5044,6 +4611,7 @@ window.submitWasteCart = async function() {
         const requestData = {
             type: "Waste Report",
             branch: branch,
+            staffId:window.sessionUser.staffId,
             staffName: cashier,
             items: uploadedItems,
             totalValueLost: totalValueLost,
@@ -5296,11 +4864,11 @@ window.filterCashierStock = function() {
 // ==========================================
 window.isMobileOrderingActive = true; 
 
-setTimeout(() => {
+window.startCashierBranchStatusFeed=function(){window.cashierBranchStatusStop?.();
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
-    onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
+    window.cashierBranchStatusStop=onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
         let btn = document.getElementById('btnMobileKillSwitch');
         if (docSnap.exists()) {
             let data = docSnap.data();
@@ -5319,7 +4887,8 @@ setTimeout(() => {
             }
         }
     });
-}, 3000);
+};
+setTimeout(()=>window.startCashierBranchStatusFeed(),3000);
 
 window.toggleMobileOrderingStatus = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
@@ -5335,6 +4904,7 @@ window.toggleMobileOrderingStatus = async function() {
     btn.innerText = "⏳..."; btn.disabled = true;
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await setDoc(doc(db, "settings", "status_" + branch), { 
             mobileOrdersActive: newState,
             lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
@@ -5401,111 +4971,9 @@ window.filterStockReq = function() {
 // 🚨 EMERGENCY REQUEST & FRAUD TRAP ENGINE
 // ========================================================
 window.triggerEmergencyRequest = async function(encodedItem) {
-    let item = JSON.parse(decodeURIComponent(encodedItem));
-    let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-    let pUom = item.purchaseUom || item.uom || 'units';
-    let bUom = item.uom || 'units';
-    let purchStock = (parseFloat(item.currentStock) || 0) / conv;
-    let branch = localStorage.getItem('takodeal_device_branch');
-    let cashier = localStorage.getItem('cashierName') || 'Staff';
-
-    const { value: formValues } = await Swal.fire({
-        title: `🚨 Emergency Request`,
-        html: `
-            <div style="font-size: 13px; color: #475569; margin-bottom: 15px; text-align: left;">
-                The system calculates you still have <b style="color:#0ea5e9;">${purchStock.toFixed(2)} ${pUom}</b> of <b>${item.name}</b>.<br><br>
-                If you are actually out of stock, you must enter the exact physical count left in the store and explain the discrepancy. Management will review the variance.
-            </div>
-            <div style="text-align: left;">
-                <label style="font-size: 11px; font-weight: bold; color: #ef4444;">How many ${pUom}s are actually left in the store?</label>
-                <input type="number" id="emQty" class="swal2-input" placeholder="0" style="margin: 5px 0 15px 0; width: 100%; box-sizing: border-box;">
-                
-                <label style="font-size: 11px; font-weight: bold; color: #ef4444;">Why is this missing? (Mandatory)</label>
-                <textarea id="emReason" class="swal2-textarea" placeholder="e.g. Dropped it, wasn't logged in waste, previous shift didn't report..." style="margin: 5px 0 0 0; width: 100%; box-sizing: border-box; height: 80px;"></textarea>
-            </div>
-        `,
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Send Emergency Alert to HQ',
-        customClass: { popup: 'rounded-2xl shadow-xl' },
-        preConfirm: () => {
-            let qtyStr = document.getElementById('emQty').value;
-            let reason = document.getElementById('emReason').value;
-            
-            if (!qtyStr || qtyStr.trim() === "") { 
-                Swal.showValidationMessage("Please enter the physical quantity left."); 
-                return false; 
-            }
-            
-            let qty = parseFloat(qtyStr);
-            if (qty < 0) { 
-                Swal.showValidationMessage("Quantity cannot be negative."); 
-                return false; 
-            }
-            
-            // Prevent them from requesting an emergency if they actually have plenty of stock!
-            if (purchStock > 0 && qty >= purchStock) { 
-                Swal.showValidationMessage(`Quantity must be less than the system stock (${purchStock.toFixed(2)}). If you have enough, no emergency request is needed!`); 
-                return false; 
-            }
-            
-            if (!reason.trim()) { 
-                Swal.showValidationMessage("A reason is strictly required."); 
-                return false; 
-            }
-            
-            return { actualLeft: qty, reason: reason.trim() };
-        }
-    });
-
-    if (formValues) {
-        Swal.fire({title: 'Sending to HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        try {
-            let actualLeftPurch = formValues.actualLeft;
-            let actualLeftBase = actualLeftPurch * conv;
-            let missingPurch = purchStock - actualLeftPurch;
-            
-            // 1. Send High-Priority Fraud Alert to Manager
-            await window.addDoc(window.collection(window.db, "manager_alerts"), {
-                type: "EMERGENCY_RESTOCK_FRAUD", branch: branch, cashier: cashier,
-                message: `🚨 EMERGENCY AUDIT: ${cashier} reported only ${actualLeftPurch} ${pUom} of ${item.name} left. System expected ${purchStock.toFixed(2)} ${pUom}. Missing: ${missingPurch.toFixed(2)} ${pUom}. Reason given: "${formValues.reason}"`,
-                timestamp: window.serverTimestamp(), isRead: false
-            });
-
-            // 2. Add PO to the Queue
-            // We pass the physicalStock so the Manager App treats it as an Audit and auto-applies penalties!
-            let reqItem = {
-                itemName: item.name, name: item.name, sourceId: item.id,
-                qty: 0, rawQty: 0, // Requested amounts start at 0, HQ decides how much to send!
-                origRawQty: 0, origBaseQty: 0,
-                uom: bUom, baseUom: bUom, purchaseUom: pUom, friendlyUom: pUom, displayUom: pUom,
-                selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
-                requestType: "Emergency Override",
-                systemStock: item.currentStock, 
-                physicalStock: actualLeftBase, 
-                displayQty: actualLeftPurch 
-            };
-
-            await window.addDoc(window.collection(window.db, "purchase_orders"), {
-                branch: branch,
-                type: "Emergency Request",
-                items: [reqItem],
-                status: "Pending",
-                requestedBy: cashier,
-                managerMessage: `EMERGENCY AUDIT REASON: ${formValues.reason}`,
-                timestamp: window.serverTimestamp()
-            });
-
-            Swal.fire('✅ Sent!', 'Emergency audit and explanation sent to HQ. Management will review the missing stock and dispatch replacements.', 'success');
-            window.loadStockRequestUI();
-        } catch(e) {
-            console.error(e);
-            Swal.fire('Error', 'Failed to send request.', 'error');
-        }
-    }
+    try{const item=JSON.parse(decodeURIComponent(encodedItem));return await window.openActualIngredientCount({inventoryId:item.id,name:item.name,branch:window.sessionUser?.branch});}
+    catch(error){return Swal.fire('Review actual stock',error.message||'Reopen the item in Stock Report. Your counts were kept.','info');}
 };
-
 window.openPendingModal = function(encodedOrders) {
     let pendingOrders = JSON.parse(decodeURIComponent(encodedOrders));
     let html = `<p style="font-size: 13px; color: #64748b; margin-top: 0; text-align: left;">You have ${pendingOrders.length} active request(s) pending review by HQ.</p>`;
@@ -5577,6 +5045,7 @@ window.openRejectedModal = function(encodedOrders) {
 
 window.acknowledgeRejectedRequest = async function(docId) {
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await window.updateDoc(window.doc(window.db, "purchase_orders", docId), { cashierAcknowledged: true });
         if (typeof Swal !== 'undefined') Swal.close();
         window.loadStockRequestUI(); 
@@ -5586,6 +5055,7 @@ window.acknowledgeRejectedRequest = async function(docId) {
 window.cancelPendingRequest = async function(docId) {
     if (!confirm("Are you sure you want to permanently cancel this request?")) return;
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         await window.deleteDoc(window.doc(window.db, "purchase_orders", docId));
         Swal.fire({title: 'Cancelled', text: 'Request has been safely cancelled.', icon: 'success', timer: 1500, showConfirmButton: false});
         if (typeof Swal !== 'undefined') Swal.close();
@@ -6155,15 +5625,21 @@ window.hasSignedNTE = false;
 
 
 window.logoutCashier = function() {
+    if(window.cart?.length||window.isProcessingOrder||window.isSubmittingOrder||window.cashierCashCountActive||window.cashierRemitSubmitting||window.expenseSubmissionFlight)return Swal.fire('Finish the current work','Finish or park the order and finish the open cash or expense action before signing out. Saved receipts stay on this tablet.','info');
+    let confirmation;try{confirmation=cashierStaffAccess.logout();}catch(error){return Swal.fire('Sign-out needs review',error.message,'info');}
+    window.cancelCashierPinLogin?.();window.cashierPinLoginEpoch=(window.cashierPinLoginEpoch||0)+1;window.cashierPinLoginPending=false;
     localStorage.removeItem('cashierName');
     localStorage.removeItem('cashierBranch');
     localStorage.removeItem('cashierPermissions');
 
     window.sessionUser = null;
-
-    // Reload fresh
-    window.location.href =
-        window.location.pathname + "?t=" + Date.now();
+    cashierOperationLifecycle.invalidate();window.stopShiftSalesFeed?.();window.recipeFeed?.stop?.();
+    window.cashierLowStock?.reset();window.stopCashierSanctions?.();window.stopMobileOrdersListener?.();
+    window.activeAnnouncements=[];window.cashierBulletinSession=null;window.cashierBulletinGuard=()=>{throw Error('Reopen announcements after signing in.');};window.hasAutoShownBulletin=false;
+    for(const id of ['staffPersonalInboxList','bulletinHistoryList']){const panel=document.getElementById(id);if(panel)panel.replaceChildren();}
+    for(const id of ['staffRequestsModal','bulletinModal']){const panel=document.getElementById(id);if(panel)panel.style.display='none';}document.getElementById('schedulePopupOverlay')?.remove();
+    const overlay=document.getElementById('loginOverlay'),pin=document.getElementById('loginPasswordInput');if(overlay)overlay.style.display='flex';if(pin)pin.value='';
+    return Promise.resolve(confirmation).then(()=>{window.location.href=window.location.pathname+'?t='+Date.now();},()=>Swal.fire('Locked on this tablet','HQ sign-out is waiting for a connection. Reconnect before the next sign-in. Saved receipts, drafts and tablet approval are kept.','info'));
 };
 
 // ========================================================
@@ -6203,20 +5679,19 @@ window.renderCashierSanctions = function() {
     if(!close){close=document.createElement('button');close.id='cashierSanctionCloseNotice';close.type='button';close.textContent='Close notice · Time Out remains available';close.style.cssText='width:100%;padding:12px;margin-top:12px;border:1px solid #d1dcd5;border-radius:8px;background:white;color:#345847;';close.onclick=()=>{modal.style.display='none';};modal.querySelector('div')?.append(close);}
     close.textContent=summary.isCase?'Close notice · Pending reply does not block Time In or Time Out':'Close notice · Time Out remains available';modal.style.display='flex';
 };
-window.checkActiveSanctions = async function(staffName) {
+window.checkActiveSanctions = async function(staffName,{refresh=false}={}) {
     if(!staffName)return;
-    if(window.cashierSanctionName===staffName && window.cashierSanctionUnsubscribe)return;
+    if(window.cashierSanctionName===staffName && window.cashierSanctionUnsubscribe&&!refresh)return;
     window.stopCashierSanctions();window.cashierSanctionName=staffName;
-    const epoch=window.cashierSanctionEpoch,q=query(collection(db,'hr_sanctions'),where('staffName','==',staffName));
-    window.cashierSanctionUnsubscribe=onSnapshot(q,snap=>{
-        if(epoch!==window.cashierSanctionEpoch || window.cashierSanctionName!==staffName)return;
-        window.cashierSanctionRows=snap.docs.map(entry=>({...entry.data(),id:entry.id}));window.renderCashierSanctions();
-        if(!window.cashierSanctionDayStop)window.cashierSanctionDayStop=startPhilippineDayTimer(()=>{if(epoch===window.cashierSanctionEpoch)window.renderCashierSanctions();});
-    },error=>{if(epoch!==window.cashierSanctionEpoch)return;window.stopCashierSanctions();console.error('Cashier notice listener:',error);});
+    const epoch=window.cashierSanctionEpoch;
+    try{const scope=await window.cashierOwnOperations.capture();if(scope.session.cashierName!==staffName)throw Error('The selected cashier changed.');const rows=await window.cashierOwnOperations.read('hr_sanctions',scope);scope.assertCurrent();if(epoch!==window.cashierSanctionEpoch)return;
+        window.cashierSanctionUnsubscribe=()=>{};window.cashierSanctionRows=rows;window.renderCashierSanctions();
+        window.cashierSanctionDayStop=startPhilippineDayTimer(()=>{if(epoch===window.cashierSanctionEpoch)window.checkActiveSanctions(staffName,{refresh:true});});
+    }catch(error){if(epoch===window.cashierSanctionEpoch)window.stopCashierSanctions();}
 };
 window.addEventListener('pagehide',()=>window.stopCashierSanctions());
-window.addEventListener('pageshow',()=>window.checkActiveSanctions(localStorage.getItem('cashierName')));
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')window.renderCashierSanctions();});
+window.addEventListener('pageshow',()=>{if(window.sessionUser?.staffId)window.checkActiveSanctions(window.sessionUser.cashierName,{refresh:true});});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&window.sessionUser?.staffId)window.checkActiveSanctions(window.sessionUser.cashierName,{refresh:true});});
 
 window.submitSanctionReply = async function() {
     let sanctionId = document.getElementById('activeSanctionId').value;
@@ -6241,7 +5716,7 @@ window.submitSanctionReply = async function() {
         const canvas = document.getElementById('signatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp},{id:sanctionId,staffName:localStorage.getItem('cashierName'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('cashierName'),staffId:window.currentBranchStaffCache?.find(row=>row.cashierName===localStorage.getItem('cashierName'))?.id || ''})});
+        const scope=await window.cashierOwnOperations.capture();await acknowledgeSanction(scope.api,{id:sanctionId,staffName:scope.session.cashierName,reply:replyText,signature:signatureDataUrl},{identity:()=>{scope.assertCurrent();return{staffName:scope.session.cashierName,staffId:scope.session.staffId};}});scope.assertCurrent();
 
         Swal.fire('Submitted', caseNotice?'Your explanation and signature have been sent for management review. This reply is not an admission, a final finding or an effective suspension.':'Your explanation and signature have been logged. A scheduled suspension still follows its effective date until management resolves it.', 'success');
         document.getElementById('hrSanctionModal').style.display = 'none';
@@ -6446,10 +5921,12 @@ window.submitSopChecklist = async function() {
     if (btn) { btn.innerText = "⏳ Submitting..."; btn.disabled = true; }
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         let score = Math.round((completedTasks / totalTasks) * 100);
 
         await addDoc(collection(db, "sop_logs"), {
             branch: branch,
+            staffId:window.sessionUser.staffId,
             staffName: cashierName,
             roleName: role,
             tasks: window.currentSopTasks,
@@ -6588,7 +6065,7 @@ window.loadKitchenPrepHistory = async function() {
                         <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
                     </td>
                     <td style="padding: 12px;">
-                        <button onclick="window.undoKitchenPrep('${log.id}', '${log.item}', ${log.variance})" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">✖ Undo</button>
+                        <button onclick="window.undoKitchenPrep()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">Owner review</button>
                     </td>
                 </tr>
             `;
@@ -6601,77 +6078,8 @@ window.loadKitchenPrepHistory = async function() {
     }
 };
 
-window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
-    if(!confirm(`⚠️ Are you sure you want to UNDO the prep batch for ${itemName}?\n\nThis will subtract ${varianceAmount} from prepared stock AND securely return the raw ingredients back to your vault.`)) return;
-    
-    try {
-        let branch = localStorage.getItem('takodeal_device_branch');
-        
-        // 1. Fetch the exact log so we know exactly how many batches they made!
-        const logRef = doc(db, "stock_logs", logId);
-        const logSnap = await getDoc(logRef);
-        
-        if (!logSnap.exists()) {
-            return Swal.fire('Error', 'This log has already been deleted.', 'error');
-        }
-        
-        let logData = logSnap.data();
-        let purchQtyToReturn = logData.purchQty || 1; // Grab the batch multiplier
-
-        // 2. Deduct the finished product from the shelf
-        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
-        const snap = await getDocs(q);
-        
-        if(!snap.empty) {
-            let itemRef = snap.docs[0].ref;
-            let currentStock = parseFloat(snap.docs[0].data().currentStock) || 0;
-            await updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
-        }
-
-        // 3. 🔥 THE UPGRADE: Auto-replenish Raw Ingredients using the BOM!
-        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
-        const bomSnap = await getDocs(bomQ);
-
-        if (!bomSnap.empty) {
-            for (let bomDoc of bomSnap.docs) {
-                let recipe = bomDoc.data();
-                let rawIngredient = recipe.ingredientName;
-                let amountToReturn = (recipe.qty || 0) * purchQtyToReturn;
-
-                const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
-                const rawSnap = await getDocs(rawQ);
-
-                if (!rawSnap.empty) {
-                    let rawRef = rawSnap.docs[0].ref;
-                    let rawData = rawSnap.docs[0].data();
-                    let currentRawStock = parseFloat(rawData.currentStock) || 0;
-
-                    // Add it back to the vault!
-                    await updateDoc(rawRef, { currentStock: currentRawStock + amountToReturn });
-
-                    // Log the replenishment in the ledger for the Manager
-                    await addDoc(collection(db, "stock_logs"), {
-                        branch: branch, inventoryId: rawRef.id, item: rawIngredient, uom: rawData.uom || 'units',
-                        oldQty: currentRawStock, newQty: currentRawStock + amountToReturn,
-                        variance: amountToReturn,
-                        type: "Kitchen Prep Undone",
-                        note: `Returned raw ingredients from voided ${purchQtyToReturn} batch(es) of ${itemName}`,
-                        user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
-                    });
-                }
-            }
-        }
-
-        // 4. Delete the old log
-        await deleteDoc(logRef); 
-        
-        Swal.fire({ title: '✅ Undone!', text: 'Prep batch reversed and raw ingredients returned to the vault.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
-        window.loadKitchenPrepHistory(); // Refresh table
-        
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to undo prep batch. Check connection.', 'error');
-    }
+window.undoKitchenPrep = async function() {
+    return Swal.fire({titleText:'Owner review required',text:'This saved prep stays on file. Ask the Owner to review its exact recorded movements. Older prep without a trusted ingredient snapshot needs a documented stock correction; it cannot be safely undone from the current recipe.',icon:'info',confirmButtonText:'Keep saved prep'});
 };
 
 // ========================================================
@@ -6869,6 +6277,7 @@ window.submitConsumablesCart = async function() {
     let cashier = localStorage.getItem('cashierName') || 'Staff';
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         for (let item of window.consumablesCart) {
             const invRef = window.doc(window.db, "inventory", item.id);
             const invSnap = await window.getDoc(invRef);
@@ -6999,6 +6408,8 @@ window.MASTER_CloseShift = async function () {
     }
 
     try {
+        const closeApi=await window.resolveCashierOperationalApi();
+        const {db,doc,collection,query,where,getDoc,getDocs,getDocFromServer,getDocsFromServer,serverTimestamp}=closeApi;
         // 6. Execute Blind Count Verification (Whole + Loose Engine)
         let physicalStockCount = [];
         let missingMandatory = false;
@@ -7057,9 +6468,9 @@ window.MASTER_CloseShift = async function () {
         if (!shiftId) throw new Error('No active shift found to close.');
 
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        const closeIdentity=captureShiftCloseIdentity(window,branchName);
-        const assertCloseCurrent=()=>{assertShiftCloseIdentity(window,closeIdentity);const currentId=(typeof activeShiftDetails!=='undefined'&&activeShiftDetails)?activeShiftDetails.logId:localStorage.getItem('currentShiftId');if(currentId!==shiftId)throw Error('The active shift changed. Reopen its closing review.');};
-        const closer=await resolveShiftCloseIdentity(window,closeIdentity);assertCloseCurrent();
+        const closeIdentity=captureShiftCloseIdentity(closeApi,branchName);
+        const assertCloseCurrent=()=>{closeApi.assertStaffOperationalCurrent();assertShiftCloseIdentity(closeApi,closeIdentity);const currentId=(typeof activeShiftDetails!=='undefined'&&activeShiftDetails)?activeShiftDetails.logId:localStorage.getItem('currentShiftId');if(currentId!==shiftId)throw Error('The active shift changed. Reopen its closing review.');};
+        const closer=await resolveShiftCloseIdentity(closeApi,closeIdentity);assertCloseCurrent();
         let cashierName = closer.staffName;
 
         let startTime = new Date();
@@ -7077,10 +6488,10 @@ window.MASTER_CloseShift = async function () {
         let totalCashSales = 0; let totalDigitalSales = 0;
         let digitalBreakdown = {}; let shiftIngredientBurn = {};
 
-        const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
-        const shiftRevisionSnapshot = await window.getDocFromServer(window.doc(window.db, "shifts", shiftId));
+        const txQ = closeApi.query(closeApi.collection(closeApi.db, "transactions"), closeApi.where("branch", "==", branchName), closeApi.where("shiftId", "==", shiftId));
+        const shiftRevisionSnapshot = await closeApi.getDocFromServer(closeApi.doc(closeApi.db, "shifts", shiftId));
         const expectedSalesRevision = Number(shiftRevisionSnapshot.data()?.salesRevision || 0);
-        const txSnap = await window.getDocsFromServer(txQ);
+        const txSnap = await closeApi.getDocsFromServer(txQ);
 
         let unverifiedDigitalCount = 0, inventoryReviewCount = 0;
 
@@ -7139,8 +6550,8 @@ window.MASTER_CloseShift = async function () {
             }
         }
 
-        const expQ = window.query(window.collection(window.db, "expenses"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
-        const expSnap = await window.getDocsFromServer(expQ);
+        const expQ = closeApi.query(closeApi.collection(closeApi.db, "expenses"), closeApi.where("branch", "==", branchName), closeApi.where("shiftId", "==", shiftId));
+        const expSnap = await closeApi.getDocsFromServer(expQ);
         let cashOut = 0;
         expSnap.forEach(e => { if (e.data().paidFrom !== 'Manager Fund' && e.data().sourceAccount !== 'Manager Fund' && e.data().paymentSource !== 'Manager Fund') cashOut += (parseFloat(e.data().amount) || 0); });
 
@@ -7184,17 +6595,17 @@ window.MASTER_CloseShift = async function () {
 
         }
 
-        const shiftSnapshot = await window.getDocFromServer(window.doc(window.db,'shifts',shiftId));
+        const shiftSnapshot = await closeApi.getDocFromServer(closeApi.doc(closeApi.db,'shifts',shiftId));
         if (!shiftSnapshot.exists()) throw new Error('The active shift was not found.');
-        const branchPolicy = await readBranchPolicy(window,branchName);
+        const branchPolicy = await readBranchPolicy(closeApi,branchName);
         let dailyClose = {isFinalShiftOfDay:false};
         if (shiftSnapshot.data().isMallBranch ?? branchPolicy.isMallBranch === true) {
-            dailyClose = await confirmMallDailyClose(window,{branch:branchName,started:shiftSnapshot.data().startTime,declaredCash});
+            dailyClose = await confirmMallDailyClose({...window,...closeApi},{branch:branchName,started:shiftSnapshot.data().startTime,declaredCash});
             if (!dailyClose) { if (confirmBtn) { confirmBtn.innerHTML=origText; confirmBtn.disabled=false; } return; }
         }
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
         assertCloseCurrent();
-        await closeShiftAtomic(window, {expectedSalesRevision,shiftId,branch:branchName,cashier:cashierName,closer,assertCurrent:assertCloseCurrent,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
+        await closeShiftAtomic(closeApi, {expectedSalesRevision,expectedCash,businessDay:businessClock().day,shiftId,branch:branchName,cashier:cashierName,closer,assertCurrent:assertCloseCurrent,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
         // The old account's commit remains saved if the screen changed while
         // its acknowledgement travelled back. Do not clear the new session.
         try{assertCloseCurrent();}catch{return;}
@@ -7290,11 +6701,10 @@ window.hasSignedBulletin = false;
 
 window.checkForAnnouncements = async function(cashierName) {
     try {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        const scope=await window.cashierOwnOperations.capture();if(cashierName!==scope.session.cashierName)throw Error('The selected cashier changed. Reopen announcements.');let branch=scope.branch;
         
         // 1. Get ALL active announcements
-        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
-        const snap = await window.getDocs(q);
+        const snap=await window.cashierOwnOperations.announcements(scope),acknowledgments=await window.cashierOwnOperations.read('acknowledgments',scope);scope.assertCurrent();
         
         let unread = [];
         for (let docSnap of snap.docs) {
@@ -7309,18 +6719,13 @@ window.checkForAnnouncements = async function(cashierName) {
             if (!isTargeted) continue; // Skip if it's not meant for them!
 
             // 2. Did THIS specific cashier sign it?
-            const ackQ = window.query(window.collection(window.db, "acknowledgments"), 
-                window.where("announcementId", "==", docSnap.id),
-                window.where("staffName", "==", cashierName)
-            );
-            const ackSnap = await window.getDocs(ackQ);
-            
-            if (ackSnap.empty) {
+            if (!acknowledgments.some(row=>row.announcementId===docSnap.id)) {
                 unread.push({ id: docSnap.id, ...d });
             }
         }
 
         if (unread.length > 0) {
+            scope.assertCurrent();window.cashierBulletinSession=scope.session;window.cashierBulletinGuard=scope.assertCurrent;
             window.activeAnnouncements = unread;
             window.currentBulletinIndex = 0;
             window.openBulletinModal();
@@ -7473,13 +6878,7 @@ window.submitBulletinAcknowledgment = async function() {
         let cashier = localStorage.getItem('cashierName') || 'Staff';
 
         // 1. Save Signature to Database
-        await addDoc(collection(db, "acknowledgments"), {
-            announcementId: announcement.id,
-            staffName: cashier,
-            signature: signatureBase64,
-            // 🔥 THE FIX: Use standard JavaScript Date so Firebase doesn't panic
-            timestamp: new Date() 
-        });
+        await window.cashierOwnOperations.acknowledge({announcementId:announcement.id,signature:signatureBase64,expectedSession:window.cashierBulletinSession,assertCurrent:window.cashierBulletinGuard});
 
         // 2. Move to the next unread announcement, or close if finished!
         window.currentBulletinIndex++;
@@ -7632,16 +7031,16 @@ window.loadBulletinHistory = async function() {
     container.innerHTML = '<div style="text-align:center; padding:40px; color:#64748b; font-weight:bold;">⏳ Fetching corporate announcements...</div>';
 
     try {
+        const scope=await window.cashierOwnOperations.capture();cashierName=scope.session.cashierName;branch=scope.branch;
         // 1. Get all active announcements from HQ
-        const annQ = query(collection(db, "announcements"), where("active", "==", true));
-        const annSnap = await getDocs(annQ);
+        const annSnap=await window.cashierOwnOperations.announcements(scope);
         
         // 2. Get this specific cashier's signatures
-        const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
-        const ackSnap = await getDocs(ackQ);
+        const acknowledged=await window.cashierOwnOperations.read('acknowledgments',scope);scope.assertCurrent();window.cashierBulletinSession=scope.session;window.cashierBulletinGuard=scope.assertCurrent;
+        const ackSnap={forEach:callback=>acknowledged.forEach(row=>callback({data:()=>row}))};
         
         // Map the signatures to the announcement ID
-        let signatures = {};
+        let signatures = Object.create(null);
         ackSnap.forEach(doc => {
             let d = doc.data();
             signatures[d.announcementId] = d;
@@ -7690,7 +7089,7 @@ window.loadBulletinHistory = async function() {
                 signatureDate: sigDateStr
             };
             
-            let modalData = encodeURIComponent(JSON.stringify(safeData));
+            let modalData = encodeURIComponent(JSON.stringify(safeData)).replace(/'/g,'%27');
 
             if (!sigData) unreadAnnouncements.push(modalData);
 
@@ -7698,18 +7097,18 @@ window.loadBulletinHistory = async function() {
                 <div onclick="window.viewAnnouncement('${modalData}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 20px rgba(0,0,0,0.08)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 10px rgba(0,0,0,0.03)';">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 10px;">
-                            <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900; line-height: 1.3;">${ann.title}</h3>
+                            <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900; line-height: 1.3;">${escapeOperationalLabel(ann.title)}</h3>
                             <div style="flex-shrink: 0;">${statusBadge}</div>
                         </div>
                         <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px;">📅 ${dateStr}</div>
-                        <div style="font-size: 14px; color: #475569; line-height: 1.6; margin-bottom: 20px;">${shortMsg}</div>
+                        <div style="font-size: 14px; color: #475569; line-height: 1.6; margin-bottom: 20px;">${escapeOperationalLabel(shortMsg)}</div>
                     </div>
                     <div style="font-size: 13px; color: #0ea5e9; font-weight: 900; text-align: right; border-top: 1px dashed #e2e8f0; padding-top: 15px;">View Details & Sign ➡</div>
                 </div>
             `;
         });
 
-        if (html === '') {
+        scope.assertCurrent();if (html === '') {
             container.innerHTML = '<div style="text-align:center; padding:40px; color:#64748b; font-weight:bold;">No announcements found.</div>';
         } else {
             container.innerHTML = html;
@@ -7718,6 +7117,7 @@ window.loadBulletinHistory = async function() {
         if (unreadAnnouncements.length > 0 && !window.hasAutoShownBulletin) {
             window.hasAutoShownBulletin = true;
             setTimeout(() => {
+                try{scope.assertCurrent();}catch{return;}
                 window.viewAnnouncement(unreadAnnouncements[0]); 
             }, 1000); 
         }
@@ -7810,12 +7210,7 @@ window.submitSignature = async function(announcementId) {
     let cashierName = localStorage.getItem('cashierName') || (window.sessionUser ? window.sessionUser.cashierName : 'Unknown Staff');
 
     try {
-        await addDoc(collection(db, "acknowledgments"), {
-            announcementId: announcementId,
-            staffName: cashierName,
-            signature: sigDataUrl,
-            timestamp: serverTimestamp()
-        });
+        await window.cashierOwnOperations.acknowledge({announcementId,signature:sigDataUrl,expectedSession:window.cashierBulletinSession,assertCurrent:window.cashierBulletinGuard});
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
@@ -8121,96 +7516,8 @@ window.renderPrepCart = function() {
 };
 
 window.confirmPrepCart = async function() {
-    if (!window.kitchenPrepCart || window.kitchenPrepCart.length === 0) {
-        return Swal.fire('Cart Empty', 'Please add items to the prep cart first.', 'warning');
-    }
-
-    const confirmResult = await Swal.fire({
-        title: 'Confirm Kitchen Prep',
-        html: `<div style="color: #475569;">You are about to securely log <strong>${window.kitchenPrepCart.length}</strong> batch(es) to your live inventory.<br><br><span style="font-size: 12px; color: #64748b;">This will automatically deduct the raw ingredients used.</span></div>`,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: '✅ Yes, Log Everything!',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#ef4444',
-        customClass: { popup: 'rounded-2xl shadow-2xl' }
-    });
-
-    if (!confirmResult.isConfirmed) return;
-
-    Swal.fire({ title: 'Processing...', text: 'Updating inventory & recipes...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-
-    try {
-        let missingItems = [];
-        let safeCashierName = localStorage.getItem('cashierName') || "Kitchen Staff";
-        let totalItemsLogged = 0;
-
-        for (let item of window.kitchenPrepCart) {
-            const invRef = doc(db, "inventory", item.id);
-            const invSnap = await getDoc(invRef);
-            
-            if (invSnap.exists()) {
-                let invData = invSnap.data();
-                let currentStock = invData.currentStock || 0;
-                
-                let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
-                let baseQtyToAdd = item.purchQty * convRate;
-
-                await updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
-
-                const bomQ = query(collection(db, "bom"), where("menuItem", "==", item.name));
-                const bomSnap = await getDocs(bomQ);
-
-                if (!bomSnap.empty) {
-                    for (let bomDoc of bomSnap.docs) {
-                        let recipe = bomDoc.data();
-                        let rawIngredient = recipe.ingredientName;
-                        let totalAmountToDeduct = (recipe.qty || 0) * item.purchQty; 
-
-                        const rawQ = query(collection(db, "inventory"), where("branch", "==", item.branch), where("name", "==", rawIngredient));
-                        const rawSnap = await getDocs(rawQ);
-
-                        if (!rawSnap.empty) {
-                            let rawRef = rawSnap.docs[0].ref;
-                            let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
-                            const rawBatch=writeBatch(db);rawBatch.update(rawRef,{currentStock:rawCurrentStock-totalAmountToDeduct});rawBatch.set(doc(collection(db,'stock_logs')),{branch:item.branch,inventoryId:rawRef.id,item:rawIngredient,uom:rawSnap.docs[0].data().baseUom||rawSnap.docs[0].data().uom||'',variance:-totalAmountToDeduct,type:'Kitchen Prep Ingredient',note:'Ingredient used for '+item.name,user:safeCashierName,timestamp:serverTimestamp()});await rawBatch.commit();
-                        } else {
-                            if (!missingItems.includes(rawIngredient)) missingItems.push(rawIngredient);
-                        }
-                    }
-                }
-
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: item.branch, inventoryId: item.id, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
-                    purchUom: item.purchUom, purchQty: item.purchQty, 
-                    type: "End-of-Shift Kitchen Prep", 
-                    note: `Prepared ${item.purchQty} ${item.purchUom}(s) by ${safeCashierName}`, 
-                    user: safeCashierName, // 🔥 THE FIX: explicitly saves the staff name!
-                    timestamp: new Date()
-                });
-                
-                totalItemsLogged++;
-            }
-        }
-
-        let msg = `<div style="text-align: left; font-size: 14px;">✅ Successfully logged <strong>${totalItemsLogged}</strong> batches to the vault.`;
-        if (missingItems.length > 0) {
-            msg += `<br><br><span style="color: #dc2626;">⚠️ <strong>Warning:</strong> The following raw ingredients are missing from the ${window.kitchenPrepCart[0].branch} warehouse and were not deducted: <strong>${missingItems.join(", ")}</strong></span>`;
-        }
-        msg += `</div>`;
-        
-        Swal.fire({ title: 'Success!', html: msg, icon: 'success', confirmButtonColor: '#16a34a', customClass: { popup: 'rounded-2xl' } });
-        
-        window.kitchenPrepCart = [];
-        window.renderPrepCart();
-        window.loadKitchenPrep(); 
-        
-    } catch (e) {
-        console.error("Prep Batch Error:", e);
-        Swal.fire('Error', '❌ Failed to log prep batch. Check connection.', 'error');
-    }
+    return installCashierPrep(window,document).confirm();
 };
-
 // ========================================================
 // 🖋️ MASTER UNIVERSAL SIGNATURE ENGINE (OVERRIDES ALL DUPLICATES)
 // ========================================================
@@ -8723,7 +8030,7 @@ window.predictedCriticalItems = {};
 window.globalDeliveryTarget = null;
 
 window.startSmartReorderListener = function() {
-    onSnapshot(doc(db, "settings", "global_delivery_schedule"), (docSnap) => {
+    window.cashierReorderStop?.();window.cashierReorderStop=onSnapshot(doc(db, "settings", "global_delivery_schedule"), (docSnap) => {
         if (docSnap.exists()) {
             window.restockSchedule = docSnap.data();
             window.globalDeliveryTarget = docSnap.data().nextDeliveryDate;
@@ -8873,12 +8180,7 @@ window.submitScheduleAck = async function(announcementId) {
     let quickSigImg = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='50'%3E%3Ctext x='10' y='30' font-family='Arial' font-size='18' font-weight='bold' fill='%2316a34a'%3E%E2%9C%85 1-Click Acknowledged%3C/text%3E%3C/svg%3E";
 
     try {
-        await window.addDoc(window.collection(window.db, "acknowledgments"), {
-            announcementId: announcementId,
-            staffName: cashierName,
-            signature: quickSigImg,
-            timestamp: window.serverTimestamp()
-        });
+        await window.cashierOwnOperations.acknowledge({announcementId,signature:quickSigImg,expectedSession:window.cashierBulletinSession,assertCurrent:window.cashierBulletinGuard});
 
         document.getElementById('schedulePopupOverlay').remove();
         
@@ -9100,6 +8402,7 @@ window.submitOpenShift = async function() {
     if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
 
     try {
+        if(typeof window.captureCashierOperationalAction==='function')await window.captureCashierOperationalAction();
         let shiftName = (window.sessionUser && window.sessionUser.cashierName) 
             ? window.sessionUser.cashierName 
             : (localStorage.getItem('cashierName') || 'Unknown');
@@ -9629,6 +8932,7 @@ installCashierDeviceSetup(window,document,{deviceContext:cashierDeviceContext,si
 installCashierAppearance(window,document,{getDocFromServer,doc,db});
 (hasCashierOwnerPreview(window)?window.restoreCashierPhysicalBranch():Promise.resolve()).catch(()=>{}).finally(()=>{refreshCashierBranchLabel(window,document);window.cashierStartupReady=true;const button=document.getElementById('btnSubmitPin');if(button){button.disabled=hasCashierOwnerPreview(window);button.removeAttribute('aria-busy');}document.querySelectorAll('[data-cashier-startup-lock]').forEach(control=>{control.disabled=false;});const note=document.getElementById('cashierStartupStatus');if(note){note.hidden=!hasCashierOwnerPreview(window);note.textContent=note.hidden?'':'Reconnect to end the Owner branch preview before staff sign in. Owner Access remains available.';}});
 installCycleCounts(window,document);
+installCashierLowIngredients(window,document,{primaryAuth:auth});
 installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')

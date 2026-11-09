@@ -35,7 +35,7 @@ function harness() {
     const localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
     const api={db:{},collection:(_db,table)=>({table}),doc:(ref,table,id)=>id===undefined?{table:ref.table,id:'auto-'+(++sequence)}:{table,id},
         query:(ref,...filters)=>({...ref,filters}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),
-        getDoc:async ref=>{if(ref.table==='cashiers'){profileReads++;return {exists:()=>true,data:()=>({cashierName:storage.get('takodeal_staff_name'),scheduleNickname:'Alias'})};}return {exists:()=>false};},
+        getDoc:async ref=>{if(ref.table==='staff_directory'){profileReads++;return {exists:()=>true,data:()=>({staffId:ref.id,cashierName:storage.get('takodeal_staff_name'),branch:'Maa',scheduleNickname:'Alias'})};}return {exists:()=>false};},
         getDocs:async()=>snapshot([]),getDocsFromServer:async q=>{if(['attendance_logs','sop_logs','cashiers'].includes(q.table))return h.window.getDocs(q);serverReads++;if(h.serverError)throw h.serverError;return h.serverSnapshot || snapshot([]);},
         onSnapshot:(q,options,next,error)=>{if(typeof options==='function'){error=next;next=options;}const sub={q,next,error,active:true,stops:0};subscriptions.push(sub);return ()=>{sub.active=false;sub.stops++;};},
         serverTimestamp:()=>new Date(),updateDoc:async(ref,data)=>writes.push({ref,data}),
@@ -45,6 +45,7 @@ function harness() {
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}},initStaffAppSignaturePad(){},playNotificationPing(){},loadMyAttendance(){},
         getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()}),verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
+    window.readStaffDirectoryProfile=staffId=>window.getDoc({table:'staff_directory',id:staffId});
     const context={...api,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,...staffSwaps,...swapModel,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,createElement:()=>({value:'',textContent:''}),addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
         console:{error(){},warn(){},log(){}},Date,
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
@@ -84,7 +85,7 @@ test('Staff login initialization creates one inbox, swap and staff-scoped sancti
     const h=staffApp();await Promise.all([startStaff(h),startStaff(h),startStaff(h)]);
     assert.equal(h.subscriptions.length,3);assert.equal(h.profileReads,1);assert.equal(h.serverReads,0);assert.equal(h.intervals.size,0);
     const sanction=h.subscriptions.find(s=>s.q.table==='hr_sanctions');
-    assert.deepEqual(sanction.q.filters,[{field:'staffName',op:'==',value:'Staff A'}]);
+    assert.deepEqual(sanction.q.filters,[{field:'staffId',op:'==',value:'a'}]);
     h.emit(sanction,[{id:'notice',type:'Notice'}]);h.node('sanctionStaffReply').value='My draft';h.window.hasSignedStaffNTE=true;
     h.emit(sanction,[{id:'notice',details:'Updated details'}]);
     assert.equal(h.node('sanctionStaffReply').value,'My draft');assert.equal(h.window.hasSignedStaffNTE,true);
@@ -100,7 +101,7 @@ test('Staff account switch releases all streams and old snapshots cannot replace
 });
 
 test('Staff deferred nickname lookup is deduplicated and cannot attach a listener after sign-out',async()=>{
-    const h=staffApp();let finish;h.context.getDoc=()=>new Promise(resolve=>{finish=resolve;});
+    const h=staffApp();let finish;h.window.readStaffDirectoryProfile=()=>new Promise(resolve=>{finish=resolve;});
     const pending=h.window.listenToIncomingSwaps();await h.window.listenToIncomingSwaps();h.window.stopStaffLiveListeners();
     finish({exists:()=>true,data:()=>({scheduleNickname:'Alias'})});await pending;assert.equal(h.subscriptions.length,0);
 });
@@ -187,14 +188,15 @@ test('Staff cached future notice is visible as due at midnight with no new cloud
     const [midnightId,midnight]=[...h.timeouts].find(([,timer])=>timer.delay===60050);assert.ok(midnight);time=new Date('2026-10-07T16:00:01Z');h.timeouts.delete(midnightId);midnight.fn();assert.equal(h.node('staffAppSanctionModal').style.display,'flex');assert.equal(h.serverReads,0);
     h.window.stopStaffLiveListeners();assert.equal(h.timeouts.size,0);
 });
-test('Cashier uses one notice stream, responds at PH midnight and prevents stale account callbacks or timers',async()=>{
+test('Cashier uses fresh own broker evidence, responds at PH midnight and prevents stale account responses or timers',async()=>{
     const h=harness();h.storage.set('cashierName','Staff A');h.window.initSignaturePad=()=>{};let time=new Date('2026-10-07T15:59:00Z');h.context.pendingDueNotices=rows=>sanctions.pendingDueNotices(rows,time);
+    h.window.sessionUser={staffId:'a',cashierName:'Staff A'};let reads=0,held=null,release;h.window.cashierOwnOperations={async capture(){const session=h.window.sessionUser;return{session,assertCurrent:()=>{if(h.window.sessionUser!==session)throw Error('Account changed');}};},async read(table,scope){assert.equal(table,'hr_sanctions');reads++;if(held&&scope.session.staffId==='a')await held;scope.assertCurrent();return scope.session.staffId==='a'?[{id:'future',effectiveDate:'2026-10-08',status:'Pending Reply'}]:[{id:'b',status:'Pending Reply'}];}};
     h.context.startPhilippineDayTimer=changed=>sanctions.startPhilippineDayTimer(changed,{now:()=>time,schedule:h.context.setTimeout,cancel:h.context.clearTimeout});
     h.run(section(cashier,'window.stopCashierSanctions = function()','window.submitSanctionReply = async function'));
-    await h.window.checkActiveSanctions('Staff A');await h.window.checkActiveSanctions('Staff A');assert.equal(h.subscriptions.length,1);const old=h.subscriptions[0];h.emit(old,[{id:'future',effectiveDate:'2026-10-08',status:'Pending Reply'}]);assert.equal(h.node('hrSanctionModal').style.display,'none');
-    const [timerId,timer]=[...h.timeouts].find(([,row])=>row.delay===60050);h.timeouts.delete(timerId);time=new Date('2026-10-07T16:00:00Z');timer.fn();assert.equal(h.node('hrSanctionModal').style.display,'flex');const stalePad=[...h.timeouts.values()].find(row=>row.delay===300).fn;
-    h.storage.set('cashierName','Staff B');await h.window.checkActiveSanctions('Staff B');h.emit(h.subscriptions[1],[{id:'b',status:'Pending Reply'}]);const newPad=h.window.cashierSanctionPadTimer;h.emit(old,[{id:'old-a',status:'Pending Reply'}]);stalePad();assert.equal(h.node('activeSanctionId').value,'b');assert.equal(h.window.cashierSanctionPadTimer,newPad);assert.equal(old.stops,1);assert.equal(h.serverReads,0);
-    h.window.stopCashierSanctions();assert.equal(h.subscriptions[1].stops,1);assert.equal(h.timeouts.size,0);assert.equal(h.node('hrSanctionModal').style.display,'none');
+    await h.window.checkActiveSanctions('Staff A');await h.window.checkActiveSanctions('Staff A');assert.equal(reads,1);assert.equal(h.subscriptions.length,0);assert.equal(h.node('hrSanctionModal').style.display,'none');
+    const [timerId,timer]=[...h.timeouts].find(([,row])=>row.delay===60050);h.timeouts.delete(timerId);time=new Date('2026-10-07T16:00:00Z');timer.fn();await new Promise(setImmediate);assert.equal(reads,2);assert.equal(h.node('hrSanctionModal').style.display,'flex');const stalePad=[...h.timeouts.values()].find(row=>row.delay===300).fn;
+    held=new Promise(resolve=>release=resolve);const old=h.window.checkActiveSanctions('Staff A',{refresh:true});await new Promise(setImmediate);h.storage.set('cashierName','Staff B');h.window.sessionUser={staffId:'b',cashierName:'Staff B'};await h.window.checkActiveSanctions('Staff B');const newPad=h.window.cashierSanctionPadTimer;release();await old;stalePad();assert.equal(h.node('activeSanctionId').value,'b');assert.equal(h.window.cashierSanctionPadTimer,newPad);assert.equal(h.serverReads,0);assert.equal(h.writes.length,0);
+    h.window.stopCashierSanctions();assert.equal(h.timeouts.size,0);assert.equal(h.node('hrSanctionModal').style.display,'none');
 });
 
 function customerApp() {
@@ -320,10 +322,10 @@ test('Rider ping updates do not duplicate timers and removing another ping does 
     h.window.stopRiderLiveServices();assert.equal(h.intervals.size,0);assert.equal(h.window.activePingId,null);
 });
 
-test('Rider runtime keeps pending, rejected and suspended logins on the account screen without business feeds or GPS',async()=>{
+test('Rider runtime keeps pending logins on own status and rejects suspended sign-in without business feeds or GPS',async()=>{
     for(const status of ['pending_approval','rejected','banned']){
-        const h=riderRuntime();h.put('rider-a',{status,isAcceptingOrders:true});assert.equal(await h.login(),true);
-        assert.equal(h.node('accountStatusScreen').style.display,'flex');assert.equal(h.node('mainApp').style.display,'none');
+        const h=riderRuntime();h.put('rider-a',{status,isAcceptingOrders:true});assert.equal(await h.login(),status==='pending_approval');
+        if(status==='pending_approval')assert.equal(h.node('accountStatusScreen').style.display,'flex');else assert.equal(h.node('authOverlay').style.display,'flex');assert.equal(h.node('mainApp').style.display,'none');
         assert.equal(h.businessSubscriptions().length,0);assert.equal(h.gps.length,0);assert.equal(h.intervals.size,0);
         assert.equal(h.window.isRiderApproved(h.window.currentRider),false);await h.window.claimDelivery('synthetic');assert.equal(h.writes.length,0);
     }

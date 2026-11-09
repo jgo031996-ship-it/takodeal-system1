@@ -58,6 +58,8 @@ function expandVerifiedAliases(source) {
     }
     expanded = expanded.replace(/\b(readData|nextData)\('([A-Za-z0-9_]+)',\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\)/g,
         (_, helper, collection, id) => `${helper === 'readData' ? 'get' : 'getAfter'}(/databases/$(database)/documents/${collection}/$(${id})).data`);
+    expanded = expanded.replace(/\breadData\('staff_pin_contexts',request\.auth\.uid \+ '_time-clock'\)/g,
+        "get(/databases/$(database)/documents/staff_pin_contexts/$(request.auth.uid + '_time-clock')).data");
     assert.doesNotMatch(expanded, new RegExp(`\\b(?:${Object.keys(aliases).join('|')})\\(`),
         'A changed helper call must be reviewed instead of silently omitted from the policy checks');
     return expanded;
@@ -72,126 +74,48 @@ test('private vault has explicit nonoverlapping collection blocks and no public 
     assert.equal(/allow (?:read|write): if true/.test(vault), false);
 });
 
-test('legacy operational authority remains while new rate metadata is protected', () => {
-    const legacy = firestore.slice(0, firestore.indexOf(marker));
-    const profile = expandVerifiedAliases(body(legacy, 'match /cashiers/{cashierId}'));
-    const profileCreate = body(profile, 'function selectorCashiersCreate('), profileUpdate = body(profile, 'function selectorCashiersUpdate(');
-    assert.match(profile, /allow read: if true;/);
-    assert.match(profile, /allow create: if selectorCashiersCreate\(request\.resource\.data\);/);
-    assert.match(profileCreate, /return isHQUser\(\) && !data\.keys\(\)\.hasAny\(\['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion'\]\)/);
-    assert.match(profileCreate, /staffRateProfileLink\(cashierId, \{\}, data\)/);
-    assert.match(profile, /allow delete: if isHQUser\(\) && resource\.data\.get\('payslipPinManaged',false\) != true && !resource\.data\.keys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\);/);
-    assert.match(profileUpdate, /before\.get\('payslipPinManaged',false\) != true/);
-    assert.match(profileUpdate, /affectedKeys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\)/);
-    assert.match(profileUpdate, /onboardingProfileLink\(cashierId,before,data\)/);
-    const attendance = expandVerifiedAliases(body(legacy, 'match /attendance_logs/{logId}'));
-    const attendanceUpdate = body(attendance, 'function selectorAttendanceLogsUpdate(');
-    assert.match(attendance, /allow read: if true;/);
-    assert.match(attendance, /allow create: if !request\.resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview','reliefScheduleReview'\]\);/);
-    assert.match(attendance, /allow update: if selectorAttendanceLogsUpdate\(request\.resource\.data,resource == null \? null : resource\.data\)\s*&& reliefOriginalSourceUnchanged\(request\.resource\.data,resource\.data\);/);
-    assert.match(attendanceUpdate, /return !data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['scheduleAmendmentReview','reliefScheduleReview'\]\)/);
-    assert.match(attendanceUpdate, /data\.diff\(before\)\.affectedKeys\(\)\.hasOnly\(\['scheduleAmendmentReview'\]\)/);
-    assert.match(attendanceUpdate, /amendmentReviewMarker\(data\.scheduleAmendmentReview,before,logId\)/);
-    assert.doesNotMatch(attendanceUpdate, /reliefReviewMarker/);
-    assert.match(attendance, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview','reliefScheduleReview'\]\)\s*&& !reliefLinkedOut\(resource\.data\);/);
-    assert.match(body(attendance, 'function reliefOriginalSourceUnchanged('), /'timestamp','type','staffId','staffName','branch','timeInLogId','timeInAt','scheduleSnapshot','status','deleted'/);
-    const reliefAudit = body(legacy, 'match /attendance_relief_reviews/{auditId}');
-    assert.match(reliefAudit, /allow read: if protectedHROwner\(\);/);
-    assert.match(reliefAudit, /allow write: if false;/);
-    // Ordinary legacy edits still pass. Only the new audit/history fields add
-    // authorization and atomic-link requirements; they must not inherit the
-    // preceding unrestricted update grant.
-    assert.match(profile, /allow update: if selectorCashiersUpdate\(request\.resource\.data,resource == null \? null : resource\.data\);/);
-    assert.match(profileUpdate, /return !data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['rateHistory','payslipPinManaged','payslipPinVersion'\]\)/);
-    assert.match(profileUpdate, /affectedKeys\(\)\.hasAny\(\['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'\]\)/);
-    assert.match(profileUpdate, /before\.get\('salaryRateVersion',0\) == 1 && data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['hourlyRate','dailyRate','branch'\]\)/);
-    assert.match(profileUpdate, /staffRateProfileLink\(cashierId, before, data\)/);
-    assert.doesNotMatch(profile, /allow (?:read, )?update: if true/);
-    assert.match(legacy, /match \/hq_email_access\/\{email\}[\s\S]*?allow write: if offlineOwner\(\);/);
-    assert.equal((legacy.match(/\bfunction legacyCandidate\(/g) || []).length, 1);
-    assert.match(legacy, /\bfunction legacyCandidate\(root\)/);
-    const flatLegacy = body(legacy, 'match /{legacyCollection}/{legacyDocument}');
-    const treeLegacy = body(legacy, 'match /{legacyTree}/{legacyTail=**}').trim();
-    const expectedLegacyNames = ['account_logs','archived_months','bom','branches','budgets','cash_accounts',
-        'customer_app_categories','daily_metrics','dispatch_logs','equipment_assets','expenses','foodpanda_payouts',
-        'franchise_accounts','franchise_budgets','franchise_comms','franchise_ledger','global_addons','grab_payouts',
-        'hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices',
-        'rider_topups','riders','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests',
-        'stock_logs','suppliers','yield_logs'];
-    // Collection-specific validators may be nested in this match. Inspect its
-    // authority clauses themselves so a validator's field-name lists cannot be
-    // mistaken for a legacy collection grant. Every method is still pinned.
-    const grants = text => {
-        const tokens = tokenizeRules(text).filter(token => !['whitespace', 'comment'].includes(token.type));
-        const clauses = [];
-        for (let i = 0; i < tokens.length; i++) {
-            if (tokens[i].type !== 'identifier' || tokens[i].text !== 'allow') continue;
-            const start = i;
-            while (i < tokens.length && tokens[i].text !== ';') i++;
-            assert.ok(i < tokens.length, 'Every allow statement must terminate');
-            clauses.push(tokens.slice(start, i + 1).map(token => token.text).join(' '));
-        }
-        return clauses;
-    };
-    const flatGrants = grants(flatLegacy), treeGrants = grants(treeLegacy);
-    assert.deepEqual(flatGrants.map(text => /^allow (\w+) :/.exec(text)?.[1]).sort(), ['create','delete','read','update']);
-    assert.equal(treeGrants.length, 1);
-    const literalNames = [...new Set([...flatGrants, ...treeGrants].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
-        .flatMap(list => [...list[1].matchAll(/'([^']+)'/g)].map(name => name[1]))))].sort();
-    assert.equal(expectedLegacyNames.length, 36);
-    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 36 non-remittance/non-count legacy roots may enter these literal clauses');
-    const remittances = body(legacy, 'match /remittances/{remittanceId}');
-    assert.match(remittances, /allow read: if true;/);
-    assert.match(remittances, /allow create: if mallHandover\(newData\(\)\);/);
-    assert.doesNotMatch(remittances, /allow (?:update|delete|write)/);
-    assert.equal(body(legacy, 'function legacyCandidate(').trim(), `return root.matches('^(${expectedLegacyNames.join('|')})$');`);
-    // Counts have the same authority in an exact block rather than duplicating
-    // heavy report checks through the generic wildcard's legacy alternatives.
-    // Old non-v3 point GET stays public; all LIST/v3GET require branch scope,
-    // v3 creation pairs its report, and v3 history cannot change or be deleted.
-    const counts = body(legacy, 'match /stock_counts/{id}');
-    const expectedStockReader = [
-        "let owner = protectedHROwner();",
-        "let email = isSignedIn() ? request.auth.token.get('email','') : '';",
-        "let path = /databases/$(database)/documents/hq_email_access/$(email);",
-        "let eligible = !owner && isSignedIn() && reqVerified() == true && reqProvider() == 'google.com';",
-        "let grant = eligible && exists(path) ? get(path).data : {};",
-        "return owner || trustedPOS(branch) || (grant.get('active',false) == true",
-        "&& grant.get('permissions',[]).hasAny(['all','inventory','audits']) && grant.get('allowedBranches',[]).hasAny(['All',branch]));"
-    ].join('\n');
-    const codeTokens = text => tokenizeRules(text).filter(token => !['whitespace', 'comment'].includes(token.type)).map(token => token.text);
-    for (const [scope, name] of [[counts, 'stockCountReader'], [body(legacy, 'match /inventory_audit_reports/{id}'), 'stockReportReader']]) {
-        assert.equal((firestore.match(new RegExp('\\bfunction ' + name + '\\(branch\\)', 'g')) || []).length, 1);
-        assert.deepEqual(codeTokens(body(scope, 'function ' + name + '(')), codeTokens(expectedStockReader), 'Scoped readers retain every original authority predicate');
-    }
-    const countGuards = {
-        get: "resource == null || oldData().get('version',0) != 3 || stockCountReader(oldData().get('branch',''))",
-        list: "stockCountReader(oldData().get('branch',''))",
-        create: "newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id)",
-        update: "oldData().get('version',0) != 3 && newData().get('version',0) != 3",
-        delete: "isOwner() && oldData().get('version',0) != 3"
-    };
-    assert.equal((counts.match(/\ballow\b/g) || []).length, 5);
-    for (const [method, expected] of Object.entries(countGuards))
-        assert.equal(new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(counts)?.[1], expected);
-    for (const method of ['read', 'create', 'update', 'delete']) {
-        const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
-        assert.ok(expression, `Missing legacy ${method} policy`);
-        const setupGuard = method === 'read' ? '' : method === 'create'
-            ? 'staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && '
-            : `staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),${method === 'delete' ? '{}' : 'newData()'}) && `;
-        const prefix = 'legacyCandidate(legacyCollection) && ' + setupGuard + '(';
-        assert.ok(expression.startsWith(prefix) && expression.endsWith(')'), 'Every legacy method must retain the exact deny-only prefix');
-        const union = expression.slice(prefix.length, -1);
-        const clause = /\(legacyCollection in \[([^\]]+)\](?: && (isHQUser|isOwner)\(\))?\)/g;
-        const clauses = [...union.matchAll(clause)];
-        assert.equal(union.replace(clause, '').replace(/\s|\|\|/g, ''), '', 'Only the explicit literal unions may grant legacy access');
-        for (const row of clauses) assert.doesNotMatch(row[1], /'(?:hr_sanctions|settings)'/, 'Deny-only roots must remain absent from every legacy whitelist');
-        const riderGrants = clauses.filter(row => row[1].split(',').map(name => name.trim()).includes("'rider_topups'"));
-        assert.equal(riderGrants.length, 1, `${method} must retain exactly one rider-topup authority path`);
-        assert.equal(riderGrants[0][2], 'isHQUser', `${method} rider topups must remain HQ-only`);
-    }
-    assert.equal(treeLegacy, "allow read, write: if legacyCandidate(legacyTree) && (legacyTree in ['archived_months','customer_app_categories','daily_metrics','franchise_accounts','franchise_budgets','suppliers'] && isHQUser());");
+test('private staff and attendance access retains audited wage, onboarding and reviewed-attendance protection', () => {
+    const legacy=firestore.slice(0,firestore.indexOf(marker)),profile=expandVerifiedAliases(body(legacy,'match /cashiers/{cashierId}'));
+    const create=body(profile,'function selectorCashiersCreate('),update=body(profile,'function selectorCashiersUpdate(');
+    assert.doesNotMatch(profile,/allow read: if true/);
+    assert.match(profile,/companyHRRead\(resource.data\)/);assert.match(profile,/companyPrivateProfile\(cashierId\)/);
+    assert.match(create,/companyHQCan\(\['all','branches'\],data.branch\)/);
+    for(const key of ['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion','loginPinVersion'])assert.ok(create.includes("'"+key+"'"));
+    assert.match(create,/staffRateProfileLink\(cashierId, \{\}, data\)/);
+    assert.match(update,/companyProfileEdit\(cashierId,before,data\)/);
+    assert.match(update,/companyHQCan\(\['all','branches'\],before.branch\) && companyHQCan\(\['all','branches'\],data.branch\)/);
+    assert.match(update,/before.get\('payslipPinManaged',false\) != true \|\| !data.diff\(before\).affectedKeys\(\).hasAny\(\['payslipPin'\]\)/);
+    assert.match(update,/onboardingProfileLink\(cashierId,before,data\)/);assert.match(update,/staffRateProfileLink\(cashierId, before, data\)/);
+    assert.match(update,/before.get\('salaryRateVersion',0\) == 1/);
+    const attendance=expandVerifiedAliases(body(legacy,'match /attendance_logs/{logId}')),review=body(attendance,'function selectorAttendanceLogsUpdate(');
+    assert.doesNotMatch(attendance,/allow (?:read|create): if true/);
+    assert.match(attendance,/allow list: if companyOperationalRead\(resource.data\)/);
+    assert.match(attendance,/companyOperationalCreate\(request.resource.data\)/);
+    assert.match(attendance,/allow update: if companyOperationalHQ\(resource.data\) && companyOperationalHQ\(request.resource.data\)/);
+    assert.match(attendance,/reliefOriginalSourceUnchanged\(request.resource.data,resource.data\)/);
+    assert.match(review,/hasOnly\(\['scheduleAmendmentReview'\]\)/);assert.match(review,/amendmentReviewMarker/);
+    assert.doesNotMatch(review,/reliefReviewMarker/);
+    assert.match(body(attendance,'function reliefOriginalSourceUnchanged('),/'timestamp','type','staffId','staffName','branch','timeInLogId','timeInAt','scheduleSnapshot','status','deleted'/);
+    assert.match(attendance,/allow delete: if companyOperationalHQ\(resource.data\)/);assert.match(attendance,/!reliefLinkedOut\(resource.data\)/);
+    const relief=body(legacy,'match /attendance_relief_reviews/{auditId}');assert.match(relief,/allow write: if false/);
+});
+
+test('legacy wildcard is deny-gated before scoped business grants and excludes separately protected staff and Rider collections',()=>{
+    const roots=['account_logs','archived_months','bom','branches','budgets','cash_accounts','customer_app_categories','daily_metrics','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_accounts','franchise_budgets','franchise_comms','franchise_ledger','global_addons','grab_payouts','hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices','shifts','stock_logs','suppliers','yield_logs'];
+    assert.equal(body(firestore,'function legacyCandidate(').trim(),"return root.matches('^("+roots.join('|')+")$');");
+    for(const denied of ['cashiers','staff_requests','staff_ledger','staff_bonuses','shift_swaps','sop_logs','riders','rider_topups','settings','hr_sanctions'])assert.ok(!roots.includes(denied));
+    const flat=body(firestore,'match /{legacyCollection}/{legacyDocument}');
+    assert.match(flat,/allow read: if legacyCandidate\(legacyCollection\) && companyBusinessRead\(legacyCollection,oldData\(\)\)/);
+    assert.match(flat,/allow create: if legacyCandidate\(legacyCollection\) && companyBusinessCreate\(legacyCollection,newData\(\)\) && staffSetupCreateAllowed/);
+    assert.match(flat,/allow update: if legacyCandidate\(legacyCollection\) && companyBusinessUpdate\(legacyCollection,oldData\(\),newData\(\)\) && staffSetupExistingAllowed/);
+    assert.match(flat,/allow delete: if legacyCandidate\(legacyCollection\) && \(companyBusinessHQ/);
+    assert.match(body(firestore,'function companyBusinessUpdate('),/branch == data.get/);
+    assert.match(body(firestore,'match /{legacyTree}/{legacyTail=**}'),/legacyCandidate\(legacyTree\).*isHQUser\(\)/);
+    const remit=body(firestore,'match /remittances/{remittanceId}');assert.doesNotMatch(remit,/allow read: if true/);assert.match(remit,/mallHandover\(newData\(\)\)/);assert.doesNotMatch(remit,/allow (?:update|delete|write)/);
+    const counts=body(firestore,'match /stock_counts/{id}');assert.doesNotMatch(counts,/allow (?:get|read|create): if true/);
+    assert.match(counts,/resource == null \? isHQUser\(\) \|\| ownTrustedDevice\(\) : stockCountReader/);
+    assert.match(counts,/allow create: if \(isOwner\(\) \|\| trustedPOS/);assert.match(counts,/stockAuditSourceCreate\(newData\(\),id\)/);
+    assert.match(counts,/allow update: if companyHQCan/);assert.match(counts,/oldData\(\).get\('version',0\) != 3 && newData\(\).get\('version',0\) != 3/);
 });
 
 test('HQ authority requires verified email and protected active permissions plus branch scope', () => {
@@ -319,17 +243,18 @@ test('current/history uploads and HQ reviews are atomic with version checks and 
     for (const text of [files, versions]) assert.match(text, /allow delete: if false/);
 });
 
-test('Storage candidate excludes every private-prefix path from the legacy public fallback', () => {
-    const fallback = body(storage, 'match /{topLevel}/{rest=**}');
-    assert.match(fallback, /allow read, write: if topLevel != 'staff_private_documents'/);
-    assert.equal(/match \/\{allPaths=\*\*\}/.test(storage), false);
-    const privateFiles = body(storage, 'match /staff_private_documents/{rest=**}').replace(/\/\/[^\n]*/g, '').trim();
-    assert.equal(privateFiles, 'allow read, write: if false;');
+test('Storage fallback excludes private namespaces, never grants public writes and private document bytes remain broker-only',()=>{
+    const fallback=body(storage,'match /{topLevel}/{rest=**}');
+    assert.doesNotMatch(fallback,/allow (?:read, )?write: if .*!= 'staff_private_documents'/);
+    for(const prefix of ['staff_private_documents','staff_requests','staff_profiles','riders','deliveries'])assert.ok(fallback.includes("'"+prefix+"'"));
+    assert.match(fallback,/allow update, delete: if false/);
+    const bytes=body(storage,'match /staff_private_documents/{rest=**}').replace(/\/\/[^\n]*/g,'').trim();
+    assert.equal(bytes,'allow read, write: if false;');
 });
 
-test('Storage has no signed-in, cross-service or token-generation exception for private bytes', () => {
-    const policy = storage.replace(/\/\/[^\n]*/g, '');
-    assert.doesNotMatch(policy, /request\.auth|firestore\.(?:get|exists)|function\s/);
-    assert.equal((policy.match(/allow\s/g) || []).length, 2);
-    assert.doesNotMatch(policy, /getDownloadURL|firebaseStorageDownloadTokens/);
+test('Storage uploads require immutable bounded images and never generate a private document download token',()=>{
+    const policy=storage.replace(/\/\/[^\n]*/g,'');
+    assert.match(body(storage,'function image('),/resource == null/);assert.match(body(storage,'function image('),/request.resource.size/);
+    assert.match(body(storage,'function owner('),/email_verified/);assert.match(body(storage,'function owner('),/google.com/);
+    assert.doesNotMatch(policy,/getDownloadURL|firebaseStorageDownloadTokens/);
 });

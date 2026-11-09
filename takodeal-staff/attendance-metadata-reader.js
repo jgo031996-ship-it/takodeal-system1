@@ -17,13 +17,13 @@ export function createAttendanceMetadataReader({projectId,apiKey,databaseId='(de
  if(!/^[a-z][a-z0-9-]{3,62}$/.test(projectId)||!/^\(default\)$|^[a-z][a-z0-9-]{2,62}$/.test(databaseId))throw Error('The attendance database configuration is invalid.');
  const base='projects/'+projectId+'/databases/'+databaseId+'/documents',url='https://firestore.googleapis.com/v1/'+base+':runQuery?key='+encodeURIComponent(apiKey);
  return async function readStaffMetadata({table,field,value}){
-  if(!((['attendance_logs','sop_logs'].includes(table)&&['staffId','staffName'].includes(field))||(table==='cashiers'&&field==='cashierName'))||typeof value!=='string'||!value.trim())throw problem('The attendance search identity is invalid.','invalid-argument');
+  if(!((['attendance_logs','sop_logs'].includes(table)&&['staffId','staffName'].includes(field))||(['cashiers','staff_directory'].includes(table)&&field==='cashierName'))||typeof value!=='string'||!value.trim())throw problem('The attendance search identity is invalid.','invalid-argument');
   const user=auth?.currentUser||null,uid=user?.uid||null,assertIdentity=()=>{if((auth?.currentUser||null)!==user||(auth?.currentUser?.uid||null)!==uid)throw problem('The signed-in attendance account changed. Reopen Time Clock.','unauthenticated');};
   const headers={'Content-Type':'application/json'};
   if(user){if(typeof user.getIdToken!=='function')throw problem('The signed-in attendance account could not be confirmed.','unauthenticated');const token=await user.getIdToken();assertIdentity();if(typeof token!=='string'||!token)throw problem('The attendance sign-in token is unavailable.','unauthenticated');headers.Authorization='Bearer '+token;}
   if(typeof getAppCheckToken==='function'){const result=await getAppCheckToken(),token=typeof result==='string'?result:result?.token;assertIdentity();if(typeof token!=='string'||!token)throw problem('The attendance device verification is unavailable.','permission-denied');headers['X-Firebase-AppCheck']=token;}
   assertIdentity();
-  const fields=table==='cashiers'?['cashierName']:ATTENDANCE_METADATA_FIELDS;
+  const fields=['cashiers','staff_directory'].includes(table)?['cashierName']:ATTENDANCE_METADATA_FIELDS;
   const response=await send(url,{method:'POST',headers,cache:'no-store',credentials:'omit',body:JSON.stringify({structuredQuery:{select:{fields:fields.map(fieldPath=>({fieldPath}))},from:[{collectionId:table}],where:{fieldFilter:{field:{fieldPath:field},op:'EQUAL',value:{stringValue:value}}}}})});assertIdentity();
   let result;try{result=await response.json();}catch(error){throw problem('HQ returned an incomplete attendance response.','attendance/read-invalid');}assertIdentity();
   const remote=Array.isArray(result)?result.find(row=>row?.error)?.error:result?.error;

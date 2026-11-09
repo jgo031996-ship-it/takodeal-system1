@@ -266,6 +266,7 @@ export function createSaleEngine(api) {
             const movements = payload.inventoryMovements;
             const issues = payload.inventoryIssues || [];
             const recipeIssues = payload.recipeIssues || [];
+            if(api.staffProfileCollection==='staff_directory'&&(payload.mealStaffName||payload.mealLevelId||['staff_meal','manager_meal'].includes(payload.globalDiscountType)||/^meal_level_/.test(payload.globalDiscountType||''))&&!payload.staffPinVerificationId)throw Error('This earlier meal receipt has no server authorization. Keep it queued for Owner review.');
             if (!Array.isArray(recipeIssues) || recipeIssues.some(issue=>!issue.menuItem ||
                 !Number.isFinite(issue.quantity) || issue.quantity<=0 || issue.reason!=='original-recipe-unavailable')) {
                 throw new Error('Invalid recipe review record. Sale remains queued.');
@@ -282,6 +283,24 @@ export function createSaleEngine(api) {
                 if (marker.exists()) { assertSale(marker.data(), payload); return 'already-committed'; }
                 const existing = await tx.get(saleRef);
                 if (existing.exists()) { assertSale(existing.data(), payload); return 'already-committed'; }
+                let mealProof=null,mealClaimRef=null,mealGeneration=1;
+                if(payload.staffPinVerificationId&&payload.mealStaffName){
+                    const savedProof=await tx.get(ref('staff_pin_verifications',payload.staffPinVerificationId));mealProof=savedProof.exists()?savedProof.data():null;
+                    const day=mealProof?.day,calendar=/^\d{4}-\d{2}-\d{2}$/.test(day||'')?new Date(day+'T00:00:00Z'):null;
+                    if(!mealProof||mealProof.schemaVersion!==1||mealProof.uid!==api.auth?.currentUser?.uid||mealProof.app!=='cashier'||mealProof.purpose!=='meal'||mealProof.branch!==payload.branch||mealProof.scope!==payload.saleId||mealProof.mealLevelId!==payload.mealLevelId||mealProof.source!==payload.mealIdentitySource||mealProof.staffId!==payload.mealIdentityId||mealProof.profile?.cashierName!==payload.mealStaffName||mealProof.mealRole!==payload.mealRole||!calendar||!Number.isFinite(+calendar)||calendar.toISOString().slice(0,10)!==day)throw Error('The saved meal authorization does not match this exact receipt. Keep it queued for HQ review.');
+                    if(mealProof.mealRole==='staff'){
+                        mealClaimRef=ref('staff_meal_daily_claims',day+'_'+mealProof.source+'_'+mealProof.staffId);const old=await tx.get(mealClaimRef);
+                        if(old.exists()){
+                            const claim=old.data();if(claim.schemaVersion!==1||claim.staffId!==mealProof.staffId||claim.source!==mealProof.source||claim.day!==day||!Number.isSafeInteger(claim.generation)||claim.generation<1||claim.generation>=Number.MAX_SAFE_INTEGER||typeof claim.saleId!=='string'||!claim.saleId||claim.saleId.includes('/'))throw Error('The saved daily meal claim needs HQ review.');
+                            const [priorSale,priorMeal]=await Promise.all([tx.get(transactionRef(claim.saleId)),tx.get(ref('staff_requests','meal-'+claim.saleId))]);
+                            if(claim.saleId===payload.saleId||!priorSale.exists()||!priorMeal.exists()||priorSale.data().status!=='Voided'||priorMeal.data().status!=='Voided'||priorSale.data().saleId!==claim.saleId||priorSale.data().branch!==claim.branch||priorSale.data().mealIdentityId!==claim.staffId||priorSale.data().mealIdentitySource!==claim.source||priorMeal.data().saleId!==claim.saleId||priorMeal.data().staffId!==claim.staffId||priorMeal.data().branch!==claim.branch||priorMeal.data().mealIdentitySource!==claim.source)throw Error('This employee already has a meal for the authorization day. Keep this receipt queued for HQ review.');
+                            mealGeneration=claim.generation+1;
+                        }
+                    }
+                    // A previously authorized, exact-target receipt may upload
+                    // after its initial15-minute checkout window, even overnight.
+                    // Its server-issued day, never the upload day, owns the claim.
+                }
                 let mobileRef;
                 if (payload.mobileOrderId) {
                     mobileRef = ref('incoming_orders', payload.mobileOrderId);
@@ -309,6 +328,7 @@ export function createSaleEngine(api) {
                 // Retain this marker even when receipt history is archived.
                 tx.set(markerRef(payload.saleId), { saleId: payload.saleId, branch: payload.branch,
                     receiptId: payload.receiptId, fingerprint: saleFingerprint(payload), committedAt: serverTimestamp() });
+                if(mealClaimRef)tx.set(mealClaimRef,{schemaVersion:1,staffId:mealProof.staffId,source:mealProof.source,day:mealProof.day,saleId:payload.saleId,branch:payload.branch,verificationId:payload.staffPinVerificationId,generation:mealGeneration,createdAt:serverTimestamp(),actorUid:mealProof.uid});
                 stats(tx, { ...payload, ballsCounted }, 1);
                 if (issues.length || recipeIssues.length) tx.set(ref('manager_alerts', 'inventory-review-' + payload.saleId), {
                     type: 'INVENTORY_REVIEW', branch: payload.branch, cashier: payload.cashier || 'Unknown',
@@ -319,9 +339,9 @@ export function createSaleEngine(api) {
                         '. These unmatched quantities were not deducted. Sales and payments are recorded.',
                     timestamp: serverTimestamp(), isRead: false
                 });
-                if (mobileRef) tx.update(mobileRef, { paymentStatus: 'paid', receiptId: payload.receiptId, encodedAt: serverTimestamp() });
+                if (mobileRef) tx.update(mobileRef, { paymentStatus: 'paid', receiptId: payload.receiptId, encodedSaleId:payload.saleId, encodedAt: serverTimestamp() });
                 else if (payload.orderType === 'Delivery') tx.set(ref('incoming_orders', 'delivery-' + payload.saleId), {
-                    branch: payload.branch, customerName: payload.customerName || 'Delivery Customer',
+                    branch: payload.branch, orderType:'Delivery', sourceSaleId:payload.saleId, customerName: payload.customerName || 'Delivery Customer',
                     contactNumber: payload.contactNumber || '', deliveryAddress: payload.deliveryAddress || '',
                     totalAmount: payload.netTotal, items: payload.cart, status: 'preparing',
                     orderCode: payload.receiptId, paymentMethod: payload.paymentMethod || 'Cash', timestamp: serverTimestamp()
@@ -334,6 +354,7 @@ export function createSaleEngine(api) {
                 if (payload.mealStaffName) tx.set(ref('staff_requests', 'meal-' + payload.saleId), {
                     type: `${payload.mealLevelName ? payload.mealLevelName.replace(/\s+Meal$/i,'') + ' Meal' : payload.globalDiscountType === 'manager_meal' ? 'Manager Meal' : 'Staff Meal'} (POS Auto)`,
                     mealLevelId:payload.mealLevelId || payload.globalDiscountType, mealRole:payload.mealRole || null,
+                    ...(mealProof?{staffId:mealProof.staffId,mealIdentitySource:mealProof.source,staffPinVerificationId:payload.staffPinVerificationId,mealDay:mealProof.day}:{}),
                     branch: payload.branch, staffName: payload.mealStaffName, amount: payload.netTotal,
                     item: payload.cart.map(i => `${i.qty}x ${i.name || i.itemName}`).join(', ') + ' | OR#: ' + payload.receiptId,
                     receiptId: payload.receiptId, saleId:payload.saleId, status: 'Pending', staffAcknowledged: false, timestamp: serverTimestamp()

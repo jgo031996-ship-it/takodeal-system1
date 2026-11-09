@@ -11,6 +11,7 @@ import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../Takodeal-POS/early-time-out-actions.js';
 import {createAttendanceMetadataReader} from '../Takodeal-POS/attendance-metadata-reader.js';
 import {metadataFetch} from './helpers/attendance-metadata-fixture.mjs';
+import {createCashierAttendanceHistoryReader,readCashierOperationalHistory} from '../Takodeal-POS/cashier-operational-history.js';
 import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
 import {chooseClockInSchedule} from '../takodeal-staff/attendance-shift-declaration-ui.js';
 import * as scheduleDeclarations from '../takodeal-staff/attendance-shift-declaration.js';
@@ -59,25 +60,33 @@ function dom() {
 function staffClock(h,clock) {
     const ui=dom(),fix={branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:+new Date(clock)};
     const window={...h.api,getAttendanceLocation:async()=>fix,checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){}};
+    window.readStaffDirectoryProfile=async(staffId,{assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await h.api.getDocFromServer('cashiers/'+staffId);assertCurrent();return snapshot;};
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
+    const user={uid:'sample-staff-upload-uid'},context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,ensureStaffPrimaryUser:async()=>user,staffPrimaryAuth:{currentUser:user},prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
     const start=staffSource.indexOf('window.punchTime = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start)),context);
     return {...ui,window};
 }
 function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test-pin',serverProfile={}}={}) {
-    const ui=dom();ui.node('clockStaffName').value=profile.cashierName;ui.node('clockStaffPin').value='test-pin';
+    const ui=dom();ui.localStorage.setItem('takodeal_device_id','DEV-SAMPLE-CLOCK');ui.node('clockStaffName').value='staff-id';ui.node('clockStaffPin').value='test-pin';
     ui.node('timeClockModal').style.display='flex';
     let gpsDone;
     if(lastTimeInHours!==null){const begin=new Date(+new Date(clock)-lastTimeInHours*3600000);h.records.set('attendance_logs/last-in',{staffId:'staff-id',staffName:profile.cashierName,branch:'Maa',type:'TIME IN',timestamp:begin,scheduleSnapshot:{version:1,source:'clock-in',branch:'Maa',staffName:profile.cashierName,expectedStartAt:begin.toISOString(),expectedEndAt:new Date(+begin+8*3600000).toISOString(),shiftId:'sample-saved-slot',wasScheduled:true,needsScheduleReview:false}});h.records.set('cashiers/staff-id',profile);}
     const window={...h.api,BRANCH_ZONES:{Maa:{lat:7,lng:125}},getDistanceInMeters:()=>2,prepareAttendanceCamera:async()=>true,verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){},
-        currentBranchStaffCache:cachedProfile?[{...profile,id:'staff-id',pin:'test-pin'}]:null};
+        currentBranchStaffCache:[{staffId:'staff-id',id:'staff-id',cashierName:profile.cashierName,branch:profile.branch}]};
     const api={...h.api,getDocs:async q=>{
         if(q.path==='cashiers'){const d={id:'staff-id',data:()=>({...profile,...serverProfile,pin})};return {empty:false,docs:[d],forEach:fn=>fn(d)};}
         return h.api.getDocs(q);
     }};api.getDocsFromServer=async q=>{if(h.serverError)throw h.serverError;return api.getDocs(q);};Object.assign(window,api);
+    const rawDoc=api.doc,rawBatch=api.writeBatch;api.doc=(...args)=>{const path=rawDoc(...args);return args.length===1&&typeof path==='string'?{path,id:path.split('/').at(-1)}:path;};api.writeBatch=()=>{const batch=rawBatch();return{set:(ref,row)=>batch.set(ref.path||ref,row),commit:()=>batch.commit()};};
+    const safeProfile={...profile,...serverProfile};for(const key of ['id','staffId','pin','hourlyRate'])delete safeProfile[key];safeProfile.staffId='staff-id';
+    const actor={uid:'synthetic-clock-device',deviceId:'DEV-SAMPLE-CLOCK',app:'cashier'},auth={currentUser:{uid:actor.uid,isAnonymous:true,getIdToken:async()=>'SYNTHETIC_CLOCK_TOKEN_123456789'}};api.auth=auth;api.staffProfileCollection='staff_directory';api.staffPinActor=()=>actor;api.limit=()=>[];
+    h.records.set('staff_directory/staff-id',{...safeProfile,profileRevision:'clock-revision'});
+    api.verifyStaffPin=window.verifyStaffPin=async input=>{input.assertCurrent?.();if(input.pin!==pin)throw Error('Incorrect PIN.');const verificationId='clock-proof-'+input.purpose;h.records.set('staff_pin_verifications/'+verificationId,{schemaVersion:1,...actor,staffId:'staff-id',purpose:input.purpose,scope:input.scope,branch:input.branch||'Maa',profileRevision:'clock-revision',expiresAt:new Date('2030-01-01')});return{schemaVersion:1,staffId:'staff-id',profile:{...safeProfile},branch:'Maa',verificationId,expiresAt:new Date('2030-01-01').toISOString()};};
+    window.historyRequests=[];window.fetch=async(url,request)=>{assert.match(url,/\/access\/staff-operational-history$/);const body=JSON.parse(request.body);window.historyRequests.push(body);if(h.serverError)return{ok:false,status:h.serverError.code==='permission-denied'?403:503,json:async()=>({})};const records=[...h.records].filter(([path])=>path.startsWith(body.table+'/')).map(([path,row])=>{const copy=clone(row);delete copy.photoBase64;delete copy.faceDescriptor;return{id:path.split('/').at(-1),...copy};});return{ok:true,json:async()=>({schemaVersion:1,staffId:'staff-id',table:body.table,complete:true,asOf:new Date(clock).toISOString(),records})};};
+    window.resolveCashierOperationalApi=async({assertCurrent}={})=>({...api,assertStaffOperationalCurrent:()=>assertCurrent?.()});
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
+    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,createCashierAttendanceHistoryReader,readCashierOperationalHistory,attendanceModalEpoch:0,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
         navigator:{geolocation:{getCurrentPosition:ok=>{gpsDone=ok({coords:{latitude:7,longitude:125}});}}}};
     const start=cashierSource.indexOf('window.submitAttendance = async function');
     vm.runInNewContext(cashierSource.slice(start,cashierSource.indexOf('// 📥 STAFF REQUEST HUB (WITH INBOX)',start)),context);
@@ -168,7 +177,7 @@ test('actual Cashier clock-in includes the previous month for a midnight overnig
     const app=cashierClock(h,clock,{cachedProfile:false});await app.window.submitAttendance('TIME IN');await app.wait();
     assert.equal(h.writes.length-before,1);const attendance=h.records.get(h.writes.at(-1));
     assert.equal(attendance.type,'TIME IN');assert.equal(attendance.staffId,'staff-id');assert.equal(attendance.recordedByStaffId,'staff-id');
-    assert.equal(attendance.sourceApp,'cashier');assert.equal(attendance.recordedDeviceId,'device-id');
+    assert.equal(attendance.sourceApp,'cashier');assert.equal(attendance.recordedDeviceId,'DEV-SAMPLE-CLOCK');
     assert.equal(attendance.scheduleSnapshot.needsScheduleReview,false);assert.equal(attendance.scheduleSnapshot.expectedStartAt,'2026-10-31T15:00:00.000Z');
     assert.equal(attendance.scheduleSnapshot.expectedEndAt,'2026-10-31T23:00:00.000Z');assert.equal(attendance.scheduleSnapshot.lateMinutes,65);
 });
@@ -291,7 +300,7 @@ test('a Cashier Time Out does not create a phantom record when fresh HQ attendan
 });
 
 test('actual Cashier Time Out reads all projected attendance evidence without a full photo-history SDK query',async()=>{
-    const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8}),requests=[];h.records.get('attendance_logs/last-in').photoBase64='large-photo'.repeat(10000);h.serverError=Error('The heavy query must not run.');cashier.window.readStaffMetadata=createAttendanceMetadataReader({projectId:'sample-project',apiKey:'sample-public-key',auth:{currentUser:null},fetch:metadataFetch(h.records,request=>requests.push(request))});await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(h.writes.length,1);assert.equal(h.records.get(h.writes[0]).type,'TIME OUT');assert.equal(h.records.get(h.writes[0]).timeInLogId,'last-in');assert.equal(requests.length,2);assert.equal(requests.some(({query})=>query.limit||query.select.fields.some(row=>row.fieldPath==='photoBase64')),false);
+    const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8});h.records.get('attendance_logs/last-in').photoBase64='large-photo'.repeat(10000);h.api.getDocsFromServer=async()=>{throw Error('The heavy query must not run.');};await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(h.writes.length,1);assert.equal(h.records.get(h.writes[0]).type,'TIME OUT');assert.equal(h.records.get(h.writes[0]).timeInLogId,'last-in');assert.equal(cashier.window.historyRequests.filter(row=>row.table==='attendance_logs').length,1);assert.ok(cashier.window.historyRequests.every(row=>row.staffId==='staff-id'&&!('staffName'in row)&&!('photoBase64'in row)));
 });
 
 test('explicit HQ retry rechecks the same selected clock and records at most one actual closure',async()=>{
@@ -334,6 +343,7 @@ test('actual Staff SOP screen follows an ID-matched Cashier shift instead of a G
 function scheduleView(h,selected='2026-11') {
     const ui=dom();ui.node('staffMonthPicker').value=selected;
     const window={...h.api};const context={...h.api,...ui,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
+    window.readStaffDirectoryProfile=async(staffId,{assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await window.getDocFromServer('cashiers/'+staffId);assertCurrent();return snapshot;};
     const start=staffSource.indexOf('window.loadStaffSchedule = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('window.cancelSwapRequest =',start)),context);
     return {...ui,window,context};
@@ -354,13 +364,14 @@ test('a slow older month response cannot replace a newer selected month or reviv
     await h.store.save(schedule('2026-11','11:00','20:00',[1]),{effectiveFrom:'2026-11-01',expectedRevisionId:null});
     const view=scheduleView(h);let release;const real=h.api.getDocFromServer;
     view.window.getDocFromServer=path=>path==='settings/schedule_month_2026_11'?new Promise(resolve=>{release=()=>real(path).then(resolve);}):real(path);
-    const first=view.window.loadStaffSchedule();while(!release)await new Promise(resolve=>setImmediate(resolve));
+    const first=view.window.loadStaffSchedule();for(let at=0;!release&&at<100;at++)await new Promise(resolve=>setImmediate(resolve));assert.equal(typeof release,'function','the actual service reached the old-month read barrier');
     view.node('staffMonthPicker').value='2026-10';await view.window.loadStaffSchedule();release();await first;
     assert.equal(view.window.cachedSchedData.currentMonth,10);assert.match(view.node('scheduleContainer').innerHTML,/October 2026/);
     assert.doesNotMatch(view.node('scheduleContainer').innerHTML,/November 2026/);
 });
 
 function swapApp(h) {
+    const source=h.records.get('cashiers/staff-id');if(source){const {pin,...safe}=source;h.records.set('staff_directory/staff-id',{...safe,...(['BLOCKED','REVOKED'].includes(pin)?{blocked:true}:{})});}
     const ui=dom(),window={loadStaffSchedule(){}};
     const context={...h.api,...ui,window,scheduleDateKey,monthKey,activeStaffProfile,staffSwapAliases,SWAP_PENDING_STATUS,SWAP_REVIEW_STATUS,SWAP_REQUEST_VERSION,Date:dateAt(now)};
     const start=staffSource.indexOf('window.handleIncomingSwap = async function');

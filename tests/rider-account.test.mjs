@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {webcrypto,randomUUID} from 'node:crypto';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {installRiderAccount} from '../takodeal-delivery/rider-account.js';
+import {riderAccessBridge} from './helpers/rider-access-bridge.mjs';
 import {normalizeRiderPhone,validateRiderPIN,riderApproved,riderStatus,riderStatusMessage,riderSubmittedAt} from '../takodeal-delivery/rider-account-model.js';
 
 const tick=()=>new Promise(setImmediate);
@@ -10,7 +11,7 @@ const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{reso
 const photo=(name='sample.jpg',contents='synthetic-image')=>{const bytes=new TextEncoder().encode(contents);return {name,type:'image/jpeg',size:bytes.length,lastModified:1,arrayBuffer:async()=>bytes.slice().buffer};};
 const base={name:'Synthetic Rider',phone:'09123456789',pin:'1234',status:'active',walletBalance:200,vehicle:'Sample motorcycle',plateNumber:'SYNTHETIC',joinedAt:{seconds:1791504000}};
 function fixture({backend=firestoreHarness(),uid='anonymous-one',auth=true}={}) {
-    const nodes=new Map(),events=[],subscriptions=[],reads=[],uploads=[],urls=[],local=new Map([['takodeal_rider_id','unverified-document-id']]);let authChanged;
+    const nodes=new Map(),events=[],subscriptions=[],reads=[],uploads=[],urls=[],objects=new Map(),local=new Map([['takodeal_rider_id','unverified-document-id']]);let authChanged;
     const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',files:[],textContent:'',disabled:false});return nodes.get(id);};
     for(const [id,value] of Object.entries({loginPhone:base.phone,loginPin:base.pin,regName:base.name,regPhone:base.phone,regPin:base.pin,regPinConfirm:base.pin,regVehicle:base.vehicle,regPlate:base.plateNumber}))node(id).value=value;
     for(const id of ['regLicense','regORCR','regSelfie'])node(id).files=[photo(id+'.jpg')];
@@ -24,11 +25,12 @@ function fixture({backend=firestoreHarness(),uid='anonymous-one',auth=true}={}) 
         onSnapshot:(ref,options,next,error)=>{const sub={ref,options,next,error,stops:0};subscriptions.push(sub);return ()=>sub.stops++;},
         onAuthStateChanged:(_auth,callback)=>{authChanged=callback;return ()=>{authChanged=null;};},
         ensureAuth:async()=>{h.authCalls++;if(h.authWait)await h.authWait.promise;if(h.authError)throw h.authError;if(!api.auth.currentUser)api.auth.currentUser={uid};},
-        ref:(_storage,path)=>({path}),uploadBytes:async(ref,file)=>{uploads.push({path:ref.path,file});if(h.uploadWait)await h.uploadWait.promise;if(h.uploadError)throw h.uploadError;return {ref};},
-        getDownloadURL:async ref=>{urls.push(ref.path);if(h.urlWait)await h.urlWait.promise;return 'https://example.invalid/'+ref.path;}};
+        ref:(_storage,path)=>({path}),getMetadata:async ref=>{if(!objects.has(ref.path))throw Object.assign(Error('Missing photo'),{code:'storage/object-not-found'});return structuredClone(objects.get(ref.path));},uploadBytes:async(ref,file,metadata)=>{uploads.push({path:ref.path,file});if(h.uploadWait)await h.uploadWait.promise;if(h.uploadError)throw h.uploadError;objects.set(ref.path,{bucket:'takodeal-pos.firebasestorage.app',fullPath:ref.path,size:file.size,...metadata});return {ref};},
+        getDownloadURL:async ref=>{urls.push(ref.path);if(h.urlWait)await h.urlWait.promise;return 'https://firebasestorage.googleapis.com/v0/b/takodeal-pos.firebasestorage.app/o/'+encodeURIComponent(ref.path)+'?alt=media&token=test-token';}};
     const h={api,backend,node,nodes,events,subscriptions,reads,uploads,urls,local,authCalls:0,
         setAuth(user){api.auth.currentUser=user;authChanged?.(user);},
-        emit(sub,data,{cache=false}={}){sub.next({id:sub.ref.id,exists:()=>data!==undefined,data:()=>structuredClone(data),metadata:{fromCache:cache}});}};
+        emit(sub,data,{cache=false}={}){const {pin,...publicData}=data||{},row=data===undefined?undefined:{...backend.get(sub.ref.path),...publicData};sub.next({id:sub.ref.id,exists:()=>row!==undefined,data:()=>structuredClone(row),metadata:{fromCache:cache}});}};
+    h.access=api.riderAccess=riderAccessBridge(api,backend,{beforeRequest:async route=>{if(route==='login'&&h.lookupWait)await h.lookupWait.promise;if(h.lookupError)throw h.lookupError;}});
     h.account=installRiderAccount(api,{getElementById:node},{onActive:rider=>events.push({kind:'active',rider}),onRestricted:state=>events.push({kind:'restricted',state}),
         onSignedOut:()=>events.push({kind:'signed-out'}),onStatusError:state=>events.push({kind:'error',state})});return h;
 }
@@ -60,14 +62,11 @@ test('auth failure is visible and never queries rider records',async()=>{
     const h=fixture({auth:false});h.authError=Error('Sign-in connection unavailable');assert.equal(await h.account.login(),false);
     assert.match(h.node('riderAuthStatus').textContent,/unavailable/);assert.equal(h.reads.length,0);assert.equal(h.account.isActive(),false);
 });
-test('pending, rejected, suspended and unknown accounts sign in to status only without active callbacks',async()=>{
-    for(const status of ['pending_approval','rejected','banned','suspended',null]){
-        const h=fixture();put(h,status);assert.equal(await h.account.login(),true);assert.equal(h.account.isActive(),false);
-        assert.equal(h.events.some(event=>event.kind==='active'),false);assert.equal(h.events.at(-1).kind,'restricted');assert.ok(h.node('applicationStatus').textContent);
-        await assert.rejects(h.account.requireActive(),/approval/);
-    }
+test('pending accounts sign in to own status; suspended, rejected or unknown profiles receive no protected session',async()=>{
+    const pending=fixture();put(pending,'pending_approval');assert.equal(await pending.account.login(),true);assert.equal(pending.account.isActive(),false);assert.equal(pending.events.at(-1).kind,'restricted');await assert.rejects(pending.account.requireActive(),/approval/);
+    for(const status of ['rejected','banned','suspended',null]){const h=fixture();put(h,status);assert.equal(await h.account.login(),false);assert.equal(h.account.isActive(),false);assert.equal(h.account.state().rider,null);assert.equal(h.events.some(event=>event.kind==='active'),false);assert.match(h.node('riderAuthStatus').textContent,/could not be verified/);}
 });
-test('active and approved login sanitize PINs while legacy PIN authentication is retained in memory only',async()=>{
+test('active and approved login privately migrates legacy PINs without retaining them in account state',async()=>{
     for(const status of ['active','approved']){const h=fixture();put(h,status);assert.equal(await h.account.login(),true);assert.equal(h.account.isActive(),true);
         assert.equal(Object.hasOwn(h.account.state().rider,'pin'),false);assert.equal(Object.hasOwn(h.events.find(event=>event.kind==='active').rider,'pin'),false);}
     const h=fixture();put(h,'active','legacy-pin',{pin:'older-password'});h.node('loginPin').value='older-password';assert.equal(await h.account.login(),true);
@@ -76,7 +75,7 @@ test('active and approved login sanitize PINs while legacy PIN authentication is
 test('wrong PIN and duplicate canonical phone records cannot select an arbitrary rider',async()=>{
     const wrong=fixture();put(wrong);wrong.node('loginPin').value='4321';assert.equal(await wrong.account.login(),false);assert.equal(wrong.account.state().rider,null);
     const duplicate=fixture();put(duplicate);put(duplicate,'active','another',{phone:'639123456789'});assert.equal(await duplicate.account.login(),false);
-    assert.match(duplicate.node('riderAuthStatus').textContent,/more than one/);assert.equal(duplicate.events.some(event=>event.kind==='active'),false);
+    assert.match(duplicate.node('riderAuthStatus').textContent,/could not be verified/);assert.equal(duplicate.events.some(event=>event.kind==='active'),false);
 });
 test('a cached approval result is refused and refresh can restore a new server confirmation',async()=>{
     const h=fixture();const id=put(h);await h.account.login();const sub=h.subscriptions[0];h.emit(sub,base,{cache:true});
@@ -122,13 +121,13 @@ test('successful registration creates one pending record, enters status view and
     assert.equal(h.account.state().rider.id,'rider-phone-'+base.phone);assert.equal(h.local.size,0);
 });
 test('slow registration blocks duplicate taps and a lost acknowledgement reuses the exact record and uploaded URLs',async()=>{
-    const h=fixture();h.uploadWait=deferred();h.backend.loseNextAck();const first=h.account.register();await tick();
-    assert.equal(h.account.isBusy(),true);assert.equal(await h.account.register(),false);h.uploadWait.resolve();assert.equal(await first,false);assert.match(h.node('registrationStatus').textContent,/Connection lost/);
+    const h=fixture();h.uploadWait=deferred();h.access.loseRegistrationAck=true;const first=h.account.register();await tick();
+    assert.equal(h.account.isBusy(),true);assert.equal(await h.account.register(),false);h.uploadWait.resolve();assert.equal(await first,false);assert.match(h.node('registrationStatus').textContent,/access could not be confirmed/i);
     const original=structuredClone(h.backend.get('riders/rider-phone-'+base.phone));assert.equal(h.uploads.length,3);
     assert.equal(await h.account.register(),true);assert.equal(h.uploads.length,3);assert.deepEqual(h.backend.get('riders/rider-phone-'+base.phone),original);
 });
 test('a changed retry photo with identical file metadata is rejected rather than reassociated with the saved application',async()=>{
-    const h=fixture();h.backend.loseNextAck();assert.equal(await h.account.register(),false);const old=structuredClone(h.backend.get('riders/rider-phone-'+base.phone));
+    const h=fixture();h.access.loseRegistrationAck=true;assert.equal(await h.account.register(),false);const old=structuredClone(h.backend.get('riders/rider-phone-'+base.phone));
     h.node('regLicense').files=[photo('regLicense.jpg','different-image')];assert.equal(await h.account.register(),false);assert.equal(h.uploads.length,3);
     assert.deepEqual(h.backend.get('riders/rider-phone-'+base.phone),old);
 });
@@ -143,7 +142,7 @@ test('a legacy application arriving during uploads is checked again before creat
     assert.equal(h.backend.get('riders/rider-phone-'+base.phone),undefined);assert.equal(h.account.state().rider,null);
 });
 test('a PIN changed by Manager after a lost acknowledgement cannot be bypassed through registration retry',async()=>{
-    const h=fixture();h.backend.loseNextAck();assert.equal(await h.account.register(),false);const path='riders/rider-phone-'+base.phone;
+    const h=fixture();h.access.loseRegistrationAck=true;assert.equal(await h.account.register(),false);const path='riders/rider-phone-'+base.phone;
     h.backend.put(path,{...h.backend.get(path),pin:'4321',status:'active',walletBalance:700});
     assert.equal(await h.account.register(),false);assert.equal(h.account.state().rider,null);assert.equal(h.backend.get(path).pin,'4321');assert.equal(h.backend.get(path).walletBalance,700);
     assert.equal(h.events.some(event=>event.kind==='active'),false);
@@ -158,11 +157,11 @@ test('logout or auth change during document upload cannot publish an application
 });
 test('a transient image upload failure keeps the form and retry resumes with existing completed photos',async()=>{
     const h=fixture(),upload=h.api.uploadBytes;let calls=0;h.api.uploadBytes=async(...args)=>{calls++;if(calls===2)throw Error('Image connection failed');return upload(...args);};
-    assert.equal(await h.account.register(),false);assert.equal(h.node('regPin').value,'1234');assert.match(h.node('registrationStatus').textContent,/connection failed/);
+    assert.equal(await h.account.register(),false);assert.equal(h.node('regPin').value,'1234');assert.match(h.node('registrationStatus').textContent,/upload result is not confirmed/);
     assert.equal(await h.account.register(),true);assert.equal(h.uploads.length,3);assert.equal(h.urls.length,3);
 });
 test('requireActive performs a new server check, holds revoked status and deduplicates concurrent refreshes',async()=>{
     const h=fixture();const id=put(h);await h.account.login();const before=h.reads.length;h.recordWait=deferred();
-    const a=h.account.requireActive(),b=h.account.refresh();assert.equal(h.reads.length,before+1);h.backend.put('riders/'+id,{...base,status:'rejected'});h.recordWait.resolve();
+    const a=h.account.requireActive(),b=h.account.refresh();assert.equal(h.reads.length,before+1);h.backend.put('riders/'+id,{...h.backend.get('riders/'+id),status:'rejected'});h.recordWait.resolve();
     assert.equal(await b,true);await assert.rejects(a,/approval/);assert.equal(h.account.isActive(),false);assert.equal(h.account.isBusy(),false);
 });

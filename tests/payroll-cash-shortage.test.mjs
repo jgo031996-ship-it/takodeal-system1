@@ -8,9 +8,9 @@ import {CASH_SHORTAGE_LIMIT} from '../takodeal-manager/cash-shortage-model.js';
 import {payrollEstimate} from '../takodeal-manager/payroll-completion.js';
 const staffId='sample-staff',name='Sample Staff',branch='Maa',start='2030-01-01',end='2030-01-15',recordId=ordinaryPayrollId(staffId,start,end);
 function fixture({manager=false}={}){
- const h=firestoreHarness(),uid=manager?'manager':'owner',email=manager?'manager@example.test':'jgo031996@gmail.com';
- h.api.auth={currentUser:{uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]}};h.api.sessionUser={uid,email,isOwner:!manager,isFranchisee:false,role:manager?'Manager':'Owner',permissions:['payroll'],allowedBranches:['All']};
- h.put('hq_managers/'+uid,{email,cashierName:'HQ',pin:'1234',role:manager?'Manager':'System Architect',permissions:['payroll'],assignedBranch:'All'});h.put('hq_email_access/'+email,{active:true,permissions:['payroll'],allowedBranches:['All']});
+ const h=firestoreHarness(),uid=manager?'manager':'owner',email=manager?'manager@example.test':'jgo031996@gmail.com',permissions=manager?['payroll','accounts','expenses']:['payroll'];
+ h.api.auth={currentUser:{uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]}};h.api.sessionUser={uid,email,isOwner:!manager,isFranchisee:false,role:manager?'Manager':'Owner',permissions:[...permissions],allowedBranches:['All']};
+ h.put('hq_managers/'+uid,{email,cashierName:'HQ',pin:'1234',role:manager?'Manager':'System Architect',permissions:[...permissions],assignedBranch:'All'});h.put('hq_email_access/'+email,{active:true,permissions:[...permissions],allowedBranches:['All']});
  const profile={staffId,cashierName:name,branch,hourlyRate:450};h.put('cashiers/'+staffId,profile);h.put('cash_accounts/cash',{name:'Bank',branch,balance:5000});
  h.api.getDocFromServer=async ref=>({id:ref.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.get(ref.path))});
  const data={staffId,name,branch,start,end,profile,basicPay:450,nightBonus:0,holidayPayTotal:0,straightBonus:0,perfBonus:0,lateDeduction:0,sss:0,pagibig:0,philhealth:0,advances:0,meals:0,loans:0,cashShortages:0,cashShortageRows:[]};
@@ -70,7 +70,7 @@ test('future and Pending Review cash shortages do not charge earlier work or cha
 });
 
 test('Manager can pay ordinary payroll but a protected cash shortage requires the verified Owner',async()=>{
- const f=fixture({manager:true});charge(f);await assert.rejects(f.pay(),/verified Owner/);noDebit(f);const g=fixture({manager:true});assert.equal((await g.pay()).finalNetPay,450);
+ const f=fixture({manager:true});charge(f);const before=structuredClone([...f.h.docs]);await assert.rejects(f.pay(),/verified Owner/);noDebit(f);assert.deepEqual([...f.h.docs],before);const g=fixture({manager:true});assert.equal((await g.pay()).finalNetPay,450);assert.equal(g.h.get('cash_accounts/cash').balance,4550);assert.equal(g.h.get('expenses/'+recordId).amount,450);
 });
 
 test('cash shortage can never make net pay negative and legacy penalties remain excluded',async()=>{

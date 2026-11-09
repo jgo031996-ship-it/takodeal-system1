@@ -13,7 +13,7 @@ export function createStaffOnboardingService(api,{createVault,now=()=>Date.now()
   if(flight?.staffId===staffId)return flight.promise;
   const token=++epoch,current=()=>token===epoch&&identity()===staffId;
   const work=(async()=>{
-   const profileWork=deadline(api.getDocFromServer(api.doc(api.db,'cashiers',staffId)),20000,'Your employee profile could not be confirmed. Reconnect and refresh.').then(confirmed);
+   const profileWork=deadline(api.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(!current())throw Error('Your private employee view changed.');}}),20000,'Your employee profile could not be confirmed. Reconnect and refresh.').then(confirmed);
    // Read complete ID AND name metadata. Earlier name-only legacy punches
    // must prevent treating the employee-ID rollout as somebody's first day.
    const attendanceWork=profileWork.then(async profileSnap=>{

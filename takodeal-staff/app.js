@@ -20,6 +20,12 @@ import {payslipSavedAmounts,savedPayslipCents} from './staff-payslip-snapshot.js
 import {readStaffSavedPayslips,installStaffSavedPayslipViews} from './staff-saved-payslips.js';
 import {createStaffVaultRecoveryForPhone} from './staff-vault-recovery.js';
 import {installStaffVaultRecovery} from './staff-vault-recovery-ui.js';
+import {createStaffLoanLedgerClient} from './staff-loan-ledger-client.js';
+import {installStaffLoanLedger} from './staff-loan-ledger-ui.js';
+import {createStaffAccessClient,operationalStaffProfile} from './staff-access.js';
+import {createStaffPrivateProfileAccess} from './staff-private-profile.js';
+import {operationalRecordsSnapshot} from './staff-operational-records.js';
+import {readStaffAnnouncements,announcementImage} from './staff-announcements.js';
 import {isPayrollAdjustment,payrollAdjustmentDetailsHTML,payrollAdjustmentHistoryHTML} from './payroll-adjustment-model.js';
 import {readStaffPayrollAdjustments,staffPayrollAdjustmentEstimate} from './staff-payroll-adjustments.js';
 import {readStaffPayrollRecoveryHistory} from './payroll-adjustment-history.js';
@@ -67,8 +73,22 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const staffPrimaryAuth = getAuth(app);
+const ensureStaffPrimaryUser=async({guard=()=>{}}={})=>{await staffPrimaryAuth.authStateReady();guard();if(staffPrimaryAuth.currentUser)return staffPrimaryAuth.currentUser;await setPersistence(staffPrimaryAuth,browserLocalPersistence);guard();const result=await signInAnonymously(staffPrimaryAuth);guard();return result.user;};
+window.staffAccessClient=createStaffAccessClient({auth:staffPrimaryAuth,ensureUser:ensureStaffPrimaryUser,deviceId:()=>localStorage.getItem('takodeal_device_id'),sessionId:()=>localStorage.getItem('takodeal_staff_session_id'),fetcher:window.fetch.bind(window)});
+window.verifyStaffPin=input=>window.staffAccessClient.verifyPin(input);
+window.staffProfileCollection='staff_directory';
+window.staffPinActor=()=>({uid:staffPrimaryAuth.currentUser?.uid,deviceId:localStorage.getItem('takodeal_device_id'),app:'staff',sessionId:localStorage.getItem('takodeal_staff_session_id')});
+const privateProfileAccess=createStaffPrivateProfileAccess({identity:()=>localStorage.getItem('takodeal_staff_id'),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+window.readPrivateStaffProfile=(staffId=localStorage.getItem('takodeal_staff_id'),options)=>privateProfileAccess.read(staffId,options);
+window.patchOwnStaffProfile=(patch,options={})=>privateProfileAccess.update(localStorage.getItem('takodeal_staff_id'),patch,options);
+const boundedStaffOperationalRead=async read=>{let timer;try{return await Promise.race([Promise.resolve().then(read),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Your Staff check took too long. Reconnect and sign in again.')),20000);})]);}finally{clearTimeout(timer);}};
+window.readStaffDirectoryProfile=async(staffId,{assertCurrent=()=>{}}={})=>{const user=await boundedStaffOperationalRead(()=>ensureStaffPrimaryUser({guard:assertCurrent}));assertCurrent();const snap=await boundedStaffOperationalRead(()=>getDocFromServer(doc(db,'staff_directory',staffId)));assertCurrent();if(staffPrimaryAuth.currentUser!==user||!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Your operational Staff profile could not be confirmed. Reconnect and sign in.');const {profileRevision,syncedAt,schemaVersion,updatedAt,...profile}=snap.data();operationalStaffProfile(profile,staffId);return snap;};
+window.readStaffPaidHistory=options=>window.staffAccessClient.payroll({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+window.readPrivatePayrollInputs=options=>window.staffAccessClient.payrollInputs({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+window.restoreStaffLoginSession=async staffId=>{const user=await boundedStaffOperationalRead(()=>ensureStaffPrimaryUser()),deviceId=localStorage.getItem('takodeal_device_id'),sessionId=localStorage.getItem('takodeal_staff_session_id'),current=()=>{if(staffPrimaryAuth.currentUser!==user||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_device_id')!==deviceId||localStorage.getItem('takodeal_staff_session_id')!==sessionId)throw Error('Your Staff session changed. Sign in again.');};current();await window.staffAccessClient.flushCancellations(current);current();const session=await boundedStaffOperationalRead(()=>getDocFromServer(doc(db,'staff_login_sessions',user.uid)));current();const saved=session.exists()?session.data():null;if(!sessionId||session.metadata?.fromCache||session.metadata?.hasPendingWrites||saved?.schemaVersion!==1||saved.uid!==user.uid||saved.staffId!==staffId||saved.deviceId!==deviceId||saved.sessionId!==sessionId||saved.app!=='staff'||!(saved.expiresAt?.toMillis?.()>Date.now()))throw Error('Your Staff sign-in expired. Enter your PIN again.');const profile=await window.readStaffDirectoryProfile(staffId,{assertCurrent:current});current();if(profile.data().branch!==saved.branch||!activeStaffProfile(profile.data()))throw Error('Your Staff profile changed. Sign in again.');return profile.data();};
+window.readOperationalRecords=async(table,{assertCurrent=()=>{}}={})=>{const staffId=localStorage.getItem('takodeal_staff_id'),sessionId=localStorage.getItem('takodeal_staff_session_id'),guard=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_session_id')!==sessionId)throw Error('Your Staff session changed. Sign in again.');assertCurrent();};guard();const value=await window.staffAccessClient.operational({staffId,table,assertCurrent:guard});guard();return operationalRecordsSnapshot(value.records);};
 window.readStaffMetadata = createAttendanceMetadataReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
-window.readStaffPayrollAttendance = createStaffPayrollAttendanceReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
+window.readStaffPayrollAttendance=({staffId,assertCurrent=()=>{}}={})=>window.readOperationalRecords('attendance_logs',{assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your private Pay identity changed. Reopen Pay.');assertCurrent();}});
 
 // 🔥 UPGRADE: This activates the "Indestructible Offline Mode" on the Staff App!
 const db = initializeFirestore(app, {
@@ -105,6 +125,7 @@ window.disableNetwork = disableNetwork;
 // before detaching so a previous account cannot update the next account's screen.
 window.staffLiveListenerEpoch = 0;
 window.stopStaffLiveListeners = function() {
+    window.staffAccessClient?.invalidate();window.clearPrivateStaffProfile?.();
     window.staffLiveListenerEpoch++;
     window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
     window.pendingSwapData=null;
@@ -143,18 +164,20 @@ window.TK_CACHE = {
 };
 
 window.fetchCachedAnnouncements = async function() {
+    const staffId=localStorage.getItem('takodeal_staff_id'),sessionId=localStorage.getItem('takodeal_staff_session_id'),key=staffId+'|'+sessionId,current=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_session_id')!==sessionId)throw Error('Your Staff account changed. Open announcements again.');};
     let now = Date.now();
-    if (window.TK_CACHE.announcements && (now - window.TK_CACHE.lastAnnouncements < window.TK_CACHE.ttl)) {
+    if (window.TK_CACHE.announcementScope===key && window.TK_CACHE.announcements && (now - window.TK_CACHE.lastAnnouncements < window.TK_CACHE.ttl)) {
         console.log(`📦 Loaded ANNOUNCEMENTS from RAM (0 Firebase Reads)`);
         return window.TK_CACHE.announcements;
     }
     console.log(`☁️ Fetching ANNOUNCEMENTS from Firebase...`);
-    const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
-    const snap = await window.getDocs(q);
+    const profile=(await window.readStaffDirectoryProfile(staffId,{assertCurrent:current})).data();current();
+    const snap = await readStaffAnnouncements(window,{staffId,staffName:profile.cashierName,branch:profile.branch,assertCurrent:current});current();
     let data = [];
     snap.forEach(doc => data.push({id: doc.id, ...doc.data()}));
     
     window.TK_CACHE.announcements = data;
+    window.TK_CACHE.announcementScope=key;
     window.TK_CACHE.lastAnnouncements = now;
     return data;
 };
@@ -211,17 +234,17 @@ window.getClosestBranch = function() {
     return closestBranch;
 };
 
-window.checkNormalLogin = function() {
+window.checkNormalLogin = async function() {
     if(!window.staffSetupAccess?.isVerified()){window.startStaffDeviceSetup?.();return false;}
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedId = localStorage.getItem('takodeal_staff_id');
     const setupBinding=window.staffSetupAccess.binding();
     if(setupBinding && savedId!==setupBinding.staffId){
         window.stopStaffLiveListeners();window.lockPayslipVault?.();
-        for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic'])localStorage.removeItem(key);
+        for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic','takodeal_staff_session_id'])localStorage.removeItem(key);
         savedName=null;savedId=null;
     }
-    if(savedId){window.staffSetupAccess.assertStaff(savedId);if(setupBinding){savedName=setupBinding.staffName;localStorage.setItem('takodeal_staff_name',savedName);}}
+    if(savedId){const restoringId=savedId;try{window.staffSetupAccess.assertStaff(savedId);const profile=await window.restoreStaffLoginSession(savedId);if(localStorage.getItem('takodeal_staff_id')!==restoringId)return false;savedName=profile.cashierName;localStorage.setItem('takodeal_staff_name',savedName);localStorage.setItem('takodeal_staff_pic',profile.profilePicUrl||'');}catch{if(localStorage.getItem('takodeal_staff_id')!==restoringId)return false;window.stopStaffLiveListeners();window.lockPayslipVault?.();for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic','takodeal_staff_session_id'])localStorage.removeItem(key);savedId=null;savedName=null;}}
     
     // 🚀 AUTO-LOGIN ENGINE
     if (savedName && savedId) {
@@ -273,26 +296,8 @@ window.loginStaff = async function() {
         const deviceId=localStorage.getItem('takodeal_device_id');
         await window.staffSetupAccess.confirm(deviceId);
         const setupSession=window.staffSetupAccess.capture(),setupBinding=window.staffSetupAccess.binding();
-        let staffData = null; let docId = null;
-        if(setupBinding){
-            const profile=await getDocFromServer(doc(db,'cashiers',setupBinding.staffId));
-            const data=profile.exists()?profile.data():null;
-            if(data && (data.branch!==setupBinding.branch || data.cashierName!==setupBinding.staffName))throw Error('Your staff profile changed. Check this phone’s setup again before signing in.');
-            const pinMatches=data && (String(data.pin)===pinInput || typeof data.pin==='number'&&Number.isSafeInteger(data.pin)&&/^\d+$/.test(pinInput)&&Number(pinInput)===data.pin);
-            if(data && data.active!==false && data.archived!==true && data.blocked!==true && !/^(Blocked|Revoked|Terminated|Resigned|Inactive|Disabled|Archived|Deleted)$/i.test(String(data.status||'')) && !/^(REVOKED|BLOCKED)$/i.test(String(data.pin)) && pinMatches){staffData=data;docId=setupBinding.staffId;}
-        } else {
-            const qStr = query(collection(db, "cashiers"), where("pin", "==", pinInput));
-            const snapStr = await getDocs(qStr);
-            if (!snapStr.empty) {staffData=snapStr.docs[0].data();docId=snapStr.docs[0].id;}
-            else {
-                let pinNum = parseInt(pinInput);
-                if (!isNaN(pinNum)) {
-                    const qNum = query(collection(db, "cashiers"), where("pin", "==", pinNum));
-                    const snapNum = await getDocs(qNum);
-                    if (!snapNum.empty) { staffData = snapNum.docs[0].data(); docId = snapNum.docs[0].id; }
-                }
-            }
-        }
+        const login=await window.staffAccessClient.login({pin:pinInput,...(setupBinding?{selectedStaffId:setupBinding.staffId}:{}),assertCurrent:()=>window.staffSetupAccess.assert(setupSession,setupBinding?.staffId)});
+        const staffData=login.profile,docId=login.staffId,loginUser=staffPrimaryAuth.currentUser;
 
         if (staffData) {
             window.staffSetupAccess.assert(setupSession,docId);
@@ -300,6 +305,7 @@ window.loginStaff = async function() {
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);
+            localStorage.setItem('takodeal_staff_session_id',login.sessionId);
             localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
             localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
             
@@ -311,7 +317,7 @@ window.loginStaff = async function() {
             
             document.getElementById('loginOverlay').style.opacity = '0';
             setTimeout(() => {
-                try{window.staffSetupAccess.assert(setupSession,docId);}catch{window.stopStaffLiveListeners();window.startStaffDeviceSetup?.();return;}
+                try{window.staffSetupAccess.assert(setupSession,docId);if(localStorage.getItem('takodeal_staff_session_id')!==login.sessionId||staffPrimaryAuth.currentUser!==loginUser)return;}catch{window.stopStaffLiveListeners();window.startStaffDeviceSetup?.();return;}
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('appContainer').style.display = 'flex';
                 document.getElementById('loginPin').value = ''; 
@@ -332,6 +338,7 @@ window.loginStaff = async function() {
     } catch (e) {
         errorMsg.innerText = e.message || "Connection error. Check again before signing in."; errorMsg.style.display = 'block';
     } finally {
+        document.getElementById('loginPin').value='';
         btn.innerText = "Secure Login"; btn.disabled = false;
     }
 };
@@ -341,12 +348,14 @@ window.logoutStaff = function() {
     Swal.fire({
         title: 'Sign Out?', text: "You will need your PIN to access your portal again.", icon: 'question',
         showCancelButton: true, confirmButtonColor: '#0f766e', confirmButtonText: 'Yes, sign out'
-    }).then((result) => {
+    }).then(async(result) => {
         if (result.isConfirmed) {
+            try{await window.staffAccessClient.logout();}catch{}
             window.stopStaffLiveListeners();
             localStorage.removeItem('takodeal_staff_name');
             localStorage.removeItem('takodeal_staff_id');
             localStorage.removeItem('takodeal_staff_pic');
+            localStorage.removeItem('takodeal_staff_session_id');
             location.reload(); 
         }
     });
@@ -356,8 +365,11 @@ window.logoutStaff = function() {
 // 📋 PROFILE ENGINE
 // ==========================================
 window.selectedProfileFile = null;
+window.staffPrivateProfileEpoch=0;
+window.clearPrivateStaffProfile=function(){window.staffPrivateProfileEpoch++;for(const id of ['profFullName','profNickname','profPhone','profAddress','profEmergName','profEmergNum','profEmail','profGcashName','profGcashNum','profGotymeName','profGotymeNum','profSss','profPhilhealth','profPagibig','profPin']){const field=document.getElementById(id);if(field)field.value='';}for(const id of ['linkSss','linkPhilhealth','linkPagibig']){const link=document.getElementById(id);if(link){link.removeAttribute('href');link.style.display='none';}}for(const id of ['profRoleHistory','profContracts']){const box=document.getElementById(id);if(box)box.replaceChildren();}const modal=document.getElementById('profileModal');if(modal)modal.style.display='none';};
 
 window.openProfile = async function() {
+    window.clearPrivateStaffProfile();const profileEpoch=window.staffPrivateProfileEpoch;
     let pic = localStorage.getItem('takodeal_staff_pic');
     let preview = document.getElementById('profilePreview');
     let placeholder = document.getElementById('profilePlaceholder');
@@ -373,7 +385,9 @@ window.openProfile = async function() {
     document.getElementById('profPin').value = ''; 
     
     try {
-        const docSnap = await getDoc(doc(db, "cashiers", staffId));
+        const docSnap = await window.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(window.staffPrivateProfileEpoch!==profileEpoch||document.hidden)throw Error('Your profile view closed. Reopen it.');}});
+        if(window.staffPrivateProfileEpoch!==profileEpoch||localStorage.getItem('takodeal_staff_id')!==staffId||document.hidden)return;
+        window.staffLoginPinVersion=docSnap.data().loginPinVersion??0;
         
         if (docSnap.exists()) {
             let d = docSnap.data();
@@ -435,7 +449,7 @@ window.openProfile = async function() {
             let elContracts = document.getElementById('profContracts');
             if(elContracts) elContracts.innerHTML = contractsHtml;
         }
-    } catch(e) { console.error("Error fetching profile data:", e); }
+    } catch(e) {if(window.staffPrivateProfileEpoch!==profileEpoch||localStorage.getItem('takodeal_staff_id')!==staffId)return;return Swal.fire('Private profile unavailable',e.message||'Use your approved private Staff phone and reconnect.','info');}
 
     document.getElementById('profileModal').style.display = 'flex';
 };
@@ -493,35 +507,16 @@ window.saveProfileData = async function() {
     };
 
     let newPin = document.getElementById('profPin').value.trim();
-    if (newPin) payload.pin = newPin;
+    if(newPin&&!/^\d{4,8}$/.test(newPin))return Swal.fire('Check Staff PIN','Use 4–8 digits for your Staff login PIN.','warning');
 
     btn.innerText = "⏳ Saving Secure Files..."; btn.disabled = true;
 
     try {
-        // 🔥 ID UPLOADER ENGINE
-        const uploadGovID = async (inputId, folderPath) => {
-            let fileEl = document.getElementById(inputId);
-            if (fileEl && fileEl.files.length > 0) {
-                let file = fileEl.files[0];
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${folderPath}/${staffId}_${Date.now()}.${fileExt}`;
-                const storageRef = ref(window.storage || getStorage(db.app), fileName);
-                const snapshot = await uploadBytes(storageRef, file);
-                return await getDownloadURL(snapshot.ref);
-            }
-            return null;
-        };
-
-        let sssUrl = await uploadGovID('imgSss', 'government_ids/sss');
-        if (sssUrl) payload.sssIdUrl = sssUrl;
-
-        let philUrl = await uploadGovID('imgPhilhealth', 'government_ids/philhealth');
-        if (philUrl) payload.philhealthIdUrl = philUrl;
-
-        let pagUrl = await uploadGovID('imgPagibig', 'government_ids/pagibig');
-        if (pagUrl) payload.pagibigIdUrl = pagUrl;
-
-        await updateDoc(doc(db, "cashiers", staffId), payload);
+        if(['imgSss','imgPhilhealth','imgPagibig'].some(id=>document.getElementById(id)?.files?.length))throw Error('Government ID uploads use the private Required documents section. No files or profile changes were saved.');
+        const profileEpoch=window.staffPrivateProfileEpoch,assertCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||window.staffPrivateProfileEpoch!==profileEpoch||document.hidden)throw Error('Your profile view changed. Reopen it.');};
+        await window.patchOwnStaffProfile(payload,{assertCurrent});
+        if(newPin){await window.staffAccessClient.changePin({staffId,newPin,operationId:crypto.randomUUID(),expectedVersion:window.staffLoginPinVersion??0,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent});window.staffLoginPinVersion=(window.staffLoginPinVersion??0)+1;}
+        assertCurrent();
         // Use the variable we stored earlier to update their screen
         localStorage.setItem('takodeal_staff_name', currentFullName);
         document.getElementById('loggedInName').innerText = currentFullName;
@@ -533,7 +528,7 @@ window.saveProfileData = async function() {
         document.getElementById('profPin').value = ''; 
     } catch (e) {
         console.error("Save Profile Error:", e);
-        Swal.fire('Error', 'Failed to save data. Check internet connection.', 'error');
+        Swal.fire('Profile save needs confirmation',e.message||'Reconnect and refresh your private profile before retrying.','error');
     } finally {
         btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
     }
@@ -854,7 +849,7 @@ window.reprintContract = async function(type, encodedData, signDate) {
     const staffId=decodeURIComponent(encodedData);
     if(staffId!==localStorage.getItem('takodeal_staff_id') || !await window.ensureStaffRateUnlocked())return;
     try {
-        const snap=await getDocFromServer(doc(db,'cashiers',staffId));
+        const snap=await window.readPrivateStaffProfile(staffId);
         if(staffId!==localStorage.getItem('takodeal_staff_id') || !window.staffRateSession?.allows(staffId) || !snap.exists())return;
         let data = snap.data();const key={Initial:'initial',Extension:'extension',Regularization:'regularization'}[type];
         const savedSignDate=key && data.signedContracts?.[key];
@@ -920,17 +915,19 @@ window.previewProfileImage = async function(event) {
 
 window.uploadProfilePicture = async function() {
     if (!window.selectedProfileFile) return;
-    let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
+    const file=window.selectedProfileFile;let uploadUser;
+    const current=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||document.hidden||window.selectedProfileFile!==file||uploadUser&&staffPrimaryAuth.currentUser!==uploadUser)throw Error('Your private profile or selected photo changed. Reopen it.');};
 
     try {
-        const fileExt = window.selectedProfileFile.name.split('.').pop();
-        const fileName = `staff_profiles/${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
+        current();uploadUser=await boundedStaffOperationalRead(()=>ensureStaffPrimaryUser({guard:current}));current();
+        const fileExt = file.name.split('.').pop().toLowerCase();if(!/^(jpe?g|png|webp)$/.test(fileExt)||!/^image\/(jpeg|png|webp)$/.test(file.type))throw Error('Choose a JPG, PNG or WebP profile photo.');
+        const fileName = `staff_profiles/${uploadUser.uid}/${staffId}/${crypto.randomUUID()}.${fileExt}`;
         const storageReference = ref(storage, fileName);
-        const snapshot = await uploadBytes(storageReference, window.selectedProfileFile);
-        const photoUrl = await getDownloadURL(snapshot.ref);
+        const snapshot = await boundedStaffOperationalRead(()=>uploadBytes(storageReference,file,{contentType:file.type,customMetadata:{staffUploadUid:uploadUser.uid,staffId}}));current();
+        const photoUrl = await boundedStaffOperationalRead(()=>getDownloadURL(snapshot.ref));current();
 
-        await updateDoc(doc(db, "cashiers", staffId), { profilePicUrl: photoUrl });
+        await window.patchOwnStaffProfile({profilePicUrl:photoUrl},{assertCurrent:current});current();
         localStorage.setItem('takodeal_staff_pic', photoUrl);
         document.getElementById('topAvatar').innerText = '';
         document.getElementById('topAvatar').style.backgroundImage = `url('${photoUrl}')`;
@@ -978,15 +975,12 @@ window.loadAnnouncements = async function() {
         // 🔥 GET STAFF BRANCH: Required to route branch-specific announcements
         let staffBranch = "Unknown";
         if (staffId) {
-            const staffDoc = await window.getDoc(window.doc(window.db, "cashiers", staffId));
+            const staffDoc = await window.readStaffDirectoryProfile(staffId);
             if (staffDoc.exists()) staffBranch = staffDoc.data().branch || "Unknown";
         }
 
-        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
-        const snap = await window.getDocs(q);
-
-        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", cashierName));
-        const ackSnap = await window.getDocs(ackQ);
+        const current=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==cashierName)throw Error('Your Staff account changed. Open announcements again.');};
+        const [snap,ackSnap] = await Promise.all([readStaffAnnouncements(window,{staffId,staffName:cashierName,branch:staffBranch,assertCurrent:current}),window.readOperationalRecords('acknowledgments',{assertCurrent:current})]);current();
 
         let signatures = {};
         ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
@@ -1033,25 +1027,26 @@ window.loadAnnouncements = async function() {
                 hasSignature: !!sigData,
                 signatureImg: sigData ? sigData.signature : '',
                 signatureDate: sigDateStr,
-                targetType: ann.targetType || 'All'
+                targetType: ann.targetType || 'All',
+                isSchedule:ann.isSchedule===true
             };
             
-            let modalData = encodeURIComponent(JSON.stringify(safeData));
+            let modalData = encodeURIComponent(JSON.stringify(safeData)).replace(/'/g,'%27');
 
             if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
                 <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
+                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${swapEscape(ann.title)}</h3>
                         <div style="margin-left: 10px; display: flex; flex-direction: column; align-items: flex-end;">
                             ${statusBadge}
                             ${targetBadge}
                         </div>
                     </div>
-                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${ann.subHeadline}</div>` : ''}
+                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${swapEscape(ann.subHeadline)}</div>` : ''}
                     <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
-                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
+                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${swapEscape(shortMsg)}</p>
                     <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details &rarr;</div>
                 </div>
             `;
@@ -1073,6 +1068,7 @@ window.loadAnnouncements = async function() {
 };
 
 window.showExtraLargeImage = function(imgSrc) {
+    imgSrc=announcementImage(imgSrc);if(!imgSrc)return;
     let existing = document.getElementById('announceImageOverlay');
     if (existing) existing.remove();
     
@@ -1082,7 +1078,7 @@ window.showExtraLargeImage = function(imgSrc) {
     
     overlay.innerHTML = `
         <button onclick="document.getElementById('announceImageOverlay').remove()" style="position: absolute; top: 20px; right: 20px; background: #ef4444; color: white; border: 2px solid white; border-radius: 50%; width: 45px; height: 45px; font-size: 22px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s;">✖</button>
-        <img src="${imgSrc}" style="max-width: 95%; max-height: 80vh; object-fit: contain; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
+        <img src="${swapEscape(imgSrc)}" style="max-width: 95%; max-height: 80vh; object-fit: contain; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
         <div style="color: white; margin-top: 20px; font-size: 14px; font-weight: bold; background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.2);">Tap the ✖ in the top right to read details and sign</div>
     `;
     document.body.appendChild(overlay);
@@ -1100,7 +1096,8 @@ window.viewAnnouncement = function(encodedData) {
     if (data.images && data.images.length > 0) {
         imagesHtml = `<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-bottom: 5px;">`;
         data.images.forEach(img => {
-            imagesHtml += `<img src="${img}" style="width: 100%; max-height: 250px; border-radius: 8px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onclick="window.showExtraLargeImage('${img}')">
+            img=announcementImage(img);if(!img)return;
+            imagesHtml += `<img src="${swapEscape(img)}" style="width: 100%; max-height: 250px; border-radius: 8px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onclick="window.showExtraLargeImage(${swapEscape(JSON.stringify(img))})">
             <div style="text-align: center; font-size: 10px; color: #94a3b8; font-weight: bold;">Tap image to enlarge 🔍</div>`;
         });
         imagesHtml += `</div>`;
@@ -1110,8 +1107,8 @@ window.viewAnnouncement = function(encodedData) {
     if (data.hasSignature) {
         sigHtml = `
             <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px; border: 1px solid #bbf7d0;">
-                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
-                <img src="${data.signatureImg}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">
+                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${swapEscape(data.signatureDate)}</span>
+                ${announcementImage(data.signatureImg,{signature:true})?`<img src="${swapEscape(announcementImage(data.signatureImg,{signature:true}))}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">`:''}
             </div>`;
     } else {
         sigHtml = `
@@ -1123,13 +1120,13 @@ window.viewAnnouncement = function(encodedData) {
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
                     <button onclick="window.clearSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear</button>
-                    <button onclick="window.submitSignature('${data.id}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
+                    <button onclick="window.submitSignature(${swapEscape(JSON.stringify(data.id))})" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
                 </div>
             </div>`;
     }
 
-    let subHeadlineHtml = data.subHeadline ? `<div style="font-size: 16px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px; line-height: 1.3;">${data.subHeadline}</div>` : '';
-    let footerHtml = data.footerMessage ? `<div style="font-size: 12px; color: #64748b; margin-top: 25px; padding-top: 15px; border-top: 2px dashed #e2e8f0; text-align: center; font-style: italic; font-weight: bold;">${data.footerMessage}</div>` : '';
+    let subHeadlineHtml = data.subHeadline ? `<div style="font-size: 16px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px; line-height: 1.3;">${swapEscape(data.subHeadline)}</div>` : '';
+    let footerHtml = data.footerMessage ? `<div style="font-size: 12px; color: #64748b; margin-top: 25px; padding-top: 15px; border-top: 2px dashed #e2e8f0; text-align: center; font-style: italic; font-weight: bold;">${swapEscape(data.footerMessage)}</div>` : '';
 
     // 🔥 MODAL TARGET BADGES
     let targetBanner = '';
@@ -1137,12 +1134,12 @@ window.viewAnnouncement = function(encodedData) {
     if (data.targetType === 'Individual') targetBanner = `<div style="background: #f5f3ff; color: #7c3aed; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; margin-bottom: 12px; border: 1px solid #ddd6fe; display: inline-block;">👤 Private Individual Notice</div>`;
 
     Swal.fire({
-        title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px; line-height: 1.2; text-transform: uppercase;">${data.title}</div>`,
+        title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px; line-height: 1.2; text-transform: uppercase;">${swapEscape(data.title)}</div>`,
         html: `<div style="text-align: left; max-height: 75vh; overflow-y: auto; padding-right: 5px;">
-                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${data.dateStr}</div>
+                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${swapEscape(data.dateStr)}</div>
                 ${targetBanner}
                 ${subHeadlineHtml}
-                <div style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
+                <div style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${swapEscape(data.message || '')}</div>
                 ${imagesHtml}
                 ${sigHtml}
                 ${footerHtml}
@@ -1248,6 +1245,7 @@ window.submitSignature = async function(announcementId) {
         await addDoc(collection(db, "acknowledgments"), {
             announcementId: announcementId,
             staffName: staffName,
+            staffId:localStorage.getItem('takodeal_staff_id'),
             signature: sigDataUrl,
             timestamp: serverTimestamp()
         });
@@ -1361,7 +1359,7 @@ window.punchTime = async function(type) {
         if (type === "TIME IN") {
             try {
                 let staffProfiles = {}; 
-                const staffDocSnap = await getDocFromServer(doc(db, "cashiers", punchStaffId));
+                const staffDocSnap = await window.readStaffDirectoryProfile(punchStaffId,{assertCurrent:assertPunchIdentity});
                 assertPunchIdentity();
                 if (staffDocSnap.exists()) {
                     staffProfiles[staffName] = {...staffDocSnap.data(),id:punchStaffId,staffId:punchStaffId};
@@ -1431,10 +1429,12 @@ window.punchTime = async function(type) {
 
                         window.staffLateProofDraft = {staffId:punchStaffId, branch:closestBranch, reason:lateForm.reason, file:lateForm.file, staffShiftChoice:lateForm.staffShiftChoice, savedAt:Date.now()};
                         pendingStaffShiftChoice=lateForm.staffShiftChoice;
+                        const proofUser=await ensureStaffPrimaryUser({guard:assertPunchIdentity});assertPunchIdentity();
                         const proof = await window.uploadAttendanceProof({
-                            file:lateForm.file, path:`staff_requests/late_${attendanceRef.id}.jpg`,
+                            file:lateForm.file, path:`staff_requests/${proofUser.uid}/${punchStaffId}/late_${attendanceRef.id}.jpg`,
+                            metadata:{contentType:'image/jpeg',customMetadata:{staffUploadUid:proofUser.uid,staffId:punchStaffId}},
                             assertCurrent:()=>{
-                                if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again before uploading or recording attendance.');
+                                if (staffPrimaryAuth.currentUser!==proofUser || localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again before uploading or recording attendance.');
                             }
                         });
                         const proofUrl = proof.url;
@@ -1572,7 +1572,7 @@ window.punchTime = async function(type) {
 // ==========================================
 window.openReqForm = function(type) {
     if (type === 'Inbox') { document.getElementById('inboxModal').style.display = 'flex'; return window.loadInbox(); }
-    if (type === 'Loans') { document.getElementById('loansModal').style.display = 'flex'; return window.loadMyLoanLedger(); }
+    if (type === 'Loans') return window.loadMyLoanLedger();
     
     let formHtml = ''; window.currentReqType = type;
     document.getElementById('reqModalTitle').innerText = type + " Request";
@@ -1590,7 +1590,7 @@ window.openReqForm = function(type) {
     } else if (type === 'Staff Meal') {
         // 🔥 THE NEW DUAL-VERIFICATION UI 🔥
         formHtml = `<div style="margin-bottom: 15px;">
-                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">To authorize your payroll deduction, please enter the exact POS Receipt OR# generated when you punched your meal.</p>
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">Ask HQ to review a meal receipt. Enter the exact POS Receipt OR#. This sends a zero-value receipt review; the saved POS meal remains the source for any authorized payroll charge.</p>
             </div>
             <div class="form-group">
                 <label>POS Receipt OR#</label>
@@ -1604,7 +1604,7 @@ window.openReqForm = function(type) {
 
 window.submitStaffRequest = async function() {
     if(window.currentReqType==='Leave')return window.getStaffLeaveUI().submitFromForm();
-    let payload = { type: window.currentReqType, staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
+    let payload = { type: window.currentReqType, staffId:localStorage.getItem('takodeal_staff_id'),staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
     let fileToUpload = null;
 
     if (payload.type === 'Cash Advance') {
@@ -1620,9 +1620,10 @@ window.submitStaffRequest = async function() {
             return Swal.fire('Required', '❌ Please enter the exact Receipt OR# from the POS.', 'warning');
         }
         
-        payload.item = "Meal Verification OR#: " + receiptCode; 
-        payload.receiptId = receiptCode; // Links this securely to the Cashier App transaction!
-        payload.amount = 0; // The Manager App will pull the real amount automatically!
+        payload.type='Meal Receipt Review';
+        payload.item = "Meal receipt for HQ review: " + receiptCode;
+        payload.receiptId = receiptCode;
+        payload.amount = 0;
     }
 
     // 🛡️ THE BULLETPROOF FIX: Deep clean undefined values before sending to Firebase!
@@ -1637,9 +1638,11 @@ window.submitStaffRequest = async function() {
     btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; btn.disabled = true;
 
     try {
+        const person=(await window.readStaffDirectoryProfile(cleanPayload.staffId,{assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==cleanPayload.staffId)throw Error('Your Staff account changed. Reopen the request.');}})).data();cleanPayload.branch=person.branch;cleanPayload.staffName=person.cashierName;
         if (fileToUpload) {
-            const fileName = `staff_requests/meal_${cleanPayload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileToUpload.name.split('.').pop()}`;
-            const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload);
+            const uploadUser=await ensureStaffPrimaryUser();if(localStorage.getItem('takodeal_staff_id')!==cleanPayload.staffId)throw Error('Your Staff account changed. Reopen the request.');
+            const fileName = `staff_requests/${uploadUser.uid}/${cleanPayload.staffId}/meal_${crypto.randomUUID()}.${fileToUpload.name.split('.').pop()}`;
+            const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload,{customMetadata:{staffUploadUid:uploadUser.uid,staffId:cleanPayload.staffId}});
             cleanPayload.proofImageUrl = await getDownloadURL(snapshot.ref);
         }
         
@@ -1681,12 +1684,14 @@ window.startInboxListener = function() {
     // 🔥 OPTIMIZED QUERY: Only fetch requests that have NOT been acknowledged yet!
     const inboxQ = window.query(
         window.collection(window.db, "staff_requests"), 
-        window.where("staffName", "==", staffName),
+        window.where("staffId", "==", staffId),
         window.where("staffAcknowledged", "==", false)
     );
 
-    window.staffInboxUnsubscribe = window.onSnapshot(inboxQ, (snapshot) => {
+    let inboxRead=0;
+    window.staffInboxUnsubscribe = window.onSnapshot(inboxQ, async (snapshot) => {
         if (!current()) return;
+        const read=++inboxRead;if(typeof window.readOperationalRecords==='function'){try{snapshot=await window.readOperationalRecords('staff_requests',{assertCurrent:()=>{if(!current()||read!==inboxRead)throw Error('Your Staff inbox changed.');}});}catch(error){if(current()&&read===inboxRead){const badge=document.getElementById('navReqBadge');if(badge){badge.style.display='block';badge.innerText='!';badge.title='Request history could not refresh. Open Inbox to retry.';}}return;}if(!current()||read!==inboxRead)return;}
         let unreadCount = 0;
         snapshot.forEach(doc => { 
             let d = doc.data(); 
@@ -1723,7 +1728,7 @@ window.loadInbox = async function() {
 
     try {
         const [snap,leaveRows] = await Promise.all([
-            getDocs(query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name')))),
+            window.readOperationalRecords('staff_requests',{assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId)throw Error('Your Staff account changed. Reopen Inbox.');}}),
             window.getStaffLeaveUI().list()
         ]);
         if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId||localStorage.getItem('takodeal_staff_name')!==inboxStaffName)return;
@@ -2077,12 +2082,12 @@ window.loadPayslipVault = async function() {
     try {
         let staffProfile={staffId,cashierName:staffName},salaryHistoryUnavailable=false;
         try {
-            const staffRef = await getDocFromServer(doc(db, "cashiers", staffId));
+            const staffRef = await window.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed.');}});
             if(!staffRef.exists()||staffRef.metadata?.fromCache||staffRef.metadata?.hasPendingWrites)throw Error('Salary profile is not confirmed.');
             staffProfile={...staffRef.data(),staffId};
         } catch {salaryHistoryUnavailable=true;}
         if (!stillOpen()) return;
-        if(staffProfile.salaryRateVersion===1){try{staffProfile=await loadStaffSalaryTimeline(window,staffProfile);}catch{salaryHistoryUnavailable=true;}}
+        if(staffProfile.salaryRateVersion===1){try{staffProfile=await window.loadPrivateStaffSalaryProfile(staffProfile);}catch{salaryHistoryUnavailable=true;}}
         if(!stillOpen())return;
         savedPayslips=await readStaffSavedPayslips(window,{staffId,staffName,profile:staffProfile,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
         if(!stillOpen())return;renderSaved();
@@ -2124,10 +2129,12 @@ window.loadPayslipVault = async function() {
         scheduleData=await loadStaffPayrollShiftConfirmations(window,{scheduleData,staffId,profile:staffProfile,attendanceRecords:[...attendanceRecords.values()],start:prevStartStr,end:endDateStr,assertCurrent:()=>{if(!stillOpen())throw Error('This Pay view closed or changed. Reopen Pay.');}});
         if(!stillOpen())return;
         
-        const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
-        const bonusSnap = await getDocs(bonusQ);
+        const financialInputs=await window.readPrivatePayrollInputs({staffId,assertCurrent:()=>{if(!stillOpen())throw Error('The private Pay view changed.');}});
+        if(financialInputs.complete!==true)throw Object.assign(Error('Your complete private deduction and bonus records need HQ review.'),{code:'staff-financial-inputs/unavailable'});
+        const inputSnapshot=records=>({docs:records.map(row=>({id:row.id,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}})),forEach:fn=>records.forEach(row=>fn({id:row.id,data:()=>row}))});
+        const bonusSnap=inputSnapshot(financialInputs.staffBonuses);
         if (!stillOpen()) return;
-        const payrollAdjustmentHistory=await readStaffPayrollAdjustments({db,collection,query,where,getDocsFromServer},{staffId,stillCurrent:stillOpen});
+        const payrollAdjustmentHistory=await readStaffPayrollAdjustments({readPrivatePayrollInputs:async()=>financialInputs},{staffId,stillCurrent:stillOpen});
         if (!stillOpen()) return;
         const adjustmentIdentity={staffId,name:staffProfile.cashierName||staffProfile.fullName||staffName,branch:staffProfile.branch};
         const currentAdjustments=staffPayrollAdjustmentEstimate(payrollAdjustmentHistory,{...adjustmentIdentity,start:startDateStr,end:endDateStr});
@@ -2162,7 +2169,7 @@ window.loadPayslipVault = async function() {
             bonusSnap.forEach(docSnap => {
                 let b = docSnap.data();
                 if(isPayrollAdjustment({...b,id:docSnap.id}))return;
-                if (b.dateAdded && isMatch(b.staffName)) {
+                if (b.dateAdded && (b.staffId?b.staffId===staffId:isMatch(b.staffName))) {
                     let t = safeDate(b.dateAdded);
                     if (t >= startT && t <= endT) { tBonuses += (parseFloat(b.amount) || 0); fBonuses.push(b); }
                 }
@@ -2273,9 +2280,9 @@ window.loadPayslipVault = async function() {
                 let existingLog = sPairs.find(l => l.in && l.in.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr);
                 if (existingLog) {
                     if (existingLog.remark.includes('Complete')) existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
-                    existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+                    existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${swapEscape(b.remarks || 'Bonus')})</span>`;
                 } else {
-                    sPairs.push({ dateObj: bDate, in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`, lateMins: 0 });
+                    sPairs.push({ dateObj: bDate, in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${swapEscape(b.remarks || 'Bonus')})</span>`, lateMins: 0 });
                 }
             });
 
@@ -2288,11 +2295,11 @@ window.loadPayslipVault = async function() {
         let estGross = currentData.basicPay;
         let prevEstGross = prevData.basicPay;
 
-        const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
+        const dedSnap=inputSnapshot(financialInputs.staffDeductions);
         if (!stillOpen()) return;
         let liveUnpaidVales = 0; let liveActiveDeductions = [];
         const onlineStaffId=localStorage.getItem('takodeal_staff_id');
-        const onlineSnap=await getDocs(query(collection(db,'staff_deductions'),where('staffId','==',onlineStaffId)));
+        const onlineSnap=inputSnapshot(financialInputs.staffDeductions.filter(row=>row.staffId===onlineStaffId));
         if(!stillOpen())return;
         const onlineRows=onlineSnap.docs.map(row=>({id:row.id,...row.data()})).filter(row=>row.type==='Online Order Refund'&&row.staffId===onlineStaffId);
         const hasCashShortageReview=onlineSnap.docs.some(row=>{const item=row.data();return item.staffId===onlineStaffId&&(item.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))&&['Pending Review','Unpaid'].includes(item.status);});
@@ -2321,18 +2328,17 @@ window.loadPayslipVault = async function() {
             }
         });
 
-        const ledgerSnap = await getDocs(query(collection(db, "staff_ledger"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
+        const loanSnapshot=await window.readMyLoanLedgerSnapshot({assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
         if (!stillOpen()) return;
-        let loanData = null;
-        ledgerSnap.forEach(d => {
-            if (isMatch(d.data().staffName)) loanData = d.data();
-        });
+        if(loanSnapshot.reviewRequired)throw Object.assign(Error('Loan records need an HQ review.'),{code:'loan-ledger-review'});
+        const loanData=loanSnapshot.ledger;
 
         let cutoffLoanDeduction = 0; let remBal = 0;
         if (loanData) {
-            remBal = (loanData.totalLoaned || 0) - (loanData.totalPaid || 0);
+            remBal = loanData.remainingBalance;
             if (remBal > 0) {
-                cutoffLoanDeduction = parseFloat(loanData.cutoffDeduction) || 0;
+                if(loanData.cutoffDeduction===null)throw Object.assign(Error('The loan deduction setting is not recorded.'),{code:'loan-ledger-review'});
+                cutoffLoanDeduction = loanData.cutoffDeduction;
                 if (cutoffLoanDeduction > remBal) cutoffLoanDeduction = remBal; 
             }
         }
@@ -2514,11 +2520,12 @@ window.loadPayslipVault = async function() {
     } catch (e) {
         if (!stillOpen()) return;
         console.error("Payslip Fetch Error:", e);
-        document.getElementById('liveEstNetPay').innerText = "Error";
+        const loanUnavailable=e?.code?.startsWith('loan-ledger-'),financialUnavailable=e?.code?.startsWith('staff-financial-inputs/')||e?.code?.startsWith('staff-access/');
+        document.getElementById('liveEstNetPay').innerText = loanUnavailable||financialUnavailable?'Unavailable':"Error";
         renderSaved();
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
         if(parentEl && !parentEl.querySelector('.error-text')) {
-            parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
+            parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">${loanUnavailable?'Your loan records could not be verified. Reopen Pay when connected or ask HQ to review this phone and ledger.':financialUnavailable?'Your complete private deduction and bonus records could not be verified. Reopen Pay on your approved phone or ask HQ to review the records.':'Error loading data.'}</p>`;
         }
     }
 };
@@ -2830,7 +2837,7 @@ window.loadStaffSchedule = async function() {
         const selected = monthKey(requestedMonth);
         const [year, month] = selected.split('-').map(Number);
         if (picker) picker.value = selected;
-        const staffSnap = await window.getDocFromServer(window.doc(window.db, 'cashiers', staffId));
+        const staffSnap = await window.readStaffDirectoryProfile(staffId,{assertCurrent:()=>{if(!stillCurrent())throw Error('The Schedule view changed.');}});
         if (!stillCurrent()) return;
         
         let nickname = staffName;
@@ -3077,7 +3084,7 @@ window.listenToIncomingSwaps = async function() {
 
     let nickname = staffName,swapAliases=[staffName];
     try {
-        const docSnap = await getDoc(doc(db, "cashiers", staffId));
+        const docSnap = await window.readStaffDirectoryProfile(staffId);
         if(docSnap.exists()){nickname=docSnap.data().scheduleNickname||staffName;swapAliases=staffSwapAliases(docSnap.data());}
     } catch(e) {}
     if (!current()) return;
@@ -3088,8 +3095,10 @@ window.listenToIncomingSwaps = async function() {
         return swapAliases.some(name=>name.toLowerCase().trim()===aName);
     };
 
-    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where("status", "in", ["Pending",SWAP_PENDING_STATUS])), (snap) => {
+    let swapRead=0;
+    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where('targetStaffId','==',staffId),where("status", "in", ["Pending",SWAP_PENDING_STATUS])), async (snap) => {
         if (!current()) return;
+        const read=++swapRead;if(typeof window.readOperationalRecords==='function'){try{snap=await window.readOperationalRecords('shift_swaps',{assertCurrent:()=>{if(!current()||read!==swapRead)throw Error('Your Staff swap view changed.');}});}catch(error){if(current()&&read===swapRead){const badge=document.getElementById('navSchedBadge');if(badge){badge.style.display='inline-block';badge.textContent='!';badge.title='Swap history could not refresh. Reconnect and reopen Schedule.';}}return;}if(!current()||read!==swapRead)return;}
         
         // 🔥 DYNAMIC UI INJECTOR: Ensure the container exists and doesn't get wiped!
         let container = document.getElementById('incomingSwapsContainer');
@@ -3160,7 +3169,7 @@ window.handleIncomingSwap = async function(swapId, action) {
     Swal.fire({title:'Processing...', allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
     try {
         const result = await runTransaction(db, async transaction => {
-            const requestRef = doc(db,'shift_swaps',swapId), profileRef = doc(db,'cashiers',staffId);
+            const requestRef = doc(db,'shift_swaps',swapId), profileRef = doc(db,'staff_directory',staffId);
             const [request, profile] = await Promise.all([transaction.get(requestRef),transaction.get(profileRef)]);
             if (localStorage.getItem('takodeal_staff_id') !== staffId) throw Error('Your staff account changed. Sign in again.');
             if (!request.exists() || !profile.exists()) throw Error('This request or staff profile is no longer available.');
@@ -3202,7 +3211,7 @@ window.viewAnnouncement = async function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
     
     // Quick fetch to check if it has the secret "isSchedule" flag!
-    let isSchedule = false;
+    let isSchedule = data.isSchedule===true;
     try {
         const docSnap = await window.getDoc(window.doc(window.db, "announcements", data.id));
         if (docSnap.exists() && docSnap.data().isSchedule) {
@@ -3212,11 +3221,11 @@ window.viewAnnouncement = async function(encodedData) {
 
     // 🔥 THE NEW SCHEDULE IMAGE POPUP ENGINE 🔥
     if (isSchedule) {
-        let imgUrl = data.images && data.images.length > 0 ? data.images[0] : '';
+        let imgUrl = data.images && data.images.length > 0 ? announcementImage(data.images[0]) : '';
         
         let ackBtnHtml = data.hasSignature 
             ? `<div style="width: 100%; background: #dcfce7; color: #16a34a; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; text-align: center; border: 2px solid #bbf7d0;">✅ You acknowledged this schedule on ${data.signatureDate}</div>`
-            : `<button onclick="window.submitScheduleAck('${data.id}')" id="btnAckSched" style="width: 100%; background: #10b981; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 18px; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 163, 74, 0.3);">✅ I ACKNOWLEDGE MY SHIFTS</button>`;
+            : `<button onclick="window.submitScheduleAck(${swapEscape(JSON.stringify(data.id))})" id="btnAckSched" style="width: 100%; background: #10b981; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 18px; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 163, 74, 0.3);">✅ I ACKNOWLEDGE MY SHIFTS</button>`;
 
         let modalHtml = `
             <div id="schedulePopupOverlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
@@ -3226,7 +3235,7 @@ window.viewAnnouncement = async function(encodedData) {
                         ${data.hasSignature ? `<button onclick="document.getElementById('schedulePopupOverlay').remove()" style="background: #ef4444; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖</button>` : ''}
                     </div>
                     <div style="flex: 1; overflow-y: auto; width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; background: #f8fafc;">
-                        <img src="${imgUrl}" style="width: 100%; height: auto; display: block;">
+                        <img src="${swapEscape(imgUrl)}" style="width: 100%; height: auto; display: block;">
                     </div>
                     ${ackBtnHtml}
                 </div>
@@ -3253,6 +3262,7 @@ window.submitScheduleAck = async function(announcementId) {
         await window.addDoc(window.collection(window.db, "acknowledgments"), {
             announcementId: announcementId,
             staffName: cashierName,
+            staffId:localStorage.getItem('takodeal_staff_id'),
             signature: quickSigImg,
             timestamp: window.serverTimestamp()
         });
@@ -3390,9 +3400,11 @@ window.startSanctionListener = function(staffName) {
     if (window.staffSanctionUnsubscribe) window.staffSanctionUnsubscribe();
     window.staffSanctionListenerKey = key;
     const current = () => epoch === window.staffLiveListenerEpoch && window.staffSanctionListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
-    const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName));
-    window.staffSanctionUnsubscribe = onSnapshot(q, snap => {
+    const q = query(collection(db, 'hr_sanctions'), where('staffId', '==', staffId));
+    let sanctionRead=0;
+    window.staffSanctionUnsubscribe = onSnapshot(q, async snap => {
         if (!current()) return;
+        const read=++sanctionRead;if(typeof window.readOperationalRecords==='function'){try{snap=await window.readOperationalRecords('hr_sanctions',{assertCurrent:()=>{if(!current()||read!==sanctionRead)throw Error('Your Staff HR view changed.');}});}catch(error){if(current()&&read===sanctionRead){window.staffSanctionCachedSnapshot=null;console.error('Staff HR history:',error);}return;}if(!current()||read!==sanctionRead)return;}
         window.staffSanctionCachedSnapshot = snap;
         window.renderActiveSanctions(snap, staffName);
         if (!window.staffSanctionDayStop) window.staffSanctionDayStop = startPhilippineDayTimer(()=>{if(current() && window.staffSanctionCachedSnapshot)window.renderActiveSanctions(window.staffSanctionCachedSnapshot,staffName);});
@@ -3408,9 +3420,9 @@ window.checkActiveSanctions = async function(staffName, {requireFresh = false} =
     const staffId = localStorage.getItem('takodeal_staff_id'), epoch = window.staffLiveListenerEpoch;
     try {
         if (!staffId || !staffName || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
-        const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName));
+        const q = query(collection(db, 'hr_sanctions'), where('staffId', '==', staffId));
         // Clock-in and explicit acknowledgement checks must see HQ's current state.
-        const snap = await getDocsFromServer(q);
+        const snap = typeof window.readOperationalRecords==='function'?await window.readOperationalRecords('hr_sanctions',{assertCurrent:()=>{if(epoch!==window.staffLiveListenerEpoch||localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your staff session changed.');}}):await getDocsFromServer(q);
         if (epoch !== window.staffLiveListenerEpoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
         const restricted = clockInRestriction(snap.docs.map(entry=>({...entry.data(),id:entry.id})).filter(row=>!row.staffId || row.staffId===staffId));
         if (requireFresh && restricted && !restricted.replyRequired) throw Error(restricted.message);
@@ -3448,7 +3460,7 @@ window.submitStaffAppSanctionReply = async function() {
         const canvas = document.getElementById('staffAppSignatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp},{id:sanctionId,staffName:localStorage.getItem('takodeal_staff_name'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('takodeal_staff_name'),staffId:localStorage.getItem('takodeal_staff_id')})});
+        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp,readOperationalRecords:window.readOperationalRecords},{id:sanctionId,staffName:localStorage.getItem('takodeal_staff_name'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('takodeal_staff_name'),staffId:localStorage.getItem('takodeal_staff_id')})});
 
         Swal.fire({
             title: '✅ Notice Acknowledged', 
@@ -3673,11 +3685,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                     if (!signatureCurrent()) return;
                     await acknowledgeCashShortagePayslip(vault,{recordId,staffId:payStaffId,signature:res.value,stillCurrent:signatureCurrent});
                 } else {
-                    await updateDoc(doc(db, "payroll_records", recordId), {
-                        acknowledged: true,
-                        acknowledgedAt: serverTimestamp(),
-                        signatureBase64: res.value
-                    });
+                    await window.staffAccessClient.acknowledgePayroll({staffId:payStaffId,recordId,signatureBase64:res.value,expectedFingerprint:d.staffPayrollFingerprint,operationId:crypto.randomUUID(),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!signatureCurrent())throw Error('The private payslip view changed. Reopen it.');}});
                 }
                 if (!signatureCurrent()) return;
                 Swal.fire({title: '✅ Payslip Acknowledged!', text: 'Your signed record has been securely moved to the Past Payslips vault.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
@@ -3693,80 +3701,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
 // ========================================================
 // 💳 STAFF APP: MY LOAN LEDGER VIEWER
 // ========================================================
-window.loadMyLoanLedger = async function() {
-    let container = document.getElementById('staffMyLoansContent');
-    let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
-    
-    container.innerHTML = '<div style="text-align:center; padding: 20px; color:#b45309; font-weight:bold;">⏳ Fetching ledger...</div>';
-
-    try {
-        // Fetch Master Ledger
-        const ledgerQ = query(collection(db, "staff_ledger"), where("staffName", "==", staffName));
-        const ledgerSnap = await getDocs(ledgerQ);
-        
-        let remBal = 0;
-        let totalLoaned = 0;
-        let totalPaid = 0;
-        
-        if (!ledgerSnap.empty) {
-            let lData = ledgerSnap.docs[0].data();
-            totalLoaned = lData.totalLoaned || 0;
-            totalPaid = lData.totalPaid || 0;
-            remBal = totalLoaned - totalPaid;
-        }
-
-        // Fetch Trace Logs
-        const logQ = query(collection(db, "staff_deductions"), where("staffName", "==", staffName));
-        const logSnap = await getDocs(logQ);
-        
-        let logs = [];
-        logSnap.forEach(doc => {
-            let d = doc.data();
-            if (d.type && d.type.includes("Company Loan")) {
-                logs.push(d);
-            }
-        });
-
-        logs.sort((a,b) => (b.dateAdded?.toDate() || 0) - (a.dateAdded?.toDate() || 0));
-
-        let html = `
-            <div style="background: #fffbeb; border: 2px dashed #fcd34d; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px;">
-                <div style="font-size: 12px; font-weight: bold; color: #b45309; text-transform: uppercase;">Total Remaining Balance</div>
-                <div style="font-size: 38px; font-weight: 900; color: #dc2626; margin: 5px 0;">₱${remBal.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                <div style="font-size: 12px; color: #92400e; font-weight: bold;">(Total Loaned: ₱${totalLoaned.toLocaleString()} | Total Paid: ₱${totalPaid.toLocaleString()})</div>
-            </div>
-            <h4 style="color: #334155; margin-bottom: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">📜 Payment & Issuance Trace Logs</h4>
-        `;
-
-        if (logs.length === 0) {
-            html += '<div style="text-align:center; padding: 20px; color:#94a3b8; font-style:italic;">No loan records found.</div>';
-        } else {
-            logs.forEach(d => {
-                let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Unknown') : '';
-                let amt = parseFloat(d.amount) || 0;
-                
-                let isPayment = d.type.includes("Payment");
-                let color = isPayment ? "#16a34a" : "#dc2626";
-                let sign = isPayment ? "+ ₱" : "- ₱";
-                let bg = isPayment ? "#dcfce7" : "#fef2f2";
-
-                html += `
-                    <div style="background: ${bg}; border: 1px solid ${color}50; padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <strong style="color: ${color}; font-size: 13px;">${d.type}</strong><br>
-                            <span style="font-size: 11px; color: #64748b;">${dateStr} - ${d.remarks || 'No notes'}</span>
-                        </div>
-                        <strong style="color: ${color}; font-size: 16px;">${sign}${amt.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
-                    </div>
-                `;
-            });
-        }
-        container.innerHTML = html;
-    } catch(e) {
-        console.error(e);
-        container.innerHTML = '<div style="text-align:center; color:red; padding: 20px;">Failed to load ledger.</div>';
-    }
-};
+// Installed below with the approved private-phone client and the Payslip PIN gate.
 
 // ==========================================
 // 🎓 END OF CONTRACT & COE ENGINE (BYPASS & DOWNLOAD FIX)
@@ -3843,7 +3778,7 @@ window.generateVirtualID = async function() {
     Swal.fire({title: 'Generating Virtual ID...', text: 'Fetching your verified records from HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        const docSnap = await window.getDoc(window.doc(window.db, "cashiers", staffId));
+        const docSnap = await window.readPrivateStaffProfile(staffId);
         if (!docSnap.exists()) return Swal.fire('Error', 'Profile not found.', 'error');
         
         let data = docSnap.data();
@@ -4041,6 +3976,9 @@ installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 
 installDeductionInbox(window,{createClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+const privateLoanClient=options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')});
+window.readMyLoanLedgerSnapshot=async options=>{const client=privateLoanClient();try{return await client.read(options);}finally{client.invalidate();}};
+installStaffLoanLedger(window,document,{createClient:privateLoanClient});
 installStaffOnboarding(window,document,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 window.staffScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')

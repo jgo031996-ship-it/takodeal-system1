@@ -177,7 +177,7 @@ test('actual Cashier bridges merge live paid and parked changes with exactly two
     const context={...h.api,window,createShiftSalesFeed,createParkedOrdersFeed,mergeParkedOrders,document:{getElementById:id=>nodes[id]},Date,console};
     const uiStart=html.indexOf('window.loadSalesDashboard = async function');
     vm.runInNewContext(html.slice(uiStart,html.indexOf('function toggleTxMenu',uiStart)),context);
-    const bridgeStart=main.indexOf('const shiftSalesFeed = createShiftSalesFeed');
+    const bridgeStart=main.indexOf('let shiftSalesFeed = createShiftSalesFeed');assert.ok(bridgeStart>=0);
     vm.runInNewContext(main.slice(bridgeStart,main.indexOf('installMealCheckout();',bridgeStart)),context);
     const opening=window.loadSalesDashboard([]);await flush();assert.equal(h.listeners.length,2);
     const paidListener=h.listeners.find(entry=>entry.query.table==='transactions'),parkedListener=h.listeners.find(entry=>entry.query.table==='parked_orders');

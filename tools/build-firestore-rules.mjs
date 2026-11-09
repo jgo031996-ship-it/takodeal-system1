@@ -35,7 +35,7 @@ function additionalSharingExclusions(source){
  const excluded=new Set(inlineMapFunctions),visited=new Set();
  function visit(name){if(!functions.has(name)||visited.has(name))return;visited.add(name);excluded.add(name);const body=functions.get(name);for(let at=0;at<body.length;at++)if(body[at-1]?.text!=='.'&&body[at+1]?.text==='('&&functions.has(body[at].text))visit(body[at].text);}
  // Include the caller's version dispatch as well as its per-case validators.
- for(const name of ['selectorHrSanctionsUpdate','selectorPayrollRecordsCreate'])visit(name);
+ for(const name of ['selectorHrSanctionsUpdate','selectorPayrollRecordsCreate','companyOperationalCreate','stockAuditCreate','companyMealProof','companyMealRequest','mealClaim'])visit(name);
  return [...excluded].sort();
 }
 const pipeline=[
@@ -44,7 +44,7 @@ const pipeline=[
  {name:'document-paths',lower:source=>lowerFirestorePaths(source,{excludedFunctions:inlinePathFunctions}),verify:assertPathLoweringEquivalent},
  {name:'map-methods',lower:source=>lowerFirestoreMapMethods(source,{excludedFunctions:inlineMapFunctions}),verify:assertMapMethodLoweringEquivalent},
  {name:'request-equalities',lower:source=>lowerRequestEqualities(source,{excludedFunctions:inlineWageFunctions}),verify:assertRequestEqualitiesEquivalent},
- {name:'bounded-text',lower:source=>shareBoundedText(source,{includeSingleBounds:true,excludedFunctions:inlineWageFunctions}),verify:assertBoundedTextSharingEquivalent},
+ {name:'bounded-text',lower:source=>shareBoundedText(source,{includeSingleBounds:true,excludedFunctions:additionalSharingExclusions(source)}),verify:assertBoundedTextSharingEquivalent},
  {name:'constant-map-gets',lower:source=>shareConstantMapGets(source,{excludedFunctions:additionalSharingExclusions(source)}),verify:assertConstantMapGetsEquivalent},
  {name:'bounded-numbers',lower:source=>shareBoundedNumbers(source,{includeSingleBounds:true,excludedFunctions:additionalSharingExclusions(source)}),verify:assertBoundedNumbersEquivalent},
  {name:'literal-false-rules',lower:lowerLiteralFalseRules,verify:assertLiteralFalseLoweringEquivalent}

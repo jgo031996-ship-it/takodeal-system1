@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareAttendanceProof,createProofUpload} from '../takodeal-staff/attendance-proof.js';
+import {prepareAttendanceProof,createProofUpload,installAttendanceProofUploader} from '../takodeal-staff/attendance-proof.js';
 
 const KiB=1024,MiB=1024*KiB;
 const bytes=(size=100)=>{const data=new Uint8Array(size);if(size>=3)data.set([0xff,0xd8,0xff]);return data;};
@@ -8,6 +8,9 @@ function sampleFile({size=600*KiB,type='image/jpeg',name='sample-photo.jpg'}={})
     const file=new Blob([bytes(size)],{type});Object.defineProperty(file,'name',{value:name});return file;
 }
 async function flush(){for(let turn=0;turn<12;turn++)await Promise.resolve();}
+test('actual proof UI preserves caller UID/staff metadata in the immutable upload operation',async()=>{
+ const metadata={contentType:'image/jpeg',customMetadata:{staffUploadUid:'sample-uid',staffId:'sample-staff'}},path='staff_requests/sample-uid/sample-staff/sample-proof.jpg',api={storage:{}},document={getElementById:()=>null},seen=[];installAttendanceProofUploader(api,document,{uploadBytesResumable(){},getDownloadURL(){},ref:(_store,path)=>({path}),getStorage(){},prepare:async()=>({blob:sampleFile(),originalBytes:100,uploadBytes:80}),createUpload:options=>{seen.push(options);return{promise:Promise.resolve({url:'https://sample.invalid/proof.jpg'}),cancel(){}};},Swal:{fire:()=>Promise.resolve({isConfirmed:true}),update(){},showLoading(){},close(){}}});await api.uploadAttendanceProof({file:sampleFile(),path,metadata});assert.equal(seen[0].reference.path,path);assert.equal(seen[0].metadata,metadata);
+});
 function clock(){
     let time=0,next=0;const timers=new Map();
     const schedule=(callback,delay)=>{const id=++next;timers.set(id,{callback,at:time+delay});return id;};

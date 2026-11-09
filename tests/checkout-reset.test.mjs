@@ -27,7 +27,7 @@ function checkout(){
     begin=html.indexOf('window.submitFinalOrder = async function()');end=html.indexOf('window.updateReceiptSyncStatus = function',begin);vm.runInNewContext(html.slice(begin,end),context);
     const environment={window:w,localStorage:ls,indexedDB:memoryIndexedDB(),crypto:webcrypto,navigator:{onLine:false},document:d,setTimeout(){},setInterval(){}};
     installSaleSafety(h.api,environment);
-    return {w,d,nodes,payments,alerts,environment,cash:payments[1],gcash:payments[0],split:payments[5]};
+    return {h,w,d,nodes,payments,alerts,environment,cash:payments[1],gcash:payments[0],split:payments[5]};
 }
 test('two consecutive GCash orders save Gcash both times and each completed order returns to Select Type and Cash',async()=>{
     const f=checkout(); // Store POS is deliberately uninitialized, as on the affected tablet.
@@ -76,3 +76,17 @@ test('cash counting pauses the real checkout pipeline before any receipt is queu
     }
 });
 test('a durable unconfirmed transfer blocks checkout after restart even without an in-memory counting flag',async()=>{const f=checkout();f.w.hasPendingCashRemittance=()=>true;const result=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:70,paymentMethod:'Cash'});assert.equal(result.status,'failed');assert.match(result.error,/earlier cash transfer/);assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(f.w.isProcessingOrder,false);});
+
+test('low-stock notifications begin only after real upload acknowledgement and cannot retry a zero-price saved sale',async()=>{
+ const f=checkout(),notifications=[];f.w.cashierLowStock={committedSale:request=>{notifications.push(request);throw Error('Optional reminder unavailable');}};
+ const result=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:0,paymentMethod:'Cash',globalDiscountType:'staff_meal'});assert.equal(result.status,'queued');await f.w.syncOfflineQueue();assert.deepEqual(notifications,[]);assert.equal((await f.w.saleOutbox.list()).length,1);
+ f.environment.navigator.onLine=true;await f.w.syncOfflineQueue();await Promise.resolve();assert.deepEqual(notifications,[{saleId:result.saleId,branch:'Maa'}]);assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(f.h.get('transactions/'+result.saleId).netTotal,0);
+ await f.w.syncOfflineQueue();assert.equal(notifications.length,1);assert.equal((await f.w.saleOutbox.list()).length,0);
+});
+test('a reserved meal sale ID still captures its receipt, date and immutable recipe before durable queueing',async()=>{
+ const f=checkout();f.w.masterPOSData.bom=[{menuItem:'Sample food',ingredientName:'Synthetic ingredient',qty:2}];const saleId=f.w.reserveCheckoutSaleId({branch:'Maa',mobileOrderCode:'synthetic/mobile%order'}),input={saleId,branch:'Maa',cart:[{name:'Sample food',qty:1,lineTotalFinal:70}],netTotal:56,paymentMethod:'Cash',mealStaffName:'Synthetic employee',mealIdentityId:'employee',mealIdentitySource:'cashiers',mealRole:'staff',mealLevelId:'staff_meal',staffPinVerificationId:'proof',staffPinInitialExpiresAt:new Date(Date.now()+900000).toISOString(),mealDay:'2026-11-09'};
+ const result=await f.w.processCheckout(input);assert.equal(result.status,'queued');assert.equal(result.saleId,saleId);const [row]=await f.w.saleOutbox.list();assert.equal(row.payload.saleId,saleId);assert.ok(row.payload.receiptId);assert.ok(Number.isFinite(Date.parse(row.payload.localTimestamp)));assert.equal(row.payload.saleVersion,2);assert.equal(row.payload.staffPinVerificationId,'proof');assert.deepEqual(row.payload.recipeSnapshot,f.w.masterPOSData.bom);assert.equal(row.payload.recipeSnapshot[0].qty,2);f.w.masterPOSData.bom[0].qty=999;assert.equal((await f.w.saleOutbox.list())[0].payload.recipeSnapshot[0].qty,2);
+});
+test('an expired initial meal proof cannot create a new local receipt, while an earlier saved queue stays untouched',async()=>{
+ const f=checkout();const saved=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:70,paymentMethod:'Cash'});const result=await f.w.processCheckout({saleId:f.w.reserveCheckoutSaleId({branch:'Maa'}),branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:70,paymentMethod:'Cash',mealStaffName:'Synthetic employee',staffPinVerificationId:'old-proof',staffPinInitialExpiresAt:new Date(Date.now()-1).toISOString()});assert.equal(result.status,'failed');const rows=await f.w.saleOutbox.list();assert.equal(rows.length,1);assert.equal(rows[0].saleId,saved.saleId);
+});

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v135-staff-vault-payslip-20261108';
+const CACHE_NAME = 'takodeal-manager-core-v136-security-stock-loans-prep-20261109';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -104,9 +104,24 @@ self.addEventListener('activate', event => {
         await self.clients.claim();
     })());
 });
+// API, account and private evidence traffic never enters an app-file cache.
+function publicCatalogImage(url) {
+  const base='/v0/b/takodeal-pos.firebasestorage.app/o/';
+  if(url.hostname!=='firebasestorage.googleapis.com'||!url.pathname.startsWith(base)||url.searchParams.get('alt')!=='media')return false;
+  try{return /^(menu_images|inventory_images|storefronts)\//.test(decodeURIComponent(url.pathname.slice(base.length)));}catch{return false;}
+}
+function privateTraffic(request,url) {
+  let pathname;try{pathname=decodeURIComponent(url.pathname);}catch{return true;}
+  if(url.username||url.password||request.headers?.has?.('authorization')||/(?:^|\/)api(?:\/|$)|\/__(?:\/|$)/i.test(pathname))return true;
+  if(url.hostname==='accounts.google.com')return true;
+  const catalog=request.destination==='image'&&publicCatalogImage(url);
+  if(/(^|\.)(googleapis\.com|googleusercontent\.com|firebaseio\.com|firebaseapp\.com|cloudfunctions\.net|run\.app)$/i.test(url.hostname)&&!catalog)return true;
+  if(!catalog&&[...url.searchParams.keys()].some(key=>/^(token|access_token|id_token|authorization|signature|sig|x-amz-signature|x-goog-signature)$/i.test(key)))return true;
+  return false;
+}
 self.addEventListener('fetch', event => {
     const request = event.request, url = new URL(request.url);
-    if (request.method !== 'GET') return;
+    if (request.method !== 'GET' || privateTraffic(request,url)) return;
     const local = url.origin === self.location.origin;
     const navigation = local && request.mode === 'navigate' && [new URL('./', self.location.href).pathname, new URL('./index.html', self.location.href).pathname].includes(url.pathname);
     const vendor = VENDORS.includes(url.href) || url.origin === 'https://www.gstatic.com' && /^\/firebasejs\/13\.1\.0\/[\w.-]+\.js$/.test(url.pathname);
@@ -170,3 +185,6 @@ CORE_ASSETS.push('./saved-shift-proposal.js','./staff-messenger-link.js','./payr
 CORE_ASSETS.push('./worked-shift-reference.js');
 
 CORE_ASSETS.push('./worked-shift-correction-model.js','./worked-shift-correction-service.js','./worked-shift-correction-ui.js','./payroll-adjustment-refresh.js','./payroll-recovery-ui.js');
+
+// Install the complete local module graph for this release. API traffic stays online.
+CORE_ASSETS.push("./branch-private-settings.js","./hq-image-upload.js","./owner-customer-reviews.js","./owner-public-inquiries.js","./owner-prep-client.js","./owner-prep-ui.js","./owner-rider-access.js","./payment-branch-review.js","./recipe-review.css","./recipe-review.js","./request-review-service.js","./staff-pin-proof.js");

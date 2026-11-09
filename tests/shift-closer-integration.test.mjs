@@ -6,6 +6,8 @@ import * as settlement from '../Takodeal-POS/cash-settlement.js';
 import {cashShortageSource} from '../takodeal-manager/cash-shortage-model.js';
 import {openCashShortageReview} from '../takodeal-manager/cash-shortage.js';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
+import {readOperationalStaffSession} from '../Takodeal-POS/staff-operational-session.js';
+import {businessClock} from '../Takodeal-POS/branch-operations.js';
 
 // Exercise the actual POS close button handler and settlement transaction. All
 // employees, cash, receipts and payroll here are fictional in-memory fixtures.
@@ -16,11 +18,12 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture({session={},upload=async()=>{},confirm=async()=>({isConfirmed:true})}={}){
  const h=firestoreHarness(),values=new Map([['takodeal_device_branch',branch],['cashierName',staffName],['currentShiftId',shiftId]]),localStorage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};
  h.put('branches/sample',{name:branch,isMallBranch:false});h.put('shifts/'+shiftId,{branch,status:'Open',active:true,startingCash:1000,cashier:'Sample Earlier Cashier / '+staffName,startTime:new Date('2026-10-21T09:00:00+08:00'),salesRevision:0});
- h.put('cashiers/'+staffId,{cashierName:staffName,branch:'Sample Home Branch',pin:'SAMPLE PIN',active:true});h.put('payroll_records/sample-paid',{status:'Paid',finalNetPay:700,frozenData:{finalNetPay:700,isPaid:true}});
+ h.put('staff_directory/'+staffId,{staffId,cashierName:staffName,branch:'Sample Home Branch',active:true,profileRevision:'sample-revision'});h.put('staff_login_sessions/sample-device-auth',{schemaVersion:1,uid:'sample-device-auth',staffId,deviceId:'DEV-SAMPLE-DEVICE',app:'cashier',branch,expiresAt:new Date('2030-01-01'),profileRevision:'sample-revision',sessionId:'sample-nonce'});h.put('payroll_records/sample-paid',{status:'Paid',finalNetPay:700,frozenData:{finalNetPay:700,isPaid:true}});
  const messages=[],errors=[],cleared=[],button={innerText:'Confirm & end shift',innerHTML:'',disabled:false};
- const api={...h.api,localStorage,auth:{currentUser:{uid:'sample-device-auth'}},sessionUser:{staffId,cashierName:staffName,branch,pin:'SAMPLE PIN',...session},saveCurrentShiftCloseDraft(){},getDocFromServer:async ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>structuredClone(h.get(ref.path)),metadata:{fromCache:false,hasPendingWrites:false}}),serverTimestamp:()=>new Date('2026-10-21T18:00:00+08:00')};
+ const api={...h.api,localStorage,auth:{currentUser:{uid:'sample-device-auth'}},sessionUser:{staffId,cashierName:staffName,branch,staffLoginSessionId:'sample-nonce',...session},staffPinActor:()=>({deviceId:'DEV-SAMPLE-DEVICE',sessionId:api.sessionUser?.staffLoginSessionId}),saveCurrentShiftCloseDraft(){},getDocFromServer:async ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>structuredClone(h.get(ref.path)),metadata:{fromCache:false,hasPendingWrites:false}}),serverTimestamp:()=>new Date('2026-10-21T18:00:00+08:00')};
+ api.readStaffSessionProfile=input=>readOperationalStaffSession(api,input);api.resolveCashierOperationalApi=async()=>{const captured=api.sessionUser,selectedBranch=values.get('takodeal_device_branch');api.assertStaffOperationalCurrent=()=>{if(api.sessionUser!==captured||values.get('takodeal_device_branch')!==selectedBranch)throw Error('The cashier or branch changed. Reopen the shift close review.');};return api;};
  api.getDocsFromServer=async query=>{const snap=await h.api.getDocsFromServer(query);return {...snap,forEach:callback=>snap.docs.forEach(callback),metadata:{fromCache:false,hasPendingWrites:false}};};api.getDocs=api.getDocsFromServer;
- const context={...settlement,window:api,localStorage,Date,console:{error:(...args)=>errors.push(args)},activeShiftDetails:{logId:shiftId,startTime:new Date('2026-10-21T09:00:00+08:00'),startingCash:1000},currentShift:{shiftId,active:true},receiptIngredientBurn:()=>({}),ensureShiftSalesUploaded:()=>upload({h,api,values}),clearCurrentShiftCloseDraft:scope=>cleared.push(scope),confirmMallDailyClose:async()=>({isFinalShiftOfDay:false}),document:{querySelector:selector=>selector.includes('MASTER_CloseShift')?button:null,querySelectorAll:selector=>selector==='.denom-input'?[{value:'9',getAttribute:()=> '100'}]:[],getElementById:()=>null},Swal:{fire:async(...args)=>{messages.push(args);return confirm(args,{h,api,values});}}};
+ const context={...settlement,businessClock,window:api,localStorage,Date,console:{error:(...args)=>errors.push(args)},activeShiftDetails:{logId:shiftId,startTime:new Date('2026-10-21T09:00:00+08:00'),startingCash:1000},currentShift:{shiftId,active:true},receiptIngredientBurn:()=>({}),ensureShiftSalesUploaded:()=>upload({h,api,values}),clearCurrentShiftCloseDraft:scope=>cleared.push(scope),confirmMallDailyClose:async()=>({isFinalShiftOfDay:false}),document:{querySelector:selector=>selector.includes('MASTER_CloseShift')?button:null,querySelectorAll:selector=>selector==='.denom-input'?[{value:'9',getAttribute:()=> '100'}]:[],getElementById:()=>null},Swal:{fire:async(...args)=>{messages.push(args);return confirm(args,{h,api,values});}}};
  const start=source.indexOf('window.MASTER_CloseShift = async function'),end=source.indexOf('\n};',start)+4;assert.ok(start>=0&&end>start);vm.runInNewContext(source.slice(start,end),context);
  return {h,api,values,messages,errors,cleared,button,context,close:()=>api.MASTER_CloseShift()};
 }
@@ -29,10 +32,8 @@ test('actual close button records the current logged-in saved staff account inde
  const f=fixture(),beforePaid=structuredClone(f.h.get('payroll_records/sample-paid'));await f.close();assert.deepEqual(f.errors,[]);const closed=f.h.get('shifts/'+shiftId);assert.equal(closed.status,'Closed');assert.equal(closed.closedBy.staffId,staffId);assert.equal(closed.closedBy.staffName,staffName);assert.equal(closed.closedBy.branch,branch);assert.equal(closed.closedBy.staffBranch,'Sample Home Branch');assert.equal(closed.cashier,'Sample Earlier Cashier / '+staffName);assert.equal(closed.expectedCash,1000);assert.equal(closed.declaredCash,900);assert.equal(closed.closedBy.recordedAt.getTime(),closed.endTime.getTime());assert.equal(f.cleared.length,1);assert.equal(f.values.has('currentShiftId'),false);assert.deepEqual(f.h.get('payroll_records/sample-paid'),beforePaid);assert.equal([...f.h.docs.keys()].some(path=>path.startsWith('staff_deductions/')),false);
 });
 
-test('normal production PIN-only cashier sessions close without a new Firebase or Google sign-in requirement',async()=>{
- // main.js keeps Firebase auth module-local; window.auth is not required by
- // the ordinary cashier PIN login and may be absent on approved devices.
- const f=fixture();delete f.api.auth;await f.close();assert.deepEqual(f.errors,[]);const closed=f.h.get('shifts/'+shiftId);assert.equal(closed.status,'Closed');assert.equal(closed.closedBy.staffId,staffId);assert.equal(closed.closedBy.staffName,staffName);assert.equal(closed.closedBy.authUid,null);assert.equal(f.cleared.length,1);
+test('an approved device session closes without a Google account, another PIN prompt or private employee reads',async()=>{
+ const f=fixture();f.api.auth.currentUser.isAnonymous=true;await f.close();assert.deepEqual(f.errors,[]);const closed=f.h.get('shifts/'+shiftId);assert.equal(closed.status,'Closed');assert.equal(closed.closedBy.staffId,staffId);assert.equal(closed.closedBy.staffName,staffName);assert.equal(closed.closedBy.authUid,'sample-device-auth');assert.equal(f.cleared.length,1);assert.equal([...f.h.docs.keys()].some(path=>path.startsWith('cashiers/')),false);
 });
 
 test('actual close handler refuses to attribute a pending close after the cashier session is replaced during upload',async()=>{
@@ -47,9 +48,8 @@ test('lost close acknowledgement and retry never replace the original saved clos
  const f=fixture();f.h.loseNextAck();await f.close();const first=structuredClone(f.h.get('shifts/'+shiftId));assert.equal(first.status,'Closed');assert.equal(first.closedBy.staffId,staffId);assert.equal(f.cleared.length,0);assert.equal(f.values.get('currentShiftId'),shiftId);await f.close();assert.deepEqual(f.h.get('shifts/'+shiftId),first);assert.equal(f.cleared.length,1);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('manager_alerts/cash-variance-')).length,1);assert.equal(f.h.get('payroll_records/sample-paid').finalNetPay,700);
 });
 
-test('legacy sessions missing a stable staff ID resolve one exact fresh employee without inferring from the joined log',async()=>{
- const f=fixture({session:{staffId:undefined}});await f.close();assert.deepEqual(f.errors,[]);assert.equal(f.h.get('shifts/'+shiftId).closedBy.staffId,staffId);
- const g=fixture({session:{staffId:undefined}});g.h.put('cashiers/sample-duplicate',{cashierName:staffName,branch:'Another Home Branch',active:true,pin:'SAMPLE PIN'});const before=structuredClone([...g.h.docs]);await g.close();assert.deepEqual([...g.h.docs],before);assert.equal(g.cleared.length,0);assert.ok(g.errors.length);
+test('a missing stable employee ID requires fresh login instead of inferring an identity from names or PINs',async()=>{
+ const f=fixture({session:{staffId:undefined}}),before=structuredClone([...f.h.docs]);await f.close();assert.deepEqual([...f.h.docs],before);assert.equal(f.cleared.length,0);assert.ok(f.errors.length);assert.equal(f.values.get('currentShiftId'),shiftId);
 });
 
 test('a legacy name-only login without a captured PIN or with a changed PIN cannot claim closing identity',async()=>{

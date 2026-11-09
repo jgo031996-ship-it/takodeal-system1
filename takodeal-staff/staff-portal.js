@@ -14,7 +14,7 @@ export function installStaffPortal() {
     const payTemplate = $('vaultContent').innerHTML;
     let profileEpoch = 0;
     const profile = async id => {
-        const snap = await window.getDocFromServer(window.doc(window.db, 'cashiers', id));
+        const snap = await window.readPrivateStaffProfile(id);
         if (!snap.exists()) throw new Error('Your staff profile could not be found. Please contact HQ.');
         return snap.data();
     };
@@ -32,6 +32,7 @@ export function installStaffPortal() {
         rate.lock({preserveRequest:preserveRateRequest});
         session.lock(); modalEpoch++; busy = false; wipeInputs();
         window.clearStaffSavedPayslips?.();
+        window.clearStaffLoanLedger?.();
         window.closeVaultRecovery?.();
         $('vaultPinModal').style.display = 'none';
         // Remove values and encoded payroll actions rather than merely covering them.
@@ -63,8 +64,8 @@ export function installStaffPortal() {
             if (data.payslipPin && !validVerifier(data.payslipPin)) throw new Error('Your PIN settings need a review by HQ.');
             modalMode = data.payslipPin ? mode : 'setup';
             const editing = modalMode !== 'unlock';
-            $('vaultPinTitle').textContent = modalMode === 'setup' ? 'Create your Payslip PIN' : editing ? 'Change your Payslip PIN' : target==='rate'?'Unlock daily rate':'Unlock Payslip Vault';
-            $('vaultPinIntro').textContent = modalMode === 'setup' ? 'Verify your staff login PIN, then choose a separate 6–8 digit PIN for your pay.' : editing ? 'Enter your current Payslip PIN and choose a new one.' : target==='rate'?'Enter your separate Payslip PIN to view your daily rate for two minutes.':'Enter your separate Payslip PIN to see your earnings and records.';
+            $('vaultPinTitle').textContent = modalMode === 'setup' ? 'Create your Payslip PIN' : editing ? 'Change your Payslip PIN' : target==='rate'?'Unlock daily rate':target==='loans'?'Unlock My loans':'Unlock Payslip Vault';
+            $('vaultPinIntro').textContent = modalMode === 'setup' ? 'Verify your staff login PIN, then choose a separate 6–8 digit PIN for your pay.' : editing ? 'Enter your current Payslip PIN and choose a new one.' : target==='rate'?'Enter your separate Payslip PIN to view your daily rate for two minutes.':target==='loans'?'Enter your separate Payslip PIN to view your private loan records.':'Enter your separate Payslip PIN to see your earnings and records.';
             $('vaultCurrentLabel').textContent = modalMode === 'setup' ? 'Staff login PIN' : 'Payslip PIN';
             $('vaultNewFields').hidden = !editing;
             $('vaultSubmit').textContent = editing ? 'Save Payslip PIN' : 'Unlock vault';
@@ -95,13 +96,14 @@ export function installStaffPortal() {
             if (modalMode !== 'unlock') {
                 if (String(data.pin ?? '') === newPin) throw new Error('Choose a Payslip PIN that is different from your staff login PIN.');
                 const verifier = await createPinVerifier(newPin); if (!current(token)) return;
-                await window.updateDoc(window.doc(window.db, 'cashiers', id), { payslipPin: verifier });
+                await window.patchOwnStaffProfile({payslipPin:verifier},{allowPayslipPin:true,assertCurrent:()=>{if(!current(token))throw Error('Your private PIN view changed.');}});
                 if (!current(token)) return;
             }
             localStorage.removeItem(attemptKey);
             window.closeVaultPin(true);
             if(modalTarget==='rate'){await rate.reveal(id,data);return;}
             session.unlock(id); refreshVault();
+            if(modalTarget==='loans'){await window.loadMyLoanLedger?.();return;}
             // PIN editing from Profile does not reveal pay behind another screen.
             if (!$('view-payslip').classList.contains('active')) { window.lockPayslipVault(); return; }
             window.loadPayslipVault();
@@ -117,9 +119,9 @@ export function installStaffPortal() {
         document.querySelector('.content-area').scrollTop = 0;
     };
     const oldLogin = window.checkNormalLogin;
-    window.checkNormalLogin = function() {
+    window.checkNormalLogin = async function() {
         const previousId = session.staffId;
-        oldLogin(); if (previousId && previousId !== identity().id) window.lockPayslipVault();
+        await oldLogin(); if (previousId && previousId !== identity().id) window.lockPayslipVault();
         if(rate.session.staffId && !rate.session.allows(identity().id))rate.lock();
         window.refreshStaffHeader();
     };
@@ -134,7 +136,7 @@ export function installStaffPortal() {
     window.refreshStaffHeader = async function() {
         const { id } = identity(), epoch = ++profileEpoch; if (!id) return;
         try {
-            const data = await profile(id); if (epoch !== profileEpoch || identity().id !== id) return;
+            const snap=await window.readStaffDirectoryProfile(id);const data=snap.data();if(epoch !== profileEpoch || identity().id !== id) return;
             $('staffProfileMeta').textContent = [data.role || 'Staff', data.branch].filter(Boolean).join(' · ');
             $('topAvatar').setAttribute('aria-label', 'Open profile for ' + (data.cashierName || 'staff'));
         } catch { $('staffProfileMeta').textContent = 'Your staff portal'; }

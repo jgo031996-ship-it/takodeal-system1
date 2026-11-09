@@ -1,0 +1,22 @@
+const origin='https://takodeal-customer.vercel.app';
+const text=(value,max)=>typeof value==='string'?value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,'').trim().slice(0,max):'';
+function publicText(value,max,name=''){
+ let out=text(value,max);if(name&&name.length>=3)out=out.split(name).join('Customer');
+ return out.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[contact removed]').replace(/(?:\+?63|0)9(?:[ ()-]*\d){9}/g,'[contact removed]').replace(/TKDL-\d{6}-\d{4}/gi,'[order reference removed]').replace(/\b\d(?:[ -]?\d){7,}\b/g,'[reference removed]');
+}
+export function publicCustomerReview(row){
+ if(!row||typeof row!=='object'||['hidden','rejected','deleted'].includes(text(row.status,30).toLowerCase()))return null;
+ const name=text(row.customer||row.customerName,200),initials=name.split(/\s+/).slice(0,3).map(word=>word.match(/[\p{L}\p{N}]/u)?.[0]?.toUpperCase()).filter(Boolean),reviewText=publicText(row.text||row.reviewText,1500,name);if(!reviewText)return null;
+ const source=Array.isArray(row.sourceItems)?row.sourceItems:Array.isArray(row.summaryItems)?row.summaryItems:[],summaryItems=source.slice(0,2).filter(item=>item&&typeof item==='object'&&!Array.isArray(item)).map(item=>{const raw=item.quantity??item.qty,qty=typeof raw==='number'||typeof raw==='string'&&/^\d+(?:[.]\d+)?$/.test(raw.trim())?Number(raw):NaN;return {name:publicText(item.name||item.itemName,160,name),qty:Number.isFinite(qty)&&qty>0&&qty<=1000?qty:null};}).filter(item=>item.name);
+ const raw=row.timestamp?.toDate?.()??(row.timestamp?.seconds!=null?new Date(row.timestamp.seconds*1000):row.timestamp),date=raw instanceof Date?raw:new Date(typeof raw==='string'||typeof raw==='number'?raw:NaN);
+ return {text:reviewText,displayName:initials.length?initials.join('. ')+'.':'Customer',initial:initials[0]||'C',submittedAt:Number.isFinite(+date)?date.toISOString():null,orderType:['Takeout','Advance Takeout','Delivery','Advance Delivery'].includes(row.orderType)?row.orderType:'Order',summaryItems,totalItemsCount:Number.isInteger(row.totalItemsCount)&&row.totalItemsCount>=summaryItems.length&&row.totalItemsCount<=100?row.totalItemsCount:null};
+}
+export function createCustomerPublicStore(db){return {async readReviews(){const snap=await db.collection('reviews').orderBy('timestamp','desc').limit(30).select('text','reviewText','customer','customerName','timestamp','orderType','summaryItems','sourceItems','totalItemsCount','status').get();return snap.docs.map(row=>row.data());}};}
+export function createCustomerPublicHandler({store,now=Date.now}={}){
+ if(typeof store?.readReviews!=='function')throw Error('A bounded public-review source is required.');const limits=new Map();let cached=null;
+ return async request=>{const response=(status,body)=>({status,body,headers:{'Content-Type':'application/json','Cache-Control':status===200?'public, max-age=30':'no-store',Vary:'Origin',...(request.origin===origin?{'Access-Control-Allow-Origin':origin}:{})}});try{
+  if(request.origin!==origin)return response(403,{message:'Open reviews in the Customer app.'});if(request.path!=='/customer-public/reviews')return response(404,{message:'This public view is unavailable.'});if(request.method==='OPTIONS')return request.preflightMethod==='GET'&&!String(request.preflightHeaders||'').trim()?{...response(204,null),headers:{...response(204,null).headers,'Access-Control-Allow-Methods':'GET','Access-Control-Max-Age':'300'}}:response(403,{message:'Use the public Customer review view.'});
+  if(request.method!=='GET'||Object.keys(request.query||{}).length||request.rawSize>0)return response(400,{message:'Use the bounded public review view.'});const window=Math.floor(now()/60000),key=window+'|'+String(request.trustedIP||'shared').slice(0,80),count=limits.get(key)||0;for(const name of limits.keys())if(!name.startsWith(window+'|'))limits.delete(name);if(limits.size>=500&&!limits.has(key)||count>=60)return response(429,{message:'Please wait a moment before refreshing reviews.'});limits.set(key,count+1);
+  if(!cached||cached.expiresAt<=now()){const rows=await store.readReviews();if(!Array.isArray(rows)||rows.length>30)throw Error('Unbounded review source.');cached={expiresAt:now()+30000,reviews:rows.map(publicCustomerReview).filter(Boolean)};}return response(200,{reviews:cached.reviews});
+ }catch{return response(503,{message:'Customer reviews could not load. Please try again shortly.'});}};
+}

@@ -8,6 +8,10 @@ export function assertCashRemittanceEndpoint(endpoint){
  const expected={platform:'gcfv2',region:['asia-southeast1'],serviceAccountEmail:'cash-remittance-review@takodeal-pos.iam.gserviceaccount.com',availableMemoryMb:256,cpu:1,concurrency:4,minInstances:0,maxInstances:2,timeoutSeconds:60,httpsTrigger:{invoker:['public']}};
  if(!endpoint||Object.entries(expected).some(([key,value])=>JSON.stringify(endpoint[key])!==JSON.stringify(value)))throw Error('The real installed SDK endpoint differs from the reviewed cash remittance runtime.');return expected;
 }
+export function assertCompanyDirectoryEndpoint(endpoint,document){
+ const expected={platform:'gcfv2',region:['asia-southeast1'],serviceAccountEmail:'cash-remittance-review@takodeal-pos.iam.gserviceaccount.com',availableMemoryMb:256,cpu:1,concurrency:4,minInstances:0,maxInstances:2,timeoutSeconds:60,eventTrigger:{eventType:'google.cloud.firestore.document.v1.written',eventFilters:{database:'(default)',namespace:'(default)'},eventFilterPathPatterns:{document},retry:true}};
+ if(!['cashiers/{staffId}','hq_managers/{profileId}'].includes(document)||!endpoint||Object.entries(expected).some(([key,value])=>JSON.stringify(endpoint[key])!==JSON.stringify(value)))throw Error('The real company directory trigger differs from the two reviewed source collections.');return expected;
+}
 export async function verifyInstalledCashRemittanceSdk(root=resolve(dirname(fileURLToPath(import.meta.url)),'..')){
  const restore=guardSdkImport();
  try{
@@ -17,9 +21,9 @@ export async function verifyInstalledCashRemittanceSdk(root=resolve(dirname(file
   const patched='2.4.0';if(lock.packages?.['node_modules/body-parser']?.version!==patched||json(resolve(folder,'node_modules/body-parser/package.json')).version!==patched)throw Error('The reviewed body-parser patch is missing.');
   const wrapper=await import(pathToFileURL(resolve(folder,'index.mjs')).href),store=await import(pathToFileURL(resolve(folder,'store.mjs')).href);
   if(typeof wrapper.cashRemittanceReview!=='function'||typeof store.createCashRemittanceStore!=='function')throw Error('The real runtime wrapper or shared Admin transaction adapter did not load.');
-  const endpoint=assertCashRemittanceEndpoint(wrapper.cashRemittanceReview.__endpoint),admin=createRequire(resolve(folder,'package.json'))('firebase-admin/app'),app=admin.getApp('cash-remittance-review');
+  const endpoint=assertCashRemittanceEndpoint(wrapper.cashRemittanceReview.__endpoint),triggers={staff:assertCompanyDirectoryEndpoint(wrapper.syncOperationalStaffDirectory?.__endpoint,'cashiers/{staffId}'),hq:assertCompanyDirectoryEndpoint(wrapper.syncCompanyHQAccess?.__endpoint,'hq_managers/{profileId}')},admin=createRequire(resolve(folder,'package.json'))('firebase-admin/app'),app=admin.getApp('cash-remittance-review');
   if(app.options.projectId!=='takodeal-pos')throw Error('The reviewed cash remittance project changed.');
-  return{localNode:process.version,productionNode:'22',sdk:versions,transitive:{'body-parser':patched},endpoint,adminApp:'cash-remittance-review',projectId:'takodeal-pos',sharedStore:'createCashRemittanceStore',network:'blocked',credentialFiles:'blocked',cloudCalls:'none'};
+  return{localNode:process.version,productionNode:'22',sdk:versions,transitive:{'body-parser':patched},endpoint,triggers,adminApp:'cash-remittance-review',projectId:'takodeal-pos',sharedStore:'createCashRemittanceStore',network:'blocked',credentialFiles:'blocked',cloudCalls:'none'};
  }finally{restore();}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

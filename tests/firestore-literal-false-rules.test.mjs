@@ -4,7 +4,7 @@ const wrap=body=>"rules_version='2'; service cloud.firestore { match /databases/
 const hash=value=>createHash('sha256').update(value).digest('hex');
 test('actual policy removes only complete literal-false statements and retains all other bytes by strict independent replay',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerLiteralFalseRules(original);
- assert.equal(result.statistics.literalFalseAllows,42);assert.equal(assertLiteralFalseLoweringEquivalent(original,result.source,result.proof).noTrueOrConditionalGrantRemoved,true);
+ assert.equal(result.statistics.literalFalseAllows,60);assert.equal(assertLiteralFalseLoweringEquivalent(original,result.source,result.proof).noTrueOrConditionalGrantRemoved,true);
 });
 test('all known method lists are allowed and true or conditional expressions survive byte-exact',()=>{
  const body='match /x/{id} { allow get,list,create,update,delete: if false; allow read,write: if false; allow read: if true; allow update: if false && allowed(); allow delete: if false || true; allow create: if (false); }',original=wrap(body),result=lowerLiteralFalseRules(original);

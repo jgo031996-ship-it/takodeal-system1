@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isSignedIn() { return request.auth != null; }
     function isOwner() {
-      return isSignedIn() && reqEmail() == 'jgo031996@gmail.com';
+      return offlineOwner();
     }
     function transactionBefore(id) { return get(/databases/$(database)/documents/transactions/$(id)).data; }
     function transactionAfter(id) { return getAfter(/databases/$(database)/documents/transactions/$(id)).data; }
@@ -21,11 +21,242 @@ service cloud.firestore {
     function inactiveStaff() { return ['Blocked', 'Revoked', 'Terminated', 'Resigned', 'Inactive', 'Disabled', 'Archived', 'Deleted']; }
 
 
-    function legacyCandidate(root) { return root.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_logs|suppliers|yield_logs)$'); }
-    function isHQUser() { return isSignedIn(); }
+    function legacyCandidate(root) { return root.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|shifts|stock_logs|suppliers|yield_logs)$'); }
+    function hqIndexValid(index) {
+      let id = index.get('sourceProfileId', '');
+      let eligible = id is string && id.size() > 0 && id.size() <= 1500 && !id.matches('.*[/].*') && !(id in ['.','..']);
+      let path = /databases/$(database)/documents/hq_managers/$(eligible ? id : '__missing__');
+      let source = eligible && exists(path) ? get(path).data : {};
+      let access = {'email':source.get('email',null),'role':source.get('role',null),
+        'permissions':source.get('permissions',null),'assignedBranch':source.get('assignedBranch',null),
+        'active':source.get('active',null),'blocked':source.get('blocked',null),
+        'status':source.get('status',null),'disabled':source.get('disabled',null),
+        'isActive':source.get('isActive',null),'archived':source.get('archived',null),'isArchived':source.get('isArchived',null),
+        'deleted':source.get('deleted',null),'isDeleted':source.get('isDeleted',null),'revoked':source.get('revoked',null),
+        'offboarded':source.get('offboarded',null),'resigned':source.get('resigned',null),'terminated':source.get('terminated',null),
+        'employmentStatus':source.get('employmentStatus',null),'contractStatus':source.get('contractStatus',null)};
+      return eligible && index.get('schemaVersion',0) == 1 && index.get('active',false) == true
+        && source.get('email','').lower() == request.auth.token.get('email','').lower()
+        && index.get('sourceAccess',{}) == access
+        && !(source.get('pin','') in ['REVOKED','BLOCKED'])
+        && !(source.get('securityPin','') in ['REVOKED','BLOCKED']);
+    }
+    function companyHQAccess() {
+      let eligible = isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true;
+      let email = eligible ? request.auth.token.get('email','').lower() : '__unauthenticated__';
+      let indexPath = /databases/$(database)/documents/hq_account_index/$(email);
+      let indexed = eligible && exists(indexPath);
+      let bridgePath = /databases/$(database)/documents/hq_email_access/$(email);
+      let bridgeExists = eligible && exists(bridgePath);
+      let bridge = bridgeExists ? get(bridgePath).data : {};
+      let access = indexed ? get(indexPath).data : bridge;
+      return {'active':eligible && (indexed ? hqIndexValid(access) : access.get('active',false) == true)
+          && (!bridgeExists || bridge.get('active',false) == true),
+        'permissions':access.get('permissions',[]),'allowedBranches':access.get('allowedBranches',[]),
+        'bridgeRequired':indexed && bridgeExists,'bridgePermissions':bridge.get('permissions',[]),'bridgeBranches':bridge.get('allowedBranches',[])};
+    }
+    function isHQUser() { return isOwner() || (isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true && companyHQAccess().active == true); }
+    function companyHQCan(permissions, branch) {
+      let owner = isOwner();
+      let eligible = !owner && isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true;
+      let access = eligible ? companyHQAccess() : {};
+      return owner || (eligible && access.active == true && access.permissions is list
+        && access.permissions.hasAny(permissions) && access.allowedBranches is list
+        && access.allowedBranches.hasAny(['All',branch])
+        && (!access.bridgeRequired || access.bridgePermissions is list && access.bridgePermissions.hasAny(permissions)
+          && access.bridgeBranches is list && access.bridgeBranches.hasAny(['All',branch])));
+    }
+    function companyProfileActive(profile) {
+      return profile.get('cashierName','') is string && profile.cashierName.size() > 0
+        && profile.get('branch','') is string && profile.branch.size() > 0
+        && ![profile.get('active',true),profile.get('isActive',true)].hasAny([false])
+        && ![profile.get('archived',false),profile.get('isArchived',false),profile.get('blocked',false),
+          profile.get('deleted',false),profile.get('isDeleted',false),profile.get('revoked',false),profile.get('offboarded',false),
+          profile.get('resigned',false),profile.get('terminated',false),profile.get('disabled',false)].hasAny([true])
+        && !(profile.get('status','').lower() in ['resigned','terminated','inactive','disabled','revoked','archived','blocked','deleted','offboarded','offboard','finished contract','contract ended','end of contract'])
+        && !(profile.get('employmentStatus','').lower() in ['resigned','terminated','inactive','disabled','revoked','archived','blocked','deleted','offboarded','offboard','finished contract','contract ended','end of contract'])
+        && !(profile.get('contractStatus','').lower() in ['resigned','terminated','revoked','offboarded'])
+        && !(profile.get('pin','') in ['REVOKED','BLOCKED']);
+    }
+    function companyProfilesActive(first,second) {
+      let firstName = first.get('cashierName','');
+      let secondName = second.get('cashierName','');
+      let firstBranch = first.get('branch','');
+      let secondBranch = second.get('branch','');
+      return firstName is string && firstName.size() > 0 && secondName is string && secondName.size() > 0
+        && firstBranch is string && firstBranch.size() > 0 && secondBranch is string && secondBranch.size() > 0
+        && ![first.get('active',true),first.get('isActive',true),second.get('active',true),second.get('isActive',true)].hasAny([false])
+        && ![first.get('archived',false),first.get('isArchived',false),first.get('blocked',false),first.get('deleted',false),first.get('isDeleted',false),
+          first.get('revoked',false),first.get('offboarded',false),first.get('resigned',false),first.get('terminated',false),first.get('disabled',false),
+          second.get('archived',false),second.get('isArchived',false),second.get('blocked',false),second.get('deleted',false),second.get('isDeleted',false),
+          second.get('revoked',false),second.get('offboarded',false),second.get('resigned',false),second.get('terminated',false),second.get('disabled',false)].hasAny([true])
+        && ![first.get('status','').lower(),first.get('employmentStatus','').lower(),second.get('status','').lower(),second.get('employmentStatus','').lower()]
+          .hasAny(['resigned','terminated','inactive','disabled','revoked','archived','blocked','deleted','offboarded','offboard','finished contract','contract ended','end of contract'])
+        && ![first.get('contractStatus','').lower(),second.get('contractStatus','').lower()].hasAny(['resigned','terminated','revoked','offboarded'])
+        && ![first.get('pin',''),second.get('pin','')].hasAny(['REVOKED','BLOCKED']);
+    }
+    function companyStaffSession() {
+      let uid = isSignedIn() ? reqUid() : '__unauthenticated__';
+      let path = /databases/$(database)/documents/staff_login_sessions/$(uid);
+      let session = isSignedIn() && exists(path) ? get(path).data : {};
+      let id = session.get('staffId','');
+      let profilePath = /databases/$(database)/documents/cashiers/$(id is string && id != '' ? id : '__missing__');
+      let profile = exists(profilePath) ? get(profilePath).data : {};
+      let directoryPath = /databases/$(database)/documents/staff_directory/$(id is string && id != '' ? id : '__missing__');
+      let directory = exists(directoryPath) ? get(directoryPath).data : {};
+      return isSignedIn() && (reqProvider() == 'anonymous' || session.get('app','') == 'cashier' && isOwner())
+        && session.get('schemaVersion',0) == 1 && session.get('uid','') == uid
+        && session.get('sessionId','') is string && session.sessionId.size() >= 16
+        && session.get('app','') in ['staff','cashier'] && session.get('expiresAt',null) is timestamp
+        && session.expiresAt > reqTime() && companyProfileActive(profile)
+        && session.get('profileRevision','') is string && session.profileRevision.size() > 0
+        && session.profileRevision == directory.get('profileRevision','')
+        && (session.app == 'staff' ? session.branch == profile.branch : trustedPOS(session.branch) || isOwner());
+    }
+    function companySessionStaffId() {
+      let path = /databases/$(database)/documents/staff_login_sessions/$(isSignedIn() ? reqUid() : '__unauthenticated__');
+      return isSignedIn() && exists(path) ? get(path).data.get('staffId','') : '__no_staff__';
+    }
+    function companyOwnData(data) {
+      let id = data.get('staffId','');
+      return isSignedIn() && (id != '' ? id == companySessionStaffId()
+        : companyNameClaim(data.get('staffName',''),companySessionStaffId())) && companyStaffSession();
+    }
+    function companyNameClaim(name,staffId) {
+      let eligibleName = name is string && name.size() > 0 && name.size() <= 200 && !name.matches('.*[/].*');
+      let claimPath = /databases/$(database)/documents/staff_name_claims/$(eligibleName ? name : '__missing__');
+      return eligibleName && exists(claimPath) && get(claimPath).data.get('ambiguous',true) == false && get(claimPath).data.uniqueStaffId == staffId;
+    }
+    function companyClockData(data) {
+      let uid = isSignedIn() ? reqUid() : '__unauthenticated__';
+      let path = /databases/$(database)/documents/staff_pin_contexts/$(uid + '_time-clock');
+      let proof = isSignedIn() && exists(path) ? get(path).data : {};
+      let sessionPath = /databases/$(database)/documents/staff_login_sessions/$(uid);
+      let session = isSignedIn() && exists(sessionPath) ? get(sessionPath).data : {};
+      let id = data.get('staffId','');
+      return proof.get('uid','') == uid && proof.get('purpose','') == 'time-clock'
+        && proof.get('expiresAt',null) is timestamp && proof.expiresAt > reqTime()
+        && (proof.get('sessionId','') in ['',null] ? trustedPOS(proof.branch) || isOwner() : companyStaffSession()
+          && session.sessionId == proof.sessionId && session.deviceId == proof.deviceId && session.app == 'cashier' && session.branch == proof.branch)
+        && (id != '' ? id == proof.staffId : companyNameClaim(data.get('staffName',''),proof.staffId));
+    }
+    function companyHRRead(data) {
+      return companyHQCan(['all','branches','payroll','feed','ledger'],data.get('branch',data.get('frozenData',{}).get('branch','')));
+    }
+    function companyHRReadPair(before,after) {
+      let first = before.get('branch',before.get('frozenData',{}).get('branch',''));
+      let second = after.get('branch',after.get('frozenData',{}).get('branch',''));
+      return companyHRRead(before) && (first == second || companyHRRead(after));
+    }
+    function companyPrivateProfile(id) {
+      return docVaultEnabled() && docVaultOwn(id) && companyProfileActive(readData('cashiers',id));
+    }
+    function companyProfileEdit(id, before, after) {
+      return after.diff(before).affectedKeys().hasOnly([
+        'phone','address','email','scheduleNickname','profilePicUrl',
+        'emergencyName','emergencyNumber','emergencyPhone','emergencyContact','emergencyContactNumber','emergNum',
+        'gcashName','gcashNumber','gotymeName','gotyme','goTymeName','gotymeNumber','gotymeNum','gotymeAcc','gotymeAccount','goTymeNumber','goTymeAccount','gotymeAccountNumber',
+        'sss','sssNumber','philhealth','philhealthNumber','pagibig','pagibigNumber','payslipPin']) && companyPrivateProfile(id);
+    }
+    function companyContractAcceptance(id, before, after) {
+      let pending = before.get('contractStatus','');
+      let key = pending == 'Pending Initial Contract' ? 'initial' : pending == 'Pending Renewal' ? 'extension' : 'regularization';
+      let previous = before.get('signedContracts',{});
+      let signed = after.get('signedContracts',{});
+      return pending in ['Pending Initial Contract','Pending Renewal','Pending Regularization']
+        && previous is map && signed is map
+        && previous.get(key,null) == null && signed.diff(previous).affectedKeys().hasOnly([key])
+        && signed.get(key,'') is string && signed.get(key,'').matches('^[A-Z][a-z]{2,8} [1-9][0-9]?, [0-9]{4}$')
+        && after.contractStatus == (key == 'initial' ? 'Active' : key == 'extension' ? 'Extended' : 'Regular')
+        && after.diff(before).affectedKeys().hasOnly(['contractStatus','contractSignature','signedContracts'])
+        && after.contractSignature is string && after.contractSignature.size() >= 64 && after.contractSignature.size() <= 500000
+        && (after.contractSignature.size() - 22) % 4 == 0
+        && after.contractSignature.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$') && companyPrivateProfile(id);
+    }
+    match /hq_account_index/{email} { allow get: if isOwner() || (isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true && request.auth.token.get('email','').lower() == email); allow list: if isOwner(); allow write: if false; }
+    match /staff_directory/{id} { allow read: if isHQUser() || ownTrustedDevice() || companyStaffSession(); allow write: if false; }
+    match /staff_name_claims/{name} { allow read: if isHQUser() || ownTrustedDevice() || companyStaffSession(); allow write: if false; }
+    match /staff_login_sessions/{uid} { allow get: if isSignedIn() && reqUid() == uid; allow list,write: if false; }
+    match /staff_pin_verifications/{id} { allow get: if isSignedIn() && oldData().uid == reqUid(); allow list,write: if false; }
+    match /staff_pin_contexts/{id} { allow get: if isSignedIn() && oldData().uid == reqUid(); allow list,write: if false; }
+    match /staff_session_cancellations/{id} { allow read,write: if false; }
+    match /staff_pin_index/{id} { allow read,write: if false; }
+    match /staff_access_operations/{id} { allow read,write: if false; }
+    match /prep_quotes/{id} { allow read,write: if false; }
+    match /prep_operations/{id} { allow read,write: if false; }
+    match /prep_reversals/{id} { allow read,write: if false; }
+    match /hq_upload_grants/{id} { allow read,write: if false; }
+    function companyMealData(data) {
+      return data.get('mealStaffName','') != '' || data.get('mealLevelId','') != ''
+        || data.get('globalDiscountType','') in ['staff_meal','manager_meal']
+        || data.get('globalDiscountType','').matches('^meal_level_.*');
+    }
+    function companyMealProof(data, saleId) {
+      let proofId = data.get('staffPinVerificationId','');
+      let path = /databases/$(database)/documents/staff_pin_verifications/$(proofId is string && proofId != '' ? proofId : '__missing__');
+      let proof = exists(path) ? get(path).data : {};
+      let claimId = proof.get('day','') + '_' + proof.get('source','') + '_' + proof.get('staffId','');
+      let claim = proof.get('mealRole','') == 'staff' ? nextData('staff_meal_daily_claims',claimId) : {};
+      return isSignedIn() && (isOwner() || trustedPOS(data.branch)) && proof.get('schemaVersion',0) == 1
+        && proof.get('uid','') == reqUid() && (isOwner() || proof.get('deviceId','') == readData('pos_bindings',reqUid()).deviceId)
+        && proof.get('app','') == 'cashier' && proof.get('purpose','') == 'meal' && proof.get('branch','') == data.branch
+        && proof.get('scope','') == saleId && data.saleId == saleId
+        && proof.get('mealLevelId','') == data.get('mealLevelId','')
+        && proof.get('source','') == data.get('mealIdentitySource','') && proof.get('staffId','') == data.get('mealIdentityId','')
+        && proof.get('profile',{}).get('cashierName','') == data.get('mealStaffName','')
+        && proof.get('mealRole','') == data.get('mealRole','')
+        && proof.get('day','') == data.get('mealDay','')
+        && proof.get('issuedAt',null) is timestamp && proof.get('expiresAt',null) is timestamp
+        && data.timestamp is timestamp && data.timestamp >= proof.issuedAt - duration.value(1,'m') && data.timestamp <= proof.expiresAt
+        && proof.get('day','').matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && (proof.mealRole != 'staff' || (claim.saleId == saleId && claim.verificationId == proofId
+          && claim.staffId == proof.staffId && claim.source == proof.source && claim.day == proof.day && claim.actorUid == reqUid()))
+        && nextData('staff_requests','meal-' + saleId).staffPinVerificationId == proofId;
+    }
+    function companyMealRequest(data, requestId) {
+      let saleId = data.get('saleId','');
+      let sale = transactionAfter(saleId);
+      return requestId == 'meal-' + saleId && companyMealProof(sale,saleId)
+        && data.get('staffId','') == sale.mealIdentityId && data.get('staffName','') == sale.mealStaffName
+        && data.branch == sale.branch && data.get('mealIdentitySource','') == sale.mealIdentitySource
+        && data.get('staffPinVerificationId','') == sale.staffPinVerificationId
+        && data.get('mealLevelId','') == sale.mealLevelId && data.get('mealRole','') == sale.mealRole
+        && data.get('mealDay','') == sale.mealDay
+        && data.type is string && data.type.size() <= 200 && data.type.matches('^.+ Meal [(]POS Auto[)]$')
+        && data.keys().hasOnly(['type','mealLevelId','mealRole','staffId','mealIdentitySource','staffPinVerificationId','mealDay','branch','staffName','amount','item','receiptId','saleId','status','staffAcknowledged','timestamp'])
+        && data.amount == sale.netTotal && data.receiptId == sale.receiptId
+        && data.status == 'Pending' && data.timestamp == reqTime() && data.staffAcknowledged == false;
+    }
+    match /staff_meal_daily_claims/{id} {
+      function mealClaim(data, generation) {
+        let proof = readData('staff_pin_verifications',data.verificationId);
+        let sale = transactionAfter(data.saleId);
+        return data.keys().hasOnly(['schemaVersion','staffId','source','day','saleId','branch','verificationId','generation','createdAt','actorUid'])
+          && data.schemaVersion == 1 && data.generation == generation && data.createdAt == reqTime() && data.actorUid == reqUid()
+          && id == data.day + '_' + data.source + '_' + data.staffId && data.source == 'cashiers'
+          && proof.mealRole == 'staff' && proof.uid == reqUid() && proof.staffId == data.staffId && proof.day == data.day
+          && proof.scope == data.saleId && proof.source == data.source && proof.branch == data.branch
+          && !exists(/databases/$(database)/documents/transactions/$(data.saleId)) && companyMealProof(sale,data.saleId);
+      }
+      function released(before) {
+        let sale = transactionBefore(before.saleId);
+        let meal = readData('staff_requests','meal-' + before.saleId);
+        return before.schemaVersion == 1 && before.generation is int && before.generation >= 1 && before.generation < 9007199254740991
+          && sale.status == 'Voided' && meal.status == 'Voided' && sale.saleId == before.saleId && meal.saleId == before.saleId
+          && sale.branch == before.branch && meal.branch == before.branch
+          && sale.mealIdentityId == before.staffId && meal.staffId == before.staffId
+          && sale.mealIdentitySource == before.source && meal.mealIdentitySource == before.source;
+      }
+      allow get: if isOwner() || ownTrustedDevice();
+      allow list: if isOwner();
+      allow create: if mealClaim(newData(),1);
+      allow update: if newData().staffId == oldData().staffId && newData().source == oldData().source && newData().day == oldData().day
+        && newData().saleId != oldData().saleId && released(oldData()) && mealClaim(newData(),oldData().generation + 1);
+      allow delete: if false;
+    }
     function offlineOwner() {
       return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
-        && request.auth.token.get('email_verified', false) == true;
+        && request.auth.token.get('email_verified', false) == true && reqProvider() == 'google.com';
     }
     function offlineGate(branch) {
       return branch is string
@@ -38,20 +269,26 @@ service cloud.firestore {
         && readData('offline_policy',branch).get('protectSalesV2', false) == true;
     }
     function verifiedHQ(branch) {
-      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
-      let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = offlineOwner();
-      let eligible = !owner && isSignedIn() && reqVerified() == true && email != '';
-      let grant = eligible && exists(path) ? get(path).data : {};
-      return owner || (grant.get('active', false) == true
-        && ('All' in grant.get('allowedBranches', []) || branch in grant.get('allowedBranches', [])));
+      let owner = isOwner();
+      let eligible = !owner && isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true;
+      let access = eligible ? companyHQAccess() : {};
+      return owner || (eligible && access.active == true && access.allowedBranches is list
+        && access.allowedBranches.hasAny(['All',branch])
+        && (!access.bridgeRequired || access.bridgeBranches is list && access.bridgeBranches.hasAny(['All',branch])));
     }
     function approvedUID(uid, branch) {
       let path = /databases/$(database)/documents/pos_bindings/$(uid);
-      let present = exists(path);
-      let binding = present ? get(path).data : {};
-      return present && binding.get('status', '') == 'Active'
-        && binding.get('branch', '') == branch;
+      let saved = get(path);
+      let present = saved != null;
+      let binding = present ? saved.data : {};
+      let mirrorId = binding.get('legacyDeviceDocId','');
+      let mirrorPath = /databases/$(database)/documents/pos_devices/$(mirrorId is string && mirrorId != '' ? mirrorId : '__missing__');
+      let savedMirror = present ? get(mirrorPath) : null;
+      let mirror = savedMirror != null ? savedMirror.data : {};
+      return present && binding.get('uid','') == uid && binding.get('status', '') == 'Active'
+        && binding.get('branch', '') == branch && mirror.get('status','') == 'Active'
+        && mirror.get('deviceId','') == binding.get('deviceId','') && mirror.get('branch','') == branch
+        && mirror.get('appType','') != 'Staff';
     }
     function trustedPOS(branch) {
       return isSignedIn()
@@ -65,7 +302,7 @@ service cloud.firestore {
       let eligible = isSignedIn() && reqProvider() == 'anonymous';
       let uid = eligible ? reqUid() : '__unauthenticated__';
       let path = /databases/$(database)/documents/pos_bindings/$(uid);
-      return eligible && exists(path) && get(path).data.status == 'Active';
+      return eligible && exists(path) && approvedUID(uid,get(path).data.get('branch',''));
     }
 
 
@@ -73,8 +310,7 @@ service cloud.firestore {
 
     // Sale-safety compatibility. Keep the existing staged branch policy.
     function saleWriter(branch) {
-      return branch is string && branch.size() > 0
-        && (!protectedSales(branch) || verifiedHQ(branch) || trustedPOS(branch));
+      return branch is string && branch.size() > 0 && (verifiedHQ(branch) || trustedPOS(branch));
     }
     function safetySale(data, id) {
       let marker = nextData('pos_sale_commits',id);
@@ -102,8 +338,8 @@ service cloud.firestore {
     match /pos_sale_commits/{id} {
       // Missing markers must be readable before the first atomic sale commit.
       // Existing legacy-branch receipts already have public reads in this policy.
-      allow read: if (request.method == 'get' && (resource == null || !protectedSales(oldData().branch)))
-        || (request.method == 'list' && offlineOwner()) || verifiedHQ(oldData().branch) || trustedPOS(oldData().branch);
+      allow get: if resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if companyHQCan(['all','history','zreadings'],oldData().branch) || trustedPOS(oldData().branch);
 
       function selectorPosSaleCommitsCreate(data) {
         return saleWriter(data.get('branch', ''))
@@ -229,7 +465,18 @@ service cloud.firestore {
     match /pos_staff_meal_exceptions/{id} { allow read, create: if offlineOwner(); allow update, delete: if false; }
     match /shift_metric_commits/{id} { allow read: if offlineOwner(); allow write: if false; }
 
-    match /hq_managers/{managerId} { allow read: if isSignedIn(); allow write: if isOwner(); }
+    match /hq_managers/{managerId} { allow read: if isOwner() || (isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true && oldData().get('email','').lower() == request.auth.token.get('email','').lower()); allow write: if isOwner(); }
+    match /branch_private_settings/{id} {
+      allow get: if resource == null ? isHQUser() : companyHQCan(['all','branches'],oldData().branch);
+      allow list: if companyHQCan(['all','branches'],oldData().branch);
+      allow create, update: if newData().keys().hasOnly(['branchId','branch','wifi','updatedAt','updatedByUid']) && newData().size() == 5
+        && newData().branchId == id && newData().branch == nextData('branches',id).name
+        && companyHQCan(['all','branches'],newData().branch)
+        && newData().wifi is string && newData().wifi.size() <= 256
+        && newData().updatedAt == request.time && newData().updatedByUid == reqUid()
+        && (resource == null || oldData().branchId == id && oldData().branch == newData().branch);
+      allow delete: if isOwner();
+    }
     match /settings/{docId} {
       function cashierAppearanceWrite(data, priorRevision) {
         let look = data.appearance;
@@ -331,13 +578,55 @@ service cloud.firestore {
           && notice.issuedByUid == request.auth.uid && notice.issuedAt == request.time;
       }
 
-      allow read: if true;
-      allow create: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      function publicSetting(id) {
+        return id in ['customer_site_profile','customer_app_categories','global_delivery','global_storefront','global_stats','franchise_teaser','visit_counter',
+          'global_pos_config','global_mixmatch','global_receipt','pos_layout','pos_item_layout','pos_addon_layout','sidebar_layout','cashier_appearance','global_app_version','live_cashier_version']
+          || id.matches('^status_.+');
+      }
+      function operationalSetting(id) {
+        return (id == 'global_schedule' || id == 'schedule_history_policy' || id == 'global_delivery_schedule'
+          || id.matches('^(schedule_|sop_).+')) && (ownTrustedDevice() || companyStaffSession());
+      }
+      function cashierAuditSetting(id) {
+        let branch = isSignedIn() ? readData('pos_bindings',reqUid()).get('branch','') : '';
+        return id.matches('^audit_.+') && trustedPOS(branch)
+          && id == 'audit_' + branch.replace(' ', '%20').replace('[.]', '%2E');
+      }
+      function companyHQGrantCan(access,permissions,branch) {
+        return access.active == true && access.permissions is list
+          && access.permissions.hasAny(permissions) && access.allowedBranches is list
+          && access.allowedBranches.hasAny(['All',branch])
+          && (!access.bridgeRequired || access.bridgePermissions is list && access.bridgePermissions.hasAny(permissions)
+            && access.bridgeBranches is list && access.bridgeBranches.hasAny(['All',branch]));
+      }
+      function settingHQWrite(id) {
+        let owner = isOwner();
+        let eligible = !owner && isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true;
+        let access = eligible ? companyHQAccess() : {};
+        let permissions = id.matches('^(global_schedule|schedule_.+)$') ? ['all','schedule']
+          : id.matches('^recipe_.+') ? ['all','inventory','menu']
+          : id == 'global_delivery_schedule' ? ['all','dispatch'] : ['all','posconfig'];
+        return owner || eligible && (companyHQGrantCan(access,['all','posconfig'],'All') || companyHQGrantCan(access,permissions,'All')
+          || id.matches('^sop_.+') && companyHQGrantCan(access,['all','sop'],id.replace('^sop_','')));
+      }
+      function branchStatusWrite(id, before, after) {
+        let branch = id.replace('^status_','');
+        return id.matches('^status_.+') && (trustedPOS(branch) || companyHQCan(['all','mobilehub'],branch))
+          && after.keys().hasOnly(['busyMode','mobileOrdersActive','lastUpdated','lastUpdatedBy'])
+          && after.diff(before).affectedKeys().hasOnly(['busyMode','mobileOrdersActive','lastUpdated','lastUpdatedBy'])
+          && (!after.keys().hasAny(['busyMode']) || after.busyMode is bool)
+          && (!after.keys().hasAny(['mobileOrdersActive']) || after.mobileOrdersActive is bool)
+          && after.lastUpdated == request.time
+          && (!after.keys().hasAny(['lastUpdatedBy']) || after.lastUpdatedBy is string && after.lastUpdatedBy.size() <= 200);
+      }
+      allow read: if publicSetting(docId) || isHQUser() || operationalSetting(docId) || cashierAuditSetting(docId);
+      allow create: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && settingHQWrite(docId)
         && cancelledPolicyWrite(docId, {}, newData());
-      allow update: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow update: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && settingHQWrite(docId)
         && cancelledPolicyWrite(docId, oldData(), newData());
-      allow delete: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow delete: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && settingHQWrite(docId)
         && cancelledPolicyWrite(docId, oldData(), {});
+      allow create, update: if branchStatusWrite(docId,resource == null ? {} : oldData(),newData());
       // PIN-only legacy Cashiers can update counters only with their atomic sale
       // or first void, with exact deltas. No general settings write is opened.
       allow create, update: if docId == 'global_stats' && saleCounterWrite();
@@ -346,11 +635,267 @@ service cloud.firestore {
       allow create, update: if docId == 'discipline_policy' && disciplinePolicyWrite(request.resource.data, resource == null ? 0 : resource.data.revision);
       allow create, update: if docId.matches('discipline_case_.*') && disciplineCounter(request.resource.data, resource == null ? {} : resource.data, docId);
     }
-    match /announcements/{document=**} { allow read, write: if true; }
-    match /acknowledgments/{document=**} { allow read, write: if true; }
-    match /reviews/{document=**} { allow read, create: if true; allow update, delete: if isHQUser(); }
-    match /customer_feedback/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
-    match /franchise_leads/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
+    // Operational PIN sessions never authorize wage, loan or payroll reads.
+    // Legacy identity is proved by the server-maintained exact-name index;
+    // bounded history brokers supply name-only lists without public searches.
+    function companyOperationalHQ(data) {
+      return companyHQCan(['all','branches','payroll','inbox','audits','feed','schedule'],data.get('branch',''));
+    }
+    function companyOperationalRead(data) {
+      return companyOperationalHQ(data) || companyOwnData(data) || companyClockData(data);
+    }
+    function companyOperationalMissing() { return isHQUser() || companyStaffSession() || ownTrustedDevice(); }
+    function companyStaffName(data) {
+      let name = data.get('staffName','');
+      return name is string && name.size() > 0 && name.size() <= 200
+        && (readData('cashiers',data.staffId).cashierName == name || companyNameClaim(name,data.staffId));
+    }
+    function companyOperationalCreate(data) {
+      return protectedHRId(data.get('staffId','')) && companyStaffName(data)
+        && (data.staffId == companySessionStaffId() && companyStaffSession() || companyClockCreate(data));
+    }
+    function companyClockCreate(data) {
+      let uid = isSignedIn() ? reqUid() : '__unauthenticated__';
+      let path = /databases/$(database)/documents/staff_pin_contexts/$(uid + '_time-clock');
+      let proof = isSignedIn() && exists(path) ? get(path).data : {};
+      let sessionPath = /databases/$(database)/documents/staff_login_sessions/$(uid);
+      let session = isSignedIn() && exists(sessionPath) ? get(sessionPath).data : {};
+      return proof.get('uid','') == uid && proof.get('app','') == 'cashier' && proof.get('purpose','') == 'time-clock'
+        && proof.get('staffId','') == data.staffId && proof.get('expiresAt',null) is timestamp && proof.expiresAt > reqTime()
+        && proof.get('profileRevision','') is string && proof.profileRevision.size() > 0
+        && proof.profileRevision == readData('staff_directory',data.staffId).get('profileRevision','')
+        && (trustedPOS(proof.branch) || isOwner())
+        && (proof.get('sessionId','') in ['',null] && companyProfileActive(readData('cashiers',data.staffId))
+          || !(proof.get('sessionId','') in ['',null]) && session.get('schemaVersion',0) == 1 && session.get('uid','') == uid
+          && session.get('sessionId','') == proof.sessionId && session.get('deviceId','') == proof.deviceId
+          && session.get('app','') == 'cashier' && session.get('branch','') == proof.branch
+          && session.get('expiresAt',null) is timestamp && session.expiresAt > reqTime()
+          && session.get('profileRevision','') is string && session.profileRevision.size() > 0
+          && session.profileRevision == readData('staff_directory',session.staffId).get('profileRevision','')
+          && companyProfilesActive(readData('cashiers',data.staffId),readData('cashiers',session.staffId)));
+    }
+    function companyPinProof(data,purpose,scope) {
+      let id = data.get('staffPinVerificationId','');
+      let eligible = protectedHRId(id);
+      let path = /databases/$(database)/documents/staff_pin_verifications/$(eligible ? id : '__missing__');
+      let proof = eligible && exists(path) ? get(path).data : {};
+      let session = isSignedIn() && exists(/databases/$(database)/documents/staff_login_sessions/$(reqUid())) ? readData('staff_login_sessions',reqUid()) : {};
+      let profile = protectedHRId(data.get('staffId','')) ? readData('cashiers',data.staffId) : {};
+      return isSignedIn() && proof.get('schemaVersion',0) == 1 && proof.get('uid','') == reqUid()
+        && proof.get('staffId','') == data.staffId && proof.get('branch','') == data.branch
+        && proof.get('profileRevision','') is string && proof.profileRevision.size() > 0
+        && proof.profileRevision == readData('staff_directory',data.staffId).get('profileRevision','')
+        && proof.get('purpose','') == purpose && proof.get('scope','') == scope
+        && proof.get('expiresAt',null) is timestamp && proof.expiresAt > reqTime()
+        && (proof.get('app','') == 'staff'
+          ? reqProvider() == 'anonymous' && session.get('schemaVersion',0) == 1 && session.get('uid','') == reqUid()
+            && session.get('staffId','') == data.staffId && session.get('deviceId','') == proof.deviceId && session.get('app','') == 'staff'
+            && session.get('expiresAt',null) is timestamp && session.expiresAt > reqTime()
+            && session.get('branch','') == profile.get('branch','') && proof.sessionId == session.get('sessionId','')
+            && session.get('profileRevision','') == proof.profileRevision
+          : proof.get('app','') == 'cashier' && (trustedPOS(proof.branch) || isOwner()))
+        && companyProfileActive(profile);
+    }
+    function companyLinkedOut(data) {
+      let id = data.get('timeOutLogId','');
+      let eligible = protectedHRId(id);
+      let path = /databases/$(database)/documents/attendance_logs/$(eligible ? id : '__missing__');
+      let out = eligible && existsAfter(path) ? getAfter(path).data : {};
+      return eligible && out.get('type','') == 'TIME OUT' && out.get('staffId','') == data.staffId
+        && out.get('branch','') == data.branch && out.get('timeInLogId','') == data.timeInLogId;
+    }
+    function companyRequestCreate(data,id) {
+      let meal = data.get('saleId','') != '' && data.get('staffPinVerificationId','') != '';
+      return data.status == 'Pending'
+        && !data.keys().hasAny(['processedAt','processedBy','processedByUid','managerReply','declarationAcknowledgement','staffShiftProposalReview','lateReview','approvedBy','timeOutReview'])
+        && (meal && companyMealRequest(data,id)
+          || !meal && (data.type in ['Leave','Leave Change'] && protectedHRId(data.get('staffId','')) && companyStaffName(data) && companyPinProof(data,'leave',id)
+          || data.type == 'Early Time Out' && protectedHRId(data.get('staffId','')) && companyStaffName(data)
+              && (companyPinProof(data,'early-time-out',id) || companyLinkedOut(data) && companyOperationalCreate(data))
+          || data.type in ['Cash Advance','Reason Letter','Schedule Declaration','Waste Report'] && companyOperationalCreate(data)
+          || data.type == 'Meal Receipt Review' && data.amount == 0 && data.receiptId is string && data.receiptId.size() > 0 && data.receiptId.size() <= 200
+            && data.keys().hasOnly(['type','staffId','staffName','branch','status','staffAcknowledged','timestamp','receiptId','item','amount','proofImageUrl'])
+            && companyOperationalCreate(data)
+          ));
+    }
+    function companyLeavePointer(before,after,id) {
+      let clearing = after.pendingLeaveChangeId == null;
+      let childId = clearing ? before.get('pendingLeaveChangeId','') : after.pendingLeaveChangeId;
+      let path = /databases/$(database)/documents/staff_requests/$(childId);
+      let child = getAfter(path).data;
+      let proof = readData('staff_pin_verifications',child.staffPinVerificationId);
+      // The child create/withdraw rule validates the live session and full PIN
+      // proof. Require that child transition in this same atomic request rather
+      // than spending its identity/lifecycle budget again on the parent pointer.
+      return protectedHRId(childId) && child.type == 'Leave Change' && child.leaveRequestId == id
+        && (before.get('staffId','') != '' ? child.staffId == before.staffId
+          : readData('staff_name_claims',before.staffName).get('ambiguous',true) == false
+            && readData('staff_name_claims',before.staffName).uniqueStaffId == child.staffId)
+        && proof.uid == reqUid() && proof.staffId == child.staffId && proof.scope == childId && proof.purpose == 'leave'
+        && (clearing ? exists(path) && get(path).data.status == 'Pending' && child.status == 'Withdrawn'
+          : !exists(path) && before.get('pendingLeaveChangeId',null) == null && child.status == 'Pending');
+    }
+    function companyRequestProofIdentity(before,after,id,purpose) {
+      let staffId = after.get('withdrawnByStaffId',before.get('staffId',''));
+      let branch = before.get('branch',readData('cashiers',staffId).get('branch',''));
+      return protectedHRId(staffId) && (before.get('staffId','') != '' ? staffId == before.staffId
+        : readData('staff_name_claims',before.staffName).get('ambiguous',true) == false
+          && readData('staff_name_claims',before.staffName).uniqueStaffId == staffId)
+        && companyPinProof({'staffId':staffId,'branch':branch,'staffPinVerificationId':after.staffPinVerificationId},purpose,id);
+    }
+    function companyRequestUpdate(before,after,id) {
+      let fields = after.diff(before).affectedKeys();
+      return before.type == 'Leave' && fields.hasOnly(['pendingLeaveChangeId'])
+        ? companyLeavePointer(before,after,id)
+        : before.type in ['Leave','Leave Change'] && before.status == 'Pending' && after.status == 'Withdrawn'
+          && fields.hasOnly(['status','withdrawnAt','withdrawnByStaffId','staffPinVerificationId'])
+          ? after.withdrawnAt == reqTime() && companyRequestProofIdentity(before,after,id,'leave')
+        : before.type == 'Early Time Out' && before.status in ['Pending','Approved'] && after.status == 'Cancelled'
+          && fields.hasOnly(['status','cancelledAt','staffPinVerificationId'])
+          ? after.cancelledAt == reqTime() && companyRequestProofIdentity(before,after,id,'early-time-out')
+        : before.type == 'Early Time Out' && after.status == 'Pending'
+          && fields.hasOnly(['requestVersion','requestToken','reason','staffPinVerificationId','staffShiftProposal','status','requiresScheduleReview','requestedDepartureAt','timestamp','staffAcknowledged','scheduledEndAt','scheduleFingerprint','processedAt','processedBy','managerReply','cancelledAt'])
+          && !after.keys().hasAny(['processedAt','processedBy','managerReply','cancelledAt'])
+          ? companyRequestProofIdentity(before,after,id,'early-time-out')
+        : before.type == 'Early Time Out' && fields.hasOnly(['status','timeOutLogId','consumedAt'])
+          && after.status in ['Consumed','Completed Normally']
+          && !exists(/databases/$(database)/documents/attendance_logs/$(after.timeOutLogId))
+          ? companyLinkedOut(after)
+        : (companyOwnData(before) || companyClockData(before)) && after.get('staffId','') == before.get('staffId','') && after.staffName == before.staffName
+        && after.get('branch','') == before.get('branch','') && after.type == before.type
+        && (fields.hasOnly(['staffAcknowledged']) && after.staffAcknowledged == true
+          || (before.type == 'Early Time Out' && (
+            after.status == 'Pending' && after.get('requiresScheduleReview',false) == true && companyLinkedOut(after)
+              && !fields.hasAny(['processedAt','processedBy','managerReply','staffShiftProposalReview','timeOutReview'])
+            )));
+    }
+    match /staff_requests/{id} {
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalRead(oldData());
+      allow list: if companyOperationalRead(oldData());
+      allow create: if companyOperationalHQ(newData()) || companyRequestCreate(newData(),id);
+      allow update: if companyOperationalHQ(oldData()) && companyOperationalHQ(newData()) || companyRequestUpdate(oldData(),newData(),id);
+      allow delete: if companyOperationalHQ(oldData());
+    }
+    match /sop_logs/{id} {
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalRead(oldData());
+      allow list: if companyOperationalRead(oldData());
+      allow create: if companyOperationalHQ(newData()) || companyOperationalCreate(newData()) && newData().timestamp == reqTime();
+      allow update,delete: if companyOperationalHQ(oldData());
+    }
+    match /staff_ledger/{id} {
+      allow get: if resource == null ? isHQUser() : companyHRRead(oldData());
+      allow list: if companyHRRead(oldData());
+      allow create: if companyHRRead(newData());
+      allow update: if companyHRRead(oldData()) && companyHRRead(newData());
+      allow delete: if companyHRRead(oldData());
+    }
+    match /staff_bonuses/{id} {
+      function payrollCredit(data) {
+        return id.matches('payroll-adjustment-.*') || data.get('type','') == 'Payroll Adjustment'
+          || data.keys().hasAny(['payrollAdjustmentVersion']);
+      }
+      function payrollCreditChange(before,after) {
+        return ownerDeductionOwner() && before.get('status','') == 'Unpaid'
+          && after.get('status','') in ['Paid','Cancelled']
+          && after.diff(before).affectedKeys().hasOnly(['status','payrollRecordId','cancel','at']);
+      }
+      allow get: if resource == null ? isHQUser() : companyHRRead(oldData());
+      allow list: if companyHRRead(oldData());
+      allow create: if payrollCredit(newData()) ? ownerDeductionOwner() : companyHRRead(newData());
+      allow update: if payrollCredit(oldData()) || payrollCredit(newData())
+        ? payrollCreditChange(oldData(),newData()) : companyHRRead(oldData()) && companyHRRead(newData());
+      allow delete: if !payrollCredit(oldData()) && companyHRRead(oldData());
+    }
+    function companySwapHQ(data) { return companyHQCan(['all','schedule'],data.branch) && companyHQCan(['all','schedule'],data.get('targetBranch',data.branch)); }
+    function companySwapPerson(data,target) { return companyOwnData({'staffId':data.get(target ? 'targetStaffId' : 'requesterStaffId',''),'staffName':data.get(target ? 'targetName' : 'requesterName','')}); }
+    match /shift_swaps/{id} {
+      allow get: if resource == null ? companyOperationalMissing() : companySwapHQ(oldData()) || companySwapPerson(oldData(),true) || companySwapPerson(oldData(),false);
+      allow list: if companySwapHQ(oldData()) || companySwapPerson(oldData(),true) || companySwapPerson(oldData(),false);
+      allow create: if companySwapHQ(newData()) || (companySwapPerson(newData(),false)
+        && newData().get('requesterStaffId','') != '' && newData().get('targetStaffId','') != ''
+        && newData().requestVersion == 2 && newData().status == 'Pending Staff Acceptance'
+        && !newData().keys().hasAny(['acceptedByStaffId','acceptedAt','acceptanceVersion','rejectedByStaffId','rejectedAt','approvedAt','approvedBy','appliedRevisionId']));
+      allow update: if companySwapHQ(oldData()) && companySwapHQ(newData())
+        || companySwapPerson(oldData(),true) && (
+          oldData().status in ['Pending','Pending Staff Acceptance']
+          && (newData().diff(oldData()).affectedKeys().hasOnly(['status','acceptedByStaffId','acceptedBy','acceptedAt','acceptanceVersion'])
+            && newData().status == (oldData().get('requestVersion',0) == 2 ? 'Awaiting HQ Review' : 'Awaiting HQ Approval')
+            && newData().acceptedByStaffId == companySessionStaffId() && newData().acceptedAt == reqTime() && newData().acceptanceVersion == 1
+          || newData().diff(oldData()).affectedKeys().hasOnly(['status','rejectedByStaffId','rejectedBy','rejectedAt'])
+            && newData().status == 'Rejected' && newData().rejectedByStaffId == companySessionStaffId() && newData().rejectedAt == reqTime()));
+      allow delete: if companySwapHQ(oldData());
+    }
+    function companyAnnouncementTarget(data,staffId,branch,allowLegacy) {
+      let type = data.get('targetType','__legacy__');
+      let name = data.get('targetStaff','');
+      let eligible = name is string && name.size() > 0 && name.size() <= 200 && !name.matches('.*[/].*');
+      let path = /databases/$(database)/documents/staff_name_claims/$(eligible ? name : '__missing__');
+      return data.get('active',false) == true && (type == 'All'
+        || allowLegacy && type == '__legacy__' && data.get('isPrivateMessage',false) != true
+          && data.get('targetStaff','') in ['',null] && data.get('targetStaffId','') in ['',null] && data.get('targetBranch','') in ['',null]
+        || type == 'Branch' && data.targetBranch == branch
+        || type == 'Individual' && (data.get('targetStaffId','') != '' ? data.targetStaffId == staffId
+          : eligible && exists(path) && get(path).data.get('ambiguous',true) == false && get(path).data.uniqueStaffId == staffId));
+    }
+    function companyAnnouncementRead(data) {
+      let type = data.get('targetType','__legacy__');
+      let staff = companyStaffSession();
+      let session = staff ? readData('staff_login_sessions',reqUid()) : {};
+      return companyHQCan(['all','announcements'],data.get('targetBranch',''))
+        || staff && companyAnnouncementTarget(data,session.staffId,session.branch,false)
+        || data.get('active',false) == true && ownTrustedDevice() && (type == 'All' || type == 'Branch' && trustedPOS(data.targetBranch));
+    }
+    match /announcements/{id} {
+      allow get,list: if companyAnnouncementRead(oldData());
+      allow create: if companyHQCan(['all','announcements'],newData().get('targetBranch',''));
+      allow update: if companyHQCan(['all','announcements'],oldData().get('targetBranch','')) && companyHQCan(['all','announcements'],newData().get('targetBranch',''));
+      allow delete: if companyHQCan(['all','announcements'],oldData().get('targetBranch',''));
+    }
+    match /acknowledgments/{id} {
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalHQ(oldData()) || companyOwnData(oldData());
+      allow list: if companyOperationalHQ(oldData()) || companyOwnData(oldData());
+      allow create: if companyStaffSession() && newData().get('staffId','') == companySessionStaffId() && companyStaffName(newData())
+        && companyAnnouncementTarget(readData('announcements',newData().announcementId),companySessionStaffId(),readData('staff_login_sessions',reqUid()).branch,true)
+        && newData().keys().hasOnly(['announcementId','staffId','staffName','signature','timestamp']) && newData().timestamp == reqTime();
+      allow update,delete: if companyOperationalHQ(oldData());
+    }
+    match /reviews/{reviewId} {
+      function customerReviewOwn(data) { return isSignedIn() && reqVerified() == true && request.auth.token.get('email','') != '' && data.get('email','') == reqEmail(); }
+      function customerReviewHQ(data) { return companyHQCan(['all','customerapp'],data.get('branch','All')); }
+      function customerReviewCreate(data) {
+        let source = readData('incoming_orders',data.orderId);
+        return customerReviewOwn(data) && reviewId == 'review-' + data.orderId && data.orderId.matches('^[A-Za-z0-9_-]{1,128}$')
+          && data.keys().hasOnly(['version','orderId','orderCode','branch','orderType','sourceItems','totalItemsCount','text','timestamp','customer','email','status','isPublished'])
+          && data.version == 1 && source.status == 'completed' && source.customerEmail == reqEmail()
+          && data.orderCode == source.orderCode && data.branch == source.branch && data.orderType == source.orderType && data.customer == source.customerName
+          && data.sourceItems == source.items && data.sourceItems is list && data.sourceItems.size() > 0 && data.sourceItems.size() <= 100
+          && data.totalItemsCount == source.items.size() && data.text is string && data.text.trim().size() > 0 && data.text.size() <= 1500
+          && data.timestamp == reqTime() && data.status == 'Pending' && data.isPublished == false
+          && nextData('incoming_orders',data.orderId).reviewPrompted == true;
+      }
+      allow get: if resource == null ? isSignedIn() && reqVerified() == true : customerReviewOwn(oldData()) || customerReviewHQ(oldData());
+      allow list: if customerReviewOwn(oldData()) || customerReviewHQ(oldData());
+      allow create: if customerReviewCreate(newData());
+      allow update: if customerReviewHQ(oldData()) && newData().diff(oldData()).affectedKeys().hasOnly(['isPublished','status'])
+        && newData().isPublished is bool && newData().status == (newData().isPublished ? 'Approved' : 'Hidden');
+      allow delete: if false;
+    }
+    match /customer_feedback/{id} {
+      allow create: if newData().keys().hasOnly(['text','timestamp','customerName','email']) && newData().size() == 4
+        && newData().text is string && newData().text.size() > 0 && newData().text.size() <= 4000
+        && newData().customerName is string && newData().customerName.size() <= 200
+        && newData().email is string && newData().email.size() <= 254 && newData().timestamp == request.time;
+      allow read, update, delete: if companyHQCan(['all','reviews'],'All');
+    }
+    match /franchise_leads/{id} {
+      allow create: if newData().keys().hasOnly(['name','phone','email','location','formatInterest','status','timestamp']) && newData().size() == 7
+        && newData().name is string && newData().name.size() >= 2 && newData().name.size() <= 100
+        && newData().phone is string && newData().phone.size() >= 10 && newData().phone.size() <= 30
+        && newData().email is string && newData().email.size() <= 254
+        && newData().location is string && newData().location.size() >= 2 && newData().location.size() <= 160
+        && newData().formatInterest in ['cart','kiosk','store','undecided'] && newData().status == 'Pending' && newData().timestamp == request.time;
+      allow read, update, delete: if companyHQCan(['all','crm'],'All');
+    }
 
     // Staff setup credentials and bindings are server-owned. A public fleet
     // mirror never grants activation; the immutable private device index also
@@ -390,11 +935,53 @@ service cloud.firestore {
           && after.endTime is timestamp && after.branch == data.branch && after.remittanceId == remittanceId
           && after.remittedCash == data.amount && after.retainedCash == data.retainedCash;
       }
-      allow read: if true;
-      allow create: if mallHandover(newData());
+      allow get: if resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if companyHQCan(['all','accounts','financial-flow','expenses'],oldData().branch) || trustedPOS(oldData().branch);
+      allow create: if (isOwner() || trustedPOS(newData().branch)) && mallHandover(newData());
     }
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
+      function companyBusinessHQ(root, branch) {
+        let permissions = root in ['cash_accounts','account_logs','budgets','expenses','payables','foodpanda_payouts','grab_payouts','franchise_ledger','franchise_comms']
+          ? ['all','accounts','financial-flow','expenses','transfers']
+          : root in ['inventory','stock_logs','yield_logs','hq_restocks','dispatch_logs']
+          ? ['all','inventory','dispatch','low-stock-alerts']
+          : root in ['shifts','parked_orders'] ? ['all','history','zreadings','dashboard']
+          : root == 'equipment_assets' ? ['all','equipment']
+          : root == 'pos_devices' ? ['all','devices']
+          : root == 'branches' ? ['all','branches']
+          : root in ['menu','bom','global_addons'] ? ['all','menu','inventory']
+          : ['all','alerts','security-alerts','dashboard'];
+        return companyHQCan(permissions,branch);
+      }
+      function companyBusinessRead(root, data) {
+        let branch = data.get('branch',data.get('toBranch','Main Office'));
+        return root in ['menu','branches','global_addons']
+          || root == 'pos_devices' && isSignedIn()
+          || root == 'bom' && (isHQUser() || ownTrustedDevice())
+          || companyBusinessHQ(root,branch)
+          || root == 'dispatch_logs' && (companyBusinessHQ(root,data.get('fromBranch','Main Office')) || trustedPOS(data.get('toBranch','')))
+          || root in ['inventory','stock_logs','shifts','parked_orders','manager_alerts','expenses'] && trustedPOS(branch)
+          || root == 'inventory' && companyStaffSession() && branch == readData('staff_login_sessions',reqUid()).branch;
+      }
+      function companyBusinessCreate(root, data) {
+        let branch = data.get('branch',data.get('toBranch',root == 'branches' ? data.get('name','') : 'Main Office'));
+        return (root != 'branches' || !data.keys().hasAny(['wifi'])) && (companyBusinessHQ(root,branch)
+          || root in ['inventory','stock_logs','shifts','parked_orders','manager_alerts','expenses'] && trustedPOS(branch)
+          || root == 'pos_devices' && isSignedIn() && data.get('status','') == 'Pending'
+            && data.keys().hasOnly(['deviceId','deviceName','branch','status','registeredAt','lastSeen','appType'])
+            && data.deviceId is string && data.deviceId.matches('^DEV-[A-Z0-9-]{6,80}$') && data.branch is string && data.branch.size() > 0);
+      }
+      function companyBusinessUpdate(root, before, data) {
+        let branch = before.get('branch',before.get('toBranch',root == 'branches' ? before.get('name','') : 'Main Office'));
+        return (root != 'branches' || !data.keys().hasAny(['wifi'])) && branch == data.get('branch',data.get('toBranch',root == 'branches' ? data.get('name','') : 'Main Office'))
+          && (companyBusinessHQ(root,branch)
+            || root in ['inventory','shifts','parked_orders','manager_alerts','expenses'] && trustedPOS(branch)
+            || root == 'dispatch_logs' && trustedPOS(before.get('toBranch',''))
+              && data.diff(before).affectedKeys().hasOnly(['status','arrivedAt','receivedAt','receivedBy','receivedByUid','receivedByStaffId','receiptVersion','inventoryReceived','receivedItems','discrepancies','receivedQty','receivedSignature'])
+            || root == 'pos_devices' && ownTrustedDevice() && before.deviceId == readData('pos_bindings',reqUid()).deviceId
+              && data.diff(before).affectedKeys().hasOnly(['lastSeen','appVersion','online','pendingSales','lastReceipt']));
+      }
       function staffSetupProtected(id, data) {
       return data.keys().hasAny(['setupVersion','setupUid'])
         || exists(/databases/$(database)/documents/staff_app_device_index/$(id));
@@ -439,15 +1026,16 @@ service cloud.firestore {
           && !staffSetupProtected(id, after)));
     }
 
-      allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
+      allow get: if legacyCandidate(legacyCollection) && resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if legacyCandidate(legacyCollection) && companyBusinessRead(legacyCollection,oldData()) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && isHQUser()));
-      allow create: if legacyCandidate(legacyCollection) && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow create: if legacyCandidate(legacyCollection) && companyBusinessCreate(legacyCollection,newData()) && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));
-      allow update: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow update: if legacyCandidate(legacyCollection) && companyBusinessUpdate(legacyCollection,oldData(),newData()) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons'] && isOwner()));
-      allow delete: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),{}) && ((legacyCollection in ['branches','parked_orders'])
+      allow delete: if legacyCandidate(legacyCollection) && (companyBusinessHQ(legacyCollection,oldData().get('branch',oldData().get('toBranch','Main Office'))) || legacyCollection == 'parked_orders' && trustedPOS(oldData().branch)) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),{}) && ((legacyCollection in ['branches','parked_orders'])
         || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_logs'] && isOwner()));
     }
@@ -651,7 +1239,8 @@ service cloud.firestore {
           && !existsAfter(/databases/$(database)/documents/parked_orders/$(parkedId));
       }
 
-      allow read: if true;
+      allow get: if resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if companyHQCan(['all','history','dashboard','zreadings'],oldData().branch) || trustedPOS(oldData().branch);
       function selectorTransactionsCreate(data) {
         return data.get('cancelledFoodSourceId', '') != ''
         ? (cancelledFoodWriter(data.branch)
@@ -664,7 +1253,10 @@ service cloud.firestore {
           && ((data.get('localSaleId', '') == txId && data.get('syncVersion', 0) == 2)
             || safetySale(data, txId) || parkedAccountability(data, txId))));
       }
-      allow create: if selectorTransactionsCreate(newData());
+      allow create: if saleWriter(newData().get('branch','')) && selectorTransactionsCreate(newData())
+        && (newData().get('saleVersion',0) == 2 ? safetySale(newData(),txId) : companyHQCan(['all','history'],newData().branch))
+        && (!companyMealData(newData()) || companyMealProof(newData(),txId))
+        && (isOwner() || newData().get('paymentVerified',false) != true || newData().get('paymentMethod','Cash') in ['Cash','Salary Deduction']);
       function selectorTransactionsUpdate(data,before) {
         return data.diff(before).affectedKeys().hasAny(['cancelledFoodPurchaseId','cancelledFoodAllocationVersion','cancelledFoodLastPurchaseId','cancelledFoodPurchasedUnits'])
         ? (before.branch == data.branch
@@ -672,7 +1264,9 @@ service cloud.firestore {
             ? preparedPortionTransition(before,data,txId) : preparedPurchaseTransition(before,data,txId)))
         : ordinaryTransactionUpdate(before,data,txId);
       }
-      allow update: if selectorTransactionsUpdate(newData(),resource == null ? null : oldData());
+      allow update: if oldData().branch == newData().branch && saleWriter(oldData().branch)
+        && (isOwner() || !newData().diff(oldData()).affectedKeys().hasAny(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile']))
+        && selectorTransactionsUpdate(newData(),resource == null ? null : oldData());
       function selectorTransactionsDelete(before) {
         return before.get('preparedCancellation',{}).get('prepared',false) != true
         && before.get('cancelledFoodSourceId','') == ''
@@ -720,7 +1314,8 @@ service cloud.firestore {
         && portionLines(source,purchase,prior,data.purchasedQuantities);
     }
 
-      allow read: if true;
+      allow get: if resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if companyHQCan(['all','history','inventory','ledger'],oldData().branch) || trustedPOS(oldData().branch);
       // A fresh companion receipt authorizes the writer in its own create rule.
       allow create, update: if cancelledPortionAllocation(newData(),sourceId);
       allow delete: if false;
@@ -772,7 +1367,8 @@ service cloud.firestore {
         && portionLine(source,purchase,prior,ledger.purchasedQuantities,data.selectionSlot,cancelledDiscount(config));
     }
 
-      allow read: if true;
+      allow get: if resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if companyHQCan(['all','history','inventory','ledger'],oldData().branch) || trustedPOS(oldData().branch);
       allow create: if cancelledPortionProof(newData(),lineId);
       allow update,delete: if false;
     }
@@ -835,8 +1431,41 @@ service cloud.firestore {
       allow write: if false;
     }
     match /attendance_logs/{logId} {
-      allow read: if true;
-      allow create: if !newData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview']);
+      function companyForcedMissingOut(data) {
+        let start = readData('attendance_logs',data.timeInLogId);
+        let replacement = nextData('attendance_logs',data.replacementTimeInLogId);
+        let proof = readData('staff_pin_verifications',data.staffPinVerificationId);
+        let context = readData('staff_pin_contexts',reqUid() + '_time-clock');
+        return isSignedIn() && data.keys().hasOnly(['staffId','staffName','staffPinVerificationId','branch','type','timestamp','locationLat','locationLng','distanceMeters','photoBase64','penaltyApplied','notes','timeInLogId','timeInAt','replacementTimeInLogId'])
+          && logId == 'auto-time-out-' + data.timeInLogId
+          && proof.uid == reqUid() && proof.app == 'cashier' && proof.purpose == 'time-clock'
+          && proof.staffId == data.staffId && proof.expiresAt > reqTime() && context.verificationId == data.staffPinVerificationId
+          && (start.get('staffId','') == data.staffId || start.get('staffId','') == ''
+            && readData('staff_name_claims',start.staffName).get('ambiguous',true) == false
+            && readData('staff_name_claims',start.staffName).uniqueStaffId == data.staffId)
+          && start.type == 'TIME IN' && start.branch == data.branch && start.staffName == data.staffName
+          && start.timestamp is timestamp && start.timestamp < reqTime() - duration.value(12,'h')
+          && data.timestamp <= start.timestamp + duration.value(9,'h')
+          && data.timestamp > start.timestamp + duration.value(9,'h') - duration.value(1,'ms')
+          && data.type == 'AUTO TIME OUT (Penalty)' && data.penaltyApplied == true
+          && data.photoBase64 == '' && data.notes == 'Forced Auto-Out. Paid next cut-off.'
+          && data.timeInLogId != data.replacementTimeInLogId
+          // This fresh companion create validates the active identity, current
+          // tablet/session and exact PIN context once for the atomic pair.
+          && !exists(/databases/$(database)/documents/attendance_logs/$(data.replacementTimeInLogId))
+          && replacement.type == 'TIME IN' && replacement.staffId == data.staffId && replacement.branch == proof.branch
+          && replacement.staffPinVerificationId == data.staffPinVerificationId
+          && replacement.timestamp >= reqTime() - duration.value(5,'m') && replacement.timestamp <= reqTime() + duration.value(1,'m');
+      }
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalRead(oldData());
+      allow list: if companyOperationalRead(oldData());
+      allow create: if !newData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
+        && (companyOperationalHQ(newData()) || (newData().type == 'AUTO TIME OUT (Penalty)' ? companyForcedMissingOut(newData())
+          : newData().type in ['TIME IN','TIME OUT']
+          && !newData().keys().hasAny(['isManual','penaltyAmount','lateExempted','lateReviewedAt','lateReviewedBy','reviewedLateMinutes','lateDecision','lateReviewHistory','lateReviewRequestId'])
+          && companyOperationalCreate(newData()) && newData().timestamp is timestamp
+          && newData().timestamp <= reqTime() + duration.value(1,'m')
+          && newData().timestamp >= reqTime() - duration.value(5,'m')));
       // Follow the original OUT link, never a caller's proposed replacement.
       // getAfter also protects the pair during the atomic Owner review itself.
       function reliefLinkedStartReviewed(timeInId) {
@@ -857,12 +1486,18 @@ service cloud.firestore {
         || (data.diff(before).affectedKeys().hasOnly(['scheduleAmendmentReview'])
           && amendmentReviewMarker(data.scheduleAmendmentReview,before,logId));
       }
-      allow update: if selectorAttendanceLogsUpdate(newData(),resource == null ? null : oldData())
+      allow update: if companyOperationalHQ(oldData()) && companyOperationalHQ(newData())
+        && selectorAttendanceLogsUpdate(newData(),resource == null ? null : oldData())
         && reliefOriginalSourceUnchanged(newData(),oldData());
-      allow delete: if isHQUser() && !oldData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
+      allow delete: if companyOperationalHQ(oldData()) && !oldData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
         && !reliefLinkedOut(oldData());
     }
-    match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /store_use_logs/{id} {
+      allow read: if companyHQCan(['all','inventory','expenses'],oldData().branch) || trustedPOS(oldData().branch);
+      allow create: if companyHQCan(['all','inventory'],newData().branch) || trustedPOS(newData().branch);
+      allow update: if companyHQCan(['all','inventory'],oldData().branch) && oldData().branch == newData().branch;
+      allow delete: if isOwner();
+    }
     // These immutable reports retain the original count; opening a period view
     // never writes another inventory adjustment. The operator is identified by
     // the approved tablet session, not attested by a server PIN challenge.
@@ -886,10 +1521,10 @@ service cloud.firestore {
           && report.version == 3 && report.id == id && data.get('source',null) == null && report.timestamp == reqTime();
       }
 
-      allow get: if resource == null || oldData().get('version',0) != 3 || stockCountReader(oldData().get('branch',''));
+      allow get: if resource == null ? isHQUser() || ownTrustedDevice() : stockCountReader(oldData().get('branch',''));
       allow list: if stockCountReader(oldData().get('branch',''));
-      allow create: if newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id);
-      allow update: if oldData().get('version',0) != 3 && newData().get('version',0) != 3;
+      allow create: if (isOwner() || trustedPOS(newData().get('branch',''))) && (newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id));
+      allow update: if companyHQCan(['all','inventory','audits'],oldData().get('branch','')) && oldData().branch == newData().branch && oldData().get('version',0) != 3 && newData().get('version',0) != 3;
       allow delete: if isOwner() && oldData().get('version',0) != 3;
     }
     match /inventory_audit_reports/{id} {
@@ -903,14 +1538,20 @@ service cloud.firestore {
         && grant.get('permissions',[]).hasAny(['all','inventory','audits']) && grant.get('allowedBranches',[]).hasAny(['All',branch]));
     }
 
+      function stockAuditCashier(data) {
+        let session = readData('staff_login_sessions',reqUid());
+        return companyStaffSession() && session.get('app','') == 'cashier'
+          && session.get('staffId','') == data.staffId && session.get('branch','') == data.branch
+          && session.get('sessionId','') == data.get('staffActionSessionId','');
+      }
       function stockAuditCreate(data,id) {
         let source = nextData('stock_counts',id);
         let staff = readData('cashiers',data.staffId);
         let start = data.periodStart.split('-');
         let end = data.periodEnd.split('-');
-        return (protectedHROwner() || trustedPOS(data.branch)) && protectedHRId(id) && protectedHRId(data.staffId)
+        return protectedHRId(id) && protectedHRId(data.staffId)
           && !exists(/databases/$(database)/documents/stock_counts/$(id)) && data.version == 3 && data.id == id
-          && data.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
+          && data.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','staffActionSessionId','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
           && data.source == 'Cashier cycle count' && data.diff(source).affectedKeys().hasOnly(['source']) && !source.keys().hasAny(['source'])
           && data.actorUid == reqUid() && data.timestamp == reqTime() && data.cutoff == reqTime()
           && data.intent is string && data.intent.size() > 0 && data.intent.size() <= 500000
@@ -918,10 +1559,8 @@ service cloud.firestore {
           && data.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && protectedHRDate(data.periodStart) && protectedHRDate(data.periodEnd)
           && data.periodStart <= data.periodEnd && timestamp.date(int(start[0]),int(start[1]),int(start[2])) - duration.value(8,'h') <= reqTime()
           && timestamp.date(int(end[0]),int(end[1]),int(end[2])) + duration.value(16,'h') > reqTime()
-          && data.cashier == staff.cashierName && data.branch == staff.branch
-          && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
-          && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
-          && (!(staff.get('pin','') is string) || !(staff.get('pin','').upper() in ['REVOKED','BLOCKED']));
+          && data.cashier == staff.cashierName
+          && (isOwner() && companyProfileActive(staff) || stockAuditCashier(data));
       }
 
       allow get: if resource == null ? protectedHROwner() || ownTrustedDevice() : stockReportReader(oldData().branch);
@@ -1006,7 +1645,11 @@ service cloud.firestore {
         && nextData('payment_reconciliation_receipts',newData().transactionId) == newData();
       allow update, delete: if false;
     }
-    match /inventory_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /inventory_logs/{id} {
+      allow read: if companyHQCan(['all','inventory','dispatch'],oldData().branch) || trustedPOS(oldData().branch);
+      allow create: if companyHQCan(['all','inventory','dispatch'],newData().branch) || trustedPOS(newData().branch);
+      allow update, delete: if isOwner();
+    }
     function supplyAuthority(branch) {
       let owner = protectedHROwner();
       let eligible = !owner && isSignedIn() && request.auth.token.get('email_verified',false)
@@ -1083,13 +1726,197 @@ service cloud.firestore {
             || data.status == 'Completed' && data.completedAt == reqTime() && full.status == 'Completed' && full.completedAt == data.completedAt
               && full.dispatchBatchId == data.dispatchBatchId && full.dispatchInvoice.orderId == poId);
       }
-      allow read: if true;
-      allow create: if !newData().keys().hasAny(privatePoKeys())
+      allow get: if resource == null && (isHQUser() || ownTrustedDevice());
+      allow read: if companyHQCan(['all','dispatch','inventory'],oldData().branch) || trustedPOS(oldData().branch);
+      allow create: if (companyHQCan(['all','dispatch','inventory'],newData().branch) || trustedPOS(newData().branch)) && !newData().keys().hasAny(privatePoKeys())
         && (newData().get('quoteVersion',0) == 2 ? supplyStubCreate(newData()) : true);
-      allow update: if !newData().keys().hasAny(privatePoKeys())
+      allow update: if oldData().branch == newData().branch && companyHQCan(['all','dispatch','inventory'],oldData().branch) && !newData().keys().hasAny(privatePoKeys())
         && (oldData().get('quoteVersion',0) == 2 || newData().get('quoteVersion',0) == 2
           ? supplyStubUpdate(oldData(),newData()) : true);
       allow delete: if oldData().get('quoteVersion',0) != 2 && isHQUser();
+    }
+    function riderAccessSession() {
+      let uid = isSignedIn() ? reqUid() : '__missing__';
+      let path = /databases/$(database)/documents/rider_login_sessions/$(uid);
+      return isSignedIn() && exists(path) ? get(path).data : {};
+    }
+    function riderAccessProfile() { return readData('riders',riderAccessSession().riderId); }
+    function riderAccessBound(session,profile) {
+      return isSignedIn() && reqProvider() == 'anonymous' && session.get('schemaVersion',0) == 1
+        && session.get('uid','') == reqUid() && session.get('sessionId','') is string && session.sessionId.size() >= 16
+        && session.get('expiresAt',null) is timestamp && session.expiresAt > reqTime() && session.get('revoked',false) != true
+        && profile.get('riderPinManaged',false) == true && !profile.keys().hasAny(['pin'])
+        && session.get('riderAuthRevision',0) is int && session.riderAuthRevision >= 1
+        && profile.get('riderAuthRevision',0) == session.riderAuthRevision;
+    }
+    function riderAccessValid() {
+      let session = riderAccessSession();
+      return riderAccessBound(session,readData('riders',session.get('riderId','__missing__')));
+    }
+    function riderAccessActive(profile) {
+      return profile.get('status','').trim().lower() in ['active','approved']
+        && profile.get('active',true) != false && profile.get('archived',false) != true
+        && profile.get('deleted',false) != true && profile.get('blocked',false) != true;
+    }
+    function riderAccessScope(profile,branch) {
+      let explicit = profile.keys().hasAny(['allowedBranches']);
+      return explicit ? profile.allowedBranches is list && profile.allowedBranches.size() > 0 && profile.allowedBranches.size() <= 30
+          && profile.allowedBranches.hasAny(['All',branch])
+        : profile.get('fleetType',null) in [null,'Main Office'] && profile.get('franchiseAccess',null) in [null,true];
+    }
+    function riderAccessHQ(profile) {
+      let access = companyHQAccess();
+      let branches = profile.get('allowedBranches',['All']);
+      return isOwner() || access.active == true && access.permissions is list && access.permissions.hasAny(['all','riders'])
+        && access.allowedBranches is list && branches is list && branches.size() > 0
+        && (access.allowedBranches.hasAny(['All']) || access.allowedBranches.hasAll(branches))
+        && (!access.bridgeRequired || access.bridgePermissions.hasAny(['all','riders'])
+          && (access.bridgeBranches.hasAny(['All']) || access.bridgeBranches.hasAll(branches)));
+    }
+    function riderAccessOwn(id) { return riderAccessValid() && riderAccessSession().riderId == id; }
+    function riderOrderActorFor(marker,session) {
+      return marker is map && marker.version == 1 && marker.actorUid == reqUid() && marker.sessionId == session.sessionId
+        && marker.riderId == session.riderId && marker.operationId is string && marker.operationId.matches('^[A-Za-z0-9_-]{1,150}$')
+        && marker.signature is string && marker.signature.size() <= 4000;
+    }
+    function riderOrderActor(marker) { return riderOrderActorFor(marker,riderAccessSession()); }
+    function riderOrderEligible(branch) { return riderAccessValid() && riderAccessActive(riderAccessProfile()) && riderAccessScope(riderAccessProfile(),branch); }
+    function riderOrderProof(url,kind,id,operationId) {
+      let session = riderAccessSession();
+      return id.matches('^[A-Za-z0-9_-]{1,150}$') && url is string && url.size() <= 2000 && url.matches('^https://firebasestorage[.]googleapis[.]com/v0/b/takodeal-pos[.]firebasestorage[.]app/o/'
+        + kind + '%2F' + reqUid() + '%2F' + session.sessionId + '%2F' + id + '%2F' + operationId
+        + '%2F[a-f0-9]{64}[.](jpg|png|webp)[?]alt=media&token=[A-Za-z0-9_-]+$');
+    }
+    function riderOrderCash(data) {
+      let method = data.get('paymentMode',data.get('paymentMethod','')).trim().lower();
+      return method in ['cash','cod','cash on delivery','cash-on-delivery'];
+    }
+    function riderOrderAmount(value) {
+      return value is number ? value : value is string && value.matches('^[0-9]+([.][0-9]{1,2})?$') ? float(value) : -1;
+    }
+    function riderOrderMoney(value) {
+      let amount = riderOrderAmount(value);
+      let cents = int(amount * 100 + 0.5);
+      return amount >= 0 && amount <= 9000000000000 && amount * 100 - cents >= -0.00001 && amount * 100 - cents <= 0.00001;
+    }
+    function riderOrderPrepaid(before,marker,id) {
+      let receipt = readData('transactions',marker.receiptTransactionId);
+      return !riderOrderCash(before) && receipt.branch == before.branch && receipt.receiptId == before.get('receiptId',before.get('orderCode',''))
+        && receipt.get('paymentVerified',false) == true && !(receipt.get('status','').trim().lower() in ['voided','void','cancelled','canceled','unpaid','pending'])
+        && !(receipt.get('paymentMethod','').trim().lower() in ['','cash','cod','cash on delivery','cash-on-delivery'])
+        && receipt.get('mobileOrderId','') in ['',id] && before.get('paymentStatus','paid').trim().lower() == 'paid';
+    }
+    function riderOrderClaim(before,data,id) {
+      let marker = data.riderClaim;
+      let session = riderAccessSession();
+      let rider = readData('riders',session.riderId);
+      let balance = riderOrderAmount(rider.get('walletBalance',0));
+      let total = riderOrderAmount(before.totalAmount);
+      let cash = riderOrderCash(before);
+      let after = nextData('riders',session.riderId);
+      return riderAccessBound(session,rider) && riderAccessActive(rider) && riderAccessScope(rider,before.branch) && before.get('orderType','') in ['Delivery','Advance Delivery'] && rider.isAcceptingOrders == true
+        && before.get('riderId',null) in [null,''] && (before.status == 'ready' && before.get('pingedRider',null) in [null,'',session.riderId]
+          || before.status == 'looking_for_rider' && before.pingedRider == session.riderId)
+        && data.diff(before).affectedKeys().hasOnly(['status','riderId','riderName','riderPhone','riderPlate','riderSelfie','riderClaimedAt','acceptedAt','pingedRider','riderClaim'])
+        && data.status == 'out_for_delivery' && data.riderId == session.riderId && data.riderName == rider.name
+        && data.riderPhone == rider.get('phone','') && data.riderPlate == rider.get('plateNumber','') && data.riderSelfie == rider.get('selfieUrl','')
+        && data.riderClaimedAt == reqTime() && data.acceptedAt == reqTime() && data.pingedRider == null
+        && !before.keys().hasAny(['riderClaim']) && riderOrderActorFor(marker,session) && marker.claimedAt == reqTime()
+        && total > 0 && riderOrderMoney(total) && riderOrderMoney(balance)
+        && (before.get('paymentMode','') == '' || before.get('paymentMethod','') == '' || (before.paymentMode.trim().lower() in ['cash','cod','cash on delivery','cash-on-delivery']) == (before.paymentMethod.trim().lower() in ['cash','cod','cash on delivery','cash-on-delivery']))
+        && marker.debitCents == (cash ? int(total * 100 + 0.5) : 0) && marker.paymentKind == (cash ? 'cash' : 'prepaid')
+        && (cash ? balance >= total && after.walletBalance == (int(balance * 100 + 0.5) - marker.debitCents) / 100.0 && after.riderWalletOperation.orderId == id
+          && after.riderWalletOperation.operationId == marker.operationId && after.riderActionSessionId == marker.sessionId
+          : riderOrderPrepaid(before,marker,id) && after.get('walletBalance',0) == rider.get('walletBalance',0));
+    }
+    function riderOrderChange(before,data,id) {
+      let session = riderAccessSession();
+      let complete = data.status == 'completed';
+      let marker = complete ? data.riderCompletion : data.riderPickup;
+      return riderOrderEligible(before.branch) && before.status == 'out_for_delivery' && before.riderId == session.riderId
+        && riderOrderActor(marker) && marker.recordedAt == reqTime()
+        && (complete ? !before.keys().hasAny(['riderCompletion']) && data.diff(before).affectedKeys().hasOnly(['status','deliveredAt','proofOfDeliveryUrl','riderCompletion'])
+            && data.deliveredAt == reqTime() && riderOrderProof(data.proofOfDeliveryUrl,'deliveries%2Fproofs',id,marker.operationId)
+          : !before.keys().hasAny(['riderPickup']) && data.diff(before).affectedKeys().hasOnly(['riderPickup','riderPickedUpAt']) && data.riderPickedUpAt == reqTime());
+    }
+    function riderOrderDecline(before,data) {
+      let id = riderAccessSession().riderId;
+      let marker = data.riderDeclines[id];
+      let previous = before.get('declinedBy',[]);
+      return riderOrderEligible(before.branch) && before.status == 'looking_for_rider' && before.get('riderId',null) in [null,''] && before.pingedRider == id
+        && data.diff(before).affectedKeys().hasOnly(['pingedRider','declinedBy','riderDeclines']) && data.pingedRider == null
+        && previous is list && data.declinedBy is list && data.declinedBy.hasAll(previous) && data.declinedBy.hasAny([id])
+        && data.declinedBy.size() == previous.size() + (previous.hasAny([id]) ? 0 : 1)
+        && data.riderDeclines.diff(before.get('riderDeclines',{})).affectedKeys().hasOnly([id])
+        && !before.get('riderDeclines',{}).keys().hasAny([id]) && riderOrderActor(marker) && marker.recordedAt == reqTime();
+    }
+    function riderWalletClaim(id,before,data) {
+      let session = riderAccessSession();
+      let operation = data.riderWalletOperation;
+      let oldOrder = readData('incoming_orders',operation.orderId);
+      let order = nextData('incoming_orders',operation.orderId);
+      let marker = order.riderClaim;
+      return session.riderId == id && riderAccessBound(session,before) && riderAccessActive(before) && riderAccessScope(before,oldOrder.branch)
+        && data.diff(before).affectedKeys().hasOnly(['walletBalance','riderActionSessionId','riderWalletOperation'])
+        && operation.kind == 'claim' && operation.version == 1 && operation.actorUid == reqUid() && operation.sessionId == session.sessionId
+        && operation.recordedAt == reqTime() && data.riderActionSessionId == operation.sessionId && operation.debitCents is int && operation.debitCents > 0
+        && !oldOrder.keys().hasAny(['riderClaim']) && order.status == 'out_for_delivery' && order.riderId == id
+        && marker.operationId == operation.operationId && marker.sessionId == operation.sessionId && marker.actorUid == reqUid() && marker.debitCents == operation.debitCents
+        && riderOrderMoney(before.get('walletBalance',0)) && riderOrderMoney(data.walletBalance)
+        && data.walletBalance == (int(riderOrderAmount(before.get('walletBalance',0)) * 100 + 0.5) - operation.debitCents) / 100.0;
+    }
+    function riderWalletTopup(id,before,data) {
+      let operation = data.riderWalletOperation;
+      let oldRequest = readData('rider_topups',operation.requestId);
+      let pending = nextData('rider_topups',operation.requestId);
+      return riderAccessHQ(before) && riderAccessActive(before) && data.diff(before).affectedKeys().hasOnly(['walletBalance','riderWalletOperation'])
+        && operation.kind == 'topup' && operation.version == 1 && operation.actorUid == reqUid() && operation.recordedAt == reqTime()
+        && operation.amountCents is int && operation.amountCents > 0 && oldRequest.status == 'pending' && oldRequest.riderId == id
+        && pending.status == 'approved' && pending.reviewOperation.operationId == operation.operationId && pending.reviewOperation.actorUid == reqUid()
+        && pending.reviewOperation.amountCents == operation.amountCents && pending.amountAdded == operation.amountCents / 100.0
+        && riderOrderMoney(before.get('walletBalance',0)) && riderOrderMoney(data.walletBalance)
+        && data.walletBalance == (int(riderOrderAmount(before.get('walletBalance',0)) * 100 + 0.5) + operation.amountCents) / 100.0;
+    }
+    match /riders/{id} {
+      allow get: if riderAccessOwn(id) || riderAccessHQ(oldData());
+      allow list: if riderAccessHQ(oldData());
+      allow create, delete: if false;
+      allow update: if newData().diff(oldData()).affectedKeys().hasAny(['walletBalance'])
+        ? (newData().riderWalletOperation.kind == 'claim' ? riderWalletClaim(id,oldData(),newData()) : riderWalletTopup(id,oldData(),newData()))
+        : riderAccessHQ(oldData()) && newData().diff(oldData()).affectedKeys().hasOnly(['status','isAcceptingOrders','approvalOperation','statusReviewedAt','statusReviewedBy'])
+          && newData().status in ['active','banned','rejected'] && newData().isAcceptingOrders == false
+          && newData().status != oldData().status && (newData().status == 'rejected' ? oldData().status == 'pending_approval' : newData().status == 'banned' ? oldData().status in ['active','approved'] : oldData().status in ['pending_approval','rejected','banned','approved'])
+          && newData().approvalOperation.version == 1 && newData().approvalOperation.operationId.matches('^[A-Za-z0-9_-]{1,150}$')
+          && newData().approvalOperation.fromStatus == oldData().status && newData().approvalOperation.status == newData().status
+          && newData().approvalOperation.actorUid == reqUid() && newData().approvalOperation.actorEmail == reqEmail()
+          && newData().approvalOperation.recordedAt == reqTime() && newData().statusReviewedAt == reqTime() && newData().statusReviewedBy == reqEmail()
+        || riderAccessOwn(id) && riderAccessActive(oldData()) && newData().riderActionSessionId == riderAccessSession().sessionId
+          && (newData().diff(oldData()).affectedKeys().hasOnly(['isAcceptingOrders','availabilityUpdatedAt','riderActionSessionId']) && newData().isAcceptingOrders is bool && newData().availabilityUpdatedAt == reqTime()
+            || newData().diff(oldData()).affectedKeys().hasOnly(['lastLat','lastLng','lastActive','riderActionSessionId']) && oldData().isAcceptingOrders == true
+              && newData().lastLat is number && newData().lastLat >= -90 && newData().lastLat <= 90 && newData().lastLng is number && newData().lastLng >= -180 && newData().lastLng <= 180 && newData().lastActive == reqTime());
+    }
+    match /rider_topups/{id} {
+      function riderTopupRead(data) { return riderAccessHQ(readData('riders',data.riderId)) || riderAccessOwn(data.riderId); }
+      allow get: if resource == null ? riderAccessValid() || isHQUser() : riderTopupRead(oldData());
+      allow list: if riderTopupRead(oldData());
+      allow create: if riderAccessOwn(newData().riderId) && riderAccessActive(riderAccessProfile())
+        && newData().keys().hasOnly(['riderId','riderName','reference','proofUrl','status','timestamp','requestOperation'])
+        && newData().riderName == riderAccessProfile().name && newData().status == 'pending' && newData().timestamp == reqTime()
+        && newData().reference is string && newData().reference.matches('^[0-9]{3,60}$')
+        && riderOrderActor(newData().requestOperation) && newData().requestOperation.recordedAt == reqTime()
+        && riderOrderProof(newData().proofUrl,'riders%2Ftopups',id,newData().requestOperation.operationId);
+      allow update: if riderAccessHQ(readData('riders',oldData().riderId)) && oldData().status == 'pending'
+        && newData().diff(oldData()).affectedKeys().hasOnly(['status','amountAdded','processedAt','processedBy','reviewOperation'])
+        && newData().status in ['approved','rejected'] && newData().processedAt == reqTime() && newData().processedBy == reqEmail()
+        && newData().reviewOperation.version == 1 && newData().reviewOperation.actorUid == reqUid() && newData().reviewOperation.actorEmail == reqEmail()
+        && newData().reviewOperation.decision == newData().status && newData().reviewOperation.recordedAt == reqTime()
+        && (newData().status == 'rejected' ? newData().reviewOperation.amountCents == 0 && !newData().diff(oldData()).affectedKeys().hasAny(['amountAdded'])
+          : riderAccessActive(readData('riders',oldData().riderId)) && newData().amountAdded is number && newData().amountAdded > 0
+            && newData().reviewOperation.amountCents == newData().amountAdded * 100
+            && nextData('riders',oldData().riderId).riderWalletOperation.requestId == id
+            && nextData('riders',oldData().riderId).riderWalletOperation.operationId == newData().reviewOperation.operationId
+            && nextData('riders',oldData().riderId).walletBalance == (int(riderOrderAmount(readData('riders',oldData().riderId).get('walletBalance',0)) * 100 + 0.5) + newData().reviewOperation.amountCents) / 100.0);
+      allow delete: if false;
     }
     match /incoming_orders/{orderId} {
       function freshCashier(branch) {
@@ -1108,32 +1935,80 @@ service cloud.firestore {
         && data.get('status', '') == 'mobile_queue'
         && data.get('paymentStatus', 'unpaid') != 'paid'
         && data.get('totalAmount', -1) is number && data.totalAmount >= 0
-        && data.get('items', []) is list && data.items.size() > 0
-        && state.get('mobileOrdersActive', true) == true && freshCashier(branch);
+        && data.get('items', []) is list && data.items.size() > 0 && data.items.size() <= 100
+        && data.keys().hasOnly(['orderCode','customerName','customerEmail','branch','orderType','preferredTime','contactNumber','deliveryAddress','mapLink','locationImage','items','totalAmount','paymentMode','paymentReference','changeFor','status','timestamp','deliveryFee','deliveryQuote'])
+        && data.orderType in ['Takeout','Advance Takeout','Delivery','Advance Delivery'] && data.timestamp == reqTime()
+        && data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 200
+        && data.orderCode is string && data.orderCode.size() > 0 && data.orderCode.size() <= 100
+        && data.get('deliveryFee',0) is number && data.get('deliveryFee',0) >= 0 && data.get('deliveryFee',0) <= data.totalAmount
+        && state.get('mobileOrdersActive', true) == true && (!offlineGate(branch) || freshCashier(branch));
     }
 
-      function incomingCreate(data) {
-      let branch = data.get('branch', '');
-      return !offlineGate(branch) || trustedPOS(branch) || verifiedHQ(branch) || admittedCustomer(data);
-    }
-
-      function incomingUpdate(before, after) {
-      let oldBranch = before.get('branch', '');
-      let newBranch = after.get('branch', '');
-      return (!offlineGate(oldBranch) && !offlineGate(newBranch))
-        || (oldBranch == newBranch && (trustedPOS(oldBranch) || verifiedHQ(oldBranch)
-          || !after.diff(before).affectedKeys().hasAny([
-            'branch', 'items', 'totalAmount', 'customerEmail', 'customerName',
-            'orderCode', 'orderType', 'contactNumber', 'deliveryAddress', 'mapLink',
-            'preferredTime', 'paymentMode', 'paymentReference', 'changeFor',
-            'deliveryFee', 'timestamp'
-          ])));
-    }
-
-      allow read: if true;
-      allow create: if incomingCreate(newData());
-      allow update: if incomingUpdate(oldData(), newData());
-      allow delete: if (!offlineGate(oldData().get('branch', '')) && isHQUser()) || verifiedHQ(oldData().get('branch', ''));
+      function incomingCustomer(data) {
+        return isSignedIn() && reqVerified() == true && request.auth.token.get('email','') != '' && data.get('customerEmail','') == reqEmail();
+      }
+      function incomingHQ(branch) { return companyHQCan(['all','history','riders'],branch); }
+      function incomingRead(data) {
+        return incomingCustomer(data) || trustedPOS(data.branch) || incomingHQ(data.branch)
+          || riderAccessValid() && riderAccessActive(riderAccessProfile())
+            && (data.get('riderId','') == riderAccessSession().riderId
+              || data.get('status','') == 'looking_for_rider' && data.get('pingedRider','') == riderAccessSession().riderId
+              || riderAccessScope(riderAccessProfile(),data.branch) && data.get('status','') == 'ready' && data.get('orderType','') in ['Delivery','Advance Delivery']);
+      }
+      function incomingCashier(branch) {
+        let session = readData('staff_login_sessions',reqUid());
+        let lease = readData('cashier_leases',branch);
+        return companyStaffSession() && session.app == 'cashier' && session.branch == branch
+          && (isOwner() || lease.uid == reqUid() && lease.seenAt is timestamp && lease.seenAt <= reqTime() && lease.seenAt > reqTime() - duration.value(3,'m'));
+      }
+      function incomingStatus(before,data) {
+        let prefix = data.status == 'preparing' ? 'accepted' : data.status == 'rejected' ? 'rejected' : data.status == 'ready' ? 'ready' : 'completed';
+        let session = readData('staff_login_sessions',reqUid());
+        let profile = readData('cashiers',session.staffId);
+        let changes = data.diff(before).affectedKeys();
+        return incomingCashier(before.branch) && data.branch == before.branch && data.status in ['preparing','rejected','ready','completed']
+          && (data.status == 'preparing' ? before.status == 'mobile_queue' : data.status == 'rejected' ? before.status == 'mobile_queue' : data.status == 'ready' ? before.status == 'preparing' : before.status in ['ready','out_for_delivery'])
+          && changes.hasOnly(['status',prefix+'At',prefix+'By',prefix+'ByUid',prefix+'DeviceId',prefix+'StaffId',prefix+'StaffSessionId','mobileHistoryVersion','prepTime','proofCheckAcknowledged','proofCheckAcknowledgedAt','rejectionReason'])
+          && (data.status == 'preparing' || !changes.hasAny(['prepTime','proofCheckAcknowledged','proofCheckAcknowledgedAt'])) && (data.status == 'rejected' || !changes.hasAny(['rejectionReason']))
+          && data[prefix+'At'] == reqTime() && data[prefix+'ByUid'] == reqUid() && data[prefix+'By'] == profile.cashierName
+          && data[prefix+'DeviceId'] == session.deviceId && data[prefix+'StaffId'] == session.staffId && data[prefix+'StaffSessionId'] == session.sessionId && data.mobileHistoryVersion == 1
+          && (data.status != 'preparing' || data.prepTime in [10,15,20,30,45,60] && data.proofCheckAcknowledged == true && data.proofCheckAcknowledgedAt == reqTime())
+          && (data.status != 'preparing' || before.get('paymentStatus','') != 'paid' && before.get('receiptId','') == '')
+          && (data.status != 'rejected' || data.rejectionReason is string && data.rejectionReason.size() > 0 && data.rejectionReason.size() <= 500);
+      }
+      function incomingCustomerUpdate(before,data) {
+        return incomingCustomer(before) && (before.status == 'completed' && data.diff(before).affectedKeys().hasOnly(['reviewPrompted']) && data.reviewPrompted == true
+          || before.status in ['ready','out_for_delivery','rider_near','rider_arrived'] && data.diff(before).affectedKeys().hasOnly(['status','completedAt']) && data.status == 'completed' && data.completedAt == reqTime());
+      }
+      function incomingEncoded(before,data) {
+        let sale = nextData('transactions',data.encodedSaleId);
+        let marker = nextData('pos_sale_commits',data.encodedSaleId);
+        return (trustedPOS(before.branch) || isOwner()) && before.get('paymentStatus','') != 'paid' && before.get('receiptId','') == ''
+          && data.diff(before).affectedKeys().hasOnly(['paymentStatus','receiptId','encodedAt','encodedSaleId']) && data.paymentStatus == 'paid' && data.encodedAt == reqTime()
+          && !exists(/databases/$(database)/documents/pos_sale_commits/$(data.encodedSaleId)) && marker.committedAt == reqTime()
+          && marker.saleId == data.encodedSaleId && marker.branch == before.branch && marker.receiptId == data.receiptId
+          && sale.saleId == data.encodedSaleId && sale.mobileOrderId == orderId && sale.branch == before.branch && sale.receiptId == data.receiptId;
+      }
+      function incomingDelivery(data) {
+        let sale = nextData('transactions',data.sourceSaleId);
+        let marker = nextData('pos_sale_commits',data.sourceSaleId);
+        return (trustedPOS(data.branch) || isOwner()) && orderId == 'delivery-' + data.sourceSaleId
+          && data.keys().hasOnly(['branch','orderType','customerName','contactNumber','deliveryAddress','totalAmount','items','status','orderCode','paymentMethod','timestamp','sourceSaleId'])
+          && data.orderType == 'Delivery' && data.status == 'preparing' && data.timestamp == reqTime()
+          && !exists(/databases/$(database)/documents/pos_sale_commits/$(data.sourceSaleId)) && marker.committedAt == reqTime()
+          && marker.branch == data.branch && marker.saleId == data.sourceSaleId && marker.receiptId == data.orderCode
+          && sale.saleId == data.sourceSaleId && sale.branch == data.branch && sale.receiptId == data.orderCode && sale.orderType == 'Delivery'
+          && sale.cart == data.items && sale.netTotal == data.totalAmount && sale.paymentMethod == data.paymentMethod;
+      }
+      allow get: if resource == null ? isSignedIn() && (reqVerified() == true || ownTrustedDevice() || riderAccessValid()) : incomingRead(oldData());
+      allow list: if incomingRead(oldData());
+      allow create: if admittedCustomer(newData()) || incomingDelivery(newData());
+      allow update: if incomingCustomer(oldData()) ? incomingCustomerUpdate(oldData(),newData())
+        : newData().diff(oldData()).affectedKeys().hasAny(['encodedSaleId']) ? incomingEncoded(oldData(),newData())
+        : newData().diff(oldData()).affectedKeys().hasAny(['riderClaim']) ? riderOrderClaim(oldData(),newData(),orderId)
+        : newData().diff(oldData()).affectedKeys().hasAny(['riderDeclines']) ? riderOrderDecline(oldData(),newData())
+        : newData().diff(oldData()).affectedKeys().hasAny(['riderPickup','riderCompletion']) ? riderOrderChange(oldData(),newData(),orderId) : incomingStatus(oldData(),newData());
+      allow delete: if false;
     }
     // Daily-rate audit is private and immutable. Public legacy profile fields
     // remain compatible, but cannot issue or replace an audited raise marker.
@@ -1379,9 +2254,10 @@ service cloud.firestore {
         && audit.recordedAt == reqTime() && audit.recordedByUid == reqUid() && audit.recordedBy == reqEmail();
     }
 
-      allow read: if true;
+      allow read: if isOwner() || (resource != null && (companyHRRead(oldData()) || companyPrivateProfile(cashierId)));
+      allow get: if resource == null && isHQUser();
       function selectorCashiersCreate(data) {
-        return isHQUser() && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion'])
+        return companyHQCan(['all','branches'],data.branch) && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion','loginPinVersion'])
         && (!data.keys().hasAny(rateKeys())
           || staffRateProfileLink(cashierId, {}, data));
       }
@@ -1389,7 +2265,13 @@ service cloud.firestore {
       function selectorCashiersUpdate(data,before) {
         // Managed Payslip PINs can only be changed by the verified recovery
         // service. Ordinary profile edits cannot remove the protection marker.
-        return !data.diff(before).affectedKeys().hasAny(['rateHistory','payslipPinManaged','payslipPinVersion'])
+        return ((data.diff(before).affectedKeys().hasOnly(['hourlyRate','dailyRate','roleHistory','staffRateAuditId','latestRateRaise','salaryRateVersion','salaryRateRevision'])
+            && data.get('roleHistory',[]) == before.get('roleHistory',[])
+            && data.get('staffRateAuditId','') != before.get('staffRateAuditId','')
+            && companyHQCan(['all','payroll','feed'],before.branch))
+          || (companyHQCan(['all','branches'],before.branch) && companyHQCan(['all','branches'],data.branch))
+          || companyContractAcceptance(cashierId,before,data) || companyProfileEdit(cashierId,before,data))
+        && !data.diff(before).affectedKeys().hasAny(['rateHistory','payslipPinManaged','payslipPinVersion','loginPinVersion'])
         && (before.get('payslipPinManaged',false) != true || !data.diff(before).affectedKeys().hasAny(['payslipPin']))
         && (!data.diff(before).affectedKeys().hasAny(['onboardingStartConfirmation','contractTerms'])
           || onboardingProfileLink(cashierId,before,data))
@@ -1398,7 +2280,7 @@ service cloud.firestore {
           || staffRateProfileLink(cashierId, before, data));
       }
       allow update: if selectorCashiersUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if isHQUser() && oldData().get('payslipPinManaged',false) != true && !oldData().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
+      allow delete: if isOwner() && oldData().get('payslipPinManaged',false) != true && !oldData().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
     }
     // Sharing a reviewed payslip never creates a payment or settlement record.
     // Staff access uses the same private, HQ-approved device identity as their
@@ -1509,7 +2391,7 @@ service cloud.firestore {
           && after.sourceFingerprint == before.sourceFingerprint && after.revisionId != before.revisionId));
     }
 
-      allow get: if true;
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalRead(oldData());
       allow list, delete: if false;
       allow create, update: if emergencyShiftWrite(timeInId, resource == null ? {} : oldData(), newData());
     }
@@ -1589,7 +2471,7 @@ service cloud.firestore {
             && data.validUntil <= start.timestamp + duration.value(24, 'h'));
     }
 
-      allow get: if true;
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalRead(oldData());
       allow list, delete: if false;
       function selectorAttendanceTimeOutApprovalsCreateUpdate(data,before) {
         return earlyTimeOutApproval(data, requestId)
@@ -1692,7 +2574,8 @@ service cloud.firestore {
           && (!exists(counterPath) || data.caseNumber == get(counterPath).data.lastCaseNumber + 1);
       }
       function disciplineReply(before,after) {
-        return isSignedIn() && before.status == 'Pending Reply' && before.finding == 'Pending' && before.decisionRevision == 0
+        return (companyOwnData(before) || companyClockData(before))
+          && before.status == 'Pending Reply' && before.finding == 'Pending' && before.decisionRevision == 0
           && after.diff(before).affectedKeys().hasOnly(['staffReply','signatureBase64','status','repliedAt','replyByStaffId','replyScheduleRevision'])
           && after.status == 'Replied' && disciplineText(after.staffReply,15,10000)
           && disciplineText(after.signatureBase64,1,600000) && after.repliedAt == request.time
@@ -1749,16 +2632,27 @@ service cloud.firestore {
           && disciplineActor(after,'cancelledAt','cancelledByUid','cancelledByEmail');
       }
 
-      allow read: if true;
-      allow create: if request.resource.data.get('caseVersion',0) == 2 ? disciplineIssue(request.resource.data,sanctionId) : true;
+      allow get: if resource == null ? companyOperationalMissing() : companyOperationalRead(oldData());
+      allow list: if companyOperationalRead(oldData());
+      allow create: if request.resource.data.get('caseVersion',0) == 2 ? disciplineIssue(request.resource.data,sanctionId) : companyOperationalHQ(newData());
       function selectorHrSanctionsUpdate(data,before) {
         return before.get('caseVersion',0) == 2 || data.get('caseVersion',0) == 2
         ? before.get('caseVersion',0) == 2 && (data.status == 'Replied' ? disciplineReply(before,data)
           : data.status == 'Reviewed' ? disciplineReview(before,data,sanctionId)
-          : data.status in ['Cancelled','Archived'] && disciplineCancel(before,data)) : true;
+          : data.status in ['Cancelled','Archived'] && disciplineCancel(before,data))
+        : companyOperationalHQ(before) && companyOperationalHQ(data)
+          || (companyOwnData(before) || companyClockData(before)) && before.status == 'Pending Reply'
+            && data.diff(before).affectedKeys().hasOnly(['staffReply','signatureBase64','status','repliedAt','replyByStaffId','replyScheduleRevision'])
+            && data.status == 'Replied' && data.staffReply is string && data.staffReply.size() >= 15 && data.staffReply.size() <= 10000
+            && data.signatureBase64 is string && data.signatureBase64.size() >= 64 && data.signatureBase64.size() <= 600000
+            && data.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$')
+            && data.repliedAt == reqTime() && data.replyScheduleRevision == before.get('scheduleRevision',0)
+            && (data.replyByStaffId == before.get('staffId','') || before.get('staffId','') == ''
+              && readData('staff_name_claims',before.staffName).get('ambiguous',true) == false
+              && readData('staff_name_claims',before.staffName).uniqueStaffId == data.replyByStaffId);
       }
       allow update: if selectorHrSanctionsUpdate(request.resource.data,resource == null ? null : resource.data);
-      allow delete: if oldData().get('caseVersion',0) != 2 && isHQUser();
+      allow delete: if oldData().get('caseVersion',0) != 2 && companyOperationalHQ(oldData());
     }
     match /payroll_records/{recordId} {
       function ownerDeductionProtectedPayroll(payroll) {
@@ -1785,15 +2679,17 @@ service cloud.firestore {
     }
 
       function ownerDeductionPayrollMetadata(payroll,recordId) {
-      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);
+      let frozen = payroll.get('frozenData',{});
+      let rows = frozen.get('ownerDeductionRows',[]);
+      let count = rows.size();
       let map = payroll.get('ownerDeductionSettlements',{});
-      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);
-      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
-        && details is list && details.size() == rows.size()
-        && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)
-        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)
-        && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()
-          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));
+      let details = frozen.get('ownerDeductionDetails',[]);
+      return rows is list && count <= 4 && rows.toSet().size() == count && map is map && map.size() == count
+        && details is list && details.size() == count
+        && (count == 0 || (ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)))
+        && frozen.get('ownerDeductions',0) == (count == 0 ? 0 : (count > 0 ? rows[0].amount : 0) + (count > 1 ? rows[1].amount : 0) + (count > 2 ? rows[2].amount : 0) + (count > 3 ? rows[3].amount : 0))
+        && (count == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()
+          && count + frozen.get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));
     }
 
       function cashShortagePayrollRow(item,map,recordId) {
@@ -1801,8 +2697,6 @@ service cloud.firestore {
       return item.keys().hasOnly(['id','amount']) && item.id is string && item.amount is number && item.amount > 0 && map[item.id] == item.amount
         && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == reqTime();
     }
-
-      function cashShortageRow(rows,map,index,recordId) { return rows.size() <= index || cashShortagePayrollRow(rows[index],map,recordId); }
 
       function cashShortageProtectedPayroll(payroll) {
       return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
@@ -1818,23 +2712,31 @@ service cloud.firestore {
     }
 
       function cashShortagePayrollMetadata(payroll,recordId) {
-      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
+      let frozen = payroll.get('frozenData',{});
+      let rows = frozen.get('cashShortageRows',[]);
+      let count = rows.size();
       let map = payroll.get('cashShortageSettlements',{});
-      let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
+      let custom = frozen.get('ownerDeductionRows',[]).size() > 0;
       // Owner custom metadata already proves Owner, paid stamps and combined
       // maximum four. It leaves room for at most three other protected rows.
-      return rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()
-        && map is map && map.size() == rows.size()
-        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
-        && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))
-        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))
-        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
+      return rows is list && count <= (custom ? 3 : 6) && rows.toSet().size() == count
+        && map is map && map.size() == count
+        && (count == 0 || ((count <= 0 || cashShortagePayrollRow(rows[0],map,recordId)) && (count <= 1 || cashShortagePayrollRow(rows[1],map,recordId)) && (count <= 2 || cashShortagePayrollRow(rows[2],map,recordId))
+        && (custom || ((count <= 3 || cashShortagePayrollRow(rows[3],map,recordId)) && (count <= 4 || cashShortagePayrollRow(rows[4],map,recordId)) && (count <= 5 || cashShortagePayrollRow(rows[5],map,recordId))))))
+        && frozen.get('cashShortages',0) == (count == 0 ? 0 : (count > 0 ? rows[0].amount : 0) + (count > 1 ? rows[1].amount : 0) + (count > 2 ? rows[2].amount : 0) + (custom ? 0 : (count > 3 ? rows[3].amount : 0) + (count > 4 ? rows[4].amount : 0) + (count > 5 ? rows[5].amount : 0)))
+        && (custom || count == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && count + payroll.get('refundSettlements',{}).size() <= 6));
     }
- allow read: if true;
+ allow read: if isOwner() || (resource != null && companyHRRead(oldData()));
+ allow get: if resource == null && isHQUser();
+ allow get: if resource != null && (ownerDeductionProtectedPayroll(oldData()) || cashShortageProtectedPayroll(oldData())) && oldData().get('staffId','') != ''
+   && companyPrivateProfile(oldData().staffId)
+   && oldData().get('frozenData',{}).get('staffId',oldData().staffId) == oldData().staffId
+   && oldData().get('frozenData',{}).get('profile',{}).get('staffId',oldData().staffId) == oldData().staffId
+   && oldData().get('frozenData',{}).get('profile',{}).get('id',oldData().staffId) == oldData().staffId;
       function selectorPayrollRecordsCreate(data) {
         return ownerDeductionPayrollMetadata(data,recordId)
         && cashShortagePayrollMetadata(data,recordId)
-        && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : isHQUser());
+        && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : isOwner() || companyHQCan(['all','payroll','feed'],'All'));
       }
       allow create: if selectorPayrollRecordsCreate(newData());
       function selectorPayrollRecordsUpdate(data,before) {
@@ -1842,8 +2744,12 @@ service cloud.firestore {
         ? cashShortageSignedAcknowledgment(before,data)
         : (!recordId.matches('refund-payroll-.*') || (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true));
       }
-      allow update: if selectorPayrollRecordsUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && !ownerDeductionProtectedPayroll(oldData()) && isHQUser(); }
+      allow update: if (isOwner() || companyHQCan(['all','payroll','feed'],'All')
+        || ((ownerDeductionProtectedPayroll(oldData()) || cashShortageProtectedPayroll(oldData()))
+          && oldData().get('staffId','') != '' && companyPrivateProfile(oldData().staffId)))
+        && selectorPayrollRecordsUpdate(newData(),resource == null ? null : oldData());
+      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && !ownerDeductionProtectedPayroll(oldData())
+        && (isOwner() || companyHQCan(['all','payroll','feed'],'All')); }
 
     // Owner-confirmed charges under the reviewed policy. Staff can respond only
     // through their existing approved private device; ledger amounts are immutable to Staff.
@@ -2321,7 +3227,9 @@ service cloud.firestore {
         && cashShortageLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
     }
 
-      allow read: if true;
+      allow get: if resource == null ? isHQUser() : companyHRRead(oldData())
+        || oldData().get('staffId','') != '' && companyPrivateProfile(oldData().staffId);
+      allow list: if companyHRRead(oldData()) || oldData().get('staffId','') != '' && companyPrivateProfile(oldData().staffId);
       function selectorStaffDeductionsCreate(data) {
         return ownerDeductionKind(data,deductId) ? ownerDeductionChargeCreate(data,deductId)
         : cashShortageKind(data,deductId) ? cashShortageChargeCreate(data,deductId)
@@ -2329,7 +3237,7 @@ service cloud.firestore {
         ? (onlineIncidentCharge(data, deductId) || directIncidentCharge(data,deductId))
         : data.get('type', '') == 'Cancelled Food Purchase'
         ? cancelledFoodChargeLink(data, deductId)
-        : isHQUser();
+        : companyHRRead(data);
       }
       allow create: if selectorStaffDeductionsCreate(newData());
       function selectorStaffDeductionsUpdate(data,before) {
@@ -2346,12 +3254,12 @@ service cloud.firestore {
           && data.status == nextData('online_order_incidents',deductId).status
           && data.reviewedAt == reqTime() && data.reviewedBy == reqEmail()) || (before.get('type','') == 'Online Order Refund' && (directChargeReview(before,data,deductId) || refundPaid(before,data,deductId)))
         : before.get('type', '') == 'Cancelled Food Purchase'
-        ? verifiedHQ(before.branch) : isHQUser();
+        ? verifiedHQ(before.branch) : companyHRReadPair(before,data);
       }
       allow update: if selectorStaffDeductionsUpdate(newData(),resource == null ? null : oldData());
       function selectorStaffDeductionsDelete(before) {
         return !ownerDeductionKind(before,deductId) && !cashShortageKind(before,deductId) && before.get('type', '') != 'Online Order Refund'
-        && (before.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(before.branch) : isHQUser());
+        && (before.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(before.branch) : companyHRRead(before));
       }
       allow delete: if selectorStaffDeductionsDelete(resource == null ? null : oldData());
     }

@@ -2,12 +2,20 @@ import {createStaffLeaveService} from './leave-request-actions.js';
 import {activeLeaveDates,leaveToday,describeLeaveDates} from './leave-model.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function installPOSLeaveRequests(w,d,{primaryAuth}={}) {
-    let resolved=null,epoch=0,submitting=false;const attempts=new Map(),activeActions=new Set();
+    let resolved=null,epoch=0,submitting=false,service;const attempts=new Map(),activeActions=new Set(),sessionIds=new WeakMap();let nextSession=0;
     const current=()=>w.sessionUser;
-    const key=()=>JSON.stringify([primaryAuth?.currentUser?.uid,current()?.staffId,current()?.cashierName,current()?.branch]);
-    const service=createStaffLeaveService(w,{getIdentity:()=>({staffId:current()?.staffId||resolved?.key===key()&&resolved.staffId,staffName:current()?.cashierName})});
+    const key=()=>{const session=current();if(session&&!sessionIds.has(session))sessionIds.set(session,++nextSession);return JSON.stringify([primaryAuth?.currentUser?.uid,session&&sessionIds.get(session),session?.staffId,session?.cashierName,session?.branch,w.localStorage?.getItem('takodeal_device_branch'),w.localStorage?.getItem('takodeal_device_id')]);};
+    const createService=api=>createStaffLeaveService(api,{getIdentity:()=>({staffId:current()?.staffId||resolved?.key===key()&&resolved.staffId,staffName:current()?.cashierName})});
+    service=createService(w);
     async function identity(){const before=key(),session=current();if(!session?.cashierName)throw Error('Sign in to your staff account before requesting leave.');
         if(w.confirmPOSStaffSession){await w.confirmPOSStaffSession();if(before!==key())throw Error('Your staff account changed. Reopen your requests.');}
+        if(typeof w.resolveCashierOperationalApi==='function'){
+            if(!session.staffId)throw Error('Sign in again to confirm your saved staff account.');
+            const assertCurrent=()=>{if(before!==key())throw Error('Your staff account changed. Reopen your requests.');};
+            const api=await w.resolveCashierOperationalApi({assertCurrent});assertCurrent();
+            if(resolved?.key!==before){service=createService(api);resolved={key:before,staffId:session.staffId};}
+            return before;
+        }
         if(!session.staffId){const snap=await w.getDocsFromServer(w.query(w.collection(w.db,'cashiers'),w.where('cashierName','==',session.cashierName)));if(before!==key()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites||snap.docs.length!==1)throw Error('Your staff account could not be confirmed. Sign in again.');resolved={key:before,staffId:snap.docs[0].id};}
         return before;
     }
@@ -46,5 +54,5 @@ export function installPOSLeaveRequests(w,d,{primaryAuth}={}) {
     w.loadStaffPersonalInbox=async function(){const before=key();await originalInbox();if(before!==key())return;const container=d.getElementById('staffPersonalInboxList');
         for(const card of [...container.children])if(['Leave','Leave Change'].includes(card.querySelector('strong')?.textContent))card.remove();
         try{await render(container);}catch(error){const warning=d.createElement('p');warning.setAttribute('role','status');warning.textContent=error.message;container.append(warning);}};
-    return {service,submit,render};
+    return {get service(){return service;},submit,render};
 }

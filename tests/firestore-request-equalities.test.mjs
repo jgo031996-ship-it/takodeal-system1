@@ -115,7 +115,7 @@ test('forged proof sites or insertion cannot turn another expression into an eli
 });
 test('frozen app policy lowers the actual bounded atom census without touching the candidate',()=>{
  const source=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerRequestEqualities(source);
- assert.deepEqual(result.statistics.bySelector,{reqUid:41,reqEmail:39,reqTime:113});assert.equal(result.proof.sites.length,193);
+ assert.deepEqual(result.statistics.bySelector,{reqUid:52,reqEmail:40,reqTime:135});assert.equal(result.proof.sites.length,227);
  const start=source.indexOf('function staffPayslipPreview(data,id)'),end=source.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
  assert.deepEqual(result.proof.sites.filter(site=>site.start>=start&&site.end<=end).map(site=>({field:site.field,selector:site.selector})),[{field:'data.publishedAt',selector:'reqTime'},{field:'data.publishedByUid',selector:'reqUid'},{field:'data.publishedByEmail',selector:'reqEmail'}],'new publication actor/time stamps explain exactly the three additional request equalities');
  assert.equal(assertRequestEqualitiesEquivalent(source,result.source,result.proof).pinnedGlobalSelectors,true);

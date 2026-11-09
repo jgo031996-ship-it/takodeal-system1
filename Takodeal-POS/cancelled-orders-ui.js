@@ -1,4 +1,4 @@
-import {createCancelledOrderEngine,CANCELLATION_REASONS,cancelledPlatform,findCancelledFoodBuyer} from './cancelled-orders.js';
+import {createCancelledOrderEngine,CANCELLATION_REASONS,cancelledPlatform,findCancelledFoodBuyer,eligibleCancelledFoodBuyer} from './cancelled-orders.js';
 import {createCancelledFoodOperationId,quoteCancelledFoodPortion,MAX_CANCELLED_FOOD_LINES} from './cancelled-food-portions.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function cancelledFoodPortionForm(offer){
@@ -8,10 +8,11 @@ export function cancelledFoodPortionForm(offer){
 export function installCancelledOrders(api,{window:w=window,document:d=document}={}){
     let busy=false;
     const valid=input=>Boolean(input.authUid&&api.auth?.currentUser?.uid===input.authUid&&w.sessionUser===input.sessionRef&&w.currentShift===input.shiftRef&&w.sessionUser?.branch===input.branch&&w.currentShift?.shiftId===input.shiftId&&w.currentShift?.active&&w.sessionUser?.cashierName===input.cashier);
-    const engine=createCancelledOrderEngine(api,{sessionCheck:valid});
+    let engine=createCancelledOrderEngine(api,{sessionCheck:valid});
     const context=value=>({sourceSaleId:decodeURIComponent(value),branch:w.sessionUser?.branch,shiftId:w.currentShift?.shiftId,cashier:w.sessionUser?.cashierName,authUid:api.auth?.currentUser?.uid,sessionRef:w.sessionUser,shiftRef:w.currentShift});
     const read=async(source,field,value)=>{const snap=await api.getDocsFromServer(api.query(api.collection(api.db,source),api.where(field,'==',value)));return snap.docs.map(row=>({id:row.id,data:row.data()}));};
-    async function device(){const id=w.localStorage?.getItem('takodeal_device_id');if(id&&(await read('pos_devices','deviceId',id)).some(row=>String(row.data.status||'').toLowerCase()==='blocked'))throw Error('This device is blocked. Ask HQ to review access.');}
+    async function activate(value){const session=w.sessionUser,shift=w.currentShift;if(typeof w.resolveCashierOperationalApi==='function'){api=await w.resolveCashierOperationalApi({assertCurrent:()=>{if(w.sessionUser!==session||w.currentShift!==shift)throw Error('The cashier or shift changed. Reopen the receipt.');}});engine=createCancelledOrderEngine(api,{sessionCheck:valid});}return context(value);}
+    async function device(){if(api.requireStaffLogin){if(typeof api.readStaffSessionProfile!=='function')throw Error('Secure staff verification is unavailable. Update the Cashier app.');const session=w.sessionUser;await api.readStaffSessionProfile({staffId:session?.staffId,branch:session?.branch,name:session?.cashierName});return;}const id=w.localStorage?.getItem('takodeal_device_id');if(id&&(await read('pos_devices','deviceId',id)).some(row=>String(row.data.status||'').toLowerCase()==='blocked'))throw Error('This device is blocked. Ask HQ to review access.');}
     const refresh=()=>w.refreshVisibleShiftSales?.()||w.loadSalesDashboard?.();
     w.preparedCancellationActions=tx=>{
         const id=tx.id||tx.saleId;if(!id||tx.isPendingSync||tx.needsReconciliation||!cancelledPlatform(tx)||tx.cancelledFoodSourceId||tx.status==='Parked')return '';
@@ -21,8 +22,9 @@ export function installCancelledOrders(api,{window:w=window,document:d=document}
     };
     w.purchaseCancelledFood=async(value)=>{
         if(busy)return;busy=true;
-        const input=context(value);
+        let input;
         try{
+            input=await activate(value);
             if(!valid(input))throw Error('Sign in on an approved Cashier device and open a shift first.');
             const pendingKey='takodeal_cancelled_food_pending_v1:'+JSON.stringify([input.branch,input.shiftId,input.sourceSaleId]);
             const removePending=()=>w.localStorage.removeItem(pendingKey);
@@ -30,23 +32,27 @@ export function installCancelledOrders(api,{window:w=window,document:d=document}
             await device();
             if(pending){const saved=await engine.confirmPortion({...input,...pending});if(saved){removePending();refresh();await w.Swal.fire({title:'Staff purchase already recorded',text:`The previous confirmation is saved once: ₱${saved.amount.toFixed(2)}. No second deduction was created.`,icon:'success'});return;}}
             const offer=await engine.available(input);if(!offer.lines.some(line=>line.remainingQty>0))throw Error('All items on this receipt have already been assigned to staff.');
+            const buyers=api.requireStaffLogin?(await w.readOperationalStaffDirectory({assertCurrent:()=>{if(!valid(input))throw Error('The cashier or shift changed. Reopen the receipt.');}})).filter(eligibleCancelledFoodBuyer):null;
             const operationId=pending?.quote.operationId??createCancelledFoodOperationId(w.crypto??globalThis.crypto);let purchaseIntent=pending?JSON.stringify({staffId:pending.staffId,quote:pending.quote}):null;
             const quantities=()=>Array.from(d.querySelectorAll('[data-cancelled-food-qty]')).map(node=>({lineIndex:Number(node.dataset.cancelledFoodQty),qty:Number(node.value)})).filter(row=>row.qty!==0);
             const liveQuote=()=>pending?.quote??quoteCancelledFoodPortion(offer,quantities(),operationId);
             const renderTotal=()=>{const consent=d.getElementById('cancelledFoodConsent');if(consent)consent.checked=false;try{const quote=liveQuote();for(const [id,value]of[['cancelledFoodBase',quote.baseAmount],['cancelledFoodDiscount',quote.discountAmount],['cancelledFoodAmount',quote.amount]]){const node=d.getElementById(id);if(node)node.textContent=(id==='cancelledFoodDiscount'?'−':'')+'₱'+value.toFixed(2);}const status=d.getElementById('cancelledFoodSelectionStatus');if(status)status.textContent=quote.selection.reduce((sum,row)=>sum+row.qty,0)+' item(s) selected for this employee.';}catch(error){const status=d.getElementById('cancelledFoodSelectionStatus');if(status)status.textContent=error.message;}};
-            const result=await w.Swal.fire({title:'Staff purchase of prepared food',html:cancelledFoodPortionForm(offer),didOpen:()=>{d.querySelectorAll('[data-cancelled-food-qty]').forEach(node=>{if(pending){node.value=String(pending.quote.selection.find(row=>row.lineIndex===Number(node.dataset.cancelledFoodQty))?.qty??0);node.disabled=true;}else node.addEventListener('input',renderTotal);});if(pending){renderTotal();const status=d.getElementById('cancelledFoodSelectionStatus');if(status)status.textContent=`Confirming the previous selection for ${pending.staffName}. Re-enter that employee’s login PIN. The same purchase reference will be retried.`;}},showCancelButton:true,confirmButtonText:pending?'Retry saved confirmation':'Confirm selected items',cancelButtonText:'Keep food unassigned',allowOutsideClick:()=>!w.Swal.isLoading(),showLoaderOnConfirm:true,customClass:{popup:'cancelled-food-dialog'},preConfirm:async()=>{
+            const chooser=buyers?'<label for="cancelledFoodStaff">Employee<select id="cancelledFoodStaff"><option value="">Choose the employee taking this food</option>'+buyers.map(row=>'<option value="'+esc(row.staffId)+'"'+(pending?.staffId===row.staffId?' selected':'')+'>'+esc(row.cashierName)+' · '+esc(row.branch)+'</option>').join('')+'</select></label>':'',form=cancelledFoodPortionForm(offer).replace('<label for="cancelledFoodPin">',chooser+'<label for="cancelledFoodPin">');
+            const result=await w.Swal.fire({title:'Staff purchase of prepared food',html:form,didOpen:()=>{d.querySelectorAll('[data-cancelled-food-qty]').forEach(node=>{if(pending){node.value=String(pending.quote.selection.find(row=>row.lineIndex===Number(node.dataset.cancelledFoodQty))?.qty??0);node.disabled=true;}else node.addEventListener('input',renderTotal);});if(pending){renderTotal();const status=d.getElementById('cancelledFoodSelectionStatus');if(status)status.textContent=`Confirming the previous selection for ${pending.staffName}. Re-enter that employee’s login PIN. The same purchase reference will be retried.`;}},showCancelButton:true,confirmButtonText:pending?'Retry saved confirmation':'Confirm selected items',cancelButtonText:'Keep food unassigned',allowOutsideClick:()=>!w.Swal.isLoading(),showLoaderOnConfirm:true,customClass:{popup:'cancelled-food-dialog'},preConfirm:async()=>{
                 const pin=d.getElementById('cancelledFoodPin'),consent=d.getElementById('cancelledFoodConsent');
                 try{
                     const quote=liveQuote();
                     if(!consent?.checked)throw Error('Confirm that the staff member agrees to the displayed deduction.');
                     if(!valid(input))throw Error('Your branch or shift changed. Reopen the receipt.');
-                    await device();const identity=await findCancelledFoodBuyer({read},String(pin?.value||''));
+                    await device();const selectedId=d.getElementById('cancelledFoodStaff')?.value,selected=buyers?.find(row=>row.staffId===selectedId);if(buyers&&!selected)throw Error('Choose the employee taking this food.');
+                    const identity=buyers?{id:selected.staffId,staffName:selected.cashierName}:await findCancelledFoodBuyer({read},String(pin?.value||''));
                     const intent=JSON.stringify({staffId:identity.id,quote});
                     if(purchaseIntent&&purchaseIntent!==intent)throw Error('A previous confirmation may still be saving. Close and reopen this receipt before changing the buyer or selected food.');
                     purchaseIntent=intent;
                     const saved=JSON.stringify({staffId:identity.id,staffName:identity.staffName,quote});
                     try{w.localStorage.setItem(pendingKey,saved);if(w.localStorage.getItem(pendingKey)!==saved)throw Error();}catch{throw Error('This device could not save the purchase reference. Free local storage before confirming; no deduction was sent.');}
-                    const answer=await engine.purchase({...input,staffId:identity.id,staffName:identity.staffName,pin:String(pin.value),quote});removePending();return answer;
+                    const enteredPin=String(pin.value),assertCurrent=()=>{if(!valid(input)||String(pin.value)!==enteredPin||buyers&&d.getElementById('cancelledFoodStaff')?.value!==identity.id||!consent.checked||JSON.stringify(liveQuote())!==JSON.stringify(quote))throw Error('The selected employee, PIN or food quantities changed. Review this purchase again.');};
+                    const answer=await engine.purchase({...input,staffId:identity.id,staffName:identity.staffName,pin:enteredPin,quote,assertCurrent});removePending();return answer;
                 }catch(error){if(error.code==='cancelled-food/selection-stale'){try{const saved=JSON.parse(w.localStorage.getItem(pendingKey));if(saved&&!await engine.confirmPortion({...input,...saved}))removePending();}catch{}}w.Swal.showValidationMessage(esc(error.message));return false;}
                 finally{if(pin)pin.value='';}
             }});
@@ -55,8 +61,9 @@ export function installCancelledOrders(api,{window:w=window,document:d=document}
         finally{busy=false;}
     };
     w.cancelPreparedOrder=async(value)=>{
-        if(busy)return;busy=true;const input=context(value);let buy=false;
+        if(busy)return;busy=true;let input,buy=false;
         try{
+            input=await activate(value);
             if(!valid(input))throw Error('Sign in on an approved Cashier device and open a shift first.');
             await device();
             const choice=await w.Swal.fire({title:'Record a cancelled platform order',text:'Use this after Grab or Foodpanda confirms the cancellation. Prepared ingredients stay consumed and the platform sale is excluded from revenue. This action does not send a platform refund.',input:'select',inputOptions:CANCELLATION_REASONS,inputPlaceholder:'Choose the cancellation reason',inputValidator:value=>Object.hasOwn(CANCELLATION_REASONS,value)?null:'Choose who cancelled the prepared order.',showCancelButton:true,confirmButtonText:'Record cancellation',cancelButtonText:'Back',customClass:{popup:'cancelled-food-dialog'}});
@@ -67,5 +74,5 @@ export function installCancelledOrders(api,{window:w=window,document:d=document}
         finally{busy=false;}
         if(buy)await w.purchaseCancelledFood(value);
     };
-    return {engine};
+    return {get engine(){return engine;}};
 }

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="takodeal-release" content="customer-security-reviews-20261109">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TAKODEÁL | Order fresh takoyaki</title>
@@ -497,7 +498,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, getDocsFromServer, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, runTransaction, collection, getDocs, getDocsFromServer, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
@@ -514,6 +515,7 @@
         import {CUSTOMER_SITE_PROFILE_DOC, branchOpeningNotice} from './customer-site-settings.js?v=customer-hub-20261009';
         import {renderCustomerSiteProfile} from './customer-site-view.js?v=customer-hub-20261009';
         import {renderOrderHistoryCard, clearTrackedOrderDetails, updateTrackedOrderDetails} from './customer-order-details.js?v=customer-order-details-20261108';
+        import {installCustomerReviews} from './customer-reviews.js?v=customer-security-20261109';
         const customerStorage=(()=>{try{return localStorage;}catch{return {getItem:()=>null,setItem:()=>{},removeItem:()=>{}};}})();
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -521,6 +523,7 @@
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
         window.currentUser = null;
+        const customerReviews=installCustomerReviews(window,document,{db,doc,runTransaction,serverTimestamp});
         window.enableNetwork = enableNetwork;
         window.disableNetwork = disableNetwork;
         
@@ -1745,55 +1748,7 @@
         });
 
         window.promptReview = function(orderCode, docId, items, orderType) {
-            const user = window.currentUser, epoch = window.customerTrackerEpoch;
-            const current = () => user && epoch === window.customerTrackerEpoch && window.currentUser?.uid === user.uid && window.currentUser?.email === user.email;
-            if (!current()) return;
-            Swal.fire({
-                didOpen: popup => {popup.dataset.customerOrderReview = 'true';},
-                title: 'How was your food? 🐙',
-                html: `
-                    <div class="text-sm text-zinc-400 mb-4">We'd love to hear your feedback on order ${orderCode}!</div>
-                    <textarea id="reviewText" class="w-full bg-darkbg border border-zinc-800 rounded-xl p-3 text-white text-sm outline-none resize-none h-24" placeholder="Tell us what you loved! (Optional)"></textarea>
-                `,
-                confirmButtonText: 'Submit Review ⭐',
-                confirmButtonColor: '#d97706',
-                showCancelButton: true,
-                cancelButtonText: 'Skip',
-                cancelButtonColor: '#3f3f46',
-                background: '#141414', color: '#fff',
-                customClass: { popup: 'border border-zinc-800 rounded-2xl' },
-                preConfirm: () => {
-                    if (!current()) return false;
-                    let text = document.getElementById('reviewText').value;
-                    if(text) {
-                        // 🔥 EXTRACT TOP 2 ITEMS TO SAVE DIRECTLY WITH REVIEW
-                        let summaryItems = [];
-                        if (items && items.length > 0) {
-                            summaryItems = items.slice(0, 2).map(i => ({
-                                name: i.name || i.itemName,
-                                qty: i.quantity || i.qty || 1
-                            }));
-                        }
-
-                        addDoc(collection(db, "reviews"), { 
-                            orderCode: orderCode, 
-                            orderType: orderType || 'Order',
-                            summaryItems: summaryItems,
-                            totalItemsCount: items ? items.length : 0,
-                            text: text, 
-                            timestamp: serverTimestamp(), 
-                            customer: user.displayName,
-                            email: user.email,
-                            status: "Pending" 
-                        });
-                    }
-                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
-                }
-            }).then((res) => {
-                if(current() && res.dismiss === Swal.DismissReason.cancel) {
-                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
-                }
-            });
+            return customerReviews.prompt(orderCode,docId,items,orderType);
         };
 
         window.activeTrackedOrderId = null;
@@ -1826,83 +1781,7 @@
         };
 
         window.loadReviewsPage = async function() {
-            let grid = document.getElementById('reviewsPageGrid');
-            grid.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading reviews...</div>';
-            
-            try {
-                // Fetch the 30 most recent reviews
-                const q = query(collection(db, "reviews"), orderBy("timestamp", "desc"), limit(30));
-                const snap = await getDocs(q);
-                
-                let reviewsData = [];
-                snap.forEach(d => reviewsData.push(d.data()));
-
-                // 🔥 ZERO N+1 READS: Uses denormalized summary data embedded directly in the review!
-                let htmlArray = reviewsData.map((rev) => {
-                    let dateStr = rev.timestamp ? (typeof rev.timestamp.toDate === 'function' ? rev.timestamp.toDate().toLocaleDateString() : new Date(rev.timestamp).toLocaleDateString()) : 'Recent';
-                    
-                    // 🔠 PRIVACY MASKING UPGRADE: Jostuart Omangay -> J. O.
-                    let rawName = rev.customer || 'Customer';
-                    let nameParts = rawName.trim().split(' ').filter(n => n.length > 0);
-                    let maskedName = nameParts.map(word => word.charAt(0).toUpperCase() + '.').join(' ');
-                    let initial = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() : 'C';
-
-                    // 📦 USE DENORMALIZED DATA INSTEAD OF FETCHING AGAIN!
-                    let orderDetailsHtml = '';
-                    let items = rev.summaryItems || [];
-                    
-                    if (items.length > 0) {
-                        let itemsList = items.map(i => `<div class="text-[11px] text-zinc-400 leading-tight font-medium">• ${i.qty}x ${i.name}</div>`).join('');
-                        let totalItems = rev.totalItemsCount || items.length;
-                        if (totalItems > 2) itemsList += `<div class="text-[10px] text-zinc-600 italic mt-1 font-bold">+${totalItems - 2} more items</div>`;
-                        
-                        // Search the Live Menu to find the beautiful image for the first item!
-                        let repItem = window.rawMenuCache ? window.rawMenuCache.find(m => m.name === items[0].name || (items[0].name && items[0].name.includes(m.name))) : null;
-                        let imgHtml = repItem && repItem.image 
-                            ? `<img src="${repItem.image}" class="w-14 h-14 rounded-xl object-cover border border-zinc-700 shadow-md">` 
-                            : `<div class="w-14 h-14 bg-zinc-800 rounded-xl flex items-center justify-center text-2xl border border-zinc-700 shadow-md">🍲</div>`;
-
-                        orderDetailsHtml = `
-                            <div class="mt-4 pt-4 border-t border-zinc-800/60 flex gap-3 items-center bg-darkbg/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
-                                ${imgHtml}
-                                <div class="flex-1">
-                                    <div class="text-[9px] font-black text-brandgold uppercase tracking-widest mb-1.5 bg-brandgold/10 inline-block px-2 py-0.5 rounded border border-brandgold/20 shadow-sm">${rev.orderType || 'Order'}</div>
-                                    <div class="flex flex-col gap-1">
-                                        ${itemsList}
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }
-
-                    return `
-                        <div class="bg-cardbg border border-zinc-800 p-6 rounded-2xl break-inside-avoid shadow-lg hover:border-zinc-600 transition-colors flex flex-col gap-2">
-                            <div class="flex gap-4 items-start mb-2">
-                                <div class="w-12 h-12 flex-shrink-0 bg-zinc-800 rounded-2xl flex items-center justify-center text-xl font-black text-white border border-zinc-600 shadow-md">
-                                    ${initial}
-                                </div>
-                                <div class="flex-1">
-                                    <div class="flex justify-between items-start mb-1">
-                                        <span class="font-black text-white text-base tracking-wide">${maskedName}</span>
-                                        <span class="text-[10px] font-bold text-zinc-500 bg-darkbg px-2 py-1 rounded-md border border-zinc-800 shadow-inner">${dateStr}</span>
-                                    </div>
-                                    <div class="text-brandgold text-xs tracking-widest">⭐⭐⭐⭐⭐</div>
-                                </div>
-                            </div>
-                            <div class="text-sm text-zinc-300 leading-relaxed italic font-medium">"${rev.text}"</div>
-                            ${orderDetailsHtml}
-                        </div>
-                    `;
-                });
-                
-                let html = htmlArray.join('');
-
-                if(!html) html = '<div class="text-zinc-500 text-sm col-span-full text-center py-10">No reviews yet. Place an order to be the first!</div>';
-                grid.innerHTML = html;
-                
-            } catch(e) { 
-                grid.innerHTML = '<div class="text-red-500 text-sm col-span-full text-center py-10">Failed to load reviews.</div>'; 
-            }
+            return customerReviews.load();
         };
 
         window.submitFeedbackSuggestion = async function() {

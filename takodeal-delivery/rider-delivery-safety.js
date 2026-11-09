@@ -1,9 +1,17 @@
-// These client transactions prevent races in the app. Existing legacy Rules do
-// not bind an anonymous Firebase UID to a rider; this is not server authorization.
+// Operation markers carry the server-issued Rider session. Firebase Rules must
+// independently compare its UID, session ID, credential revision and expiry.
 const text=value=>typeof value==='string'?value.trim():'';
 const normalized=value=>text(value).toLowerCase();
 const fingerprint=value=>JSON.stringify(value);
 const validId=value=>typeof value==='string' && /^[A-Za-z0-9_-]{1,150}$/.test(value);
+export function riderProofUrl(value,{actor,kind,recordId,operationId}){
+    try{const url=new URL(value),prefix=kind==='delivery'?'deliveries/proofs/':'riders/topups/';
+        if(url.protocol!=='https:'||url.hostname!=='firebasestorage.googleapis.com'||url.port||url.username||url.password||url.hash||url.searchParams.size!==2||url.searchParams.getAll('alt').length!==1||url.searchParams.get('alt')!=='media'||url.searchParams.getAll('token').length!==1||!url.searchParams.get('token'))throw Error();
+        const base='/v0/b/takodeal-pos.firebasestorage.app/o/';if(!url.pathname.startsWith(base))throw Error();
+        const path=decodeURIComponent(url.pathname.slice(base.length)),expected=prefix+actor.authUid+'/'+actor.sessionId+'/'+recordId+'/'+operationId+'/';
+        if(!path.startsWith(expected)||!/^([a-f0-9]{64})\.(jpg|png|webp)$/.test(path.slice(expected.length)))throw Error();return url.href;
+    }catch{throw Error('Upload a fresh proof on this signed-in Rider account before saving.');}
+}
 function id(value,label){if(!validId(value))throw Error(`Choose a valid ${label}.`);return value;}
 export function riderMoneyCents(value,label='amount') {
     if(typeof value!=='number' && !(typeof value==='string' && /^\d+(?:\.\d{1,2})?$/.test(value.trim())))throw Error(`The ${label} is invalid. Ask HQ to review it.`);
@@ -11,22 +19,28 @@ export function riderMoneyCents(value,label='amount') {
     if(!Number.isFinite(number) || number<0 || !Number.isSafeInteger(cents) || Math.abs(number*100-cents)>0.00001)throw Error(`The ${label} is invalid. Ask HQ to review it.`);
     return cents;
 }
-export function isApprovedRider(data){return ['active','approved'].includes(normalized(data?.status));}
+export function isApprovedRider(data){return ['active','approved'].includes(normalized(data?.status))&&data.active!==false&&data.archived!==true&&data.deleted!==true&&data.blocked!==true;}
+export function riderPoolScope(data){
+    const held={allowed:false,global:false,branches:[],reason:'HQ must review this rider’s saved branch assignment before delivery access.'};
+    if(!isApprovedRider(data))return {...held,reason:'Manager approval is required before delivery access.'};
+    if(Object.hasOwn(data,'allowedBranches')){
+        if(!Array.isArray(data.allowedBranches)||!data.allowedBranches.length||data.allowedBranches.length>30||data.allowedBranches.some(branch=>typeof branch!=='string'||!branch||branch.trim()!==branch||branch.length>128))return held;
+        const branches=[...new Set(data.allowedBranches)];return branches.includes('All')?{allowed:true,global:true,branches:[],reason:''}:{allowed:true,global:false,branches,reason:''};
+    }
+    if((data.fleetType==null||data.fleetType==='Main Office')&&(data.franchiseAccess==null||data.franchiseAccess===true))return {allowed:true,global:true,branches:[],reason:''};
+    return held;
+}
 function actorFor(api,input){
     if(typeof api.captureRiderActor!=='function' || typeof api.assertRiderActor!=='function')throw Error('Sign in again before changing a delivery.');
     const actor=input || api.captureRiderActor();api.assertRiderActor(actor);
-    if(!actor?.authUid || !validId(actor.riderId))throw Error('Sign in again before changing a delivery.');
+    if(!actor?.authUid || !validId(actor.riderId) || !validId(actor.sessionId) || !Number.isSafeInteger(actor.riderAuthRevision) || actor.riderAuthRevision<1)throw Error('Sign in again before changing a delivery.');
     return actor;
 }
 function assertRider(api,actor,data,branch=''){
     api.assertRiderActor(actor);
-    if(!isApprovedRider(data))throw Error('Your rider approval is no longer active. Ask Manager to review it.');
-    // Existing approved Main Office riders remain global. An explicit saved
-    // assignment, when present, is authoritative and must include this branch.
-    if(branch && Object.hasOwn(data,'allowedBranches')){
-        const branches=Array.isArray(data.allowedBranches)?data.allowedBranches.map(text).filter(Boolean):[];
-        if(!branches.includes('All') && !branches.includes(branch))throw Error('This delivery is outside your assigned branches.');
-    }
+    if(!isApprovedRider(data)||data.riderPinManaged!==true||data.riderAuthRevision!==actor.riderAuthRevision)throw Error('Your rider approval or protected sign-in changed. Sign in again or ask Manager to review it.');
+    const scope=riderPoolScope(data);if(!scope.allowed)throw Error(scope.reason);
+    if(branch&&!scope.global&&!scope.branches.includes(branch))throw Error('This delivery is outside your assigned branches.');
 }
 function delivery(order,orderId){
     if(!text(order?.branch))throw Error('The delivery branch is missing. Refresh the board.');
@@ -51,22 +65,14 @@ async function receiptFor(api,actor,orderId){
     if(plan.kind==='cash')return null;
     const receiptId=text(order.receiptId || order.orderCode);
     if(!receiptId)throw Error('HQ must verify the prepaid receipt before this delivery can be claimed.');
-    const found=await api.getDocsFromServer(api.query(api.collection(api.db,'transactions'),api.where('receiptId','==',receiptId),api.where('branch','==',order.branch)));api.assertRiderActor(actor);
-    if(found.docs.length!==1)throw Error('The prepaid receipt is missing or ambiguous. Ask HQ to review it.');
-    return {id:found.docs[0].id,receiptId,branch:order.branch};
-}
-function verifiedReceipt(order,linked,snapshot){
-    if(!linked || !snapshot?.exists())throw Error('HQ must verify the prepaid receipt before this delivery can be claimed.');
-    const receipt=snapshot.data(),status=normalized(receipt.status),method=normalized(receipt.paymentMethod);
-    if(receipt.branch!==order.branch || receipt.receiptId!==text(order.receiptId || order.orderCode) || linked.branch!==order.branch || linked.receiptId!==receipt.receiptId ||
-       ['voided','void','cancelled','canceled','unpaid','pending'].includes(status) || receipt.paymentVerified!==true || !method || ['cash','cod','cash on delivery'].includes(method))
-        throw Error('The prepaid receipt is not HQ-verified or was voided. Ask HQ to review it.');
-    if(order.paymentStatus!==undefined && normalized(order.paymentStatus)!=='paid')throw Error('The online order is not recorded as paid. Ask the cashier to review it.');
-    if(receipt.mobileOrderId && receipt.mobileOrderId!==order.id)throw Error('The prepaid receipt belongs to another order.');
+    if(typeof api.readRiderReceipt!=='function')throw Error('The private prepaid receipt check is unavailable. Reopen Rider sign-in.');
+    const found=await api.readRiderReceipt({orderId,sessionId:actor.sessionId,assertCurrent:()=>api.assertRiderActor(actor)});api.assertRiderActor(actor);
+    if(!validId(found?.id)||found.receiptId!==receiptId||found.branch!==order.branch)throw Error('The prepaid receipt is missing or ambiguous. Ask HQ to review it.');
+    return {id:found.id,receiptId,branch:order.branch};
 }
 function markerMatches(marker,operationId,actor,signature){
     if(marker?.operationId!==operationId)return false;
-    if(marker.actorUid!==actor.authUid || marker.riderId!==actor.riderId || marker.signature!==signature)throw Error('This attempt was already used for a different delivery change. Refresh before retrying.');
+    if(marker.actorUid!==actor.authUid || marker.sessionId!==actor.sessionId || marker.riderId!==actor.riderId || marker.signature!==signature)throw Error('This attempt was already used for a different delivery change or sign-in. Refresh before retrying.');
     return true;
 }
 const claimTerms=(order,plan)=>fingerprint({branch:order.branch,totalCents:plan.totalCents,paymentKind:plan.kind,receiptId:text(order.receiptId || order.orderCode)});
@@ -86,19 +92,18 @@ async function claim(api,input,ping){
             return {alreadySaved:true,debited:old.debitCents/100,walletBalance:riderMoneyCents(rider.walletBalance ?? 0,'wallet balance')/100};
         }
         if(rider.isAcceptingOrders!==true)throw Error('Go online before accepting a new delivery.');
+        if(!['Delivery','Advance Delivery'].includes(order.orderType))throw Error('This legacy delivery needs Manager review before it can be assigned.');
         if(order.riderId || order.status!==(ping?'looking_for_rider':'ready'))throw Error('Another rider or cashier already changed this delivery. Refresh the board.');
         if(ping && order.pingedRider!==actor.riderId)throw Error('This offer is no longer assigned to you.');
         if(!ping && order.pingedRider && order.pingedRider!==actor.riderId)throw Error('This delivery is reserved for another rider.');
         const balance=riderMoneyCents(rider.walletBalance ?? 0,'wallet balance');
-        if(plan.kind==='prepaid'){
-            const receipt=linked?await tx.get(api.doc(api.db,'transactions',linked.id)):null;api.assertRiderActor(actor);verifiedReceipt(order,linked,receipt);
-        }
+        if(plan.kind==='prepaid'&&(!linked||linked.branch!==order.branch||linked.receiptId!==text(order.receiptId||order.orderCode)))throw Error('The prepaid receipt link changed. Ask HQ to review it.');
         if(balance<plan.debitCents)throw Error(`Insufficient wallet funds. This cash delivery needs ₱${(plan.debitCents/100).toFixed(2)}.`);
         assertRider(api,actor,rider,order.branch);
         const stamp=api.serverTimestamp(),nextBalance=(balance-plan.debitCents)/100;
         tx.update(orderRef,{status:'out_for_delivery',riderId:actor.riderId,riderName:text(rider.name),riderPhone:text(rider.phone),riderPlate:text(rider.plateNumber),riderSelfie:text(rider.selfieUrl),
-            riderClaimedAt:stamp,acceptedAt:stamp,pingedRider:null,riderClaim:{version:1,operationId,actorUid:actor.authUid,riderId:actor.riderId,signature,orderTerms:terms,debitCents:plan.debitCents,paymentKind:plan.kind,claimedAt:stamp}});
-        if(plan.debitCents)tx.update(riderRef,{walletBalance:nextBalance});
+            riderClaimedAt:stamp,acceptedAt:stamp,pingedRider:null,riderClaim:{version:1,operationId,actorUid:actor.authUid,sessionId:actor.sessionId,riderId:actor.riderId,signature,orderTerms:terms,debitCents:plan.debitCents,paymentKind:plan.kind,receiptTransactionId:linked?.id||null,claimedAt:stamp}});
+        if(plan.debitCents)tx.update(riderRef,{walletBalance:nextBalance,riderActionSessionId:actor.sessionId,riderWalletOperation:{version:1,kind:'claim',orderId,operationId,actorUid:actor.authUid,sessionId:actor.sessionId,debitCents:plan.debitCents,recordedAt:stamp}});
         return {saved:true,debited:plan.debitCents/100,walletBalance:nextBalance};
     });
 }
@@ -106,7 +111,7 @@ export const claimDeliveryAtomic=(api,input)=>claim(api,input,false);
 export const acceptPingAtomic=(api,input)=>claim(api,input,true);
 async function ownedChange(api,input,complete){
     const orderId=id(input.orderId,'delivery'),operationId=id(input.operationId,'save attempt'),actor=actorFor(api,input.actor);
-    let proofUrl='';if(complete){try{const url=new URL(input.proofUrl);if(url.protocol!=='https:' || url.username || url.password)throw Error();proofUrl=url.href;}catch{throw Error('Upload a valid delivery proof before completing this order.');}}
+    const proofUrl=complete?riderProofUrl(input.proofUrl,{actor,kind:'delivery',recordId:orderId,operationId}):'';
     const signature=fingerprint({action:complete?'complete':'pickup',orderId,riderId:actor.riderId,...(complete?{proofUrl}:{})});
     return api.runTransaction(api.db,async tx=>{
         const orderRef=api.doc(api.db,'incoming_orders',orderId),riderRef=api.doc(api.db,'riders',actor.riderId);
@@ -121,7 +126,7 @@ async function ownedChange(api,input,complete){
         if(order.riderId!==actor.riderId || order.status!=='out_for_delivery')throw Error('Only the assigned rider can update an ongoing delivery.');
         if(!complete && order.riderPickup)throw Error('Pickup was already recorded. Refresh this delivery.');
         assertRider(api,actor,rider,order.branch);
-        const stamp=api.serverTimestamp(),patch={[key]:{version:1,operationId,actorUid:actor.authUid,riderId:actor.riderId,signature,recordedAt:stamp}};
+        const stamp=api.serverTimestamp(),patch={[key]:{version:1,operationId,actorUid:actor.authUid,sessionId:actor.sessionId,riderId:actor.riderId,signature,recordedAt:stamp}};
         if(complete)Object.assign(patch,{status:'completed',deliveredAt:stamp,proofOfDeliveryUrl:proofUrl});else patch.riderPickedUpAt=stamp;
         tx.update(orderRef,patch);return {saved:true};
     });
@@ -143,7 +148,7 @@ export async function rejectPingAtomic(api,input){
         }
         if(order.status!=='looking_for_rider' || order.riderId || order.pingedRider!==actor.riderId)throw Error('This offer changed or was assigned to another rider.');
         assertRider(api,actor,rider,order.branch);
-        tx.update(orderRef,{pingedRider:null,declinedBy:[...new Set([...declined,actor.riderId])],riderDeclines:{...declines,[actor.riderId]:{version:1,operationId,actorUid:actor.authUid,riderId:actor.riderId,signature,recordedAt:api.serverTimestamp()}}});return {saved:true};
+        tx.update(orderRef,{pingedRider:null,declinedBy:[...new Set([...declined,actor.riderId])],riderDeclines:{...declines,[actor.riderId]:{version:1,operationId,actorUid:actor.authUid,sessionId:actor.sessionId,riderId:actor.riderId,signature,recordedAt:api.serverTimestamp()}}});return {saved:true};
     });
 }
 async function managerContext(api,actor){
@@ -193,13 +198,13 @@ export async function reviewRiderTopUpAtomic(api,input){
         api.assertRiderManagerAuthority(actor,rows,riderScope(rider));const stamp=api.serverTimestamp();
         tx.update(requestRef,{status:input.decision,...(input.decision==='approved'?{amountAdded:amount/100}:{}),processedAt:stamp,processedBy:actor.email,
             reviewOperation:{version:1,operationId,actorUid:actor.authUid,actorEmail:actor.email,signature,amountCents:amount,decision:input.decision,recordedAt:stamp}});
-        if(input.decision==='approved')tx.update(riderRef,{walletBalance:next/100});return {saved:true,walletBalance:next/100};
+        if(input.decision==='approved')tx.update(riderRef,{walletBalance:next/100,riderWalletOperation:{version:1,kind:'topup',requestId,operationId,actorUid:actor.authUid,amountCents:amount,recordedAt:stamp}});return {saved:true,walletBalance:next/100};
     });
 }
 export async function requestRiderTopUpAtomic(api,input){
     const topupId=id(input.topupId,'top-up request'),operationId=id(input.operationId,'save attempt'),actor=actorFor(api,input.actor),reference=text(input.reference);
     if(!reference || reference.length>100)throw Error('Enter a payment reference of at most 100 characters.');
-    let proofUrl;try{const url=new URL(input.proofUrl);if(url.protocol!=='https:' || url.username || url.password)throw Error();proofUrl=url.href;}catch{throw Error('Upload a valid payment proof before sending the request.');}
+    const proofUrl=riderProofUrl(input.proofUrl,{actor,kind:'topup',recordId:topupId,operationId});
     const signature=fingerprint({topupId,riderId:actor.riderId,reference,proofUrl});
     return api.runTransaction(api.db,async tx=>{
         const riderSnap=await tx.get(api.doc(api.db,'riders',actor.riderId));api.assertRiderActor(actor);
@@ -207,13 +212,13 @@ export async function requestRiderTopUpAtomic(api,input){
         if(!riderSnap.exists())throw Error('Your rider record is missing.');const rider=riderSnap.data();assertRider(api,actor,rider);
         if(existing.exists()){
             const data=existing.data();
-            if(data.riderId!==actor.riderId || data.reference!==reference || data.proofUrl!==proofUrl || data.requestOperation?.signature!==signature || data.requestOperation?.actorUid!==actor.authUid)
+            if(data.riderId!==actor.riderId || data.reference!==reference || data.proofUrl!==proofUrl || data.requestOperation?.signature!==signature || data.requestOperation?.actorUid!==actor.authUid || data.requestOperation?.sessionId!==actor.sessionId)
                 throw Error('This reference already has a different request. Ask HQ to review it before submitting again.');
             return {alreadySaved:true,status:data.status,topupId};
         }
         assertRider(api,actor,rider);const stamp=api.serverTimestamp();
         tx.set(ref,{riderId:actor.riderId,riderName:text(rider.name),reference,proofUrl,status:'pending',timestamp:stamp,
-            requestOperation:{version:1,operationId,actorUid:actor.authUid,riderId:actor.riderId,signature,recordedAt:stamp}});
+            requestOperation:{version:1,operationId,actorUid:actor.authUid,sessionId:actor.sessionId,riderId:actor.riderId,signature,recordedAt:stamp}});
         return {saved:true,status:'pending',topupId};
     });
 }
@@ -223,6 +228,6 @@ export async function setRiderAvailabilityAtomic(api,input){
         const ref=api.doc(api.db,'riders',actor.riderId),snap=await tx.get(ref);api.assertRiderActor(actor);
         if(!snap.exists())throw Error('Your rider record is missing.');const rider=snap.data();assertRider(api,actor,rider);
         if(rider.isAcceptingOrders===input.isAcceptingOrders)return {alreadySaved:true};
-        tx.update(ref,{isAcceptingOrders:input.isAcceptingOrders,availabilityUpdatedAt:api.serverTimestamp()});return {saved:true};
+        tx.update(ref,{isAcceptingOrders:input.isAcceptingOrders,availabilityUpdatedAt:api.serverTimestamp(),riderActionSessionId:actor.sessionId});return {saved:true};
     });
 }

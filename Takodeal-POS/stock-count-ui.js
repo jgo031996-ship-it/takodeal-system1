@@ -56,5 +56,14 @@ export function installCycleCounts(w=window,d=document,{resolveApi,now=Date.now}
   }catch(error){if(w.sessionUser===session&&epoch===viewToken){status(committed?'Counts saved. Reopen Stock Report to review the saved count.':error.message);await w.Swal.fire(committed?'Counts saved':'Count submission needs review',committed?'The count was saved. Reopen Stock Report to review it; no automatic stock request was sent.':error.message+' Your entries are kept for retry.',committed?'info':'warning');}}
   finally{busy=false;if(button)button.disabled=false;}
  };
- return{checkApproval:()=>approval()};
+ w.openActualIngredientCount=async({inventoryId,name,branch}={})=>{
+  const session=w.sessionUser;if(busy||!session?.staffId||session.branch!==branch||!/^[-\w]{1,180}$/.test(inventoryId||''))throw Error('Finish the current stock action, then reopen this ingredient count.');
+  if(w.cart?.length||w.isProcessingOrder||w.cashierCashCountActive||w.cashierRemitSubmitting||w.expenseSubmissionFlight)throw Error('Finish the current order or open work before entering a stock count.');
+  w.invalidateCache?.('inventory');w.switchView?.('stockreq');const targetEpoch=epoch+1;await w.loadStockRequestUI();
+  if(session!==w.sessionUser||epoch!==targetEpoch||session.branch!==branch)throw Error('The staff, branch or count view changed. Reopen Stock Report.');
+  const item=w.currentStockChecklist?.find(row=>row.id===inventoryId&&row.name===name&&row.branch===branch);if(!item)throw Error('This ingredient is not available in the current staff count sheet. Ask HQ to review it.');
+  const cycle=el('manualCountCycleFilter'),search=el('manualCountSearch');if(cycle)cycle.value=stockCycle(item.restockCycle);if(search)search.value=name;w.filterManualStockCount();
+  const input=el('countBase_'+inventoryId);if(!input)throw Error('Reopen Stock Report to enter the actual count.');input.scrollIntoView?.({block:'center'});input.focus?.();status('Enter the physical count for '+name+'. Review the selected cycle and period before saving. No stock or request has changed.');return true;
+ };
+ return{checkApproval:()=>approval(),openActualIngredientCount:w.openActualIngredientCount};
 }

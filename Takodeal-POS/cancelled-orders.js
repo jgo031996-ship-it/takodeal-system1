@@ -2,6 +2,7 @@ import {SALE_VERSION,safeId,saleFingerprint,countBalls} from './pos-safety.js';
 import {cancelledFoodPolicy} from './pos-config-model.js';
 import {mealRole,savedPin} from './hq-account-model.js';
 import {cancelledFoodAvailableLine,quoteCancelledFoodPortion,cancelledFoodPortionCart,cancelledFoodPurchasedItems} from './cancelled-food-portions.js';
+import {prepareStaffPinProof,assertStaffPinProof,staffProfileCollection} from './staff-pin-proof.js';
 export const CANCELLATION_REASONS=Object.freeze({customer:'Prepared but customer cancelled',rider:'Prepared but rider cancelled'});
 export const cancelledPlatform=sale=>{const value=String(sale.paymentMethod||'').trim().toLowerCase();return value==='grab'?'Grab':['foodpanda','panda'].includes(value)?'Foodpanda':null;};
 export function eligibleCancelledFoodBuyer(profile){
@@ -22,7 +23,12 @@ const cents=value=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0
 const text=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
     const ref=(table,id)=>api.doc(api.db,table,id);
-    function guard(input){if(!input.sourceSaleId||!input.branch||!input.shiftId||!sessionCheck(input))throw Error('Your branch or shift changed. Reopen sales history before continuing.');}
+    function guard(input){input.assertCurrent?.();if(!input.sourceSaleId||!input.branch||!input.shiftId||!sessionCheck(input))throw Error('Your branch or shift changed. Reopen sales history before continuing.');}
+    async function buyer(tx,input,proof){
+        const staff=await tx.get(ref(staffProfileCollection(api),input.staffId)),profile=staff.exists()?staff.data():null;
+        if(!profile||!eligibleCancelledFoodBuyer(profile)||String(profile.cashierName||profile.fullName||profile.name)!==input.staffName||staffProfileCollection(api)!=='staff_directory'&&savedPin(profile)!==String(input.pin))throw Error('The employee login PIN or access changed. Verify their active crew or manager profile again.');
+        await assertStaffPinProof(api,tx,proof,profile,{assertCurrent:()=>guard(input)});
+    }
     async function source(tx,input){
         guard(input);
         const saleRef=ref('transactions',input.sourceSaleId),snapshot=await tx.get(saleRef);
@@ -70,6 +76,7 @@ export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
     async function purchasePortion(input){
         if(!/^[a-f0-9]{32}$/.test(input.quote?.operationId)||!Array.isArray(input.quote.selection)||!input.quote.selection.length||input.quote.selection.length>6)throw Error('Reopen this receipt and choose the items again.');
         const id=portionId(input);
+        const proof=await prepareStaffPinProof(api,{pin:String(input.pin),staffId:input.staffId,purpose:'purchase',scope:id,branch:input.branch,assertCurrent:()=>guard(input)});
         try{return await api.runTransaction(api.db,async tx=>{
             const {saleRef,sale}=await source(tx,input),purchaseRef=ref('transactions',id),deductionRef=ref('staff_deductions',id),existing=await tx.get(purchaseRef),deduction=await tx.get(deductionRef);
             if(existing.exists()){
@@ -82,14 +89,14 @@ export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
             const offer=await portionOffer(tx,sale,input,input.quote.selection.map(row=>row.lineIndex));let currentQuote;
             try{currentQuote=quoteCancelledFoodPortion(offer,input.quote.selection,input.quote.operationId);}catch(error){error.code='cancelled-food/selection-stale';throw error;}
             if(!same(currentQuote,input.quote)){const error=Error('An item quantity, discount or price changed. Reopen the receipt and review the remaining food before confirming.');error.code='cancelled-food/selection-stale';throw error;}
-            const staff=await tx.get(ref('cashiers',input.staffId));
-            if(!staff.exists()||!eligibleCancelledFoodBuyer(staff.data())||String(staff.data().cashierName||staff.data().fullName||staff.data().name)!==input.staffName||savedPin(staff.data())!==String(input.pin))throw Error('The employee login PIN or access changed. Verify their active crew or manager profile again.');
+            await buyer(tx,input,proof);
             guard(input);
             const cart=cancelledFoodPortionCart(sale,currentQuote),purchasedItems=cancelledFoodPurchasedItems(sale,currentQuote),receiptId='CF-'+sale.receiptId+'-'+currentQuote.operationId;
             const payload={saleVersion:SALE_VERSION,saleId:id,receiptId,branch:input.branch,shiftId:input.shiftId,cashier:input.cashier,cart,orderType:'Take-Out',status:'Paid',customerName:input.staffName,paymentMethod:'Salary Deduction',paymentVerified:true,subTotalBeforeDiscount:currentQuote.baseAmount,globalDiscountType:'cancelled_food',globalDiscountValue:currentQuote.discountPct,globalDiscountAmount:currentQuote.discountAmount,globalDiscountReason:'Selected prepared platform cancellation items — staff purchase',netTotal:currentQuote.amount,amountReceived:0,inventoryMovements:[],inventoryState:'applied',inventoryReviewRequired:false,ballsCounted:countBalls(cart),statsApplied:true,cancelledFoodSourceId:input.sourceSaleId,cancelledFoodSourceReceiptId:sale.receiptId,cancelledFoodStaffId:input.staffId,cancelledFoodPortionVersion:1,cancelledFoodSelection:currentQuote.selection,cancelledFoodQuote:currentQuote,timestamp:api.serverTimestamp()};
+            if(proof)payload.staffPinVerificationId=proof.id;
             tx.set(purchaseRef,payload);
             tx.set(ref('pos_sale_commits',id),{saleId:id,branch:input.branch,receiptId,fingerprint:saleFingerprint(payload),committedAt:api.serverTimestamp()});
-            tx.set(deductionRef,{staffId:input.staffId,staffName:input.staffName,branch:input.branch,type:'Cancelled Food Purchase',category:'Foods',status:'Unpaid',amount:currentQuote.amount,originalAmount:currentQuote.baseAmount,discountPct:currentQuote.discountPct,discountAmount:currentQuote.discountAmount,sourceSaleId:input.sourceSaleId,sourceReceiptId:sale.receiptId,sourcePlatform:currentQuote.platform,purchaseId:id,receiptId,purchasedItems,cancelledFoodSelection:currentQuote.selection,item:cart.map(item=>`${item.qty}x ${item.name||item.itemName}`).join(', '),dateAdded:api.serverTimestamp(),loggedBy:input.cashier});
+            tx.set(deductionRef,{staffId:input.staffId,staffName:input.staffName,branch:input.branch,type:'Cancelled Food Purchase',category:'Foods',status:'Unpaid',amount:currentQuote.amount,originalAmount:currentQuote.baseAmount,discountPct:currentQuote.discountPct,discountAmount:currentQuote.discountAmount,sourceSaleId:input.sourceSaleId,sourceReceiptId:sale.receiptId,sourcePlatform:currentQuote.platform,purchaseId:id,receiptId,purchasedItems,cancelledFoodSelection:currentQuote.selection,...(proof?{staffPinVerificationId:proof.id}:{}),item:cart.map(item=>`${item.qty}x ${item.name||item.itemName}`).join(', '),dateAdded:api.serverTimestamp(),loggedBy:input.cashier});
             const purchasedQuantities={...offer.purchasedQuantities};
             currentQuote.selection.forEach(row=>{purchasedQuantities[String(row.lineIndex)]=row.priorPurchasedQty+row.qty;});
             tx.set(ref('cancelled_food_allocations',input.sourceSaleId),{sourceSaleId:input.sourceSaleId,sourceReceiptId:sale.receiptId,branch:input.branch,shiftId:input.shiftId,purchasedQuantities,lastPurchaseId:id,updatedAt:api.serverTimestamp()});
@@ -157,6 +164,7 @@ export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
             if(!input.staffId||!input.staffName||!input.cashier||String(input.pin||'').length<4)throw Error('A verified staff PIN is required.');
             if(input.quote?.portionVersion===1)return purchasePortion(input);
             const id='cancelled-food-'+safeId(input.sourceSaleId);
+            const proof=await prepareStaffPinProof(api,{pin:String(input.pin),staffId:input.staffId,purpose:'purchase',scope:id,branch:input.branch,assertCurrent:()=>guard(input)});
             try{return await api.runTransaction(api.db,async tx=>{
                 const {saleRef,sale}=await source(tx,input),purchaseRef=ref('transactions',id),existing=await tx.get(purchaseRef),deductionRef=ref('staff_deductions',id),deduction=await tx.get(deductionRef);
                 if(existing.exists()){
@@ -169,13 +177,13 @@ export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
                 await openShift(tx,input);
                 const config=await tx.get(ref('settings','global_pos_config')),currentQuote=quote(sale,input,config.exists()?config.data():{});
                 if(!same(currentQuote,input.quote))throw Error('The discount or order changed. Review the current quote before confirming the deduction.');
-                const staff=await tx.get(ref('cashiers',input.staffId));
-                if(!staff.exists()||!eligibleCancelledFoodBuyer(staff.data())||String(staff.data().cashierName||staff.data().fullName||staff.data().name)!==input.staffName||savedPin(staff.data())!==String(input.pin))throw Error('The employee login PIN or access changed. Verify their active crew or manager profile again.');
+                await buyer(tx,input,proof);
                 guard(input);
                 const cart=sale.cart.map(item=>({...item})),receiptId='CF-'+sale.receiptId,payload={saleVersion:SALE_VERSION,saleId:id,receiptId,branch:input.branch,shiftId:input.shiftId,cashier:input.cashier,cart,orderType:'Take-Out',status:'Paid',customerName:input.staffName,paymentMethod:'Salary Deduction',paymentVerified:true,subTotalBeforeDiscount:currentQuote.baseAmount,globalDiscountType:'cancelled_food',globalDiscountValue:currentQuote.discountPct,globalDiscountAmount:currentQuote.discountAmount,globalDiscountReason:'Prepared platform cancellation — staff purchase',netTotal:currentQuote.amount,amountReceived:0,inventoryMovements:[],inventoryState:'applied',inventoryReviewRequired:false,ballsCounted:countBalls(cart),statsApplied:true,cancelledFoodSourceId:input.sourceSaleId,cancelledFoodSourceReceiptId:sale.receiptId,cancelledFoodStaffId:input.staffId,cancelledFoodQuote:currentQuote,timestamp:api.serverTimestamp()};
+                if(proof)payload.staffPinVerificationId=proof.id;
                 tx.set(purchaseRef,payload);
                 tx.set(ref('pos_sale_commits',id),{saleId:id,branch:input.branch,receiptId,fingerprint:saleFingerprint(payload),committedAt:api.serverTimestamp()});
-                tx.set(deductionRef,{staffId:input.staffId,staffName:input.staffName,branch:input.branch,type:'Cancelled Food Purchase',category:'Foods',status:'Unpaid',amount:currentQuote.amount,originalAmount:currentQuote.baseAmount,discountPct:currentQuote.discountPct,discountAmount:currentQuote.discountAmount,sourceSaleId:input.sourceSaleId,sourceReceiptId:sale.receiptId,sourcePlatform:currentQuote.platform,purchaseId:id,receiptId,item:cart.map(item=>`${item.qty}x ${item.name||item.itemName}`).join(', '),dateAdded:api.serverTimestamp(),loggedBy:input.cashier});
+                tx.set(deductionRef,{staffId:input.staffId,staffName:input.staffName,branch:input.branch,type:'Cancelled Food Purchase',category:'Foods',status:'Unpaid',amount:currentQuote.amount,originalAmount:currentQuote.baseAmount,discountPct:currentQuote.discountPct,discountAmount:currentQuote.discountAmount,sourceSaleId:input.sourceSaleId,sourceReceiptId:sale.receiptId,sourcePlatform:currentQuote.platform,purchaseId:id,receiptId,...(proof?{staffPinVerificationId:proof.id}:{}),item:cart.map(item=>`${item.qty}x ${item.name||item.itemName}`).join(', '),dateAdded:api.serverTimestamp(),loggedBy:input.cashier});
                 tx.update(saleRef,{cancelledFoodPurchaseId:id});
                 tx.update(ref('shifts',input.shiftId),{salesRevision:api.increment(1)});
                 if(payload.ballsCounted>0)tx.set(ref('settings','global_stats'),{totalTakoyakiBalls:api.increment(payload.ballsCounted),['balls_'+input.branch]:api.increment(payload.ballsCounted),lastSaleId:id,lastSaleBranch:input.branch,lastSaleDirection:1},{merge:true});

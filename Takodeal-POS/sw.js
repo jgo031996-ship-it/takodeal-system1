@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-variance-timein-20261108-r1';
+const CORE = 'takodeal-pos-core-security-stock-loans-prep-20261109-r1';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -74,6 +74,7 @@ async function savePhoto(cache, value) {
   if (url.protocol === 'data:') return;
   if (url.protocol === 'blob:') throw new Error('Temporary image URL cannot survive an app restart');
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Invalid image URL');
+  if (privateTraffic({destination:'image'},url)) throw new Error('Private evidence and account images are not saved in the offline catalog cache');
   if (await cache.match(url.href)) return;
   let response;
   try { response = await fetch(new Request(url.href, { mode: 'cors' })); }
@@ -116,9 +117,24 @@ self.addEventListener('message', event => {
     } catch (error) { port.postMessage({ ok: false, error: error.message }); }
   })());
 });
+// API, account and private evidence traffic never enters an app-file cache.
+function publicCatalogImage(url) {
+  const base='/v0/b/takodeal-pos.firebasestorage.app/o/';
+  if(url.hostname!=='firebasestorage.googleapis.com'||!url.pathname.startsWith(base)||url.searchParams.get('alt')!=='media')return false;
+  try{return /^(menu_images|inventory_images|storefronts)\//.test(decodeURIComponent(url.pathname.slice(base.length)));}catch{return false;}
+}
+function privateTraffic(request,url) {
+  let pathname;try{pathname=decodeURIComponent(url.pathname);}catch{return true;}
+  if(url.username||url.password||request.headers?.has?.('authorization')||/(?:^|\/)api(?:\/|$)|\/__(?:\/|$)/i.test(pathname))return true;
+  if(url.hostname==='accounts.google.com')return true;
+  const catalog=request.destination==='image'&&publicCatalogImage(url);
+  if(/(^|\.)(googleapis\.com|googleusercontent\.com|firebaseio\.com|firebaseapp\.com|cloudfunctions\.net|run\.app)$/i.test(url.hostname)&&!catalog)return true;
+  if(!catalog&&[...url.searchParams.keys()].some(key=>/^(token|access_token|id_token|authorization|signature|sig|x-amz-signature|x-goog-signature)$/i.test(key)))return true;
+  return false;
+}
 self.addEventListener('fetch', event => {
   const request = event.request, url = new URL(request.url);
-  if (request.method !== 'GET') return;
+  if (request.method !== 'GET' || privateTraffic(request,url)) return;
   if (url.origin === ROOT.origin && url.pathname.startsWith(ROOT.pathname + 'api/')) return;
   // Handle images FIRST, including firebasestorage.googleapis.com images.
   if (request.destination === 'image') {
@@ -169,3 +185,6 @@ required.push('./cashier-device-auth.js');
 required.push('./stock-audit-model.js','./stock-audit-device.js');
 
 required.push('./saved-shift-proposal.js');
+
+// Install the complete local module graph for this release. API traffic stays online.
+required.push("./cashier-operation-lifecycle.js","./cashier-operational-history.js","./cashier-operational-sdk.js","./cashier-own-operations.js","./cashier-prep.js","./cashier-shift-close-client.js","./cashier-staff-access.js","./low-ingredient-model.js","./low-ingredient-ui.css","./low-ingredient-ui.js","./mobile-hub-protected-api.js","./staff-announcements.js","./staff-operational-session.js","./staff-pin-proof.js");

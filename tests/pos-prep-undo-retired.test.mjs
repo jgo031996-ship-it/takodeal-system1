@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+test('actual legacy POS Undo handler preserves its source and stock and directs the cashier to reviewed Owner correction',async()=>{
+ const main=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),start=main.indexOf('window.undoKitchenPrep ='),end=main.indexOf('// 🧹 DEDICATED CONSUMABLES',start),source=main.slice(start,end),dialogs=[];let writes=0,reads=0;const blocked=()=>{writes++;throw Error('No stock write or deletion is allowed');},read=()=>{reads++;throw Error('No current recipe lookup is allowed');};const context=vm.createContext({window:{},Swal:{fire:async options=>{dialogs.push(options);return {}; }},updateDoc:blocked,deleteDoc:blocked,addDoc:blocked,getDoc:read,getDocs:read,runTransaction:blocked});vm.runInContext(source,context);await context.window.undoKitchenPrep('legacy-source','Untrusted item',1000);assert.equal(reads,0);assert.equal(writes,0);assert.equal(dialogs.length,1);assert.equal(dialogs[0].titleText,'Owner review required');assert.match(dialogs[0].text,/saved prep stays on file/);assert.match(dialogs[0].text,/cannot be safely undone from the current recipe/);assert.doesNotMatch(source,/updateDoc|deleteDoc|addDoc|getDocs|runTransaction/);assert.match(main,/onclick="window\.undoKitchenPrep\(\)"[^>]*>Owner review/);
+});

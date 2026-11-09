@@ -10,9 +10,9 @@ import {payslipDeductionBreakdown,payslipDeductionDetailsHTML} from '../takodeal
 
 const staffId='sample-staff',name='Sample Staff',branch='Maa',start='2030-01-01',end='2030-01-15',recordId=ordinaryPayrollId(staffId,start,end);
 function fixture({manager=false}={}){
- const h=firestoreHarness(),uid=manager?'manager':'owner',email=manager?'manager@example.test':'jgo031996@gmail.com';
- h.api.auth={currentUser:{uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]}};h.api.sessionUser={uid,email,isOwner:!manager,isFranchisee:false,role:manager?'Manager':'Owner',permissions:['payroll'],allowedBranches:['All']};
- h.put('hq_managers/'+uid,{email,cashierName:'HQ',pin:'1234',role:manager?'Manager':'System Architect',permissions:['payroll'],assignedBranch:'All'});h.put('hq_email_access/'+email,{active:true,permissions:['payroll'],allowedBranches:['All']});
+ const h=firestoreHarness(),uid=manager?'manager':'owner',email=manager?'manager@example.test':'jgo031996@gmail.com',permissions=manager?['payroll','accounts','expenses']:['payroll'];
+ h.api.auth={currentUser:{uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]}};h.api.sessionUser={uid,email,isOwner:!manager,isFranchisee:false,role:manager?'Manager':'Owner',permissions:[...permissions],allowedBranches:['All']};
+ h.put('hq_managers/'+uid,{email,cashierName:'HQ',pin:'1234',role:manager?'Manager':'System Architect',permissions:[...permissions],assignedBranch:'All'});h.put('hq_email_access/'+email,{active:true,permissions:[...permissions],allowedBranches:['All']});
  const profile={staffId,cashierName:name,branch,hourlyRate:450,customDeductions:[]};h.put('cashiers/'+staffId,profile);h.put('cash_accounts/cash',{name:'Bank',branch,balance:5000});
  h.api.getDocFromServer=async ref=>({id:ref.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.get(ref.path))});
  const data={staffId,name,branch,start,end,profile,basicPay:450,nightBonus:0,holidayPayTotal:0,straightBonus:0,perfBonus:0,lateDeduction:0,sss:0,pagibig:0,philhealth:0,advances:0,meals:0,loans:0,cashShortages:0,cashShortageRows:[],ownerDeductions:0,ownerDeductionRows:[],ownerDeductionDetails:[]};
@@ -70,7 +70,7 @@ test('a different cutoff cannot charge a Paid source again, and a clean next cut
  const f=fixture();seedOwner(f);await f.pay();f.data.start='2030-01-16';f.data.end='2030-01-31';await assert.rejects(f.pay(),/owner.added/i);assert.equal(f.h.get('cash_accounts/cash').balance,4600);f.data.ownerDeductions=0;f.data.ownerDeductionRows=[];f.data.customDeductions=[{name:'Wi-Fi',amount:15}];f.data.customDeductionsTotal=15;const next=await f.pay();assert.equal(next.finalNetPay,435);assert.deepEqual(next.frozenData.ownerDeductionDetails,[]);assert.equal(payslipDeductionBreakdown(next.frozenData).groups.some(group=>group.key==='ownerDeductions'),false);
 });
 test('Owner-only approval is required even when a Manager can otherwise process ordinary payroll',async()=>{
- const f=fixture({manager:true});seedOwner(f);await assert.rejects(f.pay(),/verified Owner/);noDebit(f);assert.equal((await fixture({manager:true}).pay()).finalNetPay,450);
+ const f=fixture({manager:true});seedOwner(f);const before=structuredClone([...f.h.docs]);await assert.rejects(f.pay(),/verified Owner/);noDebit(f);assert.deepEqual([...f.h.docs],before);const ordinary=fixture({manager:true});assert.equal((await ordinary.pay()).finalNetPay,450);assert.equal(ordinary.h.get('cash_accounts/cash').balance,4550);assert.equal(ordinary.h.get('expenses/'+recordId).amount,450);
 });
 test('refund and owner one-time rows share a single atomic payout and return the immutable payment on retry',async()=>{
  const f=fixture(),row=seedOwner(f);seedRefund(f);f.h.loseNextAck();await assert.rejects(f.refund(),/lost after commit/);const paid=await f.refund();assert.equal(paid.alreadyPaid,true);assert.equal(paid.finalNetPay,390);assert.equal(f.h.get('cash_accounts/cash').balance,4610);assert.deepEqual(f.h.get('payroll_records/'+paid.id).ownerDeductionSettlements,{[row.id]:50});assert.equal(f.h.get('owner_deduction_reviews/'+row.id).payrollRecordId,paid.id);

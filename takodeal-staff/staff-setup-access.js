@@ -1,6 +1,7 @@
 // Setup-code verification is performed by the trusted service. No code or
 // verifier is written to browser storage, public profiles or the device mirror.
 export const STAFF_SETUP_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDeviceSetup';
+export const STAFF_OPTIONS_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/cashRemittanceReview/access/staff-options';
 export const STAFF_SETUP_DRAFT='takodeal_staff_setup_draft_v1';
 const key=value=>typeof value==='string' && /^[-A-Za-z0-9_]{1,128}$/.test(value);
 const deviceKey=value=>typeof value==='string' && /^DEV-[A-Z0-9-]{6,50}$/.test(value);
@@ -67,19 +68,13 @@ export function createStaffSetupAuthority({transport,getUid,now=Date.now,maxAgeM
     return {confirm,invalidate,isVerified,assertStaff,capture,assert,binding:()=>current()?.mode==='protected'&&current().device?{...current().device}:null,mode:()=>current()?.mode||null};
 }
 export async function readSetupStaffDirectory({projectId,apiKey,getToken,fetcher=fetch,Controller=AbortController,delay=setTimeout,cancelDelay=clearTimeout}){
-    const rows=[];
-    const fields=['cashierName','branch','status','active','archived','blocked'];let pageToken='';
     try{
       return await withinSetupDeadline(async({signal,guard})=>{
-        const token=await getToken();guard();
-        for(let page=0;page<20;page++){
-            const params=new URLSearchParams({key:apiKey,pageSize:'100'});for(const field of fields)params.append('mask.fieldPaths',field);if(pageToken)params.set('pageToken',pageToken);
-            const response=await fetcher(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashiers?${params}`,{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token},signal});guard();
-            const data=await response.json();guard();if(!response.ok)throw Error('The staff list could not load. Check your connection and try again.');
-            for(const doc of data.documents||[]){const f=doc.fields||{},staffId=doc.name?.split('/').pop(),name=f.cashierName?.stringValue,branch=f.branch?.stringValue,status=f.status?.stringValue||'';if(key(staffId)&&name?.trim()&&branch?.trim()&&f.active?.booleanValue!==false&&f.archived?.booleanValue!==true&&f.blocked?.booleanValue!==true&&!/^(Blocked|Revoked|Terminated|Resigned|Inactive|Disabled|Archived|Deleted)$/i.test(status))rows.push({staffId,name,branch});}
-            pageToken=data.nextPageToken||'';if(!pageToken)return rows.sort((a,b)=>a.name.localeCompare(b.name)||a.branch.localeCompare(b.branch));
-        }
-        throw Error('The staff list is too large to load safely. Contact the Owner.');
+        const token=await getToken();guard();if(typeof token!=='string'||!token)throw Error('Reconnect to verify your Staff setup.');
+        const response=await fetcher(STAFF_OPTIONS_ENDPOINT,{method:'POST',cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}',signal});guard();
+        if(response.redirected||response.url&&response.url!==STAFF_OPTIONS_ENDPOINT)throw Error('The Staff setup list could not be verified.');
+        const data=await response.json();guard();if(!response.ok||!data||Object.keys(data).sort().join(',')!=='schemaVersion,staff'||data.schemaVersion!==1||!Array.isArray(data.staff)||data.staff.length>2000||data.staff.some(row=>!row||Object.keys(row).sort().join(',')!=='branch,name,staffId'||!key(row.staffId)||typeof row.name!=='string'||!row.name.trim()||row.name.length>200||typeof row.branch!=='string'||!row.branch.trim()||row.branch.length>200)||new Set(data.staff.map(row=>row.staffId)).size!==data.staff.length)throw Error('The Staff setup list could not be confirmed. Reconnect or ask HQ to review it.');
+        return data.staff.map(row=>({...row})).sort((a,b)=>a.name.localeCompare(b.name)||a.branch.localeCompare(b.branch));
       },{delay,cancelDelay,Controller},'The staff list took too long to load. Check your connection and try again.');
     }catch(error){if(error.name==='AbortError')throw Error('The staff list took too long to load. Check your connection and try again.');throw error;}
 }

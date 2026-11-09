@@ -66,6 +66,7 @@ function actual(name,loadMonth) {
  const nodes=new Map(),values=new Map([['takodeal_staff_id','staff-id'],['takodeal_staff_name','Sample Staff'],['cashierName','Cashier A'],['takodeal_device_branch','Maa']]);
  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',innerHTML:'',style:{}});return nodes.get(id);};node('staffMonthPicker').value='2026-10';
  const reads=[],window={getDocFromServer:async ref=>{reads.push(ref);return {exists:()=>true,data:()=>({cashierName:'Sample Staff',scheduleNickname:'Sample',branch:'Maa'})};},doc:(_db,table,id)=>table+'/'+id,db:{}};
+ if(name==='staff')window.readStaffDirectoryProfile=async(staffId,{assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await window.getDocFromServer('staff_directory/'+staffId);assertCurrent();return snapshot;};
  class FixedDate extends Date {constructor(...args){super(...(args.length?args:['2026-10-16T19:00:00+08:00']));}static now(){return +new Date('2026-10-16T19:00:00+08:00');}}
  const context={window,localStorage:{getItem:key=>values.get(key)||null},document:{getElementById:node},loadScheduleMonthView:loadMonth,
   scheduleDateKey,monthKey,staffScheduleDay,renderStaffScheduleConflict,structuredClone,Date:FixedDate,console:{error(){}},setTimeout(){}};
@@ -79,7 +80,7 @@ function view(branch='Maa') {
  return projectScheduleMonth({month:'2026-10',current,now:new Date('2026-10-16T19:00:00+08:00'),branch});
 }
 test('actual Staff viewer reads staff by server ID and marks the Philippine date as TODAY',async()=>{
- const h=actual('staff',async()=>view());await h.load();assert.deepEqual(h.reads,['cashiers/staff-id']);
+ const h=actual('staff',async()=>view());await h.load();assert.deepEqual(h.reads,['staff_directory/staff-id']);
  assert.match(h.node('scheduleContainer').innerHTML,/TODAY/);assert.match(h.node('scheduleContainer').innerHTML,/7:30 PM to 4:00 AM/);
  assert.equal(h.window.cachedSchedData.currentMonth,10);
 });

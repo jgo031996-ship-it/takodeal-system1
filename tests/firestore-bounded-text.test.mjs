@@ -121,11 +121,11 @@ test('forged output/proof cannot change type, method, order, inclusivity, litera
  }
  const proof=structuredClone(result.proof);proof.sites[0].bounds[0]='1';assert.throws(()=>assertBoundedTextSharingEquivalent(source,result.source,proof),/bound/);
 });
-test('reviewed app policy gives46 two-bound sites and63 with explicitly enabled single bounds',()=>{
+test('reviewed app policy gives57 two-bound sites and83 with explicitly enabled single bounds',()=>{
  const source=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),ranges=shareBoundedText(source),all=shareBoundedText(source,{includeSingleBounds:true});
- assert.equal(ranges.proof.sites.length,46);assert.equal(ranges.proof.helpers.length,2);assert.equal(all.proof.sites.length,63);assert.equal(all.proof.helpers.length,4);
+ assert.equal(ranges.proof.sites.length,57);assert.equal(ranges.proof.helpers.length,2);assert.equal(all.proof.sites.length,83);assert.equal(all.proof.helpers.length,4);
  const start=source.indexOf('function staffPayslipPreview(data,id)'),end=source.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
  assert.deepEqual(ranges.proof.sites.filter(site=>site.start>=start&&site.end<=end).map(site=>({value:site.value,bounds:site.bounds})),[{value:'data.staffName',bounds:['0','160']},{value:'data.branch',bounds:['0','128']}],'the new publication validator supplies exactly the two added text ranges');
- assert.deepEqual(ranges.statistics.byKind,{exclusiveRange:33,inclusiveRange:13,inclusiveMaximum:0,exclusiveMinimum:0});assertRequestIndependent(source,ranges);assertRequestIndependent(source,all);
+ assert.deepEqual(ranges.statistics.byKind,{exclusiveRange:41,inclusiveRange:16,inclusiveMaximum:0,exclusiveMinimum:0});assertRequestIndependent(source,ranges);assertRequestIndependent(source,all);
  assert.equal(fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),source);
 });

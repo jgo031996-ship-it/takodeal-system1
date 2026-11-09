@@ -18,6 +18,10 @@ async function fixture(cart=[row('Mango Shake',2,200),row('Bonito Takoyaki 6 Pcs
  return {h,engine,quote,purchase};
 }
 const rows=(h,table)=>[...h.docs].filter(([path])=>path.startsWith(table+'/'));
+test('a secure cancelled-food purchase uses the selected directory identity plus fresh exact purchase proof without reading PIN profiles',async()=>{
+ const f=await fixture(),actor={uid:'approved-device',deviceId:'DEV-SYNTHETIC-POS',app:'cashier',sessionId:'synthetic-session-0001'},calls=[];f.h.docs.delete('cashiers/wenna');f.h.docs.delete('cashiers/hannah');f.h.put('staff_directory/wenna',{staffId:'wenna',cashierName:'Sample Wenna',branch,role:'Staff',active:true,profileRevision:'current-revision'});Object.assign(f.h.api,{auth:{currentUser:{uid:actor.uid}},staffProfileCollection:'staff_directory',staffPinActor:()=>actor,verifyStaffPin:async request=>{calls.push(request);assert.equal(request.pin,'1234');f.h.put('staff_pin_verifications/purchase-proof',{schemaVersion:1,...actor,staffId:'wenna',branch,purpose:'purchase',scope:request.scope,profileRevision:'current-revision',expiresAt:new Date('2030-01-01')});return{staffId:'wenna',verificationId:'purchase-proof'};}});
+ const result=await f.purchase(await f.quote([{lineIndex:0,qty:1}]));assert.equal(calls.length,1);assert.equal(calls[0].purpose,'purchase');assert.equal(calls[0].scope,result.saleId);assert.equal(f.h.get('transactions/'+result.saleId).staffPinVerificationId,'purchase-proof');assert.equal(f.h.get('staff_deductions/'+result.saleId).staffPinVerificationId,'purchase-proof');assert.equal(rows(f.h,'inventory')[0][1].currentStock,88);
+});
 test('two employees each buy one shake and one takoyaki from the same cancelled receipt',async()=>{
  const f=await fixture(),beforeStock=structuredClone(rows(f.h,'inventory'));
  const first=await f.purchase(await f.quote([{lineIndex:0,qty:1},{lineIndex:1,qty:1}]));

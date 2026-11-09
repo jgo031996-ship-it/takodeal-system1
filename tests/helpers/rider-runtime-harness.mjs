@@ -4,8 +4,10 @@ import {readFileSync} from 'node:fs';
 import {webcrypto,randomUUID} from 'node:crypto';
 import {firestoreHarness} from './firestore-harness.mjs';
 import {installRiderAccount} from '../../takodeal-delivery/rider-account.js';
+import {riderAccessBridge} from './rider-access-bridge.mjs';
 import {renderRiderDispatch,riderMoney,escapeRiderText} from '../../takodeal-delivery/rider-dispatch-view.js';
 import * as safety from '../../takodeal-delivery/rider-delivery-safety.js';
+import {uploadRiderPhoto} from '../../takodeal-delivery/rider-photo-upload.js';
 
 // Run the real app after its SDK initialization, with a local-only backend.
 // Account approval and dispatch rendering are production implementations.
@@ -39,8 +41,9 @@ export function riderRuntime({savedId,online=true}={}) {
         localStorage:{getItem:key=>saved.get(key)||null,removeItem:key=>saved.delete(key),setItem:(key,value)=>{if(key==='takodeal_rider_id'||/pin|password/i.test(key))throw Error('Cannot persist unverified account credentials');saved.set(key,String(value));}}};
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}}};
+    api.riderAccess=window.riderAccess=riderAccessBridge(api,backend);
     const context={...api,...safety,window,document:{getElementById:node,visibilityState:'visible',querySelectorAll:()=>[],addEventListener},
-        installRiderAccount,renderRiderDispatch,riderMoney,escapeRiderText,installRiderLayout(){},TextEncoder,URL,Date,
+        installRiderAccount,uploadRiderPhoto,renderRiderDispatch,riderMoney,escapeRiderText,installRiderLayout(){},TextEncoder,URL,Date,
         navigator:{onLine:online,geolocation:{getCurrentPosition:(ok,fail,options)=>gps.push({ok,fail,options})}},
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,delay)=>{const id=++sequence;timeouts.set(id,{fn,delay});return id;},clearTimeout:id=>timeouts.delete(id),
@@ -49,7 +52,7 @@ export function riderRuntime({savedId,online=true}={}) {
     const h={window,context,sandbox,backend,node,nodes,subscriptions,intervals,timeouts,gps,writes,reads,saved,
         run:code=>vm.runInContext(code,sandbox),
         put(id,extra={}){const row={name:id==='rider-a'?'Rider A':'Rider B',phone:id==='rider-a'?'09123456789':'09123456780',pin:'1234',status:'active',isAcceptingOrders:true,walletBalance:100,...extra};backend.put('riders/'+id,row);return row;},
-        async login(id='rider-a',extra={}){let row=backend.get('riders/'+id);if(!row)row=h.put(id,extra);node('loginPhone').value=row.phone;node('loginPin').value=row.pin;return window.loginRider();},
+        async login(id='rider-a',extra={}){let row=backend.get('riders/'+id);if(!row)row=h.put(id,extra);node('loginPhone').value=row.phone;node('loginPin').value=row.pin||api.riderAccess.pins.get(id)||'1234';return window.loginRider();},
         emit:(sub,rows)=>sub.next(querySnapshot(rows)),
         emitAccount:(sub,row,{cache=false}={})=>sub.next({id:sub.q.id,metadata:{fromCache:cache},exists:()=>row!==undefined,data:()=>structuredClone(row)}),
         async event(name,data={}){await Promise.all((events.get(name)||[]).map(fn=>fn(data)));await new Promise(setImmediate);},

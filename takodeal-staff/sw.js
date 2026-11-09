@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v49-vault-payslip-20261108';
+const CACHE_NAME = 'takodeal-staff-v50-security-loans-20261109';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./worked-shift-reference.js');
@@ -27,12 +27,27 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
     event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key === 'takodeal-v1' || (key.startsWith('takodeal-staff-v') && key !== CACHE_NAME)).map(key => caches.delete(key)))).then(() => self.clients.claim()));
 });
+// API, account and private evidence traffic never enters an app-file cache.
+function publicCatalogImage(url) {
+  const base='/v0/b/takodeal-pos.firebasestorage.app/o/';
+  if(url.hostname!=='firebasestorage.googleapis.com'||!url.pathname.startsWith(base)||url.searchParams.get('alt')!=='media')return false;
+  try{return /^(menu_images|inventory_images|storefronts)\//.test(decodeURIComponent(url.pathname.slice(base.length)));}catch{return false;}
+}
+function privateTraffic(request,url) {
+  let pathname;try{pathname=decodeURIComponent(url.pathname);}catch{return true;}
+  if(url.username||url.password||request.headers?.has?.('authorization')||/(?:^|\/)api(?:\/|$)|\/__(?:\/|$)/i.test(pathname))return true;
+  if(url.hostname==='accounts.google.com')return true;
+  const catalog=request.destination==='image'&&publicCatalogImage(url);
+  if(/(^|\.)(googleapis\.com|googleusercontent\.com|firebaseio\.com|firebaseapp\.com|cloudfunctions\.net|run\.app)$/i.test(url.hostname)&&!catalog)return true;
+  if(!catalog&&[...url.searchParams.keys()].some(key=>/^(token|access_token|id_token|authorization|signature|sig|x-amz-signature|x-goog-signature)$/i.test(key)))return true;
+  return false;
+}
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
-    if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
+    if (event.request.method !== 'GET' || url.origin !== self.location.origin || privateTraffic(event.request,url)) return;
     // Never cache staff API requests, payroll responses, or third-party traffic.
-    const name = url.pathname.split('/').pop();
-    if (event.request.mode !== 'navigate' && !SHELL.some(path => path.split('/').pop() === name)) return;
+    const root=new URL('./',self.location.href),navigation=event.request.mode==='navigate'&&[root.pathname,new URL('./index.html',root).pathname].includes(url.pathname);
+    if (!navigation && !SHELL.some(path => new URL(path,root).pathname === url.pathname)) return;
     event.respondWith((async () => {
         const cache = await caches.open(CACHE_NAME);
         try {
@@ -65,3 +80,6 @@ SHELL.push('./payroll-vault-freshness.js');
 
 SHELL.push('./payroll-adjustment-history.js');
 SHELL.push('./staff-vault-recovery.js','./staff-vault-recovery-ui.js','./staff-payslip-snapshot.js','./staff-saved-payslips.js');
+
+// Install the complete local module graph for this release. API traffic stays online.
+SHELL.push("./staff-access.js","./staff-announcements.js","./staff-loan-ledger-client.js","./staff-loan-ledger-model.js","./staff-loan-ledger-ui.js","./staff-loan-ledger.css","./staff-operational-records.js","./staff-pin-proof.js","./staff-private-profile.js");
