@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-cashier-stock-recovery-20261109-r1';
+const CORE = 'takodeal-pos-core-cashier-audited-prep-20261109-r1';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -170,3 +170,5 @@ required.push('./stock-audit-model.js','./stock-audit-device.js');
 
 required.push('./saved-shift-proposal.js');
 required.push('./low-ingredient-model.js','./low-ingredient-ui.js','./low-ingredient-ui.css');
+
+required.push('./cashier-prep.css','./cashier-prep.js','./cashier-prep-access.js','./cashier-staff-access.js','./cashier-operational-sdk.js');

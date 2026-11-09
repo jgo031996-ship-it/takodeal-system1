@@ -1,3 +1,5 @@
+import {createCashierPrepAccess} from './cashier-prep-access.js';
+import {installCashierPrep} from './cashier-prep.js';
 import {createStockAuditDeviceResolver} from './stock-audit-device.js';
 import {installCashRemittance} from './cash-remittance-ui.js';
 import {createCashierDeviceAuthContext} from './cashier-device-auth.js';
@@ -6153,6 +6155,7 @@ window.hasSignedNTE = false;
 
 
 window.logoutCashier = function() {
+    window.cashierPrepAccess?.invalidate();
     window.cashierLowStock?.reset();
     localStorage.removeItem('cashierName');
     localStorage.removeItem('cashierBranch');
@@ -9569,3 +9572,7 @@ window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
     refresh: () => window.loadBranchSchedule()
 });
 window.loadBranchSchedule = window.cashierScheduleSync.wrap(window.loadBranchSchedule);
+
+// Audited prep uses its own confirmed context; normal Cashier entry is unchanged.
+window.cashierPrepAccess=createCashierPrepAccess(window);
+window.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cashierPrepAccess}).confirm();

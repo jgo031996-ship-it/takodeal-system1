@@ -1,0 +1,16 @@
+{
+  "revision": "a98485b3049ada587ad772c3eba818a583243333",
+  "sourcePrefix": "functions/cash-remittance-review/",
+  "files": {
+    "access-handler.mjs": "751bee50808a02cb0e8ec389f6bc44d923dd5ecedc64da4d28df3028f15d3373",
+    "access-store.mjs": "accbf84023b231ff840a7f4daff2de9c4c284dc3468efb6e6bbea7bbd0da4f48",
+    "prep-handler.mjs": "cfcbe457c636c94c0f80e4ffa0404c8c2c35a44e40044f8a2dc676714b2130d6",
+    "prep-store.mjs": "9962e55c5e484cc4d96db58efb0b6a155af4c351ba46dffb635a9f9e36620a8b",
+    "prep-model.mjs": "0e01768a0fdda7f20443e3684aa0230624f5484bb33600b797946d0b3aeb77d1",
+    "access-model.mjs": "23a388dc467011ba7b25c351e70a4887689ec8edcbaf9ab6bb3cd79a8e6b9d84",
+    "company-access-index.mjs": "974ae23b5a4567e555a0cf63cc372fd53e5efb9c90e715152e774dc6747ec4bf",
+    "relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+    "relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+    "relief-core/pos-config-model.js": "dafd4ea434d5139d6f108e41cdd0a83cf2634dcf3e0ff787f1f32aab3be09377"
+  }
+}
