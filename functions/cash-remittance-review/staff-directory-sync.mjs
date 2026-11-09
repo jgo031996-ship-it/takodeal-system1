@@ -6,7 +6,7 @@ export function createStaffDirectorySync(db,{serverTimestamp}={}){
   if(!accessId(staffId))throw Error('The staff directory identity is invalid.');
   return db.runTransaction(async tx=>{
    const source=await tx.get(db.doc('cashiers/'+staffId));
-   if(!source.exists){tx.delete(db.doc('staff_directory/'+staffId));return{removed:true};}
+   if(!source.exists){tx.set(db.doc('staff_directory/'+staffId),{staffId,active:false,cashierName:'Account requires HQ review',branch:'',profileRevision:'',syncedAt:serverTimestamp()});return{removed:true};}
    const row=source.data(),active=activeAccessStaff(row);
    let projection;try{projection=operationalStaffProfile(staffId,row,{requireActive:false});}catch{projection={staffId,cashierName:'Account requires HQ review',branch:'',active:false};}
    if(!active)projection.active=false;

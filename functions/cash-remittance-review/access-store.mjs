@@ -115,7 +115,7 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
     const path='staff_login_sessions/'+actor.uid,row=data(await read(tx,path)),cancelPath='staff_session_cancellations/'+hash(actor.uid+'|'+body.sessionId),prior=data(await read(tx,cancelPath));
     if(row?.sessionId===body.sessionId&&(row.uid!==actor.uid||row.deviceId!==body.deviceId||row.app!==body.app))denied();
     if(!prior)tx.create(ref(cancelPath),{schemaVersion:1,uid:actor.uid,sessionId:body.sessionId,deviceId:body.deviceId,app:body.app,recordedAt:new Date(now()),expiresAt:new Date(now()+13*60*60*1000)});
-    if(row?.sessionId===body.sessionId)tx.delete(ref(path));return{schemaVersion:1,signedOut:true};
+    if(row?.sessionId===body.sessionId)tx.set(ref(path),{...row,expiresAt:new Date(0),revoked:true});return{schemaVersion:1,signedOut:true};
    });
   },
   async options(){
