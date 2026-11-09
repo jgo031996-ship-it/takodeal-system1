@@ -149,6 +149,7 @@ export function installAttendanceProofUploader(api, document, {
     const bytesLabel = bytes => Math.max(0, Math.round(bytes / 1024)) + ' KB';
     api.uploadAttendanceProof = async ({file, path,metadata={contentType:'image/jpeg'}, assertCurrent = () => {}}) => {
         if (active) throw Error('A screenshot is already being prepared. Please wait or cancel it.');
+        if(typeof path!=='string'||!/^staff_requests\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{1,128}\/(?:activated_)?late_[A-Za-z0-9_-]{1,128}\.jpg$/.test(path))throw proofError('attendance/proof-update-required','This Time Clock is using older screenshot files. Your attendance has not been saved. Keep your reason, cancel Time In, and check for Staff app updates before choosing the screenshot again.');
         const operation = {cancelled: false, finished: false, upload: null};
         active = operation;
         const preparationListeners = new Set();

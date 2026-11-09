@@ -321,15 +321,18 @@ test('current/history uploads and HQ reviews are atomic with version checks and 
 
 test('Storage candidate excludes every private-prefix path from the legacy public fallback', () => {
     const fallback = body(storage, 'match /{topLevel}/{rest=**}');
-    assert.match(fallback, /allow read, write: if topLevel != 'staff_private_documents'/);
+    assert.match(fallback, /allow read: if !\(topLevel in \['staff_private_documents'/);
+    assert.match(fallback, /allow create: if resource == null && !\(topLevel in \['staff_private_documents'/);
+    assert.match(fallback, /allow update, delete: if false/);
     assert.equal(/match \/\{allPaths=\*\*\}/.test(storage), false);
     const privateFiles = body(storage, 'match /staff_private_documents/{rest=**}').replace(/\/\/[^\n]*/g, '').trim();
     assert.equal(privateFiles, 'allow read, write: if false;');
 });
 
 test('Storage has no signed-in, cross-service or token-generation exception for private bytes', () => {
-    const policy = storage.replace(/\/\/[^\n]*/g, '');
+    const policy = body(storage, 'match /staff_private_documents/{rest=**}').replace(/\/\/[^\n]*/g, '');
     assert.doesNotMatch(policy, /request\.auth|firestore\.(?:get|exists)|function\s/);
-    assert.equal((policy.match(/allow\s/g) || []).length, 2);
+    assert.equal((policy.match(/allow\s/g) || []).length, 1);
+    assert.equal(policy.trim(), 'allow read, write: if false;');
     assert.doesNotMatch(policy, /getDownloadURL|firebaseStorageDownloadTokens/);
 });

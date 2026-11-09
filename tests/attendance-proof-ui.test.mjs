@@ -35,12 +35,15 @@ function harness() {
     installAttendanceProofUploader(api,document,options);
     const assertCurrent=()=>{if(!h.currentIdentity)throw Error('The synthetic staff session changed.');};
     return Object.assign(h,{api,document,
-        begin:()=>api.uploadAttendanceProof({file:screenshot,path:'staff_requests/late_synthetic-id.jpg',assertCurrent}),
+        begin:()=>api.uploadAttendanceProof({file:screenshot,path:'staff_requests/synthetic-uid/synthetic-staff/late_synthetic-id.jpg',assertCurrent}),
         cancelDialog:dialog=>dialog.result.resolve({isDismissed:true,dismiss:'cancel'}),
         text:(id,dialog=h.dialogs.at(-1))=>dialog.nodes.get(id).textContent,
         resolveClosed:dialog=>dialog.result.resolve({isDismissed:true,dismiss:'close'})});
 }
 
+test('old flat or malformed screenshot paths fail with safe update guidance before image preparation or any Storage request',async()=>{
+ for(const path of ['staff_requests/late_old.jpg','staff_requests/uid/staff/../late_bad.jpg','staff_requests/uid/staff/other.jpg']){const h=harness();await assert.rejects(h.api.uploadAttendanceProof({file:screenshot,path}),error=>error.code==='attendance/proof-update-required'&&/attendance has not been saved/.test(error.message));assert.equal(h.preparations.length,0);assert.equal(h.references.length,0);assert.equal(h.uploads.length,0);assert.equal(h.dialogs.length,0);}
+});
 test('Cancel during image preparation aborts immediately, starts no SDK upload, and allows another explicit attempt',async()=>{
     const h=harness(),gate=deferred();h.prepare=()=>gate.promise;
     const pending=h.begin(),failure=assert.rejects(pending,error=>error.code==='attendance/proof-cancelled');
@@ -74,7 +77,7 @@ test('the actual installer presents reduced size, real byte progress and separat
     assert.equal(h.loading,1);assert.equal(h.dialogs[0].options.title,'Uploading screenshot…');
     assert.equal(h.text('attendanceProofSize'),'1536 KB reduced to 80 KB. Keep this screen open.');
     assert.match(h.text('attendanceProofProgress'),/Uploading: 0%/);
-    const entry=h.uploads[0];assert.equal(entry.reference.path,'staff_requests/late_synthetic-id.jpg');assert.equal(entry.blob,prepared.blob);assert.equal(entry.metadata.contentType,'image/jpeg');
+    const entry=h.uploads[0];assert.equal(entry.reference.path,'staff_requests/synthetic-uid/synthetic-staff/late_synthetic-id.jpg');assert.equal(entry.blob,prepared.blob);assert.equal(entry.metadata.contentType,'image/jpeg');
     entry.progress(40*1024);assert.equal(h.text('attendanceProofProgress'),'Uploading: 50% · 40 KB of 80 KB');
     entry.complete();assert.equal(h.text('attendanceProofProgress'),'Upload complete. Confirming screenshot…');
     const result=await pending;assert.equal(result.url,'https://example.invalid/synthetic-proof.jpg');assert.equal(result.originalBytes,screenshot.size);assert.equal(result.uploadBytes,80*1024);

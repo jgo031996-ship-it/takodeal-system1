@@ -1286,7 +1286,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 
 installAttendanceCamera(window, document);
 installAttendanceProofUploader(window, document, {uploadBytesResumable, getDownloadURL, ref, getStorage});
-window.authorizeAttendanceUpload=createClockUploadAccess({auth:staffPrimaryAuth,deviceId:()=>localStorage.getItem('takodeal_device_id'),Swal,fetcher:window.fetch.bind(window)});
+window.authorizeAttendanceUpload=createClockUploadAccess({auth:staffPrimaryAuth,deviceId:()=>localStorage.getItem('takodeal_device_id'),authority:()=>window.staffSetupAccess,Swal,fetcher:window.fetch.bind(window)});
 window.punchTime = async function(type) {
     if (!['TIME IN', 'TIME OUT'].includes(type)) return Swal.fire('Attendance not saved', 'Choose Time In or Time Out using the attendance buttons.', 'warning');
     let staffName = localStorage.getItem('takodeal_staff_name');

@@ -12,6 +12,8 @@ import {prepareEarlyTimeOut} from '../takodeal-staff/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../takodeal-staff/early-time-out-actions.js';
 import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice} from '../takodeal-staff/attendance-schedule-preview.js';
 import {createLocationSession} from '../takodeal-staff/staff-location.js';
+import {createClockUploadAccess} from '../takodeal-staff/clock-upload-access.js';
+import {createStaffSetupAuthority} from '../takodeal-staff/staff-setup-access.js';
 
 const source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const start=source.indexOf('window.punchTime = async function');
@@ -80,6 +82,20 @@ function assertNoAttendance(h) {
     assert.equal(h.events.includes('refresh'),false);
     assert.equal(h.alerts.some(args=>typeof args[0]==='string' && args[0].includes('Success')),false);
 }
+
+function activatedUpload(h){
+ const deviceId='DEV-SYNTHETIC-PHONE';h.localStorage.setItem('takodeal_device_id',deviceId);const user=h.window.auth.currentUser;user.isAnonymous=true;user.getIdToken=async()=>{throw Error('No separate PIN login is needed');};h.window.auth.authStateReady=async()=>{};
+ let status='Active';const setup=createStaffSetupAuthority({getUid:()=>h.window.auth.currentUser?.uid,transport:{ready:async()=>user,call:async()=>({enabled:false,mode:'protected',device:{staffId:'staff-id',staffName:profile.cashierName,branch:'Maa',deviceId,status}})}});
+ h.window.authorizeAttendanceUpload=createClockUploadAccess({auth:h.window.auth,deviceId:()=>h.localStorage.getItem('takodeal_device_id'),authority:()=>setup,Swal:{fire(){throw Error('No second PIN or HQ prompt');}},makeClient:()=>({login(){throw Error('No separate PIN login');}})});
+ return{async block(){status='Blocked';await setup.confirm(deviceId);}};
+}
+test('actual late Time In uses activated ownership without a second PIN; a failed transfer retains its draft and explicit retry saves one linked punch',async()=>{
+ const h=harness();activatedUpload(h);h.upload=async()=>{throw Error('Synthetic interrupted upload');};await h.punch('TIME IN');assertNoAttendance(h);assert.equal(h.window.staffLateProofDraft.file,screenshot);assert.match(h.uploadCalls[0].path,/staff_requests\/synthetic-auth\/staff-id\/activated_late_/);assert.equal(h.uploadCalls[0].metadata.customMetadata.staffUploadAuthority,'phone-activation');
+ h.upload=null;h.lateForm={reason:null,file:null};await h.punch('TIME IN');assert.equal(h.uploadCalls.length,2);assert.equal(h.uploadCalls[1].file,screenshot);assert.equal(h.batches.length,1);assert.equal(h.batches[0].length,2);assert.equal(h.window.staffLateProofDraft,null);assert.equal(h.window.staffPunchBusy,false);assert.ok(h.writes.every(path=>path.startsWith('attendance_logs/')||path.startsWith('staff_requests/')));
+});
+test('blocking a phone while the actual Time In upload is pending stops camera and all attendance/request writes',async()=>{
+ const h=harness(),activation=activatedUpload(h),gate=deferred();h.upload=async request=>{await gate.promise;request.assertCurrent();return{url:proofUrl};};const pending=h.punch('TIME IN');await waitFor(()=>h.uploadCalls.length,'The activated upload must begin');await activation.block();gate.resolve();await pending;assertNoAttendance(h);assert.equal(h.events.includes('camera'),false);assert.equal(h.window.staffLateProofDraft.file,screenshot);
+});
 
 test('actual late Time In preserves required reason and screenshot; cancel or missing proof creates no attendance',async()=>{
     for(const mode of ['cancel','missing-file','missing-reason']){
