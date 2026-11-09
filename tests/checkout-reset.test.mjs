@@ -27,7 +27,7 @@ function checkout(){
     begin=html.indexOf('window.submitFinalOrder = async function()');end=html.indexOf('window.updateReceiptSyncStatus = function',begin);vm.runInNewContext(html.slice(begin,end),context);
     const environment={window:w,localStorage:ls,indexedDB:memoryIndexedDB(),crypto:webcrypto,navigator:{onLine:false},document:d,setTimeout(){},setInterval(){}};
     installSaleSafety(h.api,environment);
-    return {w,d,nodes,payments,alerts,environment,cash:payments[1],gcash:payments[0],split:payments[5]};
+    return {h,w,d,nodes,payments,alerts,environment,cash:payments[1],gcash:payments[0],split:payments[5]};
 }
 test('two consecutive GCash orders save Gcash both times and each completed order returns to Select Type and Cash',async()=>{
     const f=checkout(); // Store POS is deliberately uninitialized, as on the affected tablet.
@@ -76,3 +76,15 @@ test('cash counting pauses the real checkout pipeline before any receipt is queu
     }
 });
 test('a durable unconfirmed transfer blocks checkout after restart even without an in-memory counting flag',async()=>{const f=checkout();f.w.hasPendingCashRemittance=()=>true;const result=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:70,paymentMethod:'Cash'});assert.equal(result.status,'failed');assert.match(result.error,/earlier cash transfer/);assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(f.w.isProcessingOrder,false);});
+
+test('low-stock notifications begin only after real upload acknowledgement and cannot retry a zero-price saved sale',async()=>{
+ const f=checkout(),notifications=[];f.w.cashierLowStock={committedSale:request=>{notifications.push(request);throw Error('Optional reminder unavailable');}};
+ const result=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:0,paymentMethod:'Cash',globalDiscountType:'staff_meal'});assert.equal(result.status,'queued');await f.w.syncOfflineQueue();assert.deepEqual(notifications,[]);assert.equal((await f.w.saleOutbox.list()).length,1);
+ f.environment.navigator.onLine=true;await f.w.syncOfflineQueue();await Promise.resolve();assert.deepEqual(notifications,[{saleId:result.saleId,branch:'Maa'}]);assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(f.h.get('transactions/'+result.saleId).netTotal,0);
+ await f.w.syncOfflineQueue();assert.equal(notifications.length,1);assert.equal((await f.w.saleOutbox.list()).length,0);
+});
+test('a stalled optional low-stock check cannot delay another checkout or the next durable upload acknowledgement',{timeout:2000},async()=>{
+ const f=checkout(),notifications=[];let release;const stalled=new Promise(resolve=>release=resolve);f.w.cashierLowStock={committedSale:request=>{notifications.push(request);return stalled;}};
+ const first=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:70,paymentMethod:'Cash'});f.environment.navigator.onLine=true;await f.w.syncOfflineQueue();assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(notifications[0].saleId,first.saleId);
+ const second=await f.w.processCheckout({branch:'Maa',cart:[{name:'Next food',qty:1}],netTotal:80,paymentMethod:'Cash'});await f.w.syncOfflineQueue();assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(notifications.length,2);assert.notEqual(first.saleId,second.saleId);assert.equal(f.h.get('transactions/'+second.saleId).netTotal,80);release();
+});
