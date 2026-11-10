@@ -15,6 +15,22 @@ export function revealEditableVoidCart(w,d){
  d.getElementById?.('tkCartToggle')?.click();
 }
 
+function voidPlatformSelector(d,platform){
+ if(!['Standard','Grab','Foodpanda'].includes(platform))throw Error('The saved receipt channel could not be confirmed. Keep its original reference.');
+ const selector=d.getElementById?.('posPlatformSelect');
+ // Normal user changes select the option before the existing onchange handler.
+ // A correction switches programmatically, so validate and sync that control.
+ if(selector&&!Array.from(selector.options||[]).some(option=>option.value===platform))throw Error('The saved receipt channel is not configured in POS. Keep this correction reference.');
+ return selector;
+}
+export function restoreVoidPlatform(w,d,platform,{switchCart=true}={}){
+ const selector=voidPlatformSelector(d,platform);
+ if(switchCart&&typeof w.switchPosPlatform==='function')w.switchPosPlatform(platform);
+ else if(checkoutPlatform(w,d)!==platform)throw Error('The saved receipt channel controls are not ready. Keep the original correction reference.');
+ if(selector)selector.value=platform;
+ if(checkoutPlatform(w,d)!==platform||selector&&selector.value!==platform)throw changed();
+}
+
 export function voidPreviewMarkup(view){
  const amount=typeof view.source?.netTotal==='number'&&Number.isFinite(view.source.netTotal)?'₱'+view.source.netTotal.toFixed(2):'Saved amount unavailable';
  const movements=Array.isArray(view.effects)?view.effects:[];
@@ -44,7 +60,7 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
  function platformOrderType(platform){if(platform==='Standard')return null;const values=Array.from(d.getElementById('mainOrderType')?.options||[]).map(option=>option.value),key=platform==='Grab'?'grab':'foodpanda',value=values.find(value=>platformKey(value)===key||key==='foodpanda'&&platformKey(value)==='panda');if(!value)throw Error('The saved '+platform+' channel is not configured in POS. Keep this correction reference and ask the Owner to review its order types.');return value;}
  function emptyForReplacement(platform,ownedTarget=null){
   if(!['Standard','Grab','Foodpanda'].includes(checkoutPlatform(w,d))||!Array.isArray(w.cart)||w.cart.length||w.isActiveOrderMobile||w.parkedRecovery?.activeId?.())throw Error('Keep the current order safe: return to POS and park it first, then reopen this receipt with an empty Store POS cart.');
-  if(platform){if(platform!==checkoutPlatform(w,d)&&typeof w.switchPosPlatform!=='function')throw Error('The saved receipt channel controls are not ready. Keep the original correction reference.');platformOrderType(platform);const target=w.platformCarts?.[platform];if(platform!==checkoutPlatform(w,d)&&target!==undefined&&target!==ownedTarget&&(!Array.isArray(target)||target.length))throw Error('The '+platform+' cart already contains another order. Finish or park it first. Every saved correction and the current cart are kept.');}
+  if(platform){voidPlatformSelector(d,platform);if(platform!==checkoutPlatform(w,d)&&typeof w.switchPosPlatform!=='function')throw Error('The saved receipt channel controls are not ready. Keep the original correction reference.');platformOrderType(platform);const target=w.platformCarts?.[platform];if(platform!==checkoutPlatform(w,d)&&target!==undefined&&target!==ownedTarget&&(!Array.isArray(target)||target.length))throw Error('The '+platform+' cart already contains another order. Finish or park it first. Every saved correction and the current cart are kept.');}
  }
  function ready(){if(!voidId(w.sessionUser?.staffId||w.sessionUser?.id))throw Error('This sign-in is not confirmed for receipt changes. Ask the Owner to review this tablet’s existing setup. Normal Cashier work is unchanged.');if(w.navigator?.onLine===false)throw Error('Connect this tablet before changing a saved receipt. Pending sales and the current cart stay on this device.');if(w.isProcessingOrder||w.isSubmittingOrder||w.cashierRemitSubmitting||w.cashierCashCountActive)throw Error('Finish the current payment or cash count before correcting a receipt.');}
  function save(row){return journal.put(row);}
@@ -100,15 +116,15 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
   if(view.replacement.state==='committed'){save({...row,state:'closed'});markCompletedCart(row);void w.syncOfflineQueue?.();await dialog({title:'Replacement already saved',text:'Its receipt is already recorded. No cart was restored and no second payment was created.',icon:'info'});return {saved:true,replacementSaved:true};}
   if(row.payload||view.replacement.state==='claimed')throw Error('This correction already has a checkout attempt. Use Check receipt correction to recover that exact saved checkout; do not enter another payment.');
   const platform=voidSourcePlatform(view),sameOwnedDraft=cart=>{const owner=cartOwners.get(cart),s=owner?.session,current=session();return owner&&!owner.queued&&owner.operationId===row.operationId&&owner.uid===connection.actor.uid&&owner.sourceFingerprint===row.sourceFingerprint&&view.replacement.state==='draft'&&view.replacement.restoreAttemptId===row.restoreAttemptId&&draftToken(row)===row.restoreAttemptId&&['staffId','name','branch','deviceId','shiftId'].every(key=>s[key]===current[key])&&current.shift?.active===true?owner:null;};
-  const currentOwner=sameOwnedDraft(w.cart);if(currentOwner&&checkoutPlatform(w,d)===platform){guard.releaseCart?.();active=currentOwner;active.context=connection;active.session=session();active.checkoutCart=null;w.renderCart?.();revealEditableVoidCart(w,d);return {saved:true,restored:true};}
+  const currentOwner=sameOwnedDraft(w.cart);if(currentOwner&&checkoutPlatform(w,d)===platform){restoreVoidPlatform(w,d,platform,{switchCart:false});guard.releaseCart?.();active=currentOwner;active.context=connection;active.session=session();active.checkoutCart=null;w.renderCart?.();revealEditableVoidCart(w,d);return {saved:true,restored:true};}
   const target=w.platformCarts?.[platform],targetOwner=Array.isArray(target)&&target!==w.cart?sameOwnedDraft(target):null;
-  if(targetOwner){emptyForReplacement(platform,target);connection.current();guard();guard.releaseCart?.();w.switchPosPlatform(platform);if(w.cart!==target||w.platformCarts[platform]!==target)throw changed();active=targetOwner;active.context=connection;active.session=session();w.renderCart?.();revealEditableVoidCart(w,d);return {saved:true,restored:true};}
+  if(targetOwner){emptyForReplacement(platform,target);connection.current();guard();guard.releaseCart?.();restoreVoidPlatform(w,d,platform);if(w.cart!==target||w.platformCarts[platform]!==target)throw changed();active=targetOwner;active.context=connection;active.session=session();w.renderCart?.();revealEditableVoidCart(w,d);return {saved:true,restored:true};}
   emptyForReplacement(platform);const token=draftToken(row,view.replacement.state==='unclaimed');
   view=await rpc('replacement-claim',row,connection,{phase:'draft',restoreAttemptId:token,expectedFingerprint:row.expectedFingerprint});
   if(view.replacement.state!=='draft'||view.replacement.restoreAttemptId!==token)throw held();
   row=save({...readCurrent(row),restoreAttemptId:token});
   const cart=editableVoidCart(view.replacement.cart);connection.current();guard();
-  guard.releaseCart?.();if(typeof w.switchPosPlatform==='function')w.switchPosPlatform(platform);else if(checkoutPlatform(w,d)!==platform)throw Error('The saved receipt channel controls are not ready. Keep the original correction reference.');emptyForReplacement(platform);if(platform!=='Standard')d.getElementById('mainOrderType').value=platformOrderType(platform);
+  guard.releaseCart?.();restoreVoidPlatform(w,d,platform);emptyForReplacement(platform);if(platform!=='Standard')d.getElementById('mainOrderType').value=platformOrderType(platform);
   resetCheckoutForNextOrder(w,d);w.isResumedParkedOrder=false;w.isActiveOrderMobile=false;w.activeMobileOrderCode=null;w.activeMobileOrderId=null;w.activeMobileDelivery=null;
   w.cart=cart;if(!w.platformCarts)w.platformCarts={};w.platformCarts[platform]=cart;active={operationId:row.operationId,uid:connection.actor.uid,cart,session:session(),context:connection,sourceFingerprint:row.sourceFingerprint};
   cartOwners.set(cart,active);

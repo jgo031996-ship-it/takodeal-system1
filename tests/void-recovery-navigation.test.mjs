@@ -5,11 +5,12 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {ReviewDocument,ReviewElement} from './helpers/review-dom.mjs';
-import {revealEditableVoidCart} from '../Takodeal-POS/cashier-void.js';
+import {revealEditableVoidCart,restoreVoidPlatform} from '../Takodeal-POS/cashier-void.js';
 const read=file=>readFileSync(new URL('../Takodeal-POS/'+file,import.meta.url),'utf8');
 const html=read('index.html'),main=read('main.js'),workspace=read('cashier-workspace.js'),pos=read('cashier-pos-ui.js'),css=read('cashier-pos-base.css');
 const between=(source,start,end)=>{const from=source.indexOf(start),to=source.indexOf(end,from);assert.ok(from>=0&&to>from,start);return source.slice(from,to);};
 const router=between(html,'    function switchView(viewName) {','    function closeModal(');
+const platformSwitch=between(html,'    window.switchPosPlatform = function(platform) {','    window.renderMenuItems = function()');
 const renderer=between(main,'window.renderCart = function() {','window.clearCart = function()');
 const workspaceWrapper=between(workspace,'  const original=window.switchView;','  for(const name of [\'loadConsumablesView\'');
 const toolbar=between(pos,'  function installToolbar() {','  function installDock()');
@@ -36,8 +37,9 @@ function createVoidNavFixture(){
  d.body.innerHTML=markup;
  for(const id of ['view-pos','view-sales','nav-pos','nav-sales','cartList','displayGrandTotal','topBarTitle','timeClockModal'])assert.ok(d.getElementById(id),id+' is from actual HTML');
  const sample=[{name:'SAMPLE editable item',realName:'SAMPLE editable item',variantName:'Standard',basePrice:40,variantPrice:40,qty:2,lineTotalFinal:85,notes:'SAMPLE note',addons:{SAMPLE:{name:'SAMPLE add-on',qty:1,price:2.5}}}];
- const w={document:d,cart:sample,currentShift:{shiftId:'SAMPLE_SHIFT',active:true},stopShiftSalesFeed(){},loadSalesDashboard(){},closeTimeClock(){},console};w.window=w;
- const context=vm.createContext(w);vm.runInContext(router+'\n'+renderer,context);
+ const w={document:d,cart:sample,currentShift:{shiftId:'SAMPLE_SHIFT',active:true},stopShiftSalesFeed(){},loadSalesDashboard(){},closeTimeClock(){},renderMenuItems(){},console};w.window=w;
+ for(const [id,values]of [['posPlatformSelect',['Standard','Grab','Foodpanda']],['mainOrderType',['','Dine-In','Grab','Food Panda']]]){const select=d.getElementById(id);select.options=values.map(value=>({value}));select.value=values[0];}
+ const context=vm.createContext(w);vm.runInContext(router+'\n'+renderer+'\n'+platformSwitch,context);
  vm.runInContext('(()=>{'+titles+"\nconst el=id=>document.getElementById(id),stopAttendance=()=>{};\n"+workspaceWrapper+'})()',context);
  // Actual responsive toolbar installs the real event listener. Only its pure
  // toolbar/cart excerpts run; no listeners, timers, SDK or app bootstraps run.
@@ -55,4 +57,11 @@ test('actual saved router reaches POS while responsive cart remains closed in th
 });
 test('new reveal uses actual workspace route and real Cart control to expose rendered editable items',()=>{
  const f=createVoidNavFixture();f.reveal();const state=f.snapshot();assert.equal(state.posActive,true);assert.equal(state.navCurrent,'true');assert.equal(state.cartRevealed,true);assert.equal(state.focused,'tkCartBack');assert.match(state.cartHTML,/SAMPLE editable item/);assert.match(state.cartHTML,/SAMPLE note/);assert.match(state.cartHTML,/SAMPLE add-on/);assert.equal(state.cartReferenceRetained,true);const before=JSON.stringify(f.w.cart);f.reveal();assert.equal(JSON.stringify(f.w.cart),before);assert.equal(f.snapshot().cartRevealed,true);observed.push({case:'canonical route plus real Cart toggle',...state,cartHTMLContainsSample:true,cartHTML:undefined});
+});
+
+test('actual legacy programmatic switch reproduces the old selector mismatch while correction synchronization fixes both channels',()=>{
+ for(const platform of ['Grab','Foodpanda']){const f=createVoidNavFixture(),select=f.d.getElementById('posPlatformSelect');f.w.cart=[];f.w.switchPosPlatform(platform);assert.equal(f.w.posPlatform,platform);assert.equal(select.value,'Standard','Original user-onchange handler never assigns its own selector value');const edited=f.w.cart;restoreVoidPlatform(f.w,f.d,platform,{switchCart:false});assert.equal(select.value,platform);assert.equal(f.w.cart,edited);assert.equal(f.d.getElementById('mainOrderType').value,platform==='Grab'?'Grab':'Food Panda');}
+});
+test('correction synchronization validates real selector options before touching cart/channel and preserves canonical hidden cart identity',()=>{
+ const f=createVoidNavFixture(),select=f.d.getElementById('posPlatformSelect'),cart=f.w.cart;select.options=[{value:'Standard'}];assert.throws(()=>restoreVoidPlatform(f.w,f.d,'Grab'),/not configured/);assert.equal(f.w.cart,cart);assert.equal(f.w.posPlatform,undefined);assert.equal(select.value,'Standard');select.options.push({value:'Grab'});const hidden=[{...f.sample[0],notes:'KEEP EDITED HIDDEN'}];f.w.cart=[];f.w.platformCarts={Standard:f.w.cart,Grab:hidden};restoreVoidPlatform(f.w,f.d,'Grab');assert.equal(f.w.cart,hidden);assert.equal(f.w.platformCarts.Grab,hidden);assert.equal(select.value,'Grab');assert.equal(hidden[0].notes,'KEEP EDITED HIDDEN');
 });

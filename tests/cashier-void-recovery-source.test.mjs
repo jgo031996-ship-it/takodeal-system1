@@ -9,7 +9,7 @@ test('seven exact scoped inverses restore every pre-existing product byte to liv
  for(const file of ['Takodeal-POS/pos-safety.js','takodeal-manager/pos-safety.js'])assert.equal(sha(read(file)),'415cdfb522de4da80de4e821369371d03d95879548336c055d3f4ab7ba7f495e');
 });
 test('release includes both new modules, retains all local queue/photo identities and scopes hosted checks to this branch',()=>{
- const sw=read('Takodeal-POS/sw.js');for(const file of ['cashier-void-review.js','cashier-void-sales.js'])assert.ok(sw.includes("'./"+file+"'"));assert.match(sw,/core-cashier-void-original-20261111-r1/);assert.match(sw,/const PHOTOS = 'takodeal-pos-photos-offline02'/);assert.doesNotMatch(sw,/deleteDatabase|localStorage\.clear/);
+ const sw=read('Takodeal-POS/sw.js');for(const file of ['cashier-void-review.js','cashier-void-sales.js'])assert.ok(sw.includes("'./"+file+"'"));assert.match(sw,/core-cashier-void-original-20261111-r2/);assert.match(sw,/const PHOTOS = 'takodeal-pos-photos-offline02'/);assert.doesNotMatch(sw,/deleteDatabase|localStorage\.clear/);
  assert.equal(read('.github/workflows/cashier-void-recovery-checks.yml').replaceAll('Cashier original receipt correction branch checks','Cashier Owner desktop branch checks').replaceAll('fix/cashier-void-recovery','fix/cashier-void-handoff').replaceAll('cashier-original-void-','cashier-owner-desktop-'),read('.github/workflows/cashier-owner-desktop-checks.yml'));
  const access=read('Takodeal-POS/cashier-void-access.js');assert.doesNotMatch(access,/createCashierStaffAccess|\.login\(|\.logout\(|flushLogout|staff-login|staff-logout/);assert.match(access,/purpose:'receipt-void'/);
 });
