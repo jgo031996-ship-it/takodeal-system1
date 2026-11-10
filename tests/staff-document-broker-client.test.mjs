@@ -1,3 +1,4 @@
+import {assertDocumentReleaseCopies} from './helpers/owner-document-release-pins.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -75,8 +76,8 @@ test('a stalled response body or ID-token request also reaches the same bounded 
     const h=fixture(async()=>({ok:true,headers:new Headers({'content-type':'image/jpeg'}),body:{getReader:()=>({read:()=>new Promise(()=>{}),releaseLock(){}})}}),{timeoutMs:15});await assert.rejects(h.broker.download(config,download),/unavailable/);assert.equal(h.requests[0][1].signal.aborted,true);
     const auth=fixture(undefined,{timeoutMs:15});auth.auth.currentUser.getIdToken=()=>new Promise(()=>{});await assert.rejects(auth.broker.upload(config,upload),/unavailable/);assert.equal(auth.requests.length,0);
 });
-test('Staff and Owner share private transfer/store modules and expose no direct Firebase Storage client',()=>{
-    for(const name of ['staff-document-broker.js','staff-document-store.js'])assert.equal(readFileSync(new URL('../takodeal-staff/'+name,import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/'+name,import.meta.url),'utf8'));
+test('Staff and Owner retain reviewed private transfer/store cohorts and expose no direct Firebase Storage client',()=>{
+    assertDocumentReleaseCopies(['staff-document-broker.js','staff-document-store.js']);
     const firebase=readFileSync(new URL('../takodeal-staff/staff-document-firebase.js',import.meta.url),'utf8'),store=readFileSync(new URL('../takodeal-staff/staff-document-store.js',import.meta.url),'utf8');
     assert.doesNotMatch(firebase,/firebase-storage|uploadBytes|getBlob|getDownloadURL/);assert.doesNotMatch(store,/sdk\.(uploadBytes|getBlob|getMetadata|ref)\(/);
 });

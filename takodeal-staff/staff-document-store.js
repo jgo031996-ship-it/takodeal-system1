@@ -1,18 +1,19 @@
 // Private document operations. The operational Staff PIN is never authorization.
 import {validateDocumentDraft, validateDocumentRecord} from './staff-document-model.js';
 import {createDocumentBroker,trustedDocumentBroker,DOCUMENT_POLICY_VERSION} from './staff-document-broker.js';
+import {createDocumentMetadataClient} from './document-metadata-client.js';
 export {DOCUMENT_POLICY_VERSION} from './staff-document-broker.js';
 const safeId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 export function documentFilePath(uid, staffId, kind, operationId) {
     if (![uid, staffId, operationId].every(safeId) || !['valid_id','health_card','clearance'].includes(kind)) throw Error('Invalid document identity.');
     return `staff_private_documents/${uid}/${staffId}/${kind}/${operationId}.jpg`;
 }
-export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker=createDocumentBroker({auth,identity}), uuid=()=>crypto.randomUUID(),now=()=>Date.now()}) {
+export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker=createDocumentBroker({auth,identity}), metadata=createDocumentMetadataClient({auth,identity}), uuid=()=>crypto.randomUUID(),now=()=>Date.now()}) {
     const documentRef = (id, kind) => sdk.doc(db, 'staff_private_documents', id, 'files', kind);
     const me = () => { const user=auth.currentUser; if(!user?.uid) throw Error('Private document access is not ready.'); return user; };
     const currentId = () => { const id=identity(); if(!safeId(id)) throw Error('Choose the employee again.'); return id; };
     const assertSame = (id, uid) => { if(identity()!==id || auth.currentUser?.uid!==uid) throw Error('Your account changed. Open the profile again.'); };
-    let config;const verifiedFiles=new Map();
+    let config;const verifiedFiles=new Map(),pendingReviews=new Map(),reviewFlights=new Map();
     async function ready({refresh=false}={}) {
         // A closed or not-yet-configured vault must be recoverable with Refresh
         // after HQ enables it. Cache only a successfully enabled policy.
@@ -75,25 +76,10 @@ export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker
         if(transferred?.storagePath!==path || transferred.contentType!=='image/jpeg' || transferred.size!==blob.size
             || transferred.sha256!==sha256 || typeof transferred.alreadyExists!=='boolean')throw Error('This upload could not be safely resumed. Choose the photo again.');
         assertSame(id,uid);
-        return sdk.runTransaction(db,async tx=> {
-            assertSame(id,uid);
-            const record=await tx.get(documentRef(id,kind));assertSame(id,uid);
-            const version=await tx.get(sdk.doc(db,'staff_private_documents',id,'versions',operationId));assertSame(id,uid);
-            const liveBinding=await tx.get(sdk.doc(db,'staff_document_devices',uid)); assertSame(id,uid);
-            if(!liveBinding.exists() || liveBinding.data().active!==true || liveBinding.data().staffId!==id || liveBinding.data().branch!==access.branch)throw Error('HQ changed this device’s access. Ask them to review it.');
-            const before=record.exists()?record.data():null;
-            if(before?.uploadId===operationId) {
-                if(before.staffId!==id || before.branch!==access.branch || before.group!==kind || before.uploadedByUid!==uid || before.storagePath!==path || before.contentType!==blob.type || before.size!==blob.size || before.sha256!==sha256 || (before.clearanceType||'')!==(checked.clearanceType||'') || (before.expiresOn||'')!==(checked.expiresOn||''))throw Error('This upload retry does not match the original photo and details. Choose the photo again.');
-                return {alreadySaved:true,record:before};
-            }
-            if((before?.version||0)!==expectedVersion)throw Error('This document changed. Refresh the profile before uploading again.');
-            if(version.exists())throw Error('This upload was already used for an earlier document. Choose the photo again.');
-            const next={staffId:id,branch:access.branch,group:kind,uploadId:operationId,uploadedByUid:uid,storagePath:path,contentType:'image/jpeg',size:blob.size,sha256,clearanceType:checked.clearanceType||'',expiresOn:checked.expiresOn||'',status:'pending_review',reviewNote:'',version:expectedVersion+1,uploadedAt:sdk.serverTimestamp(),updatedAt:sdk.serverTimestamp()};
-            assertSame(id,uid);
-            tx.set(documentRef(id,kind),next);
-            tx.set(sdk.doc(db,'staff_private_documents',id,'versions',operationId),next);
-            return {saved:true,record:next};
-        });
+        const result=await metadata.upload(transferConfig,{staffId:id,group:kind,uploadId:operationId,expectedVersion,sha256,size:blob.size,clearanceType:checked.clearanceType||'',expiresOn:checked.expiresOn||''},{assertCurrent:()=>assertSame(id,uid)});assertSame(id,uid);
+        const record=await sdk.getDocFromServer(documentRef(id,kind));assertSame(id,uid);const saved=record.exists()?record.data():null;
+        if(!saved||saved.staffId!==id||saved.branch!==access.branch||saved.group!==kind||saved.uploadId!==operationId||saved.uploadedByUid!==uid||saved.storagePath!==path||saved.size!==blob.size||saved.sha256!==sha256||saved.contentType!=='image/jpeg'||(saved.clearanceType||'')!==(checked.clearanceType||'')||(saved.expiresOn||'')!==(checked.expiresOn||'')||!Number.isSafeInteger(saved.version)||saved.version<result.version)throw Error('This document changed. Refresh the profile before continuing.');
+        return result.alreadySaved?{alreadySaved:true,record:saved}:{saved:true,record:saved};
     }
     async function file(record,{validatePhoto}={}) {
         const id=currentId(),uid=me().uid;const transferConfig=await ready({refresh:true});assertSame(id,uid);
@@ -117,21 +103,21 @@ export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker
     async function review(kind, expectedVersion, status, note='') {
         if(!isHQ || !['approved','rejected'].includes(status))throw Error('Document review is unavailable.');
         if(status==='rejected' && String(note).trim().length<3)throw Error('Add a reason so the employee knows what to upload again.');
-        const id=currentId(),uid=me().uid; await ready();assertSame(id,uid);
-        const operationId=uuid();
+        const id=currentId(),uid=me().uid,transferConfig=await ready({refresh:true});assertSame(id,uid);
+        const text=String(note).trim().slice(0,300),intentKey=JSON.stringify([uid,id,kind,expectedVersion,status,text]);
         const proof=verifiedFiles.get(kind);
         if(status==='approved' && (!proof || proof.staffId!==id || proof.actorUid!==uid || proof.version!==expectedVersion || now()-proof.at>300000))throw Error('View or download this photo before marking it reviewed.');
-        return sdk.runTransaction(db,async tx=> {
-            assertSame(id,uid);
-            const target=documentRef(id,kind),snap=await tx.get(target); assertSame(id,uid);
-            if(!snap.exists() || snap.data().version!==expectedVersion)throw Error('This document changed. Refresh before reviewing.');
+        if(reviewFlights.has(intentKey))return reviewFlights.get(intentKey);
+        if(!pendingReviews.has(intentKey)){if(pendingReviews.size>=32)throw Error('Earlier document reviews are unconfirmed. Refresh this profile before starting another.');pendingReviews.set(intentKey,uuid());}
+        const operationId=pendingReviews.get(intentKey);
+        const action=(async()=>{
+            const snap=await sdk.getDocFromServer(documentRef(id,kind));assertSame(id,uid);
+            if(!snap.exists() || snap.data().version!==expectedVersion && !(snap.data().reviewId===operationId && snap.data().version===expectedVersion+1))throw Error('This document changed. Refresh before reviewing.');
             const prior=snap.data();
             if(status==='approved' && (prior.uploadId!==proof.uploadId || prior.sha256!==proof.sha256))throw Error('This photo changed. View it again before marking it reviewed.');
-            const patch={status,reviewId:operationId,reviewNote:String(note).trim().slice(0,300),reviewedByUid:uid,reviewedAt:sdk.serverTimestamp(),updatedAt:sdk.serverTimestamp(),version:expectedVersion+1};
-            assertSame(id,uid);
-            tx.update(target,patch); tx.update(sdk.doc(db,'staff_private_documents',id,'versions',prior.uploadId),patch);
-            tx.set(sdk.doc(db,'staff_private_documents',id,'reviews',operationId),{staffId:id,branch:prior.branch,recordVersion:expectedVersion+1,group:kind,uploadId:prior.uploadId,status,note:patch.reviewNote,actorUid:uid,recordedAt:sdk.serverTimestamp()});
-        });
+            const result=await metadata.review(transferConfig,{staffId:id,group:kind,uploadId:prior.uploadId,expectedVersion,sha256:prior.sha256,reviewId:operationId,status,note:text},{assertCurrent:()=>assertSame(id,uid)});assertSame(id,uid);pendingReviews.delete(intentKey);return result;
+        })();reviewFlights.set(intentKey,action);
+        try{return await action;}finally{if(reviewFlights.get(intentKey)===action)reviewFlights.delete(intentKey);}
     }
     return {ready,binding,records,requestDevice,upload,file,review};
 }
