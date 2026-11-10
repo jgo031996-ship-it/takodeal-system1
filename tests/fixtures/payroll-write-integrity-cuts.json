@@ -1,0 +1,259 @@
+{
+  "base": "1f616fb3d38780ad3cd0e8bbd2b14d54b8c99aca",
+  "beforeSha256": "006c55b7795232894f386a998c9ea7f65dda39789eb883ce2c5004728b4865c3",
+  "afterSha256": "20032a518922db82231a0ed12814ebed1df2d8013f23c94e1f2b2240c4899187",
+  "edits": [
+    {
+      "label": "Action-specific payroll permission aliases preserve both fresh source and bridge authority",
+      "before": "      return {'role':index.role,\n        'permissions':present ? companyFreshHQIntersect(index.permissions,bridge.permissions,'all') : index.permissions,",
+      "after": "      return {'role':index.role,\n        'payrollWrite':index.permissions.hasAny(['all','payroll','feed']) && (!present || bridge.permissions.hasAny(['all','payroll','feed'])),\n        'permissions':present ? companyFreshHQIntersect(index.permissions,bridge.permissions,'all') : index.permissions,",
+      "at": 25061
+    },
+    {
+      "label": "Exact zero-row fastpath before unchanged ownerDeductionPayrollMetadata",
+      "before": "      function ownerDeductionPayrollMetadata(payroll,recordId) {\n      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);\n      let map = payroll.get('ownerDeductionSettlements',{});\n      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);\n      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()\n        && details is list && details.size() == rows.size()\n        && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)\n        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)\n        && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()\n          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));\n    }",
+      "after": "      function ownerDeductionPayrollMetadata(payroll,recordId) {\n      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);\n      let map = payroll.get('ownerDeductionSettlements',{});\n      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);\n      return (rows == [] && map == {} && details == [] && payroll.get('frozenData',{}).get('ownerDeductions',0) == 0) || (rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()\n        && details is list && details.size() == rows.size()\n        && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)\n        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)\n        && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()\n          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId))));\n    }",
+      "at": 135445
+    },
+    {
+      "label": "Exact zero-row fastpath before unchanged cashShortagePayrollMetadata",
+      "before": "      function cashShortagePayrollMetadata(payroll,recordId) {\n      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);\n      let map = payroll.get('cashShortageSettlements',{});\n      let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;\n      // Owner custom metadata already proves Owner, paid stamps and combined\n      // maximum four. It leaves room for at most three other protected rows.\n      return rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()\n        && map is map && map.size() == rows.size()\n        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)\n        && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))\n        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))\n        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));\n    }",
+      "after": "      function cashShortagePayrollMetadata(payroll,recordId) {\n      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);\n      let map = payroll.get('cashShortageSettlements',{});\n      let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;\n      // Owner custom metadata already proves Owner, paid stamps and combined\n      // maximum four. It leaves room for at most three other protected rows.\n      return (rows == [] && map == {} && payroll.get('frozenData',{}).get('cashShortages',0) == 0) || (rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()\n        && map is map && map.size() == rows.size()\n        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)\n        && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))\n        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))\n        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6)));\n    }",
+      "at": 138245
+    },
+    {
+      "label": "Collection-local ordinary payroll branch, HQ and legacy ACK validators",
+      "before": "      function selectorPayrollRecordsCreate(data) {",
+      "after": "      // Conflicting or missing legacy branches require global payroll access.\n      // No current employee branch is guessed for a historical saved payment.\n      function payrollSavedScope(data,branches) {\n        let frozen = data.get('frozenData',{});\n        let saved = [data.get('branch',null),frozen.get('branch',null),frozen.get('profile',{}).get('branch',null)].removeAll([null,'']);\n        return saved.size() > 0 && saved.toSet().size() == 1 && saved[0] is string\n          && saved[0].size() <= 128 && saved[0] != 'All' && saved[0] in branches;\n      }\n      function payrollScopedHQ(before,data,updating) {\n        let grant = companyFreshHQGrant();\n        let branches = grant.get('allowedBranches',[]);\n        return grant.get('payrollWrite',false) == true\n          && !(grant.get('role','').trim().lower() in ['franchisee','franchise owner'])\n          && ('All' in branches || payrollSavedScope(before,branches) && (!updating || payrollSavedScope(data,branches)));\n      }\n      // Temporary legacy compatibility: this narrow ACK is UNAUTHENTICATED.\n      // It proves neither who signed nor receipt of payment. It cannot change money.\n      function payrollLegacyAcknowledgment(before,data) {\n        return data.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n          && before.get('acknowledged',false) == false && before.get('acknowledgedAt',null) == null\n          && before.get('signatureBase64',null) in [null,'']\n          && data.acknowledged == true && data.acknowledgedAt == reqTime()\n          && data.signatureBase64 is string && data.signatureBase64.size() >= 64 && data.signatureBase64.size() <= 500000\n          && (data.signatureBase64.size() - 22) % 4 == 0\n          && data.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n      }\n      function selectorPayrollRecordsCreate(data) {",
+      "at": 139786
+    },
+    {
+      "label": "Ordinary payroll create requires strict Owner or fresh scoped payroll HQ",
+      "before": "data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : isHQUser());",
+      "after": "data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : (data.get('ownerDeductionSettlements',{}).size() > 0 || isOwner() || payrollScopedHQ(data,data,false)));",
+      "at": 141974
+    },
+    {
+      "label": "Ordinary payroll updates require both saved branches or exact legacy ACK",
+      "before": "        : (!recordId.matches('refund-payroll-.*') || (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true));",
+      "after": "        : (recordId.matches('refund-payroll-.*') ? (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true)\n          : payrollLegacyAcknowledgment(before,data) || isOwner() || payrollScopedHQ(before,data,true));",
+      "at": 142526
+    },
+    {
+      "label": "Ordinary payroll delete requires strict Owner or fresh saved branch payroll HQ",
+      "before": "!ownerDeductionProtectedPayroll(oldData()) && isHQUser(); }",
+      "after": "!ownerDeductionProtectedPayroll(oldData()) && (isOwner() || payrollScopedHQ(oldData(),oldData(),false)); }",
+      "at": 142989
+    },
+    {
+      "label": "Factor exact shared ACK fields while retaining protected own-phone and prior-false guards",
+      "before": "function cashShortageSignedAcknowledgment(before,after) {\n      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false\n        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n        && after.acknowledged == true && after.acknowledgedAt == reqTime()\n        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000\n        && (after.signatureBase64.size() - 22) % 4 == 0\n        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n    }",
+      "after": "function payrollAckFields(before,after,legacy) {\n      return after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n        && (!legacy || before.get('acknowledged',false) == false && before.get('acknowledgedAt',null) == null\n          && before.get('signatureBase64',null) in [null,''])\n        && after.acknowledged == true && after.acknowledgedAt == reqTime()\n        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000\n        && (after.signatureBase64.size() - 22) % 4 == 0\n        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n    }\n\n      function cashShortageSignedAcknowledgment(before,after) {\n      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false\n        && payrollAckFields(before,after,false);\n    }",
+      "at": 137633
+    },
+    {
+      "label": "Factor legacy ACK with constant legacy checks and unchanged predicate order",
+      "before": "function payrollLegacyAcknowledgment(before,data) {\n        return data.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n          && before.get('acknowledged',false) == false && before.get('acknowledgedAt',null) == null\n          && before.get('signatureBase64',null) in [null,'']\n          && data.acknowledged == true && data.acknowledgedAt == reqTime()\n          && data.signatureBase64 is string && data.signatureBase64.size() >= 64 && data.signatureBase64.size() <= 500000\n          && (data.signatureBase64.size() - 22) % 4 == 0\n          && data.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n      }",
+      "after": "function payrollLegacyAcknowledgment(before,data) {\n        return payrollAckFields(before,data,true);\n      }",
+      "at": 141235
+    },
+    {
+      "label": "Inline single protected ACK call with exact own-phone and prior-false order",
+      "before": "? cashShortageSignedAcknowledgment(before,data)",
+      "after": "? docVaultOwn(before.staffId) && before.get('acknowledged',false) == false && payrollAckFields(before,data,false)",
+      "at": 142188
+    },
+    {
+      "label": "Inline single legacy ACK call with constant legacy-only checks",
+      "before": ": payrollLegacyAcknowledgment(before,data) ||",
+      "after": ": payrollAckFields(before,data,true) ||",
+      "at": 142453
+    },
+    {
+      "label": "Remove now-unused trivial wrapper cashShortageSignedAcknowledgment",
+      "before": "function cashShortageSignedAcknowledgment(before,after) {\n      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false\n        && payrollAckFields(before,after,false);\n    }",
+      "after": "",
+      "at": 138330
+    },
+    {
+      "label": "Remove now-unused trivial wrapper payrollLegacyAcknowledgment",
+      "before": "function payrollLegacyAcknowledgment(before,data) {\n        return payrollAckFields(before,data,true);\n      }",
+      "after": "",
+      "at": 141037
+    },
+    {
+      "label": "Remove only blank indentation left by wrapper DCE",
+      "at": 141031,
+      "before": "      ",
+      "after": ""
+    },
+    {
+      "label": "Remove only blank indentation left by wrapper DCE",
+      "at": 138324,
+      "before": "      ",
+      "after": ""
+    },
+    {
+      "label": "Set size one proves nonempty before indexed access",
+      "at": 140276,
+      "before": "saved.size() > 0 && saved.toSet().size() == 1",
+      "after": "saved.toSet().size() == 1"
+    },
+    {
+      "label": "Outer not-All arm plus membership already excludes wildcard as saved branch",
+      "at": 140337,
+      "before": "saved[0].size() <= 128 && saved[0] != 'All' && saved[0] in branches",
+      "after": "saved[0].size() <= 128 && saved[0] in branches"
+    },
+    {
+      "label": "Replace internal updating flag with nullable after-map sentinel",
+      "at": 140399,
+      "before": "function payrollScopedHQ(before,data,updating)",
+      "after": "function payrollScopedHQ(before,data)"
+    },
+    {
+      "label": "Only literal null after-map skips the second scope check",
+      "at": 140754,
+      "before": "(!updating || payrollSavedScope(data,branches))",
+      "after": "(data == null || payrollSavedScope(data,branches))"
+    },
+    {
+      "label": "Create uses literal null after-map rather than duplicate record map",
+      "at": 141474,
+      "before": "payrollScopedHQ(data,data,false)",
+      "after": "payrollScopedHQ(data,null)"
+    },
+    {
+      "label": "Update always checks the actual whole after-map",
+      "at": 142133,
+      "before": "payrollScopedHQ(before,data,true)",
+      "after": "payrollScopedHQ(before,data)"
+    },
+    {
+      "label": "Delete uses literal null after-map rather than duplicate saved record map",
+      "at": 142441,
+      "before": "payrollScopedHQ(oldData(),oldData(),false)",
+      "after": "payrollScopedHQ(oldData(),null)"
+    }
+  ],
+  "compiler": {
+    "path": "tools/build-firestore-rules.mjs",
+    "beforeSha256": "9b1dbbc36be8fa4cb0c413d6b6a6893ff4f3bbee370754735ab83de1947e325a",
+    "afterSha256": "47919386a3fc9a8b950585fa28e626a66f57ea535fd061dc3f7cdb1193b5d8c0",
+    "edits": [
+      {
+        "label": "Only two native classifier constant-map-get exclusions",
+        "at": 4762,
+        "before": "{name:'constant-map-gets',lower:source=>shareConstantMapGets(source,{excludedFunctions:additionalSharingExclusions(source)",
+        "after": "// These classifiers run for both before and after on payroll updates. Keeping\n // their tiny native predicates avoids extra selector frames at the1000 limit.\n {name:'constant-map-gets',lower:source=>shareConstantMapGets(source,{excludedFunctions:[...additionalSharingExclusions(source),'ownerDeductionProtectedPayroll','cashShortageProtectedPayroll']"
+      }
+    ]
+  },
+  "factoring": {
+    "beforeSha256": "c567f1b979638e192e4cbb2b596e27595cb06e32944f96a00f9b862c7acbabb0",
+    "edits": [
+      {
+        "label": "Factor exact shared ACK fields while retaining protected own-phone and prior-false guards",
+        "before": "function cashShortageSignedAcknowledgment(before,after) {\n      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false\n        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n        && after.acknowledged == true && after.acknowledgedAt == reqTime()\n        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000\n        && (after.signatureBase64.size() - 22) % 4 == 0\n        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n    }",
+        "after": "function payrollAckFields(before,after,legacy) {\n      return after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n        && (!legacy || before.get('acknowledged',false) == false && before.get('acknowledgedAt',null) == null\n          && before.get('signatureBase64',null) in [null,''])\n        && after.acknowledged == true && after.acknowledgedAt == reqTime()\n        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000\n        && (after.signatureBase64.size() - 22) % 4 == 0\n        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n    }\n\n      function cashShortageSignedAcknowledgment(before,after) {\n      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false\n        && payrollAckFields(before,after,false);\n    }",
+        "at": 137633
+      },
+      {
+        "label": "Factor legacy ACK with constant legacy checks and unchanged predicate order",
+        "before": "function payrollLegacyAcknowledgment(before,data) {\n        return data.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])\n          && before.get('acknowledged',false) == false && before.get('acknowledgedAt',null) == null\n          && before.get('signatureBase64',null) in [null,'']\n          && data.acknowledged == true && data.acknowledgedAt == reqTime()\n          && data.signatureBase64 is string && data.signatureBase64.size() >= 64 && data.signatureBase64.size() <= 500000\n          && (data.signatureBase64.size() - 22) % 4 == 0\n          && data.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');\n      }",
+        "after": "function payrollLegacyAcknowledgment(before,data) {\n        return payrollAckFields(before,data,true);\n      }",
+        "at": 141235
+      },
+      {
+        "label": "Inline single protected ACK call with exact own-phone and prior-false order",
+        "before": "? cashShortageSignedAcknowledgment(before,data)",
+        "after": "? docVaultOwn(before.staffId) && before.get('acknowledged',false) == false && payrollAckFields(before,data,false)",
+        "at": 142188
+      },
+      {
+        "label": "Inline single legacy ACK call with constant legacy-only checks",
+        "before": ": payrollLegacyAcknowledgment(before,data) ||",
+        "after": ": payrollAckFields(before,data,true) ||",
+        "at": 142453
+      },
+      {
+        "label": "Remove now-unused trivial wrapper cashShortageSignedAcknowledgment",
+        "before": "function cashShortageSignedAcknowledgment(before,after) {\n      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false\n        && payrollAckFields(before,after,false);\n    }",
+        "after": "",
+        "at": 138330
+      },
+      {
+        "label": "Remove now-unused trivial wrapper payrollLegacyAcknowledgment",
+        "before": "function payrollLegacyAcknowledgment(before,data) {\n        return payrollAckFields(before,data,true);\n      }",
+        "after": "",
+        "at": 141037
+      },
+      {
+        "label": "Remove only blank indentation left by wrapper DCE",
+        "at": 141031,
+        "before": "      ",
+        "after": ""
+      },
+      {
+        "label": "Remove only blank indentation left by wrapper DCE",
+        "at": 138324,
+        "before": "      ",
+        "after": ""
+      }
+    ]
+  },
+  "triviaOnlyProof": {
+    "previousSourceSha256": "4719a73d4f49d401a13823fe343eab202dbefe8114104e20d7898e3dd55df9a3",
+    "previousGeneratedSha256": "3236a36e42f4daab9af0cfdc0f066638abb064060a04eefc5bb852dbeb3bc2a7",
+    "sameOrderedCodeTokens": true,
+    "sites": 2
+  },
+  "scopeCompaction": {
+    "beforeSha256": "b4b7d1695eeebe1f8231b6e8b675b58fead45d85553155b4c29539e60d86fe25",
+    "edits": [
+      {
+        "label": "Set size one proves nonempty before indexed access",
+        "at": 140276,
+        "before": "saved.size() > 0 && saved.toSet().size() == 1",
+        "after": "saved.toSet().size() == 1"
+      },
+      {
+        "label": "Outer not-All arm plus membership already excludes wildcard as saved branch",
+        "at": 140337,
+        "before": "saved[0].size() <= 128 && saved[0] != 'All' && saved[0] in branches",
+        "after": "saved[0].size() <= 128 && saved[0] in branches"
+      },
+      {
+        "label": "Replace internal updating flag with nullable after-map sentinel",
+        "at": 140399,
+        "before": "function payrollScopedHQ(before,data,updating)",
+        "after": "function payrollScopedHQ(before,data)"
+      },
+      {
+        "label": "Only literal null after-map skips the second scope check",
+        "at": 140754,
+        "before": "(!updating || payrollSavedScope(data,branches))",
+        "after": "(data == null || payrollSavedScope(data,branches))"
+      },
+      {
+        "label": "Create uses literal null after-map rather than duplicate record map",
+        "at": 141474,
+        "before": "payrollScopedHQ(data,data,false)",
+        "after": "payrollScopedHQ(data,null)"
+      },
+      {
+        "label": "Update always checks the actual whole after-map",
+        "at": 142133,
+        "before": "payrollScopedHQ(before,data,true)",
+        "after": "payrollScopedHQ(before,data)"
+      },
+      {
+        "label": "Delete uses literal null after-map rather than duplicate saved record map",
+        "at": 142441,
+        "before": "payrollScopedHQ(oldData(),oldData(),false)",
+        "after": "payrollScopedHQ(oldData(),null)"
+      }
+    ]
+  },
+  "generatedSha256": "32cdfdbaa3ae3599d5c4956e122fd26f0eadf402ff99db4369bd38e6f1ffe356"
+}

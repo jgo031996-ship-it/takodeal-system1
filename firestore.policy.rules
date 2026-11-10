@@ -384,6 +384,7 @@ service cloud.firestore {
     }
     function companyFreshHQCombined(index,bridge,present) {
       return {'role':index.role,
+        'payrollWrite':index.permissions.hasAny(['all','payroll','feed']) && (!present || bridge.permissions.hasAny(['all','payroll','feed'])),
         'permissions':present ? companyFreshHQIntersect(index.permissions,bridge.permissions,'all') : index.permissions,
         'allowedBranches':present ? companyFreshHQIntersect(index.allowedBranches,bridge.allowedBranches,'All') : index.allowedBranches};
     }
@@ -1895,12 +1896,12 @@ service cloud.firestore {
       let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);
       let map = payroll.get('ownerDeductionSettlements',{});
       let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);
-      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
+      return (rows == [] && map == {} && details == [] && payroll.get('frozenData',{}).get('ownerDeductions',0) == 0) || (rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
         && details is list && details.size() == rows.size()
         && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)
         && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)
         && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()
-          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));
+          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId))));
     }
 
       function cashShortagePayrollRow(item,map,recordId) {
@@ -1915,14 +1916,17 @@ service cloud.firestore {
       return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
     }
 
-      function cashShortageSignedAcknowledgment(before,after) {
-      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false
-        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
+      function payrollAckFields(before,after,legacy) {
+      return after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
+        && (!legacy || before.get('acknowledged',false) == false && before.get('acknowledgedAt',null) == null
+          && before.get('signatureBase64',null) in [null,''])
         && after.acknowledged == true && after.acknowledgedAt == reqTime()
         && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000
         && (after.signatureBase64.size() - 22) % 4 == 0
         && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
     }
+
+
 
       function cashShortagePayrollMetadata(payroll,recordId) {
       let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
@@ -1930,27 +1934,46 @@ service cloud.firestore {
       let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
       // Owner custom metadata already proves Owner, paid stamps and combined
       // maximum four. It leaves room for at most three other protected rows.
-      return rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()
+      return (rows == [] && map == {} && payroll.get('frozenData',{}).get('cashShortages',0) == 0) || (rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()
         && map is map && map.size() == rows.size()
         && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
         && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))
         && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))
-        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
+        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6)));
     }
  allow read: if true;
+      // Conflicting or missing legacy branches require global payroll access.
+      // No current employee branch is guessed for a historical saved payment.
+      function payrollSavedScope(data,branches) {
+        let frozen = data.get('frozenData',{});
+        let saved = [data.get('branch',null),frozen.get('branch',null),frozen.get('profile',{}).get('branch',null)].removeAll([null,'']);
+        return saved.toSet().size() == 1 && saved[0] is string
+          && saved[0].size() <= 128 && saved[0] in branches;
+      }
+      function payrollScopedHQ(before,data) {
+        let grant = companyFreshHQGrant();
+        let branches = grant.get('allowedBranches',[]);
+        return grant.get('payrollWrite',false) == true
+          && !(grant.get('role','').trim().lower() in ['franchisee','franchise owner'])
+          && ('All' in branches || payrollSavedScope(before,branches) && (data == null || payrollSavedScope(data,branches)));
+      }
+      // Temporary legacy compatibility: this narrow ACK is UNAUTHENTICATED.
+      // It proves neither who signed nor receipt of payment. It cannot change money.
+
       function selectorPayrollRecordsCreate(data) {
         return ownerDeductionPayrollMetadata(data,recordId)
         && cashShortagePayrollMetadata(data,recordId)
-        && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : isHQUser());
+        && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : (data.get('ownerDeductionSettlements',{}).size() > 0 || isOwner() || payrollScopedHQ(data,null)));
       }
       allow create: if selectorPayrollRecordsCreate(newData());
       function selectorPayrollRecordsUpdate(data,before) {
         return ownerDeductionProtectedPayroll(before) || ownerDeductionProtectedPayroll(data) || cashShortageProtectedPayroll(before) || cashShortageProtectedPayroll(data)
-        ? cashShortageSignedAcknowledgment(before,data)
-        : (!recordId.matches('refund-payroll-.*') || (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true));
+        ? docVaultOwn(before.staffId) && before.get('acknowledged',false) == false && payrollAckFields(before,data,false)
+        : (recordId.matches('refund-payroll-.*') ? (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true)
+          : payrollAckFields(before,data,true) || isOwner() || payrollScopedHQ(before,data));
       }
       allow update: if selectorPayrollRecordsUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && !ownerDeductionProtectedPayroll(oldData()) && isHQUser(); }
+      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && !ownerDeductionProtectedPayroll(oldData()) && (isOwner() || payrollScopedHQ(oldData(),null)); }
 
     // Owner-confirmed charges under the reviewed policy. Staff can respond only
     // through their existing approved private device; ledger amounts are immutable to Staff.

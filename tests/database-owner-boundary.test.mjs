@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdtempSync,cpSync,writeFileSync,rmSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {tmpdir} from 'node:os';import {join,dirname,resolve} from 'node:path';import {pathToFileURL} from 'node:url';
 import vm from 'node:vm';
 import {tokenizeRules,buildFirestoreRules,assertRuleBuildEquivalent} from '../tools/build-firestore-rules.mjs';
 import {restoreNoticePolicyStage} from './helpers/notice-policy-stage.mjs';
@@ -40,7 +41,9 @@ test('private network fields are Owner-only, exact and tied to the public postim
  assert.match(block,/branchId == id/);assert.match(block,/branch == nextData\('branches',id\)\.name/);assert.match(block,/!nextData\('branches',id\)\.keys\(\)\.hasAny\(\['wifi'\]\)/);assert.match(block,/wifi is string && newData\(\)\.wifi\.size\(\) <= 256/);assert.match(block,/updatedAt == request\.time && newData\(\)\.updatedByUid == reqUid\(\)/);assert.match(block,/oldData\(\)\.branchId == id && oldData\(\)\.branch == newData\(\)\.branch/);assert.doesNotMatch(block,/allow delete|isHQUser|verifiedHQ/);
  assert.match(block,/branch is string && newData\(\)\.branch\.size\(\) > 0 && newData\(\)\.branch\.size\(\) <= 128/);
 });
-test('unchanged compiler reproduces both live baseline and exact stage, with full source inverse proof',()=>{
- const baseline=buildFirestoreRules(restoreBaseline());assert.equal(sha(baseline.source),'89a7f0b95014f8263bbb08cbbbc81f3ec1d936638a40ecb2b9f6b33fc442a42d');
+test('exact compiler inverse reproduces the original live baseline; reviewed compiler proves the current stage',async()=>{
+ const delta=JSON.parse(read('tests/fixtures/payroll-write-integrity-cuts.json')).compiler;let original=read(delta.path);assert.equal(sha(original),delta.afterSha256);for(const edit of [...delta.edits].reverse()){assert.equal(original.slice(edit.at,edit.at+edit.after.length),edit.after);original=original.slice(0,edit.at)+edit.before+original.slice(edit.at+edit.after.length);}assert.equal(sha(original),delta.beforeSha256);
+ const temporary=mkdtempSync(join(tmpdir(),'takodeal-original-payroll-compiler-'));assert.equal(dirname(resolve(temporary)),resolve(tmpdir()));
+ try{cpSync(new URL('../tools/',import.meta.url),temporary,{recursive:true});writeFileSync(join(temporary,'build-firestore-rules.mjs'),original);const compiler=await import(pathToFileURL(join(temporary,'build-firestore-rules.mjs')).href),baseline=compiler.buildFirestoreRules(restoreBaseline());assert.equal(sha(baseline.source),'89a7f0b95014f8263bbb08cbbbc81f3ec1d936638a40ecb2b9f6b33fc442a42d');}finally{rmSync(temporary,{recursive:true,force:true});}
  const stage=buildFirestoreRules(policy);assert.equal(stage.source,generated);assert.equal(assertRuleBuildEquivalent(policy,generated,stage.mapping,{returnSource:true}),policy);
 });

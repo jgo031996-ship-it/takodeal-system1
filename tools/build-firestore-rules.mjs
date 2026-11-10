@@ -45,7 +45,9 @@ const pipeline=[
  {name:'map-methods',lower:source=>lowerFirestoreMapMethods(source,{excludedFunctions:inlineMapFunctions}),verify:assertMapMethodLoweringEquivalent},
  {name:'request-equalities',lower:source=>lowerRequestEqualities(source,{excludedFunctions:inlineWageFunctions}),verify:assertRequestEqualitiesEquivalent},
  {name:'bounded-text',lower:source=>shareBoundedText(source,{includeSingleBounds:true,excludedFunctions:inlineWageFunctions}),verify:assertBoundedTextSharingEquivalent},
- {name:'constant-map-gets',lower:source=>shareConstantMapGets(source,{excludedFunctions:additionalSharingExclusions(source)}),verify:assertConstantMapGetsEquivalent},
+ // These classifiers run for both before and after on payroll updates. Keeping
+ // their tiny native predicates avoids extra selector frames at the1000 limit.
+ {name:'constant-map-gets',lower:source=>shareConstantMapGets(source,{excludedFunctions:[...additionalSharingExclusions(source),'ownerDeductionProtectedPayroll','cashShortageProtectedPayroll']}),verify:assertConstantMapGetsEquivalent},
  {name:'bounded-numbers',lower:source=>shareBoundedNumbers(source,{includeSingleBounds:true,excludedFunctions:additionalSharingExclusions(source)}),verify:assertBoundedNumbersEquivalent},
  {name:'literal-false-rules',lower:lowerLiteralFalseRules,verify:assertLiteralFalseLoweringEquivalent}
 ];
