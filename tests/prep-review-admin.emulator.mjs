@@ -102,3 +102,9 @@ test('actual Admin private review reads deny Cashier/non-Google/unverified/forei
  for(const changes of [{email:'foreign@example.test'},{email_verified:false},{firebase:{sign_in_provider:'password'}}]){const read=ownerApi(changes);assert.equal((await read('reviews')).status,403);assert.equal((await read('review-read',{operationId:input.operationId})).status,403);}
  const read=ownerApi();await db.doc('hq_managers/owner').update({pin:'REVOKED'});const result=await read('review-read',{operationId:input.operationId});assert.equal(result.status,403);assert.equal(result.body.review,undefined);assert.equal((await read('reviews')).status,403);
 });
+test('actual Admin both private Owner reads honor canonical lifecycle flags and each trimmed credential revocation marker',async()=>{
+ await db.doc('inventory/raw').update({currentStock:-1});const review=await warning();await call('review-skip',skip(review));const read=ownerApi(),base={email:PREP_OWNER,role:'Owner',active:true,pin:'SYNTHETIC',permissions:['all']};
+ const patches=[{isActive:false},...['disabled','isArchived','isDeleted','revoked','offboarded','resigned','terminated'].map(key=>({[key]:true})),{status:' inactive '},{employmentStatus:' contract ended '},{contractStatus:' revoked '},{pin:' revoked '},{pin:'SYNTHETIC',securityPin:' bLoCkEd '}];
+ for(const patch of patches){await db.doc('hq_managers/owner').set({...base,...patch});assert.equal((await read('reviews')).status,403,JSON.stringify(patch));assert.equal((await read('review-read',{operationId:input.operationId})).status,403,JSON.stringify(patch));}
+ await db.doc('hq_managers/owner').set({...base,pin:1234,securityPin:5678});assert.equal((await read('reviews')).status,200);assert.equal((await read('review-read',{operationId:input.operationId})).status,200);
+});

@@ -32,6 +32,8 @@ If the original operation already prepared stock, Skip instead returns the actua
 
 Only the verified Google Owner from the Owner origin, with fresh active canonical HQ Owner authority, can call the following read-only routes. Cashier and Staff cannot list or open another employee's saved review. No new Firestore/Storage grant, IAM permission, index or router prefix is needed.
 
+Only these two new private read routes additionally apply the complete canonical lifecycle flags and both trimmed PIN/securityPin revocation markers before any private read. Ordinary Owner prep and all Cashier route behavior are unchanged by this guard.
+
 `POST /prep/reviews` accepts `{}` or `{afterOperationId}`. The optional cursor must name an existing valid private review; the server uses that exact document snapshot with `createdAt` descending. It reads at most21 and returns up to20; no client timestamp, offset, filter or limit is accepted.
 
 Response: `{schemaVersion:1,reviews:[{operationId,branch,outputInventoryId,outputName,qty,status:'Pending',stockPosted:false,createdAt}],hasMore,nextAfterOperationId}`. The timestamp is a display-only UTC ISO string. `nextAfterOperationId` is the last returned reference only when `hasMore` is true; otherwise null. A first page is never presented as the total backlog.

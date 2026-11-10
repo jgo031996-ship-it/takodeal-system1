@@ -139,3 +139,12 @@ test('private read routes deny Cashier/Staff, non-Google, unverified, foreign Ow
  for(const actor of [{email:'foreign@example.test'},{email_verified:false},{firebase:{sign_in_provider:'password'}}]){const owner=ownerApi(f,actor);assert.equal((await owner.call('reviews')).status,403);assert.equal((await owner.call('review-read',{operationId:f.input.operationId})).status,403);}
  const owner=ownerApi(f);f.update('hq_managers/owner',{pin:'REVOKED'});assert.equal((await owner.call('reviews')).status,403);assert.equal((await owner.call('review-read',{operationId:f.input.operationId})).status,403);assert.ok(!f.writes.some(row=>row.path.startsWith('manager_alerts/')));
 });
+test('only the two private Owner read routes apply the full canonical lifecycle and both trimmed PIN markers before private reads',async()=>{
+ const patches=[{isActive:false},...['disabled','isArchived','isDeleted','revoked','offboarded','resigned','terminated'].map(key=>({[key]:true})),{status:' inactive '},{employmentStatus:' contract ended '},{contractStatus:' revoked '},{pin:' revoked '},{pin:'SYNTHETIC',securityPin:' bLoCkEd '}];
+ for(const patch of patches){const f=fixture(),owner=ownerApi(f);f.update('hq_managers/owner',patch);const start=f.reads.length;for(const [route,body]of [['reviews',{}],['review-read',{operationId:'private-review-reference'}]])assert.equal((await owner.call(route,body)).status,403,JSON.stringify(patch));assert.ok(!f.reads.slice(start).some(path=>path.startsWith('prep_review_requests/')));
+  // Deliberately preserve the existing normal prep contract: these stricter
+  // canonical markers belong to the new private read routes only.
+  if(Object.hasOwn(patch,'isActive')||Object.hasOwn(patch,'securityPin')){assert.equal((await owner.call('preview',{operationId:'ordinary-owner-prep-'+Object.keys(patch)[0],outputInventoryId:'output',qty:2})).status,200);assert.equal((await f.call('preview',{...f.input,operationId:'ordinary-cashier-prep-'+Object.keys(patch)[0]})).status,200);}
+ }
+ const f=fixture(),owner=ownerApi(f);f.update('hq_managers/owner',{pin:1234,securityPin:5678});assert.equal((await owner.call('reviews')).status,200,'Ordinary numeric legacy PIN fields are not revocation markers.');
+});
