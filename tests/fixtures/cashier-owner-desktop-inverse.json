@@ -1,0 +1,195 @@
+{
+  "base": "f8f56b31ba4db3b5a7dabe42dab79198294df5b1",
+  "files": {
+    "Takodeal-POS/main.js": {
+      "baselineSha256": "a9e4ba4357c63e01643b32c9ca09a34467d1152f50a7df42bad4e1086f1ae36a",
+      "candidateSha256": "008446b2bfca664d08efe45f519df80d10d06de2b48544b2a9d6f59e890777dd",
+      "edits": [
+        {
+          "before": "",
+          "after": "import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';\n"
+        },
+        {
+          "before": "",
+          "after": "const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});\n"
+        },
+        {
+          "before": "window.cashierVoidAccess=createCashierVoidAccess(window);\n",
+          "after": "window.cashierVoidAccess=createCashierVoidAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});\n"
+        },
+        {
+          "before": "window.cashierPrepAccess=createCashierPrepAccess(window);\n",
+          "after": "window.cashierPrepAccess=createCashierPrepAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-void.js": {
+      "baselineSha256": "8035f266a427b4a6cd4d22a23836e1984062bd30ed8140b448d01c7341a22423",
+      "candidateSha256": "34c0f077d317dceef2ffa05de08f2092a9c9a89f4bd89414dc6d1dfbbdd008e3",
+      "edits": [
+        {
+          "before": " const journal=createVoidJournal(w.localStorage),physical=new Map(),cartOwners=new WeakMap();let flight=null,active=null,generation=0;\n",
+          "after": " const journal=createVoidJournal(w.localStorage),physical=new Map(),cartOwners=new WeakMap(),writers=new Map();let flight=null,active=null,generation=0;\n"
+        },
+        {
+          "before": "",
+          "after": "  saleConnection(payload){\n   if(!payload.voidCorrection){const row=checkoutRow(payload);if(!row)throw held();const api=active.context.api;active.context.current();return {api,user:api.auth.currentUser,uid:active.uid};}\n   const proof=writers.get(payload.voidCorrection.operationId),row=proof&&journal.get(proof.uid,payload.voidCorrection.operationId);if(!row||voidCanonical(row.payload)!==voidCanonical(payload))throw held();return proof;\n  },\n"
+        },
+        {
+          "before": "  async verifyQueued(payload){const info=payload.voidCorrection;if(!info||!voidId(info.operationId))throw held();const captured=capture({cart:false,requireOpen:false}),connected=await connection(null,captured.guard),row=journal.get(connected.actor.uid,info.operationId);if(!row||!actorMatches(row,connected.actor)||voidCanonical(row.payload)!==voidCanonical(payload)||row.payloadHash!==await voidPayloadHash(payload,w.crypto))throw held();connected.current();const view=await rpc('status',row,connected);connected.current();if(view.state!=='saved'||view.replacement?.checkoutAttemptId!==row.checkoutAttemptId||view.replacement?.payloadHash!==row.payloadHash||!['claimed','committed'].includes(view.replacement?.state))throw held();return view.replacement.state==='committed';},\n",
+          "after": "  async verifyQueued(payload){const info=payload.voidCorrection;if(!info||!voidId(info.operationId))throw held();const captured=capture({cart:false,requireOpen:false}),connected=await connection(null,captured.guard),row=journal.get(connected.actor.uid,info.operationId);if(!row||!actorMatches(row,connected.actor)||voidCanonical(row.payload)!==voidCanonical(payload)||row.payloadHash!==await voidPayloadHash(payload,w.crypto))throw held();connected.current();const view=await rpc('status',row,connected);connected.current();if(view.state!=='saved'||view.replacement?.checkoutAttemptId!==row.checkoutAttemptId||view.replacement?.payloadHash!==row.payloadHash||!['claimed','committed'].includes(view.replacement?.state))throw held();writers.set(info.operationId,{api:connected.api,user:connected.api.auth.currentUser,uid:connected.actor.uid});return view.replacement.state==='committed';},\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-void-access.js": {
+      "baselineSha256": "78351fb37be5c72083c603b6cc109b6afe9258f94f6ffb726379e90476494ece",
+      "candidateSha256": "8b1fb6bb6545f4ce21c15917bc97da8de50af6f596197e587084c68c95366d44",
+      "edits": [
+        {
+          "before": "",
+          "after": "import {isCashierOwnerActionUser,resolveCashierProtectedAction} from './cashier-protected-action.js';\n"
+        },
+        {
+          "before": "export function createCashierVoidAccess(w,{resolveDevice=options=>w.ensureStockAuditDevice(options),makeClient=createCashierStaffAccess,fetcher=w.fetch?.bind(w)||globalThis.fetch,now=Date.now,timeoutMs=20000}={}){\n",
+          "after": "export function createCashierVoidAccess(w,{resolveDevice=options=>w.ensureStockAuditDevice(options),resolveOwnerDesktop,makeClient=createCashierStaffAccess,fetcher=w.fetch?.bind(w)||globalThis.fetch,now=Date.now,timeoutMs=20000}={}){\n"
+        },
+        {
+          "before": "  let api,user,scope,binding,cancelled=false,pendingClient=null;\n  const localCurrent=()=>{if(cancelled||epoch!==generation||w.sessionUser!==legacy||w.auth?.currentUser!==primary||!id(staffId)||!cashierName||(legacy?.staffId||legacy?.id)!==staffId||legacy?.cashierName!==cashierName||legacy.branch!==branch||storage.getItem('takodeal_device_branch')!==branch||storage.getItem('takodeal_device_id')!==deviceId||api&&(api.auth?.currentUser!==user||user?.isAnonymous!==true)||binding&&(storage.getItem(key(user.uid,binding.row.sessionId))!==binding.raw||binding.row.state!=='active'||expiry(binding.row.expiresAt)<=now()))throw changed();};\n",
+          "after": "  let api,user,scope,binding,ownerDesktop=false,cancelled=false,pendingClient=null;\n  const localCurrent=()=>{if(cancelled||epoch!==generation||w.sessionUser!==legacy||w.auth?.currentUser!==primary||!id(staffId)||!cashierName||(legacy?.staffId||legacy?.id)!==staffId||legacy?.cashierName!==cashierName||legacy.branch!==branch||storage.getItem('takodeal_device_branch')!==branch||storage.getItem('takodeal_device_id')!==deviceId||api&&(api.auth?.currentUser!==user||(ownerDesktop?!isCashierOwnerActionUser(user):user?.isAnonymous!==true))||binding&&(storage.getItem(key(user.uid,binding.row.sessionId))!==binding.raw||binding.row.state!=='active'||expiry(binding.row.expiresAt)<=now()))throw changed();};\n"
+        },
+        {
+          "before": "    current();let timer,resolved;try{resolved=await Promise.race([resolveDevice({action:'check',assertCurrent:localCurrent}),new Promise((_,reject)=>timer=setTimeout(()=>{cancelled=true;reject(Error('This tablet’s connection check is taking too long. Keep the receipt and retry when connected.'));},timeoutMs))]);}finally{clearTimeout(timer);}current();api=resolved?.api;user=api?.auth?.currentUser;if(!api||!id(user?.uid)||user.isAnonymous!==true||user.uid!==resolved.actorUid||typeof user.getIdToken!=='function')throw Error('Check this tablet’s saved device approval before correcting a receipt.');current();\n    const matching=row=>row.uid===user.uid&&row.staffId===staffId&&row.branch===branch&&row.deviceId===deviceId;\n",
+          "after": "    current();let timer,resolved;try{resolved=await Promise.race([resolveCashierProtectedAction(w,{resolveDevice,resolveOwnerDesktop,assertCurrent:localCurrent}),new Promise((_,reject)=>timer=setTimeout(()=>{cancelled=true;reject(Error('This tablet’s connection check is taking too long. Keep the receipt and retry when connected.'));},timeoutMs))]);}finally{clearTimeout(timer);}current();ownerDesktop=resolved?.ownerDesktop===true;api=resolved?.api;user=api?.auth?.currentUser;if(!api||!id(user?.uid)||(ownerDesktop?!isCashierOwnerActionUser(user):user.isAnonymous!==true)||user.uid!==resolved.actorUid||typeof user.getIdToken!=='function')throw Error('Check this tablet’s saved device approval before correcting a receipt.');current();\n    const matching=row=>row.uid===user.uid&&row.staffId===staffId&&row.branch===branch&&row.deviceId===deviceId&&(!ownerDesktop||row.ownerDesktop===true);\n"
+        },
+        {
+          "before": "      const row={version:1,uid:other.uid,staffId:other.staffId,deviceId:other.deviceId,branch:other.branch,sessionId:other.sessionId,expiresAt:other.expiresAt,state:'active',borrowed:true};saved={row,raw:save(row)};\n",
+          "after": "      const row={version:1,uid:other.uid,staffId:other.staffId,deviceId:other.deviceId,branch:other.branch,sessionId:other.sessionId,expiresAt:other.expiresAt,state:'active',borrowed:true,...(ownerDesktop?{ownerDesktop:true}:{})};saved={row,raw:save(row)};\n"
+        },
+        {
+          "before": "    if(!saved&&legacy.staffLoginUid===user.uid&&legacy.staffLoginDeviceId===deviceId&&nonce(legacy.staffLoginSessionId)&&expiry(legacy.staffLoginExpiresAt)>now()){\n",
+          "after": "    if(!saved&&!ownerDesktop&&legacy.staffLoginUid===user.uid&&legacy.staffLoginDeviceId===deviceId&&nonce(legacy.staffLoginSessionId)&&expiry(legacy.staffLoginExpiresAt)>now()){\n"
+        },
+        {
+          "before": "     const answer=await w.Swal.fire({title:'Confirm with your Staff PIN',text:'Confirm your own account to review this receipt. Your checkout stays open. Use one employee at a time while correcting a receipt.',customClass:{popup:'cashier-void-modal'},input:'password',inputAttributes:{inputmode:'numeric',autocomplete:'off'},showCancelButton:true,confirmButtonText:'Review receipt',cancelButtonText:'Keep receipt',allowOutsideClick:false,inputValidator:value=>/^\\d{4,10}$/.test(String(value||'').trim())?undefined:'Enter your current Staff PIN.'});current();\n",
+          "after": "     const answer=await w.Swal.fire({title:'Confirm with your Staff PIN',text:(ownerDesktop?'Using the signed-in Google Owner account on this registered desktop. ':'')+'Confirm your own account to review this receipt. Your checkout stays open. Use one employee at a time while correcting a receipt.',customClass:{popup:'cashier-void-modal'},input:'password',inputAttributes:{inputmode:'numeric',autocomplete:'off'},showCancelButton:true,confirmButtonText:'Review receipt',cancelButtonText:'Keep receipt',allowOutsideClick:false,inputValidator:value=>/^\\d{4,10}$/.test(String(value||'').trim())?undefined:'Enter your current Staff PIN.'});current();\n"
+        },
+        {
+          "before": "     const row={version:1,uid:user.uid,staffId,deviceId,branch,sessionId:identity.staffLoginSessionId,expiresAt:identity.staffLoginExpiresAt,state:'active',borrowed:false};ownedScope=row;\n",
+          "after": "     const row={version:1,uid:user.uid,staffId,deviceId,branch,sessionId:identity.staffLoginSessionId,expiresAt:identity.staffLoginExpiresAt,state:'active',borrowed:false,...(ownerDesktop?{ownerDesktop:true}:{})};ownedScope=row;\n"
+        },
+        {
+          "before": "     let identity;try{identity=await client.login(String(answer.value||'').trim(),{selectedStaffId:staffId,assertCurrent:current});current();const connection=client.takeOperationalContext(identity);if(connection.auth!==api.auth||identity.staffLoginUid!==user.uid||identity.staffId!==staffId||identity.branch!==branch)throw changed();}catch(error){void Promise.resolve().then(()=>client.logout()).catch(()=>{});throw error;}\n",
+          "after": "     let identity;try{identity=await client.login(String(answer.value||'').trim(),{selectedStaffId:staffId,assertCurrent:current});current();const connection=client.takeOperationalContext(identity);if(connection.auth!==api.auth||identity.staffLoginUid!==user.uid||identity.staffId!==staffId||identity.branch!==branch)throw changed();}catch(error){void Promise.resolve().then(()=>client.logout()).catch(()=>{});if(ownerDesktop&&error.status===403&&error.code==='owner-desktop/approval-required')throw Object.assign(Error('Use the already signed-in verified Google Owner account on its active Main Office desktop, then choose an active branch and retry with your own Staff PIN. Existing tablet registrations are unchanged; no new approval was requested.'),{status:403,code:error.code});throw error;}\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-prep-access.js": {
+      "baselineSha256": "82d1a537f2cf9f55a044532b887cbd9bf75fddcfe207586b034b0cbff6daf017",
+      "candidateSha256": "6dbde10afe548047aada1d817d8ed88aae2c70f8b35439449880f43da7cfab54",
+      "edits": [
+        {
+          "before": "",
+          "after": "import {isCashierOwnerActionUser,resolveCashierProtectedAction} from './cashier-protected-action.js';\n"
+        },
+        {
+          "before": "export function createCashierPrepAccess(w,{resolveDevice=options=>w.ensureStockAuditDevice(options),makeClient=createCashierStaffAccess,fetcher=w.fetch?.bind(w)||globalThis.fetch,now=Date.now}={}){\n",
+          "after": "export function createCashierPrepAccess(w,{resolveDevice=options=>w.ensureStockAuditDevice(options),resolveOwnerDesktop,makeClient=createCashierStaffAccess,fetcher=w.fetch?.bind(w)||globalThis.fetch,now=Date.now}={}){\n"
+        },
+        {
+          "before": "  let api,user,scope,binding;\n  const localCurrent=()=>{if(epoch!==generation||w.sessionUser!==legacy||w.auth?.currentUser!==primary||!id(staffId)||!cashierName||(legacy?.staffId||legacy?.id)!==staffId||legacy?.cashierName!==cashierName||legacy.branch!==branch||storage.getItem('takodeal_device_branch')!==branch||storage.getItem('takodeal_device_id')!==deviceId||api&&(api.auth?.currentUser!==user||user?.isAnonymous!==true)||binding&&(storage.getItem(key(user.uid,binding.row.sessionId))!==binding.raw||binding.row.state!=='active'||expiry(binding.row.expiresAt)<=now()))throw changed();};\n",
+          "after": "  let api,user,scope,binding,ownerDesktop=false;\n  const localCurrent=()=>{if(epoch!==generation||w.sessionUser!==legacy||w.auth?.currentUser!==primary||!id(staffId)||!cashierName||(legacy?.staffId||legacy?.id)!==staffId||legacy?.cashierName!==cashierName||legacy.branch!==branch||storage.getItem('takodeal_device_branch')!==branch||storage.getItem('takodeal_device_id')!==deviceId||api&&(api.auth?.currentUser!==user||(ownerDesktop?!isCashierOwnerActionUser(user):user?.isAnonymous!==true))||binding&&(storage.getItem(key(user.uid,binding.row.sessionId))!==binding.raw||binding.row.state!=='active'||expiry(binding.row.expiresAt)<=now()))throw changed();};\n"
+        },
+        {
+          "before": "    current();const resolved=await resolveDevice({action:'check',assertCurrent:localCurrent});current();api=resolved?.api;user=api?.auth?.currentUser;if(!api||!id(user?.uid)||user.isAnonymous!==true||user.uid!==resolved.actorUid||typeof user.getIdToken!=='function')throw Error('Check this tablet’s saved device approval before saving prep.');current();\n    const matching=row=>row.uid===user.uid&&row.staffId===staffId&&row.branch===branch&&row.deviceId===deviceId;\n",
+          "after": "    current();const resolved=await resolveCashierProtectedAction(w,{resolveDevice,resolveOwnerDesktop,assertCurrent:localCurrent});current();ownerDesktop=resolved?.ownerDesktop===true;api=resolved?.api;user=api?.auth?.currentUser;if(!api||!id(user?.uid)||(ownerDesktop?!isCashierOwnerActionUser(user):user.isAnonymous!==true)||user.uid!==resolved.actorUid||typeof user.getIdToken!=='function')throw Error('Check this tablet’s saved device approval before saving prep.');current();\n    const matching=row=>row.uid===user.uid&&row.staffId===staffId&&row.branch===branch&&row.deviceId===deviceId&&(!ownerDesktop||row.ownerDesktop===true);\n"
+        },
+        {
+          "before": "    if(!saved&&legacy.staffLoginUid===user.uid&&legacy.staffLoginDeviceId===deviceId&&nonce(legacy.staffLoginSessionId)&&expiry(legacy.staffLoginExpiresAt)>now()){\n",
+          "after": "    if(!saved&&!ownerDesktop&&legacy.staffLoginUid===user.uid&&legacy.staffLoginDeviceId===deviceId&&nonce(legacy.staffLoginSessionId)&&expiry(legacy.staffLoginExpiresAt)>now()){\n"
+        },
+        {
+          "before": "     const answer=await w.Swal.fire({title:'Confirm prep with your Staff PIN',text:'Confirm your own account to save these batches on this tablet. Your checkout stays open. Use one employee at a time while saving prep.',customClass:{popup:'cashier-prep-modal'},input:'password',inputAttributes:{inputmode:'numeric',autocomplete:'off'},showCancelButton:true,confirmButtonText:'Review prep',cancelButtonText:'Keep prep cart',allowOutsideClick:false,inputValidator:value=>/^\\d{4,10}$/.test(String(value||'').trim())?undefined:'Enter your current Staff PIN.'});current();\n",
+          "after": "     const answer=await w.Swal.fire({title:'Confirm prep with your Staff PIN',text:(ownerDesktop?'Using the signed-in Google Owner account on this registered desktop. ':'')+'Confirm your own account to save these batches. Your checkout stays open. Use one employee at a time while saving prep.',customClass:{popup:'cashier-prep-modal'},input:'password',inputAttributes:{inputmode:'numeric',autocomplete:'off'},showCancelButton:true,confirmButtonText:'Review prep',cancelButtonText:'Keep prep cart',allowOutsideClick:false,inputValidator:value=>/^\\d{4,10}$/.test(String(value||'').trim())?undefined:'Enter your current Staff PIN.'});current();\n"
+        },
+        {
+          "before": "     const row={version:1,uid:user.uid,staffId,deviceId,branch,sessionId:identity.staffLoginSessionId,expiresAt:identity.staffLoginExpiresAt,state:'active',borrowed:false};ownedScope=row;\n",
+          "after": "     const row={version:1,uid:user.uid,staffId,deviceId,branch,sessionId:identity.staffLoginSessionId,expiresAt:identity.staffLoginExpiresAt,state:'active',borrowed:false,...(ownerDesktop?{ownerDesktop:true}:{})};ownedScope=row;\n"
+        },
+        {
+          "before": "     let identity;try{identity=await client.login(String(answer.value||'').trim(),{selectedStaffId:staffId,assertCurrent:current});current();const connection=client.takeOperationalContext(identity);if(connection.auth!==api.auth||identity.staffLoginUid!==user.uid||identity.staffId!==staffId||identity.branch!==branch)throw changed();}catch(error){void Promise.resolve().then(()=>client.logout()).catch(()=>{});throw error;}\n",
+          "after": "     let identity;try{identity=await client.login(String(answer.value||'').trim(),{selectedStaffId:staffId,assertCurrent:current});current();const connection=client.takeOperationalContext(identity);if(connection.auth!==api.auth||identity.staffLoginUid!==user.uid||identity.staffId!==staffId||identity.branch!==branch)throw changed();}catch(error){void Promise.resolve().then(()=>client.logout()).catch(()=>{});if(ownerDesktop&&error.status===403&&error.code==='owner-desktop/approval-required')throw Object.assign(Error('Use the already signed-in verified Google Owner account on its active Main Office desktop, then choose an active branch and retry with your own Staff PIN. Existing tablet registrations are unchanged; no new approval was requested.'),{status:403,code:error.code});throw error;}\n"
+        }
+      ]
+    },
+    "Takodeal-POS/pos-checkout.js": {
+      "baselineSha256": "bb8ea101a8cb3623e2370ea61deb7484ca08ad368f20db09c5b7a2db253ce33c",
+      "candidateSha256": "7a975b884e68828d737babc86dbc470e42766902ea5e1d045b0f32e53fa0551b",
+      "edits": [
+        {
+          "before": "",
+          "after": "import {createCorrectionSaleEngine} from './cashier-correction-engine.js';\n"
+        },
+        {
+          "before": "    const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid);\n",
+          "after": "    const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid, api);\n"
+        },
+        {
+          "before": "                payload = await engine.prepare(payload, payload.recipeSnapshot);\n",
+          "after": "                payload = await createCorrectionSaleEngine(api,w.cashierVoid.saleConnection(payload)).prepare(payload, payload.recipeSnapshot);\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-void-queue.js": {
+      "baselineSha256": "5c581a270fc9a14284e5ff4782c0787ad5fb072f577ab90175547079ab65ae82",
+      "candidateSha256": "16373f0f9de2b34173158436796d7ecce4b15de63536750e894a7d17e1a9991b",
+      "edits": [
+        {
+          "before": "",
+          "after": "import {createCorrectionSaleEngine} from './cashier-correction-engine.js';\n"
+        },
+        {
+          "before": "export function createCashierVoidQueue(engine,environment,getService){\n",
+          "after": "export function createCashierVoidQueue(engine,environment,getService,baseApi){\n"
+        },
+        {
+          "before": "  sync(){if(flight)return flight;flight=(async()=>{const uploaded=[];if(environment.navigator?.onLine===false)return {changed:false,uploaded};const rows=await outbox.list();for(const row of rows){const payload=await outbox.claim(row.saleId,owner);if(!payload)continue;try{const service=getService();if(!service)throw Error('Receipt correction recovery is still loading. The replacement remains queued.');if(!await service.verifyQueued(payload))await engine.commit(payload);await service.acknowledge(payload);await outbox.acknowledge(payload.saleId);uploaded.push({saleId:payload.saleId,branch:payload.branch,auditDeferred:payload.auditDeferred===true});}catch(error){await outbox.noteError(payload.saleId,owner,error).catch(()=>{});console.warn('Replacement receipt remains safely queued:',error);}finally{await outbox.release(payload.saleId,owner);}}return {changed:rows.length>0,uploaded};})().finally(()=>{flight=null;});return flight;}\n",
+          "after": "  sync(){if(flight)return flight;flight=(async()=>{const uploaded=[];if(environment.navigator?.onLine===false)return {changed:false,uploaded};const rows=await outbox.list();for(const row of rows){const payload=await outbox.claim(row.saleId,owner);if(!payload)continue;try{const service=getService();if(!service)throw Error('Receipt correction recovery is still loading. The replacement remains queued.');if(!await service.verifyQueued(payload))await (baseApi?createCorrectionSaleEngine(baseApi,service.saleConnection(payload)):engine).commit(payload);await service.acknowledge(payload);await outbox.acknowledge(payload.saleId);uploaded.push({saleId:payload.saleId,branch:payload.branch,auditDeferred:payload.auditDeferred===true});}catch(error){await outbox.noteError(payload.saleId,owner,error).catch(()=>{});console.warn('Replacement receipt remains safely queued:',error);}finally{await outbox.release(payload.saleId,owner);}}return {changed:rows.length>0,uploaded};})().finally(()=>{flight=null;});return flight;}\n"
+        }
+      ]
+    },
+    "Takodeal-POS/sw.js": {
+      "baselineSha256": "dc326f4a049a623d20ce6b747d497bbd20b17da3c3952abd0b57db73560e50b0",
+      "candidateSha256": "073255b5c938e16cfdc261bbcf9f754095913320611998bd6ed8e9242920c289",
+      "edits": [
+        {
+          "before": "const CORE = 'takodeal-pos-core-cashier-prep-review-20261110-r1';\n",
+          "after": "const CORE = 'takodeal-pos-core-cashier-owner-desktop-20261111-r1';\n"
+        },
+        {
+          "before": "",
+          "after": "required.push('./cashier-protected-action.js','./cashier-correction-engine.js');\n"
+        }
+      ]
+    },
+    "Takodeal-POS/index.html": {
+      "baselineSha256": "ab754af72ffc3a6e81e4a4e78ff06c46690c6147f5f57c2652edbfca359f7892",
+      "candidateSha256": "a92b980c47838b422edef5814f154d43144b628d1a479c98f45634ac9e0b32fa",
+      "edits": [
+        {
+          "before": "    <script type=\"module\" src=\"main.js?v=cashier-prep-review-20261110-r1\"></script>\n",
+          "after": "    <script type=\"module\" src=\"main.js?v=cashier-owner-desktop-20261111-r1\"></script>\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-data.js": {
+      "baselineSha256": "3d03415a89b7371999f792612560ad5537404062955f47aa853a226fd89b49bb",
+      "candidateSha256": "c073195828eda81f27d4117ae332f1addab626adbb5d3b270d28d499cafdb84b",
+      "edits": [
+        {
+          "before": "export const CASHIER_RELEASE = 'cashier-prep-review-20261110-r1';\n",
+          "after": "export const CASHIER_RELEASE = 'cashier-owner-desktop-20261111-r1';\n"
+        }
+      ]
+    }
+  }
+}
