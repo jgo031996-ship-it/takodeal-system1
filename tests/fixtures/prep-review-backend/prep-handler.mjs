@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {planPrepBatch,planPrepReversal,prepCanonical,prepId,prepTimestampToken,PREP_VERSION} from './prep-model.mjs';
 import {resolveHQAccount,savedPin} from './relief-core/hq-account-model.js';
 import {activeAccessStaff} from './access-model.mjs';
+import {activeStaffProfile} from './relief-core/staff-lifecycle-model.js';
 import {PrepSourceReviewError,normalizedPrepName,prepSemanticIssue,prepReviewSourceSnapshot,prepReviewFingerprint,prepReviewSourceReferences,savedPrepReview} from './prep-review-model.mjs';
 export const PREP_OWNER='jgo031996@gmail.com',PREP_ORIGIN='https://takodeal-owner.vercel.app',PREP_CASHIER_ORIGIN='https://takodeal-cashier.vercel.app',PREP_MAX_BYTES=4096;
 const routes=new Set(['/prep/preview','/prep/commit','/prep/reversal-preview','/prep/reverse','/prep/review-skip','/prep/reviews','/prep/review-read']);
@@ -87,6 +88,10 @@ export function createPrepHandler({verifyToken,store,now=Date.now}={}){
  if(typeof verifyToken!=='function'||typeof store?.transaction!=='function')throw Error('Trusted Owner authentication and prep transactions are required.');
  async function execute(path,input,actor){return store.transaction(async tx=>{
   await authority(tx,actor,undefined,now);
+  if(path==='/prep/reviews'||path==='/prep/review-read'){
+   const records=await tx.ownerRecords();
+   if(!records.length||records.some(row=>!activeStaffProfile(row)||[row.pin,row.securityPin].some(value=>/^(REVOKED|BLOCKED)$/i.test(String(value??'').trim()))))fail(403,'prep/owner-unavailable','HQ must confirm this active Owner account before opening private prep reviews.');
+  }
   if(path==='/prep/reviews'){
    if(input.afterOperationId!==undefined){const cursor=await tx.get('prep_review_requests',input.afterOperationId);if(!cursor)fail(409,'prep/review-unavailable','The private review cursor was not found. Refresh the newest page.');privateReview(cursor,input.afterOperationId);}
    const records=await tx.reviewRows(input.afterOperationId),reviews=records.slice(0,20).map(row=>privateReview(row,row.id));return {schemaVersion:1,reviews,hasMore:records.length>20,nextAfterOperationId:records.length>20?reviews[reviews.length-1].operationId:null};
