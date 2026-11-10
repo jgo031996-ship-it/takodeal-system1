@@ -3,7 +3,7 @@ import {accessDocumentId} from './access-model.mjs';
 
 export const CASHIER_VOID_VERSION=1;
 export const CASHIER_VOID_REASONS=Object.freeze(['OrderCancelled','WrongPunched']);
-export class CashierVoidError extends Error{constructor(status,code,message){super(message);this.name='CashierVoidError';this.status=status;this.code='cashier-void/'+code;}}
+export class CashierVoidError extends Error{constructor(status,code,message,details){super(message);this.name='CashierVoidError';this.status=status;this.code='cashier-void/'+code;if(details)this.details=details;}}
 export const voidFail=(status,code,message)=>{throw new CashierVoidError(status,code,message);};
 export const voidHold=message=>voidFail(409,'owner-review',message);
 export const voidPlain=value=>Boolean(value&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value)));
@@ -44,7 +44,7 @@ export function editableVoidCart(cart){
  return cart.map(item=>{
   if(!voidPlain(item)||!voidText(item.name,200)||!finite(item.qty,{positive:true,max:10000})||!money(item.basePrice)||!money(item.variantPrice))voidHold('A saved item is missing its editable unit prices or quantity. Ask the Owner to review this receipt.');
   const result={name:item.name,basePrice:item.basePrice,variantPrice:item.variantPrice,qty:item.qty,discountType:'none',discountVal:0,addons:{}};
-  for(const key of ['realName','variantName','orderType'])if(item[key]!==undefined){if(!voidText(item[key],200))voidHold('A saved item option needs Owner review.');result[key]=item[key];}
+  for(const key of ['realName','variantName','orderType'])if(item[key]!==undefined){if(typeof item[key]!=='string'||item[key].length>200||/[\u0000-\u001f\u007f]/.test(item[key]))voidHold('A saved item option needs Owner review.');result[key]=item[key];}
   if(item.notes!==undefined){if(typeof item.notes!=='string'||item.notes.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(item.notes))voidHold('A saved item note needs Owner review.');result.notes=item.notes;}
   if(item.isGrouped!==undefined){if(typeof item.isGrouped!=='boolean')voidHold('A saved item variant needs Owner review.');result.isGrouped=item.isGrouped;}
   if(item.addons!==undefined&&(!voidPlain(item.addons)||Object.keys(item.addons).length>40))voidHold('Saved add-ons need Owner review.');
@@ -66,7 +66,7 @@ export function voidUnitIdentity(row){
 }
 export function validVoidUnitSnapshot(value){return voidFields(value,['schemaVersion','baseUom','uom'])&&value.schemaVersion===1&&sameUnit(value,voidUnitIdentity(value));}
 const sameUnit=(a,b)=>canonicalCashierVoidJSON(a)===canonicalCashierVoidJSON(b);
-export function verifyVoidSource({source,marker,saleId,receiptId,branch,shiftId}){
+export function verifyVoidSource({source,marker,saleId,receiptId,branch,shiftId,reason}){
  const row=source?.data,commit=marker?.data;
  if(!row||!commit)voidHold('The original receipt or its permanent saved-sale proof is missing. Ask the Owner to review it.');
  const joint=voidRevision(source.createTime);
@@ -77,7 +77,10 @@ export function verifyVoidSource({source,marker,saleId,receiptId,branch,shiftId}
  if(!voidFields(commit,['saleId','branch','receiptId','fingerprint','committedAt'])||commit.saleId!==saleId||commit.branch!==branch||commit.receiptId!==receiptId||commit.fingerprint!==savedFingerprint(row))voidHold('The original sale proof does not match this receipt. Ask the Owner to reconcile it.');
  if(row.saleVersion!==2||row.saleId!==saleId||row.receiptId!==receiptId||row.branch!==branch||row.shiftId!==shiftId||!['applied','deferred'].includes(row.inventoryState)||![undefined,'Paid','Completed','Complete','Settled','Received'].includes(row.status)||!money(row.netTotal))voidHold('Only an unchanged completed POS receipt from this open shift can be voided here. Ask the Owner to review this record.');
  const method=typeof row.paymentMethod==='string'?row.paymentMethod.trim().toLowerCase():'';
- if(!method||method==='salary deduction'||/grab|foodpanda|panda|split|refund|return/.test(method)||row.paymentVerified!==undefined&&typeof row.paymentVerified!=='boolean'||row.paymentVerified===true&&method!=='cash')voidHold('This verified or externally linked payment needs Owner review. Use its payment or prepared-cancellation process.');
+ const platform=['grab','foodpanda','food panda'].includes(method);
+ if(!method||method==='salary deduction'||/split|refund|return/.test(method)||/grab|foodpanda|panda/.test(method)&&!platform||platform&&row.paymentVerified!==false||row.paymentVerified!==undefined&&typeof row.paymentVerified!=='boolean'||row.paymentVerified===true&&method!=='cash')voidHold('This verified or externally linked payment needs Owner review. Use its payment or prepared-cancellation process.');
+ const sourcePlatform=platform?(method==='grab'?'Grab':'Foodpanda'):'Standard',orderPlatform=typeof row.orderType==='string'?row.orderType.trim().toLowerCase():'';
+ if(platform&&!(sourcePlatform==='Grab'?['grab']:['foodpanda','food panda','panda']).includes(orderPlatform)||!platform&&['grab','foodpanda','food panda','panda'].includes(orderPlatform))voidHold('The saved platform channel is inconsistent. Ask the Owner to review it; no stock or platform payment was changed.');
  const linked=['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile','manualVerification','preparedCancellation','cancelledFoodSourceId','cancelledFoodPurchaseId','cancelledFoodAllocationVersion','cancelledFoodLastPurchaseId','cancelledFoodPurchasedUnits','refundId','refund','refundedAt','refundAmount','refundedBy','returnedAt','returnId','splitDetails'];
  if(linked.some(key=>Object.hasOwn(row,key)))voidHold('This receipt has a payment, refund, or prepared-food link. Ask the Owner to use the linked cancellation or reconciliation process.');
  if(row.isMobileOrder===true||row.mobileOrderId||row.mobileOrderCode||row.orderType==='Delivery'||row.mealStaffName||row.mealIdentityId||row.mealLevelId||row.mealRole||row.globalDiscountType&&!['none','percentage','fixed'].includes(row.globalDiscountType))voidHold('Mobile, delivery, and meal receipts need their linked Owner cancellation process.');
@@ -86,7 +89,7 @@ export function verifyVoidSource({source,marker,saleId,receiptId,branch,shiftId}
  for(const effect of row.inventoryMovements)if(!voidFields(effect,['inventoryId','ingredientName','quantity','unitSnapshot'],['inventoryId','ingredientName','quantity'])||!accessDocumentId(effect.inventoryId)||!voidText(effect.ingredientName,200)||!finite(effect.quantity,{positive:true})||effect.unitSnapshot!==undefined&&!validVoidUnitSnapshot(effect.unitSnapshot))voidHold('A saved stock deduction needs Owner review.');
  const balls=countBalls(row.cart||[]);if(!finite(balls)||balls<0||row.statsApplied!==true||row.ballsCounted!==balls)voidHold('The original sales counters need Owner review.');
  const cart=editableVoidCart(row.cart),fingerprint=voidHash({source:row,sourceRevision:joint,marker:commit,markerRevision:voidRevision(marker.updateTime)});
- return {fingerprint,revision:joint,cart,netTotal:row.netTotal,inventoryState:row.inventoryState,movements:row.inventoryMovements,balls,legacyFingerprint:commit.fingerprint};
+ return {fingerprint,revision:joint,cart,netTotal:row.netTotal,inventoryState:row.inventoryState,movements:row.inventoryMovements,balls,platform:sourcePlatform,legacyFingerprint:commit.fingerprint};
 }
 export function voidEffects(proof,inventory,unitProof=[]){
  if(proof.inventoryState==='deferred')return [];
@@ -104,7 +107,10 @@ export function verifyReplacementPayload(payload,operation,actorName){
  if(!voidFields(payload,payloadKeys,['branch','cashier','shiftId','orderType','paymentMethod','netTotal','cart','saleId','receiptId','localTimestamp','saleVersion','inventoryMovements','voidCorrection'])||Buffer.byteLength(canonicalCashierVoidJSON(payload))>131072)voidHold('The replacement checkout contains unsupported fields. Keep this exact draft and ask the Owner to review it.');
  const expected={schemaVersion:1,operationId:operation.operationId,sourceSaleId:operation.intent.saleId,sourceReceiptId:operation.intent.receiptId,sourceFingerprint:operation.sourceFingerprint,checkoutAttemptId:payload.voidCorrection?.checkoutAttemptId,claimTokenHash:voidDigest(operation.replacement.claimToken)};
  if(canonicalCashierVoidJSON(payload.voidCorrection)!==canonicalCashierVoidJSON(expected)||!voidText(expected.checkoutAttemptId,96)||!/^[-A-Za-z0-9_]{8,96}$/.test(expected.checkoutAttemptId)||payload.branch!==operation.actor.branch||payload.shiftId!==operation.intent.shiftId||payload.cashier!==actorName||payload.saleId!==operation.replacement.saleId||payload.receiptId!==operation.replacement.receiptId||payload.saleVersion!==2||!money(payload.netTotal)||!Number.isFinite(Date.parse(payload.localTimestamp)))voidHold('The replacement checkout does not match its reserved correction. Keep the same draft and ask the Owner to review it.');
- if(!voidText(payload.paymentMethod,80)||payload.orderType==='Delivery'||payload.isMobileOrder===true||payload.mobileOrderId||payload.mobileOrderCode||payload.mealStaffName||payload.mealIdentityId||payload.mealLevelId||payload.mealRole||payload.globalDiscountType&&!['none','percentage','fixed'].includes(payload.globalDiscountType)||/grab|foodpanda|panda|split|salary|refund/i.test(payload.paymentMethod)||payload.paymentVerified!==undefined&&typeof payload.paymentVerified!=='boolean'||payload.paymentVerified===true&&payload.paymentMethod.trim().toLowerCase()!=='cash')voidHold('Use a separate reviewed checkout for linked payments, meals, or delivery. This correction supports ordinary receipts only.');
+ const platform=operation.source.platform||'Standard',isPlatform=platform!=='Standard';
+ if(!voidText(payload.paymentMethod,80)||payload.orderType==='Delivery'||payload.isMobileOrder===true||payload.mobileOrderId||payload.mobileOrderCode||payload.mealStaffName||payload.mealIdentityId||payload.mealLevelId||payload.mealRole||payload.globalDiscountType&&!['none','percentage','fixed'].includes(payload.globalDiscountType)||/split|salary|refund|return/i.test(payload.paymentMethod)||payload.paymentVerified!==undefined&&typeof payload.paymentVerified!=='boolean'||payload.paymentVerified===true&&payload.paymentMethod.trim().toLowerCase()!=='cash')voidHold('Use a separate reviewed checkout for linked payments, meals, or delivery. This correction supports ordinary receipts only.');
+ const replacementOrder=typeof payload.orderType==='string'?payload.orderType.trim().toLowerCase():'';
+ if(isPlatform?(!(platform==='Grab'?['grab']:['foodpanda','food panda','panda']).includes(replacementOrder)||payload.paymentMethod!==platform||payload.paymentVerified!==false||!voidText(payload.platformOrderId,200)):['grab','foodpanda','food panda','panda'].includes(replacementOrder)||/grab|foodpanda|panda/i.test(payload.paymentMethod))voidHold('The corrected order must stay in its original sales channel and use its freshly entered payment reference. This changes only the local ledger, not a platform refund or external cancellation.');
  editableVoidCart(payload.cart);
  const cartKeys=['name','basePrice','variantName','variantPrice','qty','notes','addons','discountType','discountVal','isGrouped','realName','orderType','lineTotalFinal','category'];
  for(const item of payload.cart){if(!voidFields(item,cartKeys,['name','basePrice','variantPrice','qty','addons','discountType','discountVal','lineTotalFinal']))voidHold('The replacement cart contains unsupported saved fields. Keep the draft and ask the Owner to review it.');for(const addon of Object.values(item.addons))if(!voidFields(addon,['name','price','qty','linkedIngredient','deductQty'],['price','qty']))voidHold('A replacement add-on contains unsupported saved fields.');}

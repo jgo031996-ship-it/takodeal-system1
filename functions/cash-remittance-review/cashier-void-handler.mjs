@@ -21,10 +21,14 @@ export function createCashierVoidHandler({verifyToken,store,now=Date.now}={}){
    let actor;try{actor=await verifyToken(bearer,true);}catch{voidFail(401,'sign-in','Sign in again to verify this approved tablet.');}
    if(!accessId(actor?.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!isAccessOwner(actor))voidFail(403,'identity','Use the approved Cashier tablet identity or the already signed-in verified Owner desktop account.');localRate('uid:'+actor.uid,180);
    const body=request.body,path=request.path;let keys=common;
-   if(path==='/cashier-void/commit')keys=[...common,'expectedFingerprint'];
-   if(path==='/cashier-void/replacement-claim')keys=[...common,'expectedFingerprint','phase','restoreAttemptId','claimToken',...(body.phase==='checkout'?['checkoutAttemptId','payload']:[])];
+   if(Object.hasOwn(body,'pinVerificationId'))keys=[...common,'pinVerificationId'];
+   if(path==='/cashier-void/preview'&&Object.hasOwn(body,'ownerUnitReview'))keys=[...keys,'ownerUnitReview'];
+   if(path==='/cashier-void/commit')keys=[...keys,'expectedFingerprint'];
+   if(path==='/cashier-void/replacement-claim')keys=[...keys,'expectedFingerprint','phase','restoreAttemptId','claimToken',...(body.phase==='checkout'?['checkoutAttemptId','payload']:[])];
    if(!voidFields(body,keys)||!op(body.operationId)||!accessDevice(body.deviceId)||!accessId(body.staffId)||!accessId(body.sessionId)||body.sessionId.length<16||!voidText(body.branch,120)||!accessDocumentId(body.shiftId)||!accessDocumentId(body.saleId)||!voidText(body.receiptId,200)||!CASHIER_VOID_REASONS.includes(body.reason)||keys.includes('expectedFingerprint')&&!hash(body.expectedFingerprint)||path==='/cashier-void/replacement-claim'&&(!['draft','checkout','abandon'].includes(body.phase)||!op(body.restoreAttemptId)||!hash(body.claimToken)||body.phase==='checkout'&&!op(body.checkoutAttemptId)))voidFail(400,'request','The void details changed or are incomplete. Keep the original reference and reopen its review.');
+   if(Object.hasOwn(body,'ownerUnitReview')&&(!isAccessOwner(actor)||!voidFields(body.ownerUnitReview,['confirmed','fingerprint','reason'])||body.ownerUnitReview.confirmed!==true||!hash(body.ownerUnitReview.fingerprint)||!voidText(body.ownerUnitReview.reason,1000)||body.ownerUnitReview.reason.trim().length<8))voidFail(400,'request','Only the verified Owner can explicitly confirm each unknown original unit with a documented reason.');
+   if(Object.hasOwn(body,'pinVerificationId')&&(!accessId(body.pinVerificationId)||!body.pinVerificationId.startsWith('pin-')))voidFail(400,'request','Confirm the original cashier PIN for this exact saved receipt.');
    await store.rate(actor.uid);return response(200,await store.execute(path,body,actor));
-  }catch(error){if(error instanceof CashierVoidError)return response(error.status,{code:error.code,message:error.message});return response(503,{code:'cashier-void/unavailable',message:'The saved void result could not be confirmed. Keep the same reference and check its status before starting another attempt.'});}
+  }catch(error){if(error instanceof CashierVoidError)return response(error.status,{code:error.code,message:error.message,...(error.code==='cashier-void/legacy-unit-review-required'&&error.details?.unitReview?{unitReview:error.details.unitReview}:{})});return response(503,{code:'cashier-void/unavailable',message:'The saved void result could not be confirmed. Keep the same reference and check its status before starting another attempt.'});}
  };
 }
