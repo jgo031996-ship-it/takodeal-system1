@@ -442,7 +442,10 @@ window.verifyPin = async function (pin) {
 
   } catch (error) {
     console.error("Database error:", error);
-    return null;
+    // A failed device/database/cache check is not evidence of a wrong PIN.
+    // Keep this a plain Error: application codes must not masquerade as a
+    // FirebaseError when another SDK operation handles the failure.
+    throw Object.assign(new Error('The sign-in check could not access its saved data or connection. Retry when connected. If it keeps failing, reopen Cashier when your current work is safely saved.'), {code:'cashier-login/unavailable'});
   }
 };
 

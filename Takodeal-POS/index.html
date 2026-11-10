@@ -476,27 +476,43 @@
           if (!password) { alert("Please enter your password."); return; }
 
           let btn = document.getElementById('btnSubmitPin'); 
+          if (window.cashierLoginCheckPending) return;
+          const attempt = window.cashierLoginCheckAttempt = (window.cashierLoginCheckAttempt || 0) + 1;
+          let selectedDevice, selectedBranch;
+          window.cashierLoginCheckPending = true;
+          let expired = false;
           btn.innerText = "Verifying..."; btn.disabled = true;
 
           // 🔥 ULTIMATE HANG FIX: Force unlock UI after 8 seconds if internet is dead!
           let forceUnlock = setTimeout(() => {
-              if (btn.innerText === "Verifying...") {
+              if (window.cashierLoginCheckAttempt === attempt && btn.innerText === "Verifying...") {
+                  expired = true;
+                  window.cashierLoginCheckPending = false;
                   alert("⚠️ Network is slow or unstable. Please check your WiFi connection and try logging in again.");
-                  passInput.value = ""; 
                   btn.innerText = "Secure Login"; 
                   btn.disabled = false;
               }
           }, 8000);
           
           try {
+              try {
+                  selectedDevice = localStorage.getItem('takodeal_device_id');
+                  selectedBranch = localStorage.getItem('takodeal_device_branch');
+              } catch {
+                  throw Object.assign(new Error('Saved-data access is unavailable.'), {code:'cashier-login/unavailable'});
+              }
               // Standard verify call
               let identity = await window.verifyPin(password);
+              if (expired || window.cashierLoginCheckAttempt !== attempt) return;
+              if (passInput.value.trim() !== password) throw Object.assign(new Error('The entered PIN changed. Check it and try again.'), {code:'cashier-login/changed'});
               
               clearTimeout(forceUnlock); // Cancel the timeout if Firebase successfully responds!
               
               if (identity === "BLOCKED") {
                   passInput.value = ""; btn.innerText = "Secure Login"; btn.disabled = false; return; 
               }
+              if (document.getElementById('loginOverlay')?.style.display === 'none') return;
+              if (localStorage.getItem('takodeal_device_id') !== selectedDevice || localStorage.getItem('takodeal_device_branch') !== selectedBranch) throw Object.assign(new Error('The selected device or branch changed.'), {code:'cashier-login/changed'});
               if (!identity) { 
                   alert("Invalid Password."); passInput.value = ""; btn.innerText = "Secure Login"; btn.disabled = false; return; 
               }
@@ -535,12 +551,20 @@
               if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
 
           } catch (err) {
+              if (expired || window.cashierLoginCheckAttempt !== attempt) return;
               console.warn("Login Hang Prevented:", err);
               clearTimeout(forceUnlock);
-              alert("⚠️ Network is slow or unstable. Please check your WiFi connection and try logging in again.");
-              passInput.value = ""; 
+              const message = err?.code === 'cashier-login/unavailable'
+                  ? 'Sign-in could not be checked because the connection or saved-data access is unavailable. Retry when connected. If this continues, reopen Cashier when your current work is safely saved. Your saved orders and device settings have not been cleared.'
+                  : err?.code === 'cashier-login/changed'
+                  ? 'The PIN, device or sign-in screen changed while checking. Check the details and try again.'
+                  : 'The sign-in check could not finish. Check your connection and try again.';
+              alert(message);
               btn.innerText = "Secure Login"; 
               btn.disabled = false;
+          } finally {
+              clearTimeout(forceUnlock);
+              if (window.cashierLoginCheckAttempt === attempt) window.cashierLoginCheckPending = false;
           }
       }
   </script>
