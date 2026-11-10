@@ -127,7 +127,7 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
    return{schemaVersion:1,staff:staff.sort((a,b)=>a.name.localeCompare(b.name)||a.branch.localeCompare(b.branch))};
   },
   async changePin(body,actor){
-   if(typeof body.newPin!=='string'||!/^[A-Za-z0-9]{4,100}$/.test(body.newPin)||/^(REVOKED|BLOCKED)$/i.test(body.newPin))fail(400,'access/request','Choose another daily Staff PIN. This value is reserved for account status.');
+   if(typeof body.newPin!=='string'||!/^\d{4,10}$/.test(body.newPin))fail(400,'access/request','Use 4–10 digits for your daily Staff PIN.');
    return db.runTransaction(async tx=>{
     const profile=await privateProfile(tx,body,actor),version=profile.row.loginPinVersion??0,opPath='staff_access_operations/'+hash(actor.uid+'|'+body.operationId),prior=data(await read(tx,opPath));
     if(prior){if(prior.uid!==actor.uid||prior.staffId!==body.staffId||prior.deviceId!==body.deviceId||prior.expectedVersion!==body.expectedVersion||prior.version!==version||!exactNewDailyPin(profile.row.pin,body.newPin))review();return{schemaVersion:1,staffId:body.staffId,version,changed:true,alreadySaved:true};}
