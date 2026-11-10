@@ -358,11 +358,159 @@ service cloud.firestore {
       allow create, update: if docId == 'discipline_policy' && disciplinePolicyWrite(request.resource.data, resource == null ? 0 : resource.data.revision);
       allow create, update: if docId.matches('discipline_case_.*') && disciplineCounter(request.resource.data, resource == null ? {} : resource.data, docId);
     }
-    match /announcements/{document=**} { allow read, write: if true; }
-    match /acknowledgments/{document=**} { allow read, write: if true; }
-    match /reviews/{document=**} { allow read, create: if true; allow update, delete: if isHQUser(); }
-    match /customer_feedback/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
-    match /franchise_leads/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
+    function companyFreshHQPinActive(value) {
+      return value == null || value is string && !(value.trim().upper() in ['REVOKED','BLOCKED'])
+        || value is number && value >= -9007199254740991 && value <= 9007199254740991;
+    }
+    function companyFreshHQSource(index,email) {
+      let id = index.get('sourceProfileId','');
+      let valid = id is string && id.size() > 0 && id.size() <= 1500 && !id.matches('.*[/].*') && !id.matches('[.]+');
+      let path = /databases/$(database)/documents/hq_managers/$(valid ? id : '__invalid_notice_source__');
+      let source = valid && exists(path) ? get(path).data : {};
+      return valid && source.get('email','') is string && source.email.trim().lower() == email
+        && (source.get('uid',null) in [null,''] || source.uid == reqUid())
+        && index.get('sourceAccess',{}) == {
+          'email':source.get('email',null),'role':source.get('role',null),'permissions':source.get('permissions',null),
+          'assignedBranch':source.get('assignedBranch',null),'active':source.get('active',null),'isActive':source.get('isActive',null),
+          'blocked':source.get('blocked',null),'status':source.get('status',null),'disabled':source.get('disabled',null),
+          'archived':source.get('archived',null),'isArchived':source.get('isArchived',null),'deleted':source.get('deleted',null),
+          'isDeleted':source.get('isDeleted',null),'revoked':source.get('revoked',null),'offboarded':source.get('offboarded',null),
+          'resigned':source.get('resigned',null),'terminated':source.get('terminated',null),
+          'employmentStatus':source.get('employmentStatus',null),'contractStatus':source.get('contractStatus',null)}
+        && companyFreshHQPinActive(source.get('pin',null)) && companyFreshHQPinActive(source.get('securityPin',null));
+    }
+    function companyFreshHQIntersect(left,right,wildcard) {
+      return wildcard in left ? right : wildcard in right ? left : left.removeAll(left.removeAll(right));
+    }
+    function companyFreshHQCombined(index,bridge,present) {
+      return {'role':index.role,
+        'permissions':present ? companyFreshHQIntersect(index.permissions,bridge.permissions,'all') : index.permissions,
+        'allowedBranches':present ? companyFreshHQIntersect(index.allowedBranches,bridge.allowedBranches,'All') : index.allowedBranches};
+    }
+    function companyFreshHQGrant() {
+      let email = isSignedIn() ? request.auth.token.get('email','') : '';
+      let eligible = isSignedIn() && reqVerified() == true && reqProvider() == 'google.com'
+        && email is string && email.size() > 0 && email.size() <= 320 && !email.matches('.*[/].*');
+      let canonical = eligible ? email.lower() : '__unverified_company_account__';
+      let path = /databases/$(database)/documents/hq_account_index/$(canonical);
+      let index = eligible && exists(path) ? get(path).data : {};
+      let bridgePath = /databases/$(database)/documents/hq_email_access/$(canonical);
+      let bridgePresent = eligible && exists(bridgePath);
+      let bridge = bridgePresent ? get(bridgePath).data : {};
+      return eligible && index.get('schemaVersion',0) == 1 && index.get('email','') == canonical
+        && index.get('active',false) == true && index.get('ambiguous',true) == false && index.get('role','') is string
+        && index.get('permissions',[]) is list && index.permissions.size() <= 100 && index.get('allowedBranches',[]) is list
+        && index.allowedBranches.size() > 0 && index.allowedBranches.size() <= 30
+        && companyFreshHQSource(index,canonical)
+        && (!bridgePresent || bridge.get('active',false) == true
+          && (bridge.get('role',null) in [null,''] || bridge.role == index.role)
+          && bridge.get('permissions',[]) is list && bridge.permissions.size() <= 100 && bridge.get('allowedBranches',[]) is list
+          && bridge.allowedBranches.size() > 0 && bridge.allowedBranches.size() <= 30)
+        ? companyFreshHQCombined(index,bridge,bridgePresent) : {};
+    }
+    function companyFreshHQScope(grant,permissions,branch) {
+      return grant.get('permissions',[]) is list && (grant.get('permissions',[]).hasAny(['all']) || grant.get('permissions',[]).hasAny(permissions))
+        && grant.get('allowedBranches',[]) is list
+        && ('All' in grant.get('allowedBranches',[]) || branch is string && branch != '' && branch != 'All' && branch in grant.get('allowedBranches',[]));
+    }
+    // No Owner bypass is implicit. Each collection chooses whether the strict
+    // canonical Owner or a freshly scoped HQ publisher may perform its action.
+    function companyFreshHQCan(permissions,branch) { return companyFreshHQScope(companyFreshHQGrant(),permissions,branch); }
+    match /announcements/{announcementId} {
+      function noticeStaffBranch(name) {
+        let valid = name is string && name.size() > 0 && name.size() <= 200 && !name.matches('.*[/].*') && !name.matches('[.]+');
+        let path = /databases/$(database)/documents/staff_name_claims/$(valid ? name : '__invalid_notice_staff__');
+        let claim = valid && exists(path) ? get(path).data : {};
+        let id = claim.get('uniqueStaffId','');
+        let unique = valid && claim.get('schemaVersion',0) == 1 && claim.get('name','') == name && claim.get('ambiguous',true) == false
+          && id is string && id.matches('^[A-Za-z0-9_-]{1,160}$');
+        let staffPath = /databases/$(database)/documents/cashiers/$(unique ? id : '__invalid_notice_staff__');
+        let staff = unique && exists(staffPath) ? get(staffPath).data : {};
+        return unique && staff.get('cashierName','') == name ? staff.get('branch','') : '';
+      }
+      function noticeTargetBranch(data) {
+        return data.get('targetType','') == 'Individual' ? noticeStaffBranch(data.get('targetStaff',''))
+          : data.get('targetType','') == 'Branch' ? data.get('targetBranch','')
+          : data.get('isSchedule',false) == true ? (data.get('branchTarget','') == 'All Branches' ? 'All' : data.get('branchTarget',''))
+          : data.get('targetType','') in ['','All'] ? 'All' : '';
+      }
+      function noticeHQPublisher(data) {
+        let grant = companyFreshHQGrant();
+        return grant.get('role','') is string && !(grant.get('role','').trim().lower() in ['franchisee','franchise owner'])
+          && companyFreshHQScope(grant,['bulletin'],noticeTargetBranch(data));
+      }
+      function noticePublisher(data) { return isOwner() || noticeHQPublisher(data); }
+      allow read: if true;
+      allow create: if noticePublisher(newData());
+      allow update: if newData().diff(oldData()).affectedKeys().hasOnly(['active'])
+        && newData().get('active',null) is bool && noticePublisher(oldData());
+      allow delete: if false; }
+    match /acknowledgments/{acknowledgmentId} {
+      // Legacy Staff/Cashier creates remain compatible until identity-bound
+      // acknowledgment transport is deployed. These are not authenticated signatures.
+      allow read, create: if true;
+      allow update, delete: if false; }
+    // Raw customer review/contact data is private. The Customer public review
+    // wall uses the existing bounded, sanitized server projection instead.
+    match /reviews/{reviewId} {
+      function inquiryReviewOwn(data) {
+        return isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true
+          && request.auth.token.get('email','') != '' && data.get('email','') == reqEmail();
+      }
+      function inquiryReviewHQ(data) {
+        return isOwner() || companyFreshHQCan(['all','customerapp'],data.get('branch','All'));
+      }
+      function inquiryReviewCreate(data) {
+        let source = readData('incoming_orders',data.orderId);
+        return inquiryReviewOwn(data) && reviewId == 'review-' + data.orderId
+          && data.orderId is string && data.orderId.matches('^[A-Za-z0-9_-]{1,128}$')
+          && data.keys().hasOnly(['version','orderId','orderCode','branch','orderType','sourceItems','totalItemsCount','text','timestamp','customer','email','status','isPublished'])
+          && data.version == 1 && source.status == 'completed' && source.customerEmail == reqEmail()
+          && data.orderCode == source.orderCode && data.branch == source.branch
+          && data.orderType == source.orderType && data.customer == source.customerName
+          && data.sourceItems == source.items && data.sourceItems is list
+          && data.sourceItems.size() > 0 && data.sourceItems.size() <= 100
+          && data.totalItemsCount == source.items.size() && data.text is string
+          && data.text.trim().size() > 0 && data.text.size() <= 1500
+          && data.timestamp == reqTime() && data.status == 'Pending' && data.isPublished == false
+          && nextData('incoming_orders',data.orderId).reviewPrompted == true;
+      }
+      allow get: if resource == null
+        ? isSignedIn() && reqProvider() == 'google.com' && reqVerified() == true
+        : inquiryReviewOwn(oldData()) || inquiryReviewHQ(oldData());
+      allow list: if inquiryReviewOwn(oldData()) || inquiryReviewHQ(oldData());
+      allow create: if inquiryReviewCreate(newData());
+      allow update: if inquiryReviewHQ(oldData())
+        && newData().diff(oldData()).affectedKeys().hasOnly(['isPublished','status'])
+        && newData().isPublished is bool
+        && newData().status == (newData().isPublished ? 'Approved' : 'Hidden');
+      allow delete: if false;
+    }
+    match /customer_feedback/{id} {
+      allow create: if newData().keys().hasOnly(['text','timestamp','customerName','email'])
+        && newData().size() == 4 && newData().text is string
+        && newData().text.trim().size() > 0 && newData().text.size() <= 4000
+        && newData().customerName is string && newData().customerName.size() <= 200
+        && newData().email is string && newData().email.size() <= 254
+        && newData().timestamp == reqTime();
+      allow read: if isOwner() || companyFreshHQCan(['all','reviews'],'All');
+      allow update, delete: if false;
+    }
+    match /franchise_leads/{id} {
+      allow create: if newData().keys().hasOnly(['name','phone','email','location','formatInterest','status','timestamp'])
+        && newData().size() == 7 && newData().name is string
+        && newData().name.trim().size() >= 2 && newData().name.size() <= 100
+        && newData().phone is string && newData().phone.size() >= 10 && newData().phone.size() <= 30
+        && newData().email is string && newData().email.size() <= 254
+        && newData().location is string && newData().location.trim().size() >= 2 && newData().location.size() <= 160
+        && newData().formatInterest in ['cart','kiosk','store','undecided']
+        && newData().status == 'Pending' && newData().timestamp == reqTime();
+      allow read: if isOwner() || companyFreshHQCan(['all','crm'],'All');
+      allow update: if (isOwner() || companyFreshHQCan(['all','crm'],'All'))
+        && newData().diff(oldData()).affectedKeys().hasOnly(['status'])
+        && newData().status == 'Contacted';
+      allow delete: if false;
+    }
 
     // Staff setup credentials and bindings are server-owned. A public fleet
     // mirror never grants activation; the immutable private device index also

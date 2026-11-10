@@ -1,0 +1,4 @@
+import {restoreInquiryPolicyStage} from './inquiry-policy-stage.mjs';
+import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
+const cuts=JSON.parse(readFileSync(new URL('../fixtures/notice-integrity-policy-cuts.json',import.meta.url),'utf8')),sha=value=>createHash('sha256').update(value).digest('hex');
+export function restoreNoticePolicyStage(input){const policy=restoreInquiryPolicyStage(input);assert.equal(sha(policy),cuts.afterSha256,'Exact reviewed notice source');assert.equal(cuts.edits.length,1);let source=policy;for(const edit of [...cuts.edits].reverse()){assert.equal(source.slice(edit.at,edit.at+edit.after.length),edit.after,edit.label);source=source.slice(0,edit.at)+edit.before+source.slice(edit.at+edit.after.length);}assert.equal(sha(source),'4991047fbcd9a23b86730c8fe614eaa84ff694fa6ced9d4cf10d9b02888c2a53','Notice-only inverse restores exact live d649/c55 policy');return source;}

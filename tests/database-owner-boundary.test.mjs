@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import vm from 'node:vm';
 import {tokenizeRules,buildFirestoreRules,assertRuleBuildEquivalent} from '../tools/build-firestore-rules.mjs';
+import {restoreNoticePolicyStage} from './helpers/notice-policy-stage.mjs';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),policy=read('firestore.policy.rules'),generated=read('firestore.rules');
 const sha=text=>createHash('sha256').update(text).digest('hex');
 function helper(source,name){const code=tokenizeRules(source).filter(t=>!['comment','whitespace'].includes(t.type)),at=code.findIndex((t,i)=>t.text==='function'&&code[i+1]?.text===name);assert.ok(at>=0);let open=at+2;while(code[open].text!=='{')open++;let end=open,depth=1;while(depth){end++;if(code[end].text==='{')depth++;else if(code[end].text==='}')depth--;}return source.slice(code[at].start,code[end].end);}
@@ -12,7 +13,7 @@ function restoreBaseline(){
  const owner="function isOwner() {\n      return isSignedIn() && reqEmail() == 'jgo031996@gmail.com';\n    }",offline="function offlineOwner() {\n      return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'\n        && request.auth.token.get('email_verified', false) == true;\n    }";
  // Compose the exact reviewed broker-cut inverse before proving the original
  // Owner/WiFi boundary against the historical live baseline.
- const cuts=JSON.parse(read('tests/fixtures/compatible-document-gcash-policy-cuts.json'));let stage=policy;
+ const cuts=JSON.parse(read('tests/fixtures/compatible-document-gcash-policy-cuts.json'));let stage=restoreNoticePolicyStage(policy);
  for(const edit of [...cuts.edits].reverse()){assert.equal(stage.slice(edit.at,edit.at+edit.after.length),edit.after);stage=stage.slice(0,edit.at)+edit.before+stage.slice(edit.at+edit.after.length);}
  assert.equal(sha(stage),'e8346ffd82e8b35f555cc7a97d5b3e442628dc25a0a16c3d63ede294debda728');
  let restored=stage.replace(helper(stage,'isOwner'),owner).replace(helper(stage,'offlineOwner'),offline);
