@@ -39,7 +39,7 @@ export function createAccessHandler({verifyToken,store}={}){
     await store.rate(actor.uid,request.trustedIP,route);return response(200,await store.options(actor));
    }
    if(route==='change-staff-pin'){
-    if(app!=='staff'||actor.firebase?.sign_in_provider!=='anonymous'||!only(body,['staffId','deviceId','newPin','operationId','expectedVersion'])||!accessId(body.staffId)||!accessDevice(body.deviceId)||!pin(body.newPin)||!accessId(body.operationId)||body.operationId.length<8||!Number.isSafeInteger(body.expectedVersion)||body.expectedVersion<0)fail(400,'access/request','Reopen your private account PIN change.');
+    if(app!=='staff'||actor.firebase?.sign_in_provider!=='anonymous'||!only(body,['staffId','deviceId','newPin','operationId','expectedVersion'])||!accessId(body.staffId)||!accessDevice(body.deviceId)||!pin(body.newPin)||!accessId(body.operationId)||body.operationId.length<8||!Number.isSafeInteger(body.expectedVersion)||body.expectedVersion<0)fail(400,'access/request','Use 4–10 digits for your daily Staff PIN.');
     await store.rate(actor.uid,request.trustedIP,route);return response(200,await store.changePin(body,actor));
    }
    if(['staff-payroll-history','staff-payroll-inputs'].includes(route)){

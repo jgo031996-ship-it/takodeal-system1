@@ -1,6 +1,6 @@
 import {createStaffDocumentFirebase} from './staff-document-firebase.js';
 import {documentCards,decodeDocumentPhoto} from './staff-documents.js';
-import {DOCUMENT_LABELS} from './staff-document-model.js';
+import {DOCUMENT_LABELS,SUPPORTED_DOCUMENT_GROUPS} from './staff-document-model.js';
 const html=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const ms=value=>value?.toMillis?.() ?? (value?.seconds?value.seconds*1000+Math.floor((value.nanoseconds||0)/1000000):0);
 export function installMasterEmployeeDocuments(api=window,{d=document,createVault}={}) {
@@ -22,8 +22,8 @@ export function installMasterEmployeeDocuments(api=window,{d=document,createVaul
         text('Checking private staff documents…');
         try {
             const client=await vault();await client.store.ready();
-            const data=await client.store.records();if(!same(token,id,uid))return;
-            records=data;el('masterStaffDocumentCards').innerHTML=documentCards(data,{hq:true});text('View or download these photos to attach them to the employee’s contract.');
+            const data=await client.store.records({groups:SUPPORTED_DOCUMENT_GROUPS});if(!same(token,id,uid))return;
+            records=data;el('masterStaffDocumentCards').innerHTML=documentCards(data,{hq:true,groups:SUPPORTED_DOCUMENT_GROUPS});text('Required documents and optional government IDs · Open a photo before approving it.');
             if(await admin(client)) {
                 const snap=await client.sdk.getDocsFromServer(client.sdk.query(client.sdk.collection(client.db,'staff_document_requests'),client.sdk.where('staffId','==',id)));
                 if(!same(token,id,uid))return;

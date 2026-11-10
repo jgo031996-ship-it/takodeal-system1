@@ -6,7 +6,7 @@ const TRUSTED_ENDPOINTS = Object.freeze([DOCUMENT_BROKER_ENDPOINT]);
 const MAX_BYTES = 2 * 1024 * 1024;
 const safeId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const safeHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const safeGroup = value => ['valid_id','health_card','clearance'].includes(value);
+const safeGroup = value => ['valid_id','health_card','clearance','sss_id','philhealth_id','pagibig_id'].includes(value);
 export function trustedDocumentBroker(config) {
     if(config?.enabled!==true || config.policyVersion!==DOCUMENT_POLICY_VERSION
         || typeof config.brokerEndpoint!=='string' || !TRUSTED_ENDPOINTS.includes(config.brokerEndpoint)) {
