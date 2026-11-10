@@ -201,6 +201,6 @@ test('opening an expense dialog during real installer activation prevents reload
 
 test('Cashier release caches the extracted updater and keeps progress visible above sign-in on small screens',()=>{
   const sw=readFileSync(new URL('../Takodeal-POS/sw.js',import.meta.url),'utf8'),css=readFileSync(new URL('../Takodeal-POS/cashier-theme.css',import.meta.url),'utf8');
-  assert.match(sw,/core-cashier-connection-recovery-20261110-r1/);assert.match(sw,/'\.\/cashier-app-update\.js'/);assert.match(sw,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
+  assert.match(sw,/core-cashier-cloud-recovery-20261110-r1/);assert.match(sw,/'\.\/cashier-app-update\.js'/);assert.match(sw,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
   assert.match(css,/z-index:1000001!important/);assert.match(css,/prefers-reduced-motion:reduce/);assert.doesNotMatch(css,/cashier-update-notice span\{display:none/);
 });

@@ -104,6 +104,8 @@ const storage = getStorage(app); // 🔥 Turn on the engine
 
 // 🔥 THE NEW ENTERPRISE OFFLINE ENGINE 🔥
 const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: false,
   localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
