@@ -23,8 +23,8 @@ test('phased Owner release preserves the live Rider and fleet implementation byt
 });
 
 test('Owner-only release queries and cache identify the document and GCash cohort while Staff stays on its base release',()=>{
- assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v138-protected-archive-20261110');
- const worker=read('takodeal-manager/sw.js').toString(),html=read('takodeal-manager/index.html').toString();assert.ok(worker.includes(OWNER_DOCUMENT_RELEASE));assert.match(html,/<meta name="takodeal-release" content="protected-archive-20261110">/);assert.match(html,/auth\.js\?v=protected-archive-20261110/);assert.match(read('takodeal-manager/auth.js').toString(),/main\.js\?v=protected-archive-20261110/);
+ assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v139-private-documents-20261110');
+ const worker=read('takodeal-manager/sw.js').toString(),html=read('takodeal-manager/index.html').toString();assert.ok(worker.includes(OWNER_DOCUMENT_RELEASE));assert.match(html,/<meta name="takodeal-release" content="private-documents-20261110">/);assert.match(html,/auth\.js\?v=private-documents-20261110/);assert.match(read('takodeal-manager/auth.js').toString(),/main\.js\?v=private-documents-20261110/);
  for(const file of ['document-metadata-client.js','gcash-reconciliation-client.js'])assert.ok(worker.includes("'./"+file+"'"));
  assert.match(read('takodeal-staff/sw.js').toString(),/takodeal-staff-v50-security-loans-20261109/);assert.match(read('takodeal-staff/index.html').toString(),/app\.js\?v=staff-security-loans-20261109/);
 });
