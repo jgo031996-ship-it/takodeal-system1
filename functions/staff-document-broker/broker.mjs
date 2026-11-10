@@ -7,7 +7,7 @@ const OWNER_EMAIL='jgo031996@gmail.com';
 const id=value=>typeof value==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const hash=value=>typeof value==='string' && /^[a-f0-9]{64}$/.test(value);
-const groups=['valid_id','health_card','clearance'];
+const groups=['valid_id','health_card','clearance','sss_id','philhealth_id','pagibig_id'];
 export class BrokerError extends Error {constructor(status,code,message){super(message);this.status=status;this.code=code;}}
 const reject=(status,code,message)=>{throw new BrokerError(status,code,message);};
 const object=value=>value && typeof value==='object' && !Array.isArray(value);

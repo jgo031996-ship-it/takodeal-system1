@@ -8,7 +8,7 @@ export function createDocumentMetadataClient({auth,identity,fetchFn=globalThis.f
  async function post(config,kind,input,{assertCurrent=()=>{}}={}){
   trustedDocumentBroker(config);const user=auth?.currentUser,staffId=input?.staffId;
   if(!id(staffId)||identity?.()!==staffId||!id(user?.uid)||typeof user.getIdToken!=='function')throw failure(401);
-  if(!['valid_id','health_card','clearance'].includes(input.group)||!id(input.uploadId)||!hash(input.sha256)||!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<(kind==='upload'?0:1)||input.expectedVersion>=Number.MAX_SAFE_INTEGER)throw failure(409);
+  if(!['valid_id','health_card','clearance','sss_id','philhealth_id','pagibig_id'].includes(input.group)||!id(input.uploadId)||!hash(input.sha256)||!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<(kind==='upload'?0:1)||input.expectedVersion>=Number.MAX_SAFE_INTEGER)throw failure(409);
   const controller=new AbortController();let timer,expired=false;
   const guard=()=>{if(expired||controller.signal.aborted)throw failure(503);assertCurrent();if(auth.currentUser!==user||identity()!==staffId)throw Error('Your account changed. Open the profile again.');};
   const operation=Promise.resolve().then(async()=>{

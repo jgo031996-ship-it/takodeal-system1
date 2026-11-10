@@ -13,6 +13,8 @@ const hash=value=>createHash('sha256').update(value).digest('hex');
 const stamp=value=>value?.toMillis?.()??(value instanceof Date?+value:Date.parse(value));
 const millisToken=value=>value?String(value.seconds??value._seconds)+'|'+String(value.nanoseconds??value._nanoseconds):'';
 const exactPin=(saved,input)=>typeof saved==='string'?saved===input:typeof saved==='number'&&Number.isSafeInteger(saved)&&Number(input)===saved;
+const numericDailyPin=input=>/^\d+$/.test(input)&&Number.isSafeInteger(Number(input))?Number(input):null;
+const exactNewDailyPin=(saved,input)=>typeof saved==='string'?saved===input:typeof saved==='number'&&Number.isSafeInteger(saved)&&numericDailyPin(input)!==null&&numericDailyPin(input)===saved;
 const data=snap=>snap?.exists?snap.data():null;
 const privateConfig=row=>row?.enabled===true&&row.policyVersion===2&&row.brokerEndpoint==='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
 const equalJSON=(a,b)=>{const sort=value=>Array.isArray(value)?value.map(sort):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,sort(value[key])])):value;return JSON.stringify(sort(a))===JSON.stringify(sort(b));};
@@ -127,11 +129,11 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
   async changePin(body,actor){
    return db.runTransaction(async tx=>{
     const profile=await privateProfile(tx,body,actor),version=profile.row.loginPinVersion??0,opPath='staff_access_operations/'+hash(actor.uid+'|'+body.operationId),prior=data(await read(tx,opPath));
-    if(prior){if(prior.uid!==actor.uid||prior.staffId!==body.staffId||prior.deviceId!==body.deviceId||prior.expectedVersion!==body.expectedVersion||prior.version!==version||!exactPin(profile.row.pin,body.newPin))review();return{schemaVersion:1,staffId:body.staffId,version,changed:true,alreadySaved:true};}
+    if(prior){if(prior.uid!==actor.uid||prior.staffId!==body.staffId||prior.deviceId!==body.deviceId||prior.expectedVersion!==body.expectedVersion||prior.version!==version||!exactNewDailyPin(profile.row.pin,body.newPin))review();return{schemaVersion:1,staffId:body.staffId,version,changed:true,alreadySaved:true};}
     if(!Number.isSafeInteger(version)||version<0||body.expectedVersion!==version)review();
-    const others=(await Promise.all([query(tx,'cashiers','pin','==',body.newPin),query(tx,'cashiers','pin','==',Number(body.newPin))])).flat().filter(row=>row.id!==body.staffId&&activeAccessStaff(row.data())&&exactPin(row.data().pin,body.newPin));
+    const numeric=numericDailyPin(body.newPin),others=(await Promise.all([query(tx,'cashiers','pin','==',body.newPin),...(numeric!==null?[query(tx,'cashiers','pin','==',numeric)]:[])])).flat().filter(row=>row.id!==body.staffId&&activeAccessStaff(row.data())&&exactNewDailyPin(row.data().pin,body.newPin));
     const pinPath='staff_pin_index/'+hash('staff-login-pin|'+body.newPin),pinIndex=data(await read(tx,pinPath));let occupied=false;
-    if(pinIndex&&pinIndex.staffId!==body.staffId){if(!accessId(pinIndex.staffId))review();const person=data(await read(tx,'cashiers/'+pinIndex.staffId));occupied=activeAccessStaff(person)&&exactPin(person.pin,body.newPin);}
+    if(pinIndex&&pinIndex.staffId!==body.staffId){if(!accessId(pinIndex.staffId))review();const person=data(await read(tx,'cashiers/'+pinIndex.staffId));occupied=activeAccessStaff(person)&&exactNewDailyPin(person.pin,body.newPin);}
     if(others.length||occupied)fail(409,'access/pin-in-use','Choose another daily Staff PIN. That PIN is already assigned.');
     tx.set(ref(pinPath),{staffId:body.staffId,updatedAt:serverTimestamp()});
     tx.update(ref('cashiers/'+body.staffId),{pin:body.newPin,loginPinVersion:version+1,pinUpdatedAt:serverTimestamp()});

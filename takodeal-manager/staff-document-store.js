@@ -1,11 +1,11 @@
 // Private document operations. The operational Staff PIN is never authorization.
-import {validateDocumentDraft, validateDocumentRecord} from './staff-document-model.js';
+import {DOCUMENT_GROUPS,SUPPORTED_DOCUMENT_GROUPS,validateDocumentDraft, validateDocumentRecord} from './staff-document-model.js';
 import {createDocumentBroker,trustedDocumentBroker,DOCUMENT_POLICY_VERSION} from './staff-document-broker.js';
 import {createDocumentMetadataClient} from './document-metadata-client.js';
 export {DOCUMENT_POLICY_VERSION} from './staff-document-broker.js';
 const safeId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 export function documentFilePath(uid, staffId, kind, operationId) {
-    if (![uid, staffId, operationId].every(safeId) || !['valid_id','health_card','clearance'].includes(kind)) throw Error('Invalid document identity.');
+    if (![uid, staffId, operationId].every(safeId) || !SUPPORTED_DOCUMENT_GROUPS.includes(kind)) throw Error('Invalid document identity.');
     return `staff_private_documents/${uid}/${staffId}/${kind}/${operationId}.jpg`;
 }
 export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker=createDocumentBroker({auth,identity}), metadata=createDocumentMetadataClient({auth,identity}), uuid=()=>crypto.randomUUID(),now=()=>Date.now()}) {
@@ -31,11 +31,12 @@ export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker
         if(data?.active!==true || data.uid!==uid || data.staffId!==id || typeof data.branch!=='string' || !data.branch) throw Error('Ask HQ to approve this device for your private documents.');
         return {...data, uid};
     }
-    async function records() {
+    async function records({groups=DOCUMENT_GROUPS}={}) {
+        if(!Array.isArray(groups)||groups.length>SUPPORTED_DOCUMENT_GROUPS.length||new Set(groups).size!==groups.length||groups.some(group=>!SUPPORTED_DOCUMENT_GROUPS.includes(group)))throw Error('Choose supported document groups.');
         const id=currentId(), uid=me().uid; await ready(); assertSame(id,uid);
         if(!isHQ) {await binding();assertSame(id,uid);}
         const result={};
-        await Promise.all(['valid_id','health_card','clearance'].map(async kind=> { const snap=await sdk.getDocFromServer(documentRef(id,kind)); assertSame(id,uid);result[kind]=snap.exists()?snap.data():null; }));
+        await Promise.all(groups.map(async kind=> { const snap=await sdk.getDocFromServer(documentRef(id,kind)); assertSame(id,uid);result[kind]=snap.exists()?snap.data():null; }));
         assertSame(id,uid); return result;
     }
     async function requestDevice({deviceId='',deviceName='Staff device'}={}) {
