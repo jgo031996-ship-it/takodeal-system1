@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "backendBase": "c533ffcb0edc470573c2d35cd27ddf8d3353c182",
+  "purpose": "Test-only exact scoped receipt-PIN and void runtime closure; no app deployment imports.",
+  "files": {
+    "access-handler.mjs": "e91a4946a7fd17b01d2a10aa0fc169a782edf2d1e501dfe7de9ae1632dffd92d",
+    "access-store.mjs": "2083cdf86141f42beee8695b1532a751788e4e0bb1485a8777ab0fb4e3242159",
+    "cashier-void-handler.mjs": "6c36b369f696af5a0c6b3cf0f53daab2584bc9e83eb409e6bba373adafbfbf5a",
+    "cashier-void-store.mjs": "9984fb961cf9f7c2d438b38f322df4f5278f358ad9479cd70c42c61c4bdea961",
+    "access-model.mjs": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+    "company-access-index.mjs": "974ae23b5a4567e555a0cf63cc372fd53e5efb9c90e715152e774dc6747ec4bf",
+    "relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+    "relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+    "owner-desktop-authority.mjs": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855",
+    "relief-core/pos-config-model.js": "dafd4ea434d5139d6f108e41cdd0a83cf2634dcf3e0ff787f1f32aab3be09377",
+    "cashier-void-model.mjs": "0283156732db5c994a11c881f915b27958c936020229d5b701641e21840961d7",
+    "cashier-void-history.mjs": "82420a726ab66645d47f53b605ad7c4885dc173ae09ff34d986bfca615f780fe"
+  },
+  "backendCommit": "b206f51d7963925ea9bc34825d46b4a39bb782ad"
+}

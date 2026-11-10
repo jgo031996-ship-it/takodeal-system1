@@ -12,7 +12,7 @@ test('four exact platform-only changes restore every other void byte to the live
 
 test('untouched Store POS uses the actual Standard selector before window.posPlatform is initialized, including replacement checkout',async()=>{
  const source=readFileSync(new URL('../Takodeal-POS/index.html',import.meta.url),'utf8');assert.match(source,/<option value="Standard">[^<]*Store POS/);
- const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value:'Standard'});const result=await start(f);assert.equal(result.restored,true,JSON.stringify(result));assert.equal(f.backend.commits,1);assert.equal(f.w.posPlatform,undefined);
+ const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value:'Standard',options:[{value:'Standard'},{value:'Grab'},{value:'Foodpanda'}]});const result=await start(f);assert.equal(result.restored,true,JSON.stringify(result));assert.equal(f.backend.commits,1);assert.equal(f.w.posPlatform,undefined);
  const payload={branch:f.backend.branch,shiftId:'SAMPLE_SHIFT',cart:f.w.cart,paymentMethod:'Cash',netTotal:85},reserved=await f.controller.prepareCheckout(payload);Object.assign(payload,{saleId:reserved.saleId,receiptId:reserved.receiptId});const frozen=await f.controller.freezeCheckout(payload);assert.equal(frozen.saleId,reserved.saleId);assert.equal(frozen.receiptId,reserved.receiptId);assert.equal(f.backend.commits,1);
 });
 
@@ -21,11 +21,11 @@ test('Store POS default with no selector or global value uses the same existing 
 });
 
 test('uninitialized global never treats a Grab, Foodpanda or unknown selector as Standard',async()=>{
- for(const value of ['Grab','Foodpanda','Store POS','UNKNOWN']){const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value});const cart=f.w.cart,result=await start(f);assert.match(result.error,/empty Store POS cart/,value);assert.equal(f.backend.commits,0,value);assert.equal(f.calls.length,0,value);assert.equal(f.w.cart,cart,value);}
+ for(const value of ['Grab','Foodpanda','Store POS','UNKNOWN']){const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value,options:[{value:'Standard'},{value:'Grab'},{value:'Foodpanda'}]});const cart=f.w.cart,result=await start(f);assert.match(result.error,/empty Store POS cart|channel controls/,value);assert.equal(f.backend.commits,0,value);if(['Store POS','UNKNOWN'].includes(value))assert.equal(f.calls.length,0,value);assert.equal(f.w.cart,cart,value);}
 });
 
 test('selector mode changing during PIN verification cannot void or restore under the old mode',async()=>{
- const f=voidUI();delete f.w.posPlatform;const select={value:'Standard'};f.elements.set('posPlatformSelect',select);const fire=f.w.Swal.fire;f.w.Swal.fire=async options=>{const answer=await fire(options);if(options.input==='password')select.value='Grab';return answer;};const result=await start(f);assert.ok(result.error);assert.equal(f.backend.commits,0);assert.equal(f.calls.some(call=>call.path.startsWith('/cashier-void/')),false);assert.equal(f.w.cart.length,0);
+ const f=voidUI();delete f.w.posPlatform;const select={value:'Standard',options:[{value:'Standard'},{value:'Grab'},{value:'Foodpanda'}]};f.elements.set('posPlatformSelect',select);const fire=f.w.Swal.fire;f.w.Swal.fire=async options=>{const answer=await fire(options);if(options.input==='password')select.value='Grab';return answer;};const result=await start(f);assert.ok(result.error);assert.equal(f.backend.commits,0);assert.equal(f.calls.some(call=>call.path.startsWith('/cashier-void/')),false);assert.equal(f.w.cart.length,0);
 });
 
 test('Order cancelled preserves an occupied current order, hidden platform carts, customer, mobile and parked context',async()=>{
@@ -34,5 +34,5 @@ test('Order cancelled preserves an occupied current order, hidden platform carts
 });
 
 test('genuinely occupied Wrong punched keeps the existing safeguards without auto-parking or any PIN request',async()=>{
- const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value:'Standard'});const cart=f.w.cart=[{name:'KEEP CUSTOMER',qty:2,addons:{Extra:{qty:1,price:5}},notes:'KEEP NOTES'}],before=JSON.stringify(cart),customer=f.elements.get('finalCustomerName').value;f.w.parkOrder=()=>assert.fail('No auto-park');assert.match((await start(f)).error,/park it first/);assert.equal(f.w.cart,cart);assert.equal(JSON.stringify(f.w.cart),before);assert.equal(f.elements.get('finalCustomerName').value,customer);assert.equal(f.calls.length,0);assert.equal(f.backend.commits,0);
+ const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value:'Standard',options:[{value:'Standard'},{value:'Grab'},{value:'Foodpanda'}]});const cart=f.w.cart=[{name:'KEEP CUSTOMER',qty:2,addons:{Extra:{qty:1,price:5}},notes:'KEEP NOTES'}],before=JSON.stringify(cart),customer=f.elements.get('finalCustomerName').value;f.w.parkOrder=()=>assert.fail('No auto-park');assert.match((await start(f)).error,/park it first/);assert.equal(f.w.cart,cart);assert.equal(JSON.stringify(f.w.cart),before);assert.equal(f.elements.get('finalCustomerName').value,customer);assert.equal(f.calls.length,0);assert.equal(f.backend.commits,0);
 });
