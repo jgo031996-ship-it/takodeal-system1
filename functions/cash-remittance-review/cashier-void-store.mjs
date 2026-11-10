@@ -1,5 +1,6 @@
 import {randomBytes} from 'node:crypto';
-import {accessId,accessDevice,accessDocumentId,activeAccessStaff} from './access-model.mjs';
+import {accessId,accessDevice,accessDocumentId,activeAccessStaff,isAccessOwner,ACCESS_OWNER} from './access-model.mjs';
+import {freshOwnerDesktopAuthority,ownerDesktopSessionMatches,OwnerDesktopAuthorityError} from './owner-desktop-authority.mjs';
 import {CASHIER_VOID_VERSION,canonicalCashierVoidJSON,voidHash,voidDigest,voidRevision,voidMillis,voidText,voidFields,voidFail,voidHold,verifyVoidSource,voidEffects,verifyReplacementPayload,replacementReceiptMatches} from './cashier-void-model.mjs';
 import {createCashierVoidHistoricalReader} from './cashier-void-history.mjs';
 
@@ -30,12 +31,17 @@ export function createCashierVoidStore(db,{serverTimestamp,now=Date.now,randomTo
   // All authority, source, inventory, and claim reads happen in this SAME Admin
   // transaction; optimistic retries cannot adopt a revoked device or closed shift.
   const read=async(table,id)=>{if(!accessDocumentId(id))voidHold('The saved source reference is invalid.');return wrapped(await tx.get(db.doc(table+'/'+id)));};
+  let desktop=null;
+  if(isAccessOwner(actor)){
+   const rows=async(table,field,value)=>{const snap=await tx.get(db.collection(table).where(field,'==',value).limit(3));if(snap.size>=3)throw new OwnerDesktopAuthorityError();return snap.docs.map(doc=>({...doc.data(),id:doc.id}));};
+   try{desktop=await freshOwnerDesktopAuthority({actor,deviceId:body.deviceId,branch:body.branch,owners:()=>rows('hq_managers','email',ACCESS_OWNER),devices:()=>rows('pos_devices','deviceId',body.deviceId),branches:()=>rows('branches','name',body.branch)});}catch(error){if(error instanceof OwnerDesktopAuthorityError)voidFail(403,'owner-desktop-required',error.message);throw error;}
+  }
   const session=(await read('staff_login_sessions',actor.uid))?.data;
-  if(!accessId(actor.uid)||actor.firebase?.sign_in_provider!=='anonymous'||!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==body.staffId||session.deviceId!==body.deviceId||session.branch!==body.branch||session.sessionId!==body.sessionId||!Number.isFinite(voidMillis(session.expiresAt))||voidMillis(session.expiresAt)<=now())deny();
+  if(!accessId(actor.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!desktop||!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==body.staffId||session.deviceId!==body.deviceId||session.branch!==body.branch||session.sessionId!==body.sessionId||!Number.isFinite(voidMillis(session.expiresAt))||voidMillis(session.expiresAt)<=now()||desktop&&!ownerDesktopSessionMatches(session,desktop))deny();
   const profile=await read('cashiers',body.staffId);if(!activeAccessStaff(profile?.data)||!voidRevision(profile.updateTime)||session.profileRevision!==voidRevision(profile.updateTime))deny();
-  const binding=(await read('pos_bindings',actor.uid))?.data;
+  if(!desktop){const binding=(await read('pos_bindings',actor.uid))?.data;
   if(!binding||binding.uid!==actor.uid||binding.status!=='Active'||binding.deviceId!==body.deviceId||binding.branch!==body.branch||!accessId(binding.legacyDeviceDocId))deny();
-  const mirror=(await read('pos_devices',binding.legacyDeviceDocId))?.data;if(!mirror||mirror.status!=='Active'||mirror.deviceId!==body.deviceId||mirror.branch!==body.branch||String(mirror.appType||'').trim().toLowerCase()==='staff'||mirror.uid&&mirror.uid!==actor.uid)deny();
+  const mirror=(await read('pos_devices',binding.legacyDeviceDocId))?.data;if(!mirror||mirror.status!=='Active'||mirror.deviceId!==body.deviceId||mirror.branch!==body.branch||String(mirror.appType||'').trim().toLowerCase()==='staff'||mirror.uid&&mirror.uid!==actor.uid)deny();}
   const actorIdentity=actorKey(actor,body),operationKey=keyFor(actor.uid,body.operationId),operationRef=db.doc(TABLES.operations+'/'+operationKey),quoteRef=db.doc(TABLES.quotes+'/'+operationKey),sourceRef=db.doc(TABLES.sources+'/'+sourceKey(body));
   const operation=data(await tx.get(operationRef));if(operation)owned(operation,actor,body);
   const quote=data(await tx.get(quoteRef));if(quote)owned(quote,actor,body);
@@ -101,13 +107,13 @@ export function createCashierVoidStore(db,{serverTimestamp,now=Date.now,randomTo
   const expectedFingerprint=voidHash(plan);
   if(path==='/cashier-void/preview'){
    if(quote){if(quote.expectedFingerprint!==expectedFingerprint||quote.initiatingSessionId!==body.sessionId||quote.expiresAt<=now())voidFail(409,'preview-changed','The receipt, stock, shift, or preview changed. Cancel this reference and start a fresh review.');return view(quote,body);}
-   const record={schemaVersion:1,kind:'cashier-void-quote',operationId:body.operationId,actor:actorIdentity,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:voidHash(intent(body)),sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,unitProof,expiresAt:now()+5*60000,createdAt:serverTimestamp()};tx.create(quoteRef,record);return view(record,body);
+   const record={schemaVersion:1,kind:'cashier-void-quote',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),initiatingSessionId:body.sessionId,intent:intent(body),intentHash:voidHash(intent(body)),sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,unitProof,expiresAt:now()+5*60000,createdAt:serverTimestamp()};tx.create(quoteRef,record);return view(record,body);
   }
   if(!quote||quote.expiresAt<=now()||quote.expectedFingerprint!==body.expectedFingerprint||quote.expectedFingerprint!==expectedFingerprint||quote.initiatingSessionId!==body.sessionId)voidFail(409,'preview-changed','The confirmed preview expired or changed. Cancel this reference and review the original receipt again. Nothing further was voided by this attempt.');
   const stats=proof.balls>0?await read('settings','global_stats'):null;if(proof.balls>0&&(!stats?.data||!safeNumber(stats.data.totalTakoyakiBalls)||!safeNumber(stats.data['balls_'+body.branch])||stats.data.totalTakoyakiBalls<proof.balls||stats.data['balls_'+body.branch]<proof.balls))voidHold('The saved sales counters need Owner review before this void can be recorded.');
   const suffix=voidDigest(body.branch+'\0'+body.saleId),replacement=body.reason==='WrongPunched'?{saleId:'sale-voidfix-'+suffix,receiptId:'FIX-'+suffix.slice(0,32).toUpperCase(),claimToken:randomToken()}:null;
   if(replacement){if(!/^[a-f0-9]{64}$/.test(replacement.claimToken))throw Error('A secure replacement token is required.');if(await read('transactions',replacement.saleId)||await read('pos_sale_commits',replacement.saleId))voidHold('The reserved correction receipt already exists. Ask the Owner to review it before any replacement payment.');}
-  const at=serverTimestamp(),record={schemaVersion:CASHIER_VOID_VERSION,kind:'cashier-void-operation',operationId:body.operationId,actor:actorIdentity,actorName:profile.data.cashierName,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:quote.intentHash,state:'saved',sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,replacement,committedAt:at};
+  const at=serverTimestamp(),record={schemaVersion:CASHIER_VOID_VERSION,kind:'cashier-void-operation',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),actorName:profile.data.cashierName,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:quote.intentHash,state:'saved',sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,replacement,committedAt:at};
   // Every read above precedes the first write. The shift write serializes with
   // close/count/other voids, and all stock/log/counter/audit effects commit once.
   for(const effect of effects){tx.update(db.doc('inventory/'+effect.id),{currentStock:effect.afterStock});tx.create(db.doc('stock_logs/void-'+sourceKey(body)+'-'+voidDigest(effect.id)),{schemaVersion:1,branch:body.branch,inventoryId:effect.id,sourceSaleId:body.saleId,sourceReceiptId:body.receiptId,operationId:body.operationId,voidReason:body.reason,item:effect.name,uom:effect.unit,oldQty:effect.beforeStock,newQty:effect.afterStock,variance:effect.quantity,type:'Transaction Voided',note:'Original saved deduction reversed · '+body.reason,user:profile.data.cashierName,actorUid:actor.uid,staffId:body.staffId,deviceId:body.deviceId,timestamp:at});}

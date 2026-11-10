@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "base": "fe8c6184a4ddca1f5dca14ef7cf3d7fd3953cea6",
+  "files": [
+    {
+      "path": "functions/cash-remittance-review/access-store.mjs",
+      "beforeSha256": "34c47e01f9c047716e0be967d027bcb8730027e885c538113c866b148fa2de9d",
+      "afterSha256": "10e8baf0a1035be6f345084a7e3d023de80d39e948741911586c29d82157a7a4",
+      "hunks": [
+        {
+          "afterStart": 7,
+          "beforeLines": [],
+          "afterLines": [
+            "import {freshOwnerDesktopAuthority} from './owner-desktop-authority.mjs';"
+          ]
+        },
+        {
+          "afterStart": 29,
+          "beforeLines": [
+            " async function resolveDevice(tx,body,actor,profile){"
+          ],
+          "afterLines": [
+            " async function resolveDevice(tx,body,actor,profile,ownerDesktop){"
+          ]
+        },
+        {
+          "afterStart": 34,
+          "beforeLines": [
+            "    if(records.length!==1||records[0].data().status!=='Active'||records[0].data().branch!==body.branch||String(records[0].data().appType||'').trim().toLowerCase()==='staff')denied();"
+          ],
+          "afterLines": [
+            "    const active=records.filter(snap=>snap.data().status==='Active');",
+            "    if(ownerDesktop&&active.length===1&&active[0].data().branch==='Main Office'){",
+            "     const rows=values=>values.map(snap=>({...snap.data(),id:snap.id}));",
+            "     ownerDesktop.value=await freshOwnerDesktopAuthority({actor,deviceId:body.deviceId,branch:body.branch,owners:async()=>rows(await query(tx,'hq_managers','email','==',ACCESS_OWNER)),devices:async()=>rows(await query(tx,'pos_devices','deviceId','==',body.deviceId)),branches:async()=>rows(await query(tx,'branches','name','==',body.branch))});return body.branch;",
+            "    }",
+            "    if(records.length!==1||records[0].data().status!=='Active'||String(records[0].data().appType||'').trim().toLowerCase()==='staff')denied();",
+            "    if(records[0].data().branch!==body.branch)denied();"
+          ]
+        },
+        {
+          "afterStart": 97,
+          "beforeLines": [
+            "    const profile=await profileForPin(tx,body.pin,body.selectedStaffId),branch=await resolveDevice(tx,body,actor,profile),expiresAt=new Date(now()+12*60*60*1000);",
+            "    const session={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,issuedAt:new Date(now()),expiresAt,profileRevision:profile.revision,sessionId:body.sessionId};"
+          ],
+          "afterLines": [
+            "    const ownerDesktop={},profile=await profileForPin(tx,body.pin,body.selectedStaffId),branch=await resolveDevice(tx,body,actor,profile,ownerDesktop),expiresAt=new Date(now()+12*60*60*1000);",
+            "    const session={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,issuedAt:new Date(now()),expiresAt,profileRevision:profile.revision,sessionId:body.sessionId,...(ownerDesktop.value?{ownerDesktopAuthority:ownerDesktop.value}:{})};"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/cashier-void-handler.mjs",
+      "beforeSha256": "75275d1cd42d6e15b4d5f4593dfc270fc6c40eca1b1838f8ff0d24e467cab5e5",
+      "afterSha256": "ac927c602581afe34055753b3c9d11319a94c133267b3b95cb909fe1c89f1ea9",
+      "hunks": [
+        {
+          "afterStart": 1,
+          "beforeLines": [
+            "import {accessId,accessDevice,accessDocumentId} from './access-model.mjs';"
+          ],
+          "afterLines": [
+            "import {accessId,accessDevice,accessDocumentId,isAccessOwner} from './access-model.mjs';"
+          ]
+        },
+        {
+          "afterStart": 22,
+          "beforeLines": [
+            "   if(!accessId(actor?.uid)||actor.firebase?.sign_in_provider!=='anonymous')voidFail(403,'identity','Use the approved Cashier tablet identity.');localRate('uid:'+actor.uid,180);"
+          ],
+          "afterLines": [
+            "   if(!accessId(actor?.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!isAccessOwner(actor))voidFail(403,'identity','Use the approved Cashier tablet identity or the already signed-in verified Owner desktop account.');localRate('uid:'+actor.uid,180);"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/cashier-void-store.mjs",
+      "beforeSha256": "1a5c1620ffbba02a077bbaa7bda9c43a790b81bba5cd0aaaa8efebbd77135ef6",
+      "afterSha256": "9a9874ca335024be2c8ccf23ae192d9fa9ccc492f0cbc63bf8c8ccf8d2cfbe5a",
+      "hunks": [
+        {
+          "afterStart": 2,
+          "beforeLines": [
+            "import {accessId,accessDevice,accessDocumentId,activeAccessStaff} from './access-model.mjs';"
+          ],
+          "afterLines": [
+            "import {accessId,accessDevice,accessDocumentId,activeAccessStaff,isAccessOwner,ACCESS_OWNER} from './access-model.mjs';",
+            "import {freshOwnerDesktopAuthority,ownerDesktopSessionMatches,OwnerDesktopAuthorityError} from './owner-desktop-authority.mjs';"
+          ]
+        },
+        {
+          "afterStart": 34,
+          "beforeLines": [],
+          "afterLines": [
+            "  let desktop=null;",
+            "  if(isAccessOwner(actor)){",
+            "   const rows=async(table,field,value)=>{const snap=await tx.get(db.collection(table).where(field,'==',value).limit(3));if(snap.size>=3)throw new OwnerDesktopAuthorityError();return snap.docs.map(doc=>({...doc.data(),id:doc.id}));};",
+            "   try{desktop=await freshOwnerDesktopAuthority({actor,deviceId:body.deviceId,branch:body.branch,owners:()=>rows('hq_managers','email',ACCESS_OWNER),devices:()=>rows('pos_devices','deviceId',body.deviceId),branches:()=>rows('branches','name',body.branch)});}catch(error){if(error instanceof OwnerDesktopAuthorityError)voidFail(403,'owner-desktop-required',error.message);throw error;}",
+            "  }"
+          ]
+        },
+        {
+          "afterStart": 40,
+          "beforeLines": [
+            "  if(!accessId(actor.uid)||actor.firebase?.sign_in_provider!=='anonymous'||!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==body.staffId||session.deviceId!==body.deviceId||session.branch!==body.branch||session.sessionId!==body.sessionId||!Number.isFinite(voidMillis(session.expiresAt))||voidMillis(session.expiresAt)<=now())deny();"
+          ],
+          "afterLines": [
+            "  if(!accessId(actor.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!desktop||!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==body.staffId||session.deviceId!==body.deviceId||session.branch!==body.branch||session.sessionId!==body.sessionId||!Number.isFinite(voidMillis(session.expiresAt))||voidMillis(session.expiresAt)<=now()||desktop&&!ownerDesktopSessionMatches(session,desktop))deny();"
+          ]
+        },
+        {
+          "afterStart": 42,
+          "beforeLines": [
+            "  const binding=(await read('pos_bindings',actor.uid))?.data;"
+          ],
+          "afterLines": [
+            "  if(!desktop){const binding=(await read('pos_bindings',actor.uid))?.data;"
+          ]
+        },
+        {
+          "afterStart": 44,
+          "beforeLines": [
+            "  const mirror=(await read('pos_devices',binding.legacyDeviceDocId))?.data;if(!mirror||mirror.status!=='Active'||mirror.deviceId!==body.deviceId||mirror.branch!==body.branch||String(mirror.appType||'').trim().toLowerCase()==='staff'||mirror.uid&&mirror.uid!==actor.uid)deny();"
+          ],
+          "afterLines": [
+            "  const mirror=(await read('pos_devices',binding.legacyDeviceDocId))?.data;if(!mirror||mirror.status!=='Active'||mirror.deviceId!==body.deviceId||mirror.branch!==body.branch||String(mirror.appType||'').trim().toLowerCase()==='staff'||mirror.uid&&mirror.uid!==actor.uid)deny();}"
+          ]
+        },
+        {
+          "afterStart": 110,
+          "beforeLines": [
+            "   const record={schemaVersion:1,kind:'cashier-void-quote',operationId:body.operationId,actor:actorIdentity,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:voidHash(intent(body)),sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,unitProof,expiresAt:now()+5*60000,createdAt:serverTimestamp()};tx.create(quoteRef,record);return view(record,body);"
+          ],
+          "afterLines": [
+            "   const record={schemaVersion:1,kind:'cashier-void-quote',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),initiatingSessionId:body.sessionId,intent:intent(body),intentHash:voidHash(intent(body)),sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,unitProof,expiresAt:now()+5*60000,createdAt:serverTimestamp()};tx.create(quoteRef,record);return view(record,body);"
+          ]
+        },
+        {
+          "afterStart": 116,
+          "beforeLines": [
+            "  const at=serverTimestamp(),record={schemaVersion:CASHIER_VOID_VERSION,kind:'cashier-void-operation',operationId:body.operationId,actor:actorIdentity,actorName:profile.data.cashierName,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:quote.intentHash,state:'saved',sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,replacement,committedAt:at};"
+          ],
+          "afterLines": [
+            "  const at=serverTimestamp(),record={schemaVersion:CASHIER_VOID_VERSION,kind:'cashier-void-operation',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),actorName:profile.data.cashierName,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:quote.intentHash,state:'saved',sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,replacement,committedAt:at};"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/prep-handler.mjs",
+      "beforeSha256": "c78f8f64eb0f944d6cb141bc4c1c89b552523036086b076bfb4b5fedf1980686",
+      "afterSha256": "e2fc8d3e46f46a5587915f5adfe253d1d4ac4480352b615aecafd9e7950c6ad5",
+      "hunks": [
+        {
+          "afterStart": 6,
+          "beforeLines": [],
+          "afterLines": [
+            "import {ownerDesktopSessionMatches,OwnerDesktopAuthorityError} from './owner-desktop-authority.mjs';"
+          ]
+        },
+        {
+          "afterStart": 22,
+          "beforeLines": [
+            "const actorFields=actor=>actor.prepApp==='cashier'?{actorUid:actor.uid,actorEmail:actor.email||'',actorType:'cashier',staffId:actor.cashier.staffId,deviceId:actor.cashier.deviceId,sessionId:actor.cashier.sessionId}:{actorUid:actor.uid,actorEmail:PREP_OWNER};"
+          ],
+          "afterLines": [
+            "const actorFields=actor=>actor.prepApp==='cashier'?{actorUid:actor.uid,actorEmail:actor.email||'',actorType:'cashier',staffId:actor.cashier.staffId,deviceId:actor.cashier.deviceId,sessionId:actor.cashier.sessionId,...(actor.prepDesktopAuthority?{ownerDesktopAuthority:actor.prepDesktopAuthority}:{})}:{actorUid:actor.uid,actorEmail:PREP_OWNER};"
+          ]
+        },
+        {
+          "afterStart": 36,
+          "beforeLines": [],
+          "afterLines": [
+            "  if(trustedOwner(actor)&&session.ownerDesktopAuthority){",
+            "   let desktop;try{desktop=await tx.ownerDesktopAuthority(actor,context.deviceId,session.branch);}catch(error){if(error instanceof OwnerDesktopAuthorityError)fail(403,'prep/owner-desktop-required',error.message);throw error;}",
+            "   if(!ownerDesktopSessionMatches(session,desktop)||branch!=null&&branch!==session.branch)fail(403,'prep/staff-session-required','Confirm the selected employee PIN again in this Owner desktop branch preview.');",
+            "   actor.prepActorName=profile.cashierName;actor.prepBranch=session.branch;actor.prepDesktopAuthority=desktop;return;",
+            "  }"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/prep-store.mjs",
+      "beforeSha256": "0196335aae59f9c710ebf2e98b082d414ff0df6fd008ba11dc9d835a93d69f45",
+      "afterSha256": "609c1ad8c1ac00dbcfaa0124b322af8ad9639126b22e77192d4de69d435a3e23",
+      "hunks": [
+        {
+          "afterStart": 3,
+          "beforeLines": [],
+          "afterLines": [
+            "import {freshOwnerDesktopAuthority} from './owner-desktop-authority.mjs';"
+          ]
+        },
+        {
+          "afterStart": 20,
+          "beforeLines": [],
+          "afterLines": [
+            "   ownerDesktopAuthority:(actor,deviceId,branch)=>freshOwnerDesktopAuthority({actor,deviceId,branch,owners:()=>query('hq_managers',[['email',OWNER]],3,{allowAmbiguousCap:true}),devices:()=>query('pos_devices',[['deviceId',deviceId]],3,{allowAmbiguousCap:true}),branches:()=>query('branches',[['name',branch]],3,{allowAmbiguousCap:true})}),"
+          ]
+        }
+      ]
+    }
+  ],
+  "added": {
+    "path": "functions/cash-remittance-review/owner-desktop-authority.mjs",
+    "sha256": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855"
+  }
+}

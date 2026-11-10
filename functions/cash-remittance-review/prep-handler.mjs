@@ -3,6 +3,7 @@ import {planPrepBatch,planPrepReversal,prepCanonical,prepId,prepTimestampToken,P
 import {resolveHQAccount,savedPin} from './relief-core/hq-account-model.js';
 import {activeAccessStaff} from './access-model.mjs';
 import {activeStaffProfile} from './relief-core/staff-lifecycle-model.js';
+import {ownerDesktopSessionMatches,OwnerDesktopAuthorityError} from './owner-desktop-authority.mjs';
 import {PrepSourceReviewError,normalizedPrepName,prepSemanticIssue,prepReviewSourceSnapshot,prepReviewFingerprint,prepReviewSourceReferences,savedPrepReview} from './prep-review-model.mjs';
 export const PREP_OWNER='jgo031996@gmail.com',PREP_ORIGIN='https://takodeal-owner.vercel.app',PREP_CASHIER_ORIGIN='https://takodeal-cashier.vercel.app',PREP_MAX_BYTES=4096;
 const routes=new Set(['/prep/preview','/prep/commit','/prep/reversal-preview','/prep/reverse','/prep/review-skip','/prep/reviews','/prep/review-read']);
@@ -18,7 +19,7 @@ const planFields=['version','kind','branch','outputInventoryId','outputName','qt
 const provenance=row=>row.recipeMatch?{recipeMatch:row.recipeMatch}:{};
 const validProvenance=row=>!row.recipeMatch||fields(row.recipeMatch,['method','outputName','recipeName'])&&row.recipeMatch.method==='whitespace-only'&&row.recipeMatch.outputName===row.outputName&&typeof row.recipeMatch.recipeName==='string'&&row.recipeMatch.recipeName.length<=160&&normalizedPrepName(row.recipeMatch.outputName)===normalizedPrepName(row.recipeMatch.recipeName);
 const trustedOwner=actor=>actor.email?.toLowerCase()===PREP_OWNER&&actor.email_verified===true&&actor.firebase?.sign_in_provider==='google.com';
-const actorFields=actor=>actor.prepApp==='cashier'?{actorUid:actor.uid,actorEmail:actor.email||'',actorType:'cashier',staffId:actor.cashier.staffId,deviceId:actor.cashier.deviceId,sessionId:actor.cashier.sessionId}:{actorUid:actor.uid,actorEmail:PREP_OWNER};
+const actorFields=actor=>actor.prepApp==='cashier'?{actorUid:actor.uid,actorEmail:actor.email||'',actorType:'cashier',staffId:actor.cashier.staffId,deviceId:actor.cashier.deviceId,sessionId:actor.cashier.sessionId,...(actor.prepDesktopAuthority?{ownerDesktopAuthority:actor.prepDesktopAuthority}:{})}:{actorUid:actor.uid,actorEmail:PREP_OWNER};
 const savedActorKey=row=>row.actorType==='cashier'?{actorUid:row.actorUid,staffId:row.staffId,deviceId:row.deviceId,sessionId:row.sessionId}:{actorUid:row.actorUid};
 const actorKey=actor=>savedActorKey(actorFields(actor));
 const validSavedActor=row=>prepId(row.actorUid)&&(row.actorType==='cashier'?prepId(row.staffId)&&prepId(row.deviceId)&&prepId(row.sessionId)&&row.sessionId.length>=16&&typeof row.actorEmail==='string':row.actorEmail===PREP_OWNER);
@@ -32,6 +33,11 @@ async function authority(tx,actor,branch,now){
   const session=await tx.get('staff_login_sessions',actor.uid),context=actor.cashier,expires=session?.expiresAt?.toMillis?.()??Date.parse(session?.expiresAt||'');
   if(!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==context.staffId||session.deviceId!==context.deviceId||session.sessionId!==context.sessionId||!Number.isFinite(expires)||expires<=now()||branch!=null&&session.branch!==branch)fail(403,'prep/staff-session-required','Sign in again on this approved Cashier device before preparing stock.');
   const profile=await tx.get('cashiers',session.staffId);if(!activeAccessStaff(profile)||profile.accessRevision!==session.profileRevision)fail(403,'prep/staff-session-required','The selected employee changed. Sign in again before preparing stock.');
+  if(trustedOwner(actor)&&session.ownerDesktopAuthority){
+   let desktop;try{desktop=await tx.ownerDesktopAuthority(actor,context.deviceId,session.branch);}catch(error){if(error instanceof OwnerDesktopAuthorityError)fail(403,'prep/owner-desktop-required',error.message);throw error;}
+   if(!ownerDesktopSessionMatches(session,desktop)||branch!=null&&branch!==session.branch)fail(403,'prep/staff-session-required','Confirm the selected employee PIN again in this Owner desktop branch preview.');
+   actor.prepActorName=profile.cashierName;actor.prepBranch=session.branch;actor.prepDesktopAuthority=desktop;return;
+  }
   if(trustedOwner(actor)){const mirrors=await tx.deviceRecords(context.deviceId);if(mirrors.length!==1||mirrors[0].status!=='Active'||mirrors[0].branch!==session.branch||String(mirrors[0].appType||'').trim().toLowerCase()==='staff')fail(403,'prep/device-required','This Cashier device needs HQ approval.');}
   else{const binding=await tx.get('pos_bindings',actor.uid);if(!binding||binding.uid!==actor.uid||binding.status!=='Active'||binding.deviceId!==context.deviceId||binding.branch!==session.branch||!prepId(binding.legacyDeviceDocId))fail(403,'prep/device-required','This Cashier device needs HQ approval.');const mirror=await tx.get('pos_devices',binding.legacyDeviceDocId);if(!mirror||mirror.status!=='Active'||mirror.deviceId!==context.deviceId||mirror.branch!==session.branch||String(mirror.appType||'').trim().toLowerCase()==='staff')fail(403,'prep/device-required','This Cashier device needs HQ approval.');}
   actor.prepActorName=profile.cashierName;actor.prepBranch=session.branch;
