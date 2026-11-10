@@ -1,3 +1,4 @@
+import {CashierDeviceSetupMissing,CashierNoRetainedAnonymousCredential} from './stock-audit-device.js';
 // Select an existing identity for an explicit protected action. This never signs
 // in, signs out, registers, approves or rewrites the tablet's physical branch.
 const OWNER='jgo031996@gmail.com',OWNER_APP='takodeal-pos-owner-preview-v1';
@@ -51,12 +52,14 @@ export function createCashierOwnerDesktopContext(w,{primaryAuth,primaryDb,fireba
 }
 
 export async function resolveCashierProtectedAction(w,{resolveDevice,resolveOwnerDesktop,assertCurrent=()=>{}}={}){
- assertCurrent();const owner=typeof resolveOwnerDesktop==='function'?await resolveOwnerDesktop({assertCurrent}):null;assertCurrent();
- if(!owner){
-  let result;try{result=await resolveDevice({action:'check',assertCurrent});assertCurrent();}
-  catch(error){assertCurrent();throw Object.assign(Error((error?.message||'This protected action could not confirm the tablet connection.')+' '+ownerGuidance),{code:error?.code,status:error?.status});}
-  return checkedWork(w,result,assertCurrent);
- }
+ assertCurrent();let absent=null,result;
+ // An already-approved store identity always wins, even while a Google Owner
+ // credential is retained. Neither uncertainty nor denial can select a new UID.
+ try{result=await resolveDevice({action:'check',existingOnly:true,assertCurrent});assertCurrent();}
+ catch(error){assertCurrent();const missing=error instanceof CashierDeviceSetupMissing&&error.code==='cashier-device/setup-missing'&&error.deviceStatus==='Missing',noCredential=error instanceof CashierNoRetainedAnonymousCredential&&error.code==='cashier-device/no-retained-anonymous';if((!missing&&!noCredential)||Object.hasOwn(error,'status'))throw error;absent=error;}
+ if(!absent)return checkedWork(w,result,assertCurrent);
+ const owner=typeof resolveOwnerDesktop==='function'?await resolveOwnerDesktop({assertCurrent}):null;assertCurrent();
+ if(!owner)throw Object.assign(Error(absent.message+' '+ownerGuidance),{code:absent.code});
  const {auth,db,user}=owner,current=()=>{assertCurrent();owner.current();};current();return checkedWork(w,{api:{auth,db,assertStockAuditCurrent:current},actorUid:user.uid,ownerDesktop:true},current);
 }
 async function checkedWork(w,result,current){

@@ -4,8 +4,8 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {restoreCashierOwnerDesktop} from './helpers/cashier-owner-desktop-inverse.mjs';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),sha=value=>createHash('sha256').update(value).digest('hex');
-test('all nine reviewed Owner desktop hooks have exact inverses; ordinary financial engine and its mirror retain their live bytes',()=>{
- const proof=JSON.parse(read('tests/fixtures/cashier-owner-desktop-inverse.json'));assert.equal(proof.base,'f8f56b31ba4db3b5a7dabe42dab79198294df5b1');assert.equal(Object.keys(proof.files).length,9);
+test('all eleven reviewed Owner desktop hooks have exact inverses; ordinary financial engine and its mirror retain their live bytes',()=>{
+ const proof=JSON.parse(read('tests/fixtures/cashier-owner-desktop-inverse.json'));assert.equal(proof.base,'f8f56b31ba4db3b5a7dabe42dab79198294df5b1');assert.equal(Object.keys(proof.files).length,11);
  for(const [file,record]of Object.entries(proof.files)){const source=read(file);assert.equal(sha(restoreCashierOwnerDesktop(source,file)),record.baselineSha256,file);assert.throws(()=>restoreCashierOwnerDesktop(source+'\n// unrelated mutation\n',file),/Only the reviewed/);}
  for(const file of ['Takodeal-POS/pos-safety.js','takodeal-manager/pos-safety.js'])assert.equal(sha(read(file)),'415cdfb522de4da80de4e821369371d03d95879548336c055d3f4ab7ba7f495e');
 });
