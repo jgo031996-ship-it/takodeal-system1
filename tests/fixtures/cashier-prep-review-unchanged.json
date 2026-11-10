@@ -1,0 +1,10 @@
+{
+  "base": "dd8c13d5427c17ef7bfa6c0452bfd9a6dc0cc5ff",
+  "files": {
+    "Takodeal-POS/main.js": "a9e4ba4357c63e01643b32c9ca09a34467d1152f50a7df42bad4e1086f1ae36a",
+    "Takodeal-POS/pos-safety.js": "415cdfb522de4da80de4e821369371d03d95879548336c055d3f4ab7ba7f495e",
+    "takodeal-manager/pos-safety.js": "415cdfb522de4da80de4e821369371d03d95879548336c055d3f4ab7ba7f495e",
+    "Takodeal-POS/pos-checkout.js": "bb8ea101a8cb3623e2370ea61deb7484ca08ad368f20db09c5b7a2db253ce33c",
+    "Takodeal-POS/cashier-prep-access.js": "82d1a537f2cf9f55a044532b887cbd9bf75fddcfe207586b034b0cbff6daf017"
+  }
+}

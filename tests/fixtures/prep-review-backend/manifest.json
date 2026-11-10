@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Test-only frozen staged prep review runtime; no production route changes in this Cashier slice.",
+  "sourceBase": "650409386054048399ccda3675a2333fe4188833",
+  "files": {
+    "prep-handler.mjs": {
+      "sha256": "8ec25dd1353b7b5eb6b84b0f9477d8d9f81e229d8be802c2da8bb6e6d177ea85",
+      "bytes": 33007
+    },
+    "prep-model.mjs": {
+      "sha256": "e6a1aec2b4f917ef4d91f64176de4e7465d30694ec2fb81503ff44b9945e3fb7",
+      "bytes": 11222
+    },
+    "prep-store.mjs": {
+      "sha256": "0196335aae59f9c710ebf2e98b082d414ff0df6fd008ba11dc9d835a93d69f45",
+      "bytes": 7916
+    },
+    "prep-review-model.mjs": {
+      "sha256": "16488e56adb47db2a11c2706d56df759d386e6bd2b8a865c85499ca46447b761",
+      "bytes": 4774
+    },
+    "access-model.mjs": {
+      "sha256": "23a388dc467011ba7b25c351e70a4887689ec8edcbaf9ab6bb3cd79a8e6b9d84",
+      "bytes": 2548
+    },
+    "relief-core/hq-account-model.js": {
+      "sha256": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+      "bytes": 2079
+    },
+    "relief-core/staff-lifecycle-model.js": {
+      "sha256": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+      "bytes": 4557
+    }
+  }
+}

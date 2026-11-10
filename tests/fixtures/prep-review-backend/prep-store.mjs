@@ -1,0 +1,39 @@
+import {createHash} from 'node:crypto';
+import {prepId,prepTimestampToken} from './prep-model.mjs';
+const OWNER='jgo031996@gmail.com',readTables=new Set(['inventory','prep_quotes','prep_operations','prep_reversals','prep_review_requests','staff_login_sessions','cashiers','pos_bindings','pos_devices']);
+export function createPrepStore(db,{serverTimestamp,now=Date.now}={}){
+ if(typeof db?.runTransaction!=='function'||typeof serverTimestamp!=='function')throw Error('A trusted prep database is required.');
+ return {async rateOwner(uid){if(!prepId(uid))throw Error('The Owner identity is unavailable.');const window=Math.floor(now()/900000),key='prep-'+createHash('sha256').update(uid+'|'+window).digest('hex');await db.runTransaction(async tx=>{const ref=db.doc('cash_remittance_attempts/'+key),snap=await tx.get(ref),row=snap.exists?snap.data():null;if(row&&(!Number.isSafeInteger(row.count)||row.count<0)||Number(row?.count||0)>=120)throw Object.assign(Error('Too many prep checks. Wait a few minutes before retrying.'),{status:429,code:'prep/rate-limit'});tx.set(ref,{count:(row?.count||0)+1,expiresAt:new Date((window+2)*900000).toISOString()});});},transaction:work=>db.runTransaction(async tx=>{
+  let wrote=false,reads=0,nameReads=0;const cache=new Map(),values=new Map(),snapshots=new Map(),check=(table,id)=>{if(!readTables.has(table)||!prepId(id))throw Error('Read only exact prep sources.');},wrap=snap=>snap.exists?{...snap.data(),id:snap.id,updateTime:prepTimestampToken(snap.updateTime),createTime:prepTimestampToken(snap.createTime),accessRevision:snap.updateTime?String(snap.updateTime.seconds??snap.updateTime._seconds)+'|'+String(snap.updateTime.nanoseconds??snap.updateTime._nanoseconds):''}:null;
+  async function get(table,id){check(table,id);if(wrote)throw Error('Read all prep sources before writing.');const path=table+'/'+id;if(!cache.has(path)){if(++reads>150)throw Error('This prep needs a smaller scope.');cache.set(path,tx.get(db.doc(path)).then(snap=>{const row=wrap(snap);values.set(path,row);snapshots.set(path,snap);return row;}));}return cache.get(path);}
+  async function query(table,filters,limit,{allowAmbiguousCap=false}={}){if(wrote)throw Error('Read all prep sources before writing.');let q=db.collection(table);for(const [key,value]of filters)q=q.where(key,'==',value);const snap=await tx.get(q.limit(limit));reads+=snap.size;if(reads>150||snap.size>=limit&&!allowAmbiguousCap)throw Error('The saved prep sources are too large or ambiguous. Review them first.');return snap.docs.map(snap=>{const row=wrap(snap);if(table==='inventory'){cache.set(table+'/'+snap.id,Promise.resolve(row));values.set(table+'/'+snap.id,row);}return row;});}
+  // Only used when exact recipe-name lookup failed. A complete, bounded label
+  // census proves uniqueness without returning other rows or reading quantities.
+  // These projected snapshots never replace full inventory entries in the cache.
+  async function nameRows(table,branch){if(wrote||!['inventory','bom'].includes(table)||table==='inventory'&&(typeof branch!=='string'||!branch||branch.length>128))throw Error('Use the exact prep name-review scope.');const cap=table==='inventory'?501:2001;let q=db.collection(table);if(table==='inventory')q=q.where('branch','==',branch);q=q.select(...(table==='inventory'?['name','category']:['menuItem'])).limit(cap);const snapshot=await tx.get(q);nameReads+=snapshot.size;if(snapshot.size>=cap||nameReads>2500)throw Error('The prep name review could not prove a complete bounded source. Ask HQ to review it.');return snapshot.docs.map(wrap);}
+  const privateCreate=(table,id,value)=>{if(!['prep_quotes','prep_operations','prep_reversals','prep_review_requests'].includes(table)||!prepId(id)||value.version!==1||!(value.actorEmail===OWNER||value.actorType==='cashier'&&prepId(value.actorUid)&&prepId(value.staffId)&&prepId(value.deviceId)&&prepId(value.sessionId)))throw Error('Only a linked Owner prep audit may be saved.');wrote=true;tx.create(db.doc(table+'/'+id),value);};
+  return work({
+   get,serverTimestamp,
+   deviceRecords:deviceId=>query('pos_devices',[['deviceId',deviceId]],3),
+   ownerRecords:()=>query('hq_managers',[['email',OWNER]],11),
+   branchRecords:name=>{if(typeof name!=='string'||!name||name.length>128)throw Error('Choose one saved branch.');return query('branches',[['name',name]],3);},
+   recipeRows:name=>{if(typeof name!=='string'||!name||name.length>160)throw Error('Choose one saved prepared item.');return query('bom',[['menuItem',name]],32,{allowAmbiguousCap:true});},
+   ingredientRows:(branch,name)=>{if(typeof branch!=='string'||typeof name!=='string'||!name||branch.length>128||name.length>160)throw Error('Use exact saved ingredients.');return query('inventory',[['branch',branch],['name',name]],3,{allowAmbiguousCap:true});},
+   recipeNameRows:()=>nameRows('bom'),preparedNameRows:branch=>nameRows('inventory',branch),
+   async reviewRows(afterOperationId){if(wrote||afterOperationId!==undefined&&(!prepId(afterOperationId)||!values.get('prep_review_requests/'+afterOperationId)))throw Error('Read the exact private review cursor first.');let q=db.collection('prep_review_requests').orderBy('createdAt','desc');if(afterOperationId!==undefined)q=q.startAfter(snapshots.get('prep_review_requests/'+afterOperationId));const snap=await tx.get(q.limit(21));reads+=snap.size;if(reads>150||snap.size>21)throw Error('The private prep inbox exceeded its bounded source.');return snap.docs.map(wrap);},
+   createQuote:(id,value)=>privateCreate('prep_quotes',id,value),
+   closeQuote(id){if(!prepId(id)||!values.get('prep_quotes/'+id)||!(values.get('prep_quotes/'+id).actorEmail===OWNER||values.get('prep_quotes/'+id).actorType==='cashier'))throw Error('Read the exact saved prep quote before closing it.');wrote=true;tx.update(db.doc('prep_quotes/'+id),{status:'closed',closedAt:serverTimestamp()});},
+   createOperation:(id,value)=>privateCreate('prep_operations',id,value),
+   createReversal:(id,value)=>privateCreate('prep_reversals',id,value),
+   createReview(id,value){if(value.kind!=='cashier-prep-review'||value.actorType!=='cashier'||value.status!=='Pending'||value.stockPosted!==false||value.operationId!==id||!prepId(value.outputInventoryId)||typeof value.qty!=='number'||!Number.isFinite(value.qty)||value.qty<=0)throw Error('Only a linked pending Cashier prep review may be saved.');privateCreate('prep_review_requests',id,value);},
+   updateStock(id,expectedUpdateTime,currentStock,scope){
+    check('inventory',id);const saved=values.get('inventory/'+id);
+    if(!saved||saved.updateTime!==prepTimestampToken(expectedUpdateTime)||typeof currentStock!=='number'||!Number.isFinite(currentStock)||Math.abs(currentStock)>1e12)throw Error('Only guarded prep stock quantities may change.');
+    if(scope&&(!['output','ingredient'].includes(scope.role)||!prepId(scope.outputInventoryId)||scope.role==='output'&&scope.outputInventoryId!==id||scope.role==='ingredient'&&scope.outputInventoryId===id))throw Error('The prep movement role does not match its exact output.');
+    if(currentStock<0&&(!scope||scope.role!=='output'||scope.outputInventoryId!==id||String(saved.category||'').trim().toLowerCase()!=='prepared batch'))throw Error('Only the exact prepared output may retain a negative balance; raw ingredients cannot become negative.');
+    wrote=true;tx.update(db.doc('inventory/'+id),{currentStock});
+   },
+   createLog(id,value){if(!prepId(id)||!['Manager Prep Batch','End-of-Shift Kitchen Prep','Kitchen Prep Ingredient','Owner Prep Reversal'].includes(value.type)||!prepId(value.prepOperationId)||value.version!==1||!(value.user===OWNER||value.actorType==='cashier'&&prepId(value.actorUid)&&prepId(value.staffId)&&prepId(value.deviceId)&&prepId(value.sessionId)&&typeof value.user==='string'&&value.user.length>0))throw Error('Only linked prep movement logs may be created.');wrote=true;tx.create(db.doc('stock_logs/'+id),value);}
+  });
+ })};
+}
