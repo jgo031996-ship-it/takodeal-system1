@@ -1,3 +1,4 @@
+import {createCashierVoidQueue} from './cashier-void-queue.js';
 import { SALE_VERSION, saleIdentity, safeId, createOutbox, createSaleEngine } from './pos-safety.js';
 import {installCheckoutControls,resetCheckoutForNextOrder} from './checkout-controls.js';
 
@@ -48,6 +49,8 @@ export function installSaleSafety(api, environment = globalThis) {
     const ls = environment.localStorage;
     const outbox = createOutbox(environment.indexedDB || null);
     const engine = createSaleEngine(api);
+    const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid);
+    w.cashierVoidQueue = correctionQueue;
     const owner = saleIdentity({}, environment.crypto);
     w.saleOutbox = outbox;
     w.isSyncing = false;
@@ -100,7 +103,7 @@ export function installSaleSafety(api, environment = globalThis) {
         return value && value !== '{}' && value !== 'null';
     }
     async function refreshQueue() {
-        w.offlineQueue = [...(await outbox.list()).map(row => ({ ...row.payload, syncError: row.syncError })), ...legacySales()];
+        w.offlineQueue = [...(await outbox.list()).map(row => ({ ...row.payload, syncError: row.syncError })), ...(await correctionQueue.list()).map(row => ({ ...row.payload, syncError: row.syncError })), ...legacySales()];
         return w.offlineQueue;
     }
     w.getPendingSales = refreshQueue;
@@ -138,6 +141,7 @@ export function installSaleSafety(api, environment = globalThis) {
         if (w.isProcessingOrder) return { status: 'failed', error: 'Checkout is already processing.' };
         w.isProcessingOrder = true;
         let saved;
+        const correctionCheckout = !!w.cashierVoid?.ownsCart();
         try {
             watchAuditBranch();
             if (!payload.branch || !Array.isArray(payload.cart) || !payload.cart.length || !Number.isFinite(Number(payload.netTotal)) || Number(payload.netTotal) < 0) {
@@ -155,14 +159,16 @@ export function installSaleSafety(api, environment = globalThis) {
                 payload.splitDetails = [{ method: m1, amount: a1 }, { method: m2, amount: a2 }];
             }
             payload.paymentVerified = String(payload.paymentMethod || 'Cash').toLowerCase() === 'cash';
+            const correction = await w.cashierVoid?.prepareCheckout(payload);
+            if (payload.voidCorrection && !correction) throw Error('Reopen the original receipt correction before saving its replacement.');
             await w.parkedRecovery?.prepareCheckout(payload);
             if (!payload.saleId) {
-                payload.saleId = saleIdentity(payload, environment.crypto);
+                payload.saleId = correction?.saleId || saleIdentity(payload, environment.crypto);
                 const d = new Date();
                 const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
                 const counter = (Number(ls.getItem('takodeal_offline_rcpt_count')) || 0) + 1;
                 ls.setItem('takodeal_offline_rcpt_count', String(counter));
-                payload.receiptId = payload.mobileOrderCode || `${date}-${String(counter).padStart(4, '0')}-${payload.saleId.slice(-8).toUpperCase()}`;
+                payload.receiptId = correction?.receiptId || payload.mobileOrderCode || `${date}-${String(counter).padStart(4, '0')}-${payload.saleId.slice(-8).toUpperCase()}`;
                 payload.localTimestamp = d.toISOString();
                 payload.saleVersion = SALE_VERSION;
                 payload.auditDeferred = payload.branch === watchedAuditBranch ? w.isAuditModeActive : localAuditMode(payload.branch);
@@ -173,13 +179,20 @@ export function installSaleSafety(api, environment = globalThis) {
                     payload.recipeSnapshotStatus = Array.isArray(bom) && bom.length ? 'cached' : 'unavailable';
                 }
             }
+            if (correction) {
+                payload = await engine.prepare(payload, payload.recipeSnapshot);
+                w.cashierVoid.assertCheckout(payload);
+                payload = await w.cashierVoid.freezeCheckout(payload);
+                w.cashierVoid.assertCheckout(payload);
+            }
             // JSON clone also catches unserializable input before local commit.
             w.parkedRecovery?.linkCheckout(payload);
-            saved = await outbox.enqueue(JSON.parse(JSON.stringify(payload)));
+            saved = correction ? await correctionQueue.enqueue(JSON.parse(JSON.stringify(payload))) : await outbox.enqueue(JSON.parse(JSON.stringify(payload)));
             w.parkedRecovery?.acknowledgeCheckout(saved);
+            try { w.cashierVoid?.queued(saved); } catch (error) { console.warn('Replacement sale is saved locally; its correction reference remains for recovery.', error); }
         } catch (error) {
             console.error('Checkout was not saved:', error);
-            return { status: 'failed', error: error.message };
+            return { status: correctionCheckout ? 'correction-pending' : 'failed', error: error.message };
         } finally {
             w.isProcessingOrder = false;
         }
@@ -244,6 +257,12 @@ export function installSaleSafety(api, environment = globalThis) {
         try {
             if (environment.navigator?.locks) await environment.navigator.locks.request('takodeal-sale-sync-v2', sync);
             else await sync(); // IndexedDB claims still serialize each sale.
+            const corrections = await correctionQueue.sync();
+            queueChanged ||= corrections.changed;
+            for (const sale of corrections.uploaded) {
+                uploadedBranches.set(sale.branch, uploadedBranches.get(sale.branch) || sale.auditDeferred);
+                void Promise.resolve().then(() => w.cashierLowStock?.committedSale({saleId:sale.saleId,branch:sale.branch})).catch(() => {});
+            }
         } catch (error) {
             syncError = error;
             console.warn('Safe synchronization paused:', error);

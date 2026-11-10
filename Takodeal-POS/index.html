@@ -3,6 +3,7 @@
   
 <head>
 <link rel="stylesheet" href="./cashier-prep.css">
+<link rel="stylesheet" href="./cashier-void.css">
 <link rel="stylesheet" href="./meal-checkout.css">
 <link rel="stylesheet" href="./cashier-schedule-proposals.css?v=20261025">
 <link rel="stylesheet" href="./sales-actions.css?v=tablet-attendance-stock-20261009-r1">
@@ -2771,7 +2772,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
                     <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🔍 View Details</div>
                     <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🖨️ Print Receipt</div>
                     ${window.preparedCancellationActions?.(tx) || ''}
-                    ${tx.preparedCancellation || tx.cancelledFoodSourceId ? '' : `<div class="action-item danger" onclick="voidTx('${tx.receiptId}')" style="color: #dc2626; padding: 10px 15px;">🗑️ Void Transaction</div>`}
+                    ${tx.preparedCancellation || tx.cancelledFoodSourceId || tx.status === 'Voided' ? '' : `<div class="action-item danger" data-void-sale="${escapeSyncText(tx.id)}" data-void-receipt="${escapeSyncText(tx.receiptId)}" onclick="voidTx(this.dataset.voidSale,this.dataset.voidReceipt)" style="color: #dc2626; padding: 10px 15px;">Void / correct order</div>`}
                 </div>
             </div>`}
         </td>
@@ -2791,15 +2792,13 @@ window.loadSalesDashboard = async function (liveTransactions) {
   `;
 
   document.getElementById('tbTransBody').innerHTML = auditHeader + tBody;
+  window.cashierVoid?.renderRecovery();
 };
 
     function toggleTxMenu(id) { window.cashierSalesActions?.toggle(id); }
 
-    async function voidTx(receiptId) {
-      if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\n⚠️ WARNING: This action will be reported immediately to the Manager.`)) {
-        try { const voided = await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(voided ? 'Transaction voided. The Manager has been notified.' : 'This transaction is already voided.'); loadSalesDashboard(); }
-        catch (e) { alert("Error voiding transaction: " + e.message); }
-      }
+    async function voidTx(saleId, receiptId) {
+      return window.cashierVoid?.start(saleId, receiptId);
     }
 
     async function reprintDashboardReceipt(receiptId) {
@@ -3144,6 +3143,7 @@ window.confirmAddOrUpdateToCart = function() {
 };
 
 window.renderCart = function() {
+    const escapeCartText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
     if (!window.cart || window.cart.length === 0) { 
         window.activeMobileOrderId=null;window.activeMobileOrderCode=null;window.isActiveOrderMobile=false;window.activeMobileDelivery=null;
@@ -3155,7 +3155,7 @@ window.renderCart = function() {
         window.cart.forEach((item, index) => {
             grandTotal += item.lineTotalFinal;
             
-            let notesText = item.notes ? '<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">' + item.notes + '</div>' : '';
+            let notesText = item.notes ? '<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">' + escapeCartText(item.notes) + '</div>' : '';
 
             let addonsText = '';
             if (item.addons) {
@@ -3164,7 +3164,7 @@ window.renderCart = function() {
                     if (addon.qty > 0) {
                         let priceText = (addon.price && addon.price > 0) ? '(₱' + (addon.price * addon.qty).toFixed(2) + ')' : '';
                         let addonName = addon.name || key;
-                        addonsText += '<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ' + addon.qty + 'x ' + addonName + ' <span style="color:#64748b;">' + priceText + '</span></div>';
+                        addonsText += '<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ' + escapeCartText(addon.qty) + 'x ' + escapeCartText(addonName) + ' <span style="color:#64748b;">' + priceText + '</span></div>';
                     }
                 }
             }
@@ -3174,22 +3174,21 @@ window.renderCart = function() {
             else if (item.orderType === 'Take-Out') { badgeBg = '#fffbeb'; badgeCol = '#d97706'; badgeBrd = '#fde68a'; }
             else if (item.orderType) { badgeBg = '#e0f2fe'; badgeCol = '#0284c7'; badgeBrd = '#bae6fd'; }
             
-            let typeBadge = item.orderType ? `<span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${item.orderType}</span>` : '';
+            let typeBadge = item.orderType ? `<span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${escapeCartText(item.orderType)}</span>` : '';
 
-            let safeItemName = item.name.replace(/'/g, "\\'");
 
             // 🔥 THE FIX: Perfectly Aligned Flex Grid! Matches the Header 2.5 : 1 : 0.8 : 1 : 28px
             list.innerHTML += `
-                <li style="display: flex; padding: 12px 15px 12px 20px; border-bottom: 1px solid #f1f5f9; align-items: center; background: white; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';" onclick="window.openAddOrderModal('${safeItemName}', ${item.basePrice}, window.cart[${index}])">
+                <li style="display: flex; padding: 12px 15px 12px 20px; border-bottom: 1px solid #f1f5f9; align-items: center; background: white; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';" onclick="window.openAddOrderModal(window.cart[${index}].name, window.cart[${index}].basePrice, window.cart[${index}])">
                     
                     <div style="flex: 2.5; display: flex; flex-direction: column; padding-right: 10px;">
-                        <span style="font-weight: 900; color: #1e293b; font-size: 14px; line-height: 1.2;">${item.name} ${typeBadge}</span>
+                        <span style="font-weight: 900; color: #1e293b; font-size: 14px; line-height: 1.2;">${escapeCartText(item.name)} ${typeBadge}</span>
                         <div style="margin-top: 2px;">${addonsText}${notesText}</div>
                     </div>
                     
                     <div style="flex: 1; text-align: right; color: #64748b; font-weight: bold; font-size: 13px;">₱${item.variantPrice.toFixed(2)}</div>
                     
-                    <div style="flex: 0.8; display: flex; justify-content: center; font-weight: 900; font-size: 14px; color: #0ea5e9;">x${item.qty}</div>
+                    <div style="flex: 0.8; display: flex; justify-content: center; font-weight: 900; font-size: 14px; color: #0ea5e9;">x${escapeCartText(item.qty)}</div>
                     
                     <div style="flex: 1; text-align: right; font-weight: 900; color: #0f172a; font-size: 14px;">₱${item.lineTotalFinal.toFixed(2)}</div>
                     
@@ -3208,7 +3207,8 @@ window.renderCart = function() {
     }
 };
 
-window.clearCart = function() { 
+window.clearCart = function() {
+    if (window.cashierVoid?.activeCorrection()) return window.cashierVoid.abandonActive();
     if (!window.cart || window.cart.length === 0) return; 
     if (confirm("Clear order?")) { 
         window.cart = []; 
@@ -3703,7 +3703,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         document.getElementById('receiptModal').style.display = 'flex';
       } else {
-        alert("Checkout was not saved. Your cart is unchanged.\n\n" + (checkout.error || "Please try again."));
+        if (checkout.status === 'correction-pending') await Swal.fire({title:'Check this receipt correction',text:(checkout.error || 'The replacement save is not confirmed.')+' Keep its original recovery reference. Do not collect another payment or enter the same order under a new receipt.',icon:'warning',customClass:{popup:'cashier-void-modal'}});
+        else alert("Checkout was not saved. Your cart is unchanged.\n\n" + (checkout.error || "Please try again."));
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
     };
@@ -3957,6 +3958,7 @@ window.printReceipt = async function(type) {
 window.currentParkedOrdersList = []; 
 
 window.parkOrder = async function(settingsPermit) {
+    if (window.cashierVoid?.ownsCart()) { await Swal.fire({title:'Keep this correction together',text:'Finish its reserved replacement checkout, or keep the saved correction for the Owner. It cannot be parked as a different order.',icon:'info'}); return; }
     if (typeof cart === 'undefined' || cart.length === 0) return;
     let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
     if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
@@ -4555,7 +4557,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cashier-cloud-recovery-20261110-r1"></script>
+    <script type="module" src="main.js?v=cashier-void-20261110-r1"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

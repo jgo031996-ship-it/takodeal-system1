@@ -10,8 +10,8 @@ import { readProductAddonRows } from '../takodeal-manager/product-options-draft.
 
 function sauceSale() {
     const h = firestoreHarness();
-    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce Regular', branch: 'Main Office', currentStock: 1000 });
-    h.put('inventory/sauce-other', { name: 'Takoyaki Sauce Regular', branch: 'Cabantian', currentStock: 10000 });
+    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce Regular', branch: 'Main Office', currentStock: 1000, uom:'ml' });
+    h.put('inventory/sauce-other', { name: 'Takoyaki Sauce Regular', branch: 'Cabantian', currentStock: 10000, uom:'ml' });
     const payload = { saleVersion: SALE_VERSION, saleId: 'sale-held', receiptId: 'TEST-HELD-SAUCE',
         branch: 'Main Office', netTotal: 280, localTimestamp: '2026-10-03T10:46:00Z',
         recipeSnapshot: [{ menuItem: 'Takoyaki 8 Pcs', ingredientName: 'T.Reg.Sauce', qty: 35 }],
@@ -24,7 +24,7 @@ test('held recipe snapshot resolves confirmed sauce replacement and merges exact
     const prepared = await engine.prepare(payload, [{ menuItem: 'Takoyaki 8 Pcs', ingredientName: 'Wrong Ingredient', qty: 500 }]);
     assert.deepEqual(payload, before);
     assert.equal(saleFingerprint(prepared), saleFingerprint(before));
-    assert.deepEqual(prepared.inventoryMovements, [{ ingredientName: 'Takoyaki Sauce Regular', quantity: 80, inventoryId: 'sauce-office' }]);
+    assert.deepEqual(prepared.inventoryMovements, [{ ingredientName: 'Takoyaki Sauce Regular', quantity: 80, inventoryId: 'sauce-office', unitSnapshot: {schemaVersion:1,baseUom:null,uom:'ml'} }]);
     await Promise.all(Array.from({ length: 20 }, () => createSaleEngine(h.api).commit(prepared)));
     assert.equal(h.get('inventory/sauce-office').currentStock, 920);
     assert.equal(h.get('inventory/sauce-other').currentStock, 10000);
@@ -43,7 +43,7 @@ test('sauce recovery survives lost acknowledgment and uses recorded canonical st
 });
 test('replacement never deducts ambiguous or other-branch stock and preserves missing quantities for review', async () => {
     const { h, payload, engine } = sauceSale();
-    h.put('inventory/sauce-copy', { name: 'Takoyaki Sauce Regular', branch: 'Main Office', currentStock: 100 });
+    h.put('inventory/sauce-copy', { name: 'Takoyaki Sauce Regular', branch: 'Main Office', currentStock: 100, uom:'ml' });
     const duplicate = await engine.prepare(payload);
     assert.equal(duplicate.inventoryIssues[0].reason, 'duplicate');
     assert.equal(duplicate.inventoryIssues[0].quantity, 70);
@@ -55,10 +55,10 @@ test('replacement never deducts ambiguous or other-branch stock and preserves mi
 });
 test('an existing old ingredient is preferred, but duplicate old records are sent to review', async () => {
     const { h, payload, engine } = sauceSale();
-    h.put('inventory/old', { name: 'T.Reg.Sauce', branch: 'Main Office', currentStock: 100 });
+    h.put('inventory/old', { name: 'T.Reg.Sauce', branch: 'Main Office', currentStock: 100, uom:'ml' });
     const prepared = await engine.prepare(payload);
     assert.equal(prepared.inventoryMovements.find(m => m.inventoryId === 'old').quantity, 70);
-    h.put('inventory/old-copy', { name: 'T.Reg.Sauce', branch: 'Main Office', currentStock: 100 });
+    h.put('inventory/old-copy', { name: 'T.Reg.Sauce', branch: 'Main Office', currentStock: 100, uom:'ml' });
     const duplicate = await engine.prepare(payload);
     assert.equal(duplicate.inventoryIssues[0].ingredientName, 'T.Reg.Sauce');
     assert.ok(!duplicate.inventoryMovements.some(row => ['old','old-copy'].includes(row.inventoryId)));
@@ -66,10 +66,10 @@ test('an existing old ingredient is preferred, but duplicate old records are sen
 
 test('extra spaces in actual stock names recover the same receipt and deduct once across retries', async () => {
     const { h, payload, engine } = sauceSale();
-    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000 });
+    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000, uom:'ml' });
     const fingerprint = saleFingerprint(payload);
     const prepared = await engine.prepare(payload);
-    assert.deepEqual(prepared.inventoryMovements, [{ ingredientName: 'Takoyaki Sauce  Regular', quantity: 80, inventoryId: 'sauce-office' }]);
+    assert.deepEqual(prepared.inventoryMovements, [{ ingredientName: 'Takoyaki Sauce  Regular', quantity: 80, inventoryId: 'sauce-office', unitSnapshot: {schemaVersion:1,baseUom:null,uom:'ml'} }]);
     assert.equal(saleFingerprint(prepared), fingerprint);
     h.loseNextAck(); await assert.rejects(engine.commit(prepared));
     await Promise.all(Array.from({ length: 20 }, () => createSaleEngine(h.api).commit(prepared)));
@@ -83,19 +83,19 @@ test('extra spaces in actual stock names recover the same receipt and deduct onc
 
 test('whitespace fallback flags multiple matches and cannot cross branches or ignore letter case', async () => {
     const { h, payload, engine } = sauceSale();
-    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000 });
-    h.put('inventory/sauce-copy', { name: ' Takoyaki Sauce Regular ', branch: 'Main Office', currentStock: 100 });
+    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000, uom:'ml' });
+    h.put('inventory/sauce-copy', { name: ' Takoyaki Sauce Regular ', branch: 'Main Office', currentStock: 100, uom:'ml' });
     assert.equal((await engine.prepare(payload)).inventoryIssues[0].matches, 2);
     h.docs.delete('inventory/sauce-copy'); h.docs.delete('inventory/sauce-office');
     assert.equal((await engine.prepare(payload)).inventoryMovements.length, 0);
-    h.put('inventory/sauce-office', { name: 'takoyaki sauce regular', branch: 'Main Office', currentStock: 1000 });
+    h.put('inventory/sauce-office', { name: 'takoyaki sauce regular', branch: 'Main Office', currentStock: 1000, uom:'ml' });
     assert.equal((await engine.prepare(payload)).inventoryIssues[0].matches, 0);
     assert.equal(h.get('inventory/sauce-other').currentStock, 10000);
 });
 
 test('whitespace fallback downloads branch inventory at most once per preparation', async () => {
     const { h, payload } = sauceSale();
-    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000 });
+    h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000, uom:'ml' });
     const queries = [], getDocs = h.api.getDocsFromServer;
     h.api.getDocsFromServer = async q => { queries.push(q); return getDocs(q); };
     await createSaleEngine(h.api).prepare(payload);

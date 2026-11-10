@@ -38,7 +38,7 @@ export function createShiftSalesFeed(api, onChange, onError = console.warn) {
             const q = api.query(api.collection(api.db, 'transactions'), api.where('branch', '==', branch), api.where('timestamp', '>=', start));
             unsubscribe = api.onSnapshot(q, snapshot => {
                 if (current !== generation || scope !== key) return;
-                const rows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(row =>
+                const rows = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(row =>
                     row.branch === branch && (!row.shiftId || row.shiftId === 'UNKNOWN' || row.shiftId === shiftId));
                 currentRows=rows;
                 Promise.resolve(onChange(rows)).catch(onError);

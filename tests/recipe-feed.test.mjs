@@ -52,7 +52,7 @@ test('first-load server failure uploads a reviewable receipt without guessing ne
     const h=feedHarness();h.api.getDocFromServer=async()=>{throw new Error('offline');};
     assert.equal((await createRecipeFeed(h.api).capture()).recipeSnapshotStatus,'unavailable');
     const db=firestoreHarness(),engine=createSaleEngine(db.api);
-    db.put('inventory/cup',{branch:'Maa',name:'Paper Cup',currentStock:30});
+    db.put('inventory/cup',{branch:'Maa',name:'Paper Cup',currentStock:30,uom:'piece'});
     const payload={saleId:'old-offline',saleVersion:2,receiptId:'old',branch:'Maa',netTotal:120,localTimestamp:'2026-10-07T03:00:00Z',
         cart:[{name:'Takoyaki 6 Pcs',qty:1}],recipeSnapshot:[],recipeSnapshotStatus:'unavailable'};
     const prepared=await engine.prepare(payload,[row('Paper Cup',2)]);
@@ -64,8 +64,8 @@ test('first-load server failure uploads a reviewable receipt without guessing ne
 });
 test('old queued snapshot and new replacement each deduct once despite lost acknowledgement',async()=>{
     const db=firestoreHarness(),engine=createSaleEngine(db.api);
-    db.put('inventory/box',{branch:'Maa',name:'Box',currentStock:30});
-    db.put('inventory/cup',{branch:'Maa',name:'Paper Cup',currentStock:30});
+    db.put('inventory/box',{branch:'Maa',name:'Box',currentStock:30,uom:'piece'});
+    db.put('inventory/cup',{branch:'Maa',name:'Paper Cup',currentStock:30,uom:'piece'});
     const base={saleVersion:2,branch:'Maa',orderType:'Take-Out',netTotal:120,localTimestamp:'2026-10-07T03:00:00Z',cart:[{name:'Takoyaki 6 Pcs',qty:2}]};
     const old=await engine.prepare({...base,saleId:'old',receiptId:'old',recipeSnapshot:[row()]},[row('Paper Cup',2)]);
     const next=await engine.prepare({...base,saleId:'new',receiptId:'new',recipeSnapshot:[row('Paper Cup',2)]});

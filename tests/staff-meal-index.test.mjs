@@ -60,11 +60,15 @@ test('invalid timestamps in Voided meals and unrelated requests do not invent a 
 // An asynchronous IndexedDB stand-in, used by the actual durable outbox code.
 // Browser outbox tests separately verify native locking and persistence.
 function memoryIndexedDB(){
+    const databases=new Map();
+    function database(){
     const rows=new Map(),db={createObjectStore(){},transaction(){
         let pending=0,finished=false;const tx={objectStore:()=>store,abort(){finished=true;queueMicrotask(()=>tx.onabort?.());}};
         function request(action){const req={};pending++;queueMicrotask(()=>{if(finished)return;try{req.result=structuredClone(action());req.onsuccess?.();}catch(error){req.error=error;req.onerror?.();tx.abort();}pending--;queueMicrotask(()=>{if(!pending&&!finished){finished=true;tx.oncomplete?.();}});});return req;}
         const store={get:id=>request(()=>rows.get(id)),getAll:()=>request(()=>[...rows.values()]),add:row=>request(()=>rows.set(row.saleId,structuredClone(row))),put:row=>request(()=>rows.set(row.saleId,structuredClone(row))),delete:id=>request(()=>rows.delete(id))};return tx;
-    }};return {open(){const req={result:db};queueMicrotask(()=>{req.onupgradeneeded?.();req.onsuccess?.();});return req;}};
+    }};return db;
+    }
+    return {open(name){if(!databases.has(name))databases.set(name,database());const req={result:databases.get(name)};queueMicrotask(()=>{req.onupgradeneeded?.();req.onsuccess?.();});return req;}};
 }
 function checkout({claimRows=[],requestError=missingIndex()}={}){
     const h=firestoreHarness(),nodes={},calls=[],notices=[],alerts=[],storage=new Map([['takodeal_device_branch','Maa']]);

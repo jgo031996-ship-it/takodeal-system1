@@ -13,9 +13,9 @@ const sale = (overrides = {}) => ({ saleVersion: SALE_VERSION, saleId: 'octopus-
     recipeSnapshot: [{menuItem:'6 Pcs Takoyaki',ingredientName:'Batter',qty:6}, {menuItem:'6 Pcs Takoyaki',ingredientName:'Octopus',qty:10}], ...overrides });
 function setup() {
     const h = firestoreHarness();
-    h.put('inventory/batter', {branch:'Maa',name:'Batter',currentStock:100});
-    h.put('inventory/cooked', {branch:'Maa',name:'Cooked Octopus',currentStock:1000});
-    h.put('inventory/office-matcha', {branch:'Main Office',name:'Ceremonial Matcha',currentStock:1000});
+    h.put('inventory/batter', {branch:'Maa',name:'Batter',currentStock:100,uom:'gram'});
+    h.put('inventory/cooked', {branch:'Maa',name:'Cooked Octopus',currentStock:1000,uom:'gram'});
+    h.put('inventory/office-matcha', {branch:'Main Office',name:'Ceremonial Matcha',currentStock:1000,uom:'gram'});
     return {h, engine:createSaleEngine(h.api)};
 }
 
@@ -44,7 +44,7 @@ test('both held Maa receipts upload their full amounts while preserving unmatche
 
 test('duplicate ingredients are not deducted and the exact skipped quantity stays on the receipt', async()=>{
     const {h,engine}=setup();
-    for(const id of ['a','b']) h.put('inventory/'+id,{branch:'Maa',name:'Octopus',currentStock:100});
+    for(const id of ['a','b']) h.put('inventory/'+id,{branch:'Maa',name:'Octopus',currentStock:100,uom:'gram'});
     await engine.commit(await engine.prepare(sale()));
     const issue=h.get('transactions/octopus-sale').inventoryIssues[0];
     assert.equal(issue.reason,'duplicate'); assert.equal(issue.matches,2); assert.equal(issue.quantity,20);
@@ -65,7 +65,7 @@ test('commit failure rolls back receipt, known stock and inventory alert togethe
 
 test('stock added after preparation does not silently change the recorded review decision',async()=>{
     const {h,engine}=setup(), prepared=await engine.prepare(sale());
-    h.put('inventory/octopus',{branch:'Maa',name:'Octopus',currentStock:100});
+    h.put('inventory/octopus',{branch:'Maa',name:'Octopus',currentStock:100,uom:'gram'});
     assert.deepEqual(await engine.prepare(prepared),prepared);
     await engine.commit(prepared);
     assert.equal(h.get('inventory/octopus').currentStock,100);

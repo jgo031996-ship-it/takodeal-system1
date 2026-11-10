@@ -33,7 +33,7 @@ function memoryIndexedDB(){
 function checkoutHarness(values={},configureApi){
     const h=firestoreHarness(),reads=[],watchers=[],events=new Map(),intervals=[],timeouts=[],alerts=[];
     let now=0;
-    for(const branch of ['Maa','Cabantian'])h.put(`inventory/${branch}-Batter`,{branch,name:'Batter',currentStock:100});
+    for(const branch of ['Maa','Cabantian'])h.put(`inventory/${branch}-Batter`,{branch,name:'Batter',currentStock:100,uom:'gram'});
     const queryRead=h.api.getDocsFromServer;
     h.api.getDocsFromServer=async query=>{reads.push(query);return queryRead(query);};
     h.api.onSnapshot=(query,callback)=>{watchers.push({query,callback});return ()=>{};};

@@ -1,0 +1,12 @@
+{
+  "backendBase": "59281163035148857338546185224579a7e46f63",
+  "description": "New additive Cashier void broker closure, test only; Root owns deployment integration.",
+  "files": {
+    "access-model.mjs": "23a388dc467011ba7b25c351e70a4887689ec8edcbaf9ab6bb3cd79a8e6b9d84",
+    "cashier-void-handler.mjs": "75275d1cd42d6e15b4d5f4593dfc270fc6c40eca1b1838f8ff0d24e467cab5e5",
+    "cashier-void-history.mjs": "2ef5293c8fe223cfcc0e658d83e17afe38d64d478323abfccbb37d65756a22ca",
+    "cashier-void-model.mjs": "e0c6fcf7a9fa7afddaf97eaf79859f51919cd0c4ddd969f06c5f9eab25f4941b",
+    "cashier-void-store.mjs": "1a5c1620ffbba02a077bbaa7bda9c43a790b81bba5cd0aaaa8efebbd77135ef6",
+    "relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569"
+  }
+}

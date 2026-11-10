@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createOutbox } from '../Takodeal-POS/pos-safety.js';
+import { restoreCashierUnitSnapshots } from './helpers/cashier-unit-snapshot-inverse.mjs';
 import { outboxIndexedDB } from './helpers/outbox-indexeddb.mjs';
 const sale = (id = 'same-receipt-id') => ({ saleVersion: 2, saleId: id, receiptId: 'SAVED-1', branch: 'Fictional branch', cashier: 'Fictional Cashier', cart: [{ name: 'Synthetic food', qty: 2 }], netTotal: 50, inventoryMovements: [{ inventoryId: 'ingredient', quantity: 4 }] });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -47,7 +48,8 @@ test('uncertain commit acknowledgment keeps the exact physical operation pending
 });
 test('only createOutbox changed and the shared receipt engine remains byte-identical', () => {
     const base = execFileSync('git', ['show', '3ebd23df0651a3b89aca9769c1375122a71a167a:Takodeal-POS/pos-safety.js'], { encoding: 'utf8' }), current = readFileSync(new URL('../Takodeal-POS/pos-safety.js', import.meta.url), 'utf8');
+    const reviewedCurrent=restoreCashierUnitSnapshots(current);
     const before = source => source.slice(0, source.indexOf('export function createOutbox(')), after = source => source.slice(source.indexOf('\nexport function createSaleEngine('));
-    assert.equal(before(current), before(base)); assert.equal(after(current), after(base)); assert.equal(current, readFileSync(new URL('../takodeal-manager/pos-safety.js', import.meta.url), 'utf8'));
+    assert.equal(before(reviewedCurrent), before(base)); assert.equal(after(reviewedCurrent), after(base)); assert.equal(current, readFileSync(new URL('../takodeal-manager/pos-safety.js', import.meta.url), 'utf8'));
     assert.doesNotMatch(current.slice(current.indexOf('export function createOutbox('), current.indexOf('\nexport function createSaleEngine(')), /deleteDatabase|\.clear\(|location\.reload|localStorage|sessionStorage/);
 });

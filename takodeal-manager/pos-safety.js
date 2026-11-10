@@ -4,6 +4,31 @@ export const SALE_VERSION = 2;
 // Owner-confirmed replacement for the deleted ingredient. This also repairs
 // queued recipe snapshots; receipt identities and recipe quantities stay intact.
 const INGREDIENT_REPLACEMENTS = Object.freeze({ 'T.Reg.Sauce': 'Takoyaki Sauce Regular' });
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+function validUnitSnapshot(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.keys(value).length !== 3 || !['schemaVersion', 'baseUom', 'uom'].every(key => own(value, key)) || value.schemaVersion !== 1) return false;
+    const aliases = [value.baseUom, value.uom];
+    if (aliases.some(unit => unit !== null && (typeof unit !== 'string' || unit.length < 1 || unit.length > 64 || /[\u0000-\u001f\u007f]/.test(unit)))) return false;
+    const usable = aliases.filter(unit => typeof unit === 'string' && unit.trim()).map(unit => unit.trim().toLowerCase());
+    return usable.length > 0 && new Set(usable).size === 1;
+}
+function captureUnitSnapshot(row) {
+    const value = { schemaVersion: 1, baseUom: row.baseUom === undefined ? null : row.baseUom, uom: row.uom === undefined ? null : row.uom };
+    return validUnitSnapshot(value) ? value : null;
+}
+function sameUnitSnapshot(left, right) {
+    return validUnitSnapshot(left) && validUnitSnapshot(right) && left.baseUom === right.baseUom && left.uom === right.uom;
+}
+function movementUnitIssue(movement, row) {
+    // Older already-prepared outbox payloads have no proof. Keep that existing
+    // upload contract; never manufacture a historical unit for those receipts.
+    if (!own(movement, 'unitSnapshot')) return null;
+    if (!validUnitSnapshot(movement.unitSnapshot)) return 'unit-unavailable';
+    return sameUnitSnapshot(movement.unitSnapshot, captureUnitSnapshot(row)) ? null : 'unit-changed';
+}
+const unitReviewIssue = (movement, reason) => ({ inventoryId: movement.inventoryId, ingredientName: movement.ingredientName,
+    quantity: movement.quantity, lookupName: movement.ingredientName, reason, matches: 1 });
 export const safeId = value => encodeURIComponent(String(value)).replace(/\./g, '%2E');
 export function saleFingerprint(payload) {
     const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -75,7 +100,8 @@ export function receiptIngredientBurn(sale) {
 
 // IndexedDB read/write transactions serialize across tabs; array replacement in
 // localStorage cannot provide that guarantee. Resolve only after oncomplete.
-export function createOutbox(indexedDB = globalThis.indexedDB, { openTimeoutMs = 5000, transactionTimeoutMs = 15000 } = {}) {
+export function createOutbox(indexedDB = globalThis.indexedDB, { openTimeoutMs = 5000, transactionTimeoutMs = 15000, databaseName = 'takodeal_sale_outbox_v2' } = {}) {
+    if (!['takodeal_sale_outbox_v2', 'takodeal_void_replacement_outbox_v1'].includes(databaseName)) throw new Error('Invalid local receipt database.');
     for (const value of [openTimeoutMs, transactionTimeoutMs]) if (!Number.isInteger(value) || value < 1 || value > 60000) throw new Error('Invalid local storage deadline.');
     let connection;
     const retryable = new WeakSet();
@@ -96,7 +122,7 @@ export function createOutbox(indexedDB = globalThis.indexedDB, { openTimeoutMs =
             const fail = error => { if (settled) return; settled = true; clearTimeout(timer); retire(slot); reject(error); };
             const timer = setTimeout(() => fail(new Error('Local sale storage did not open. Keep this device and its saved receipts for review.')), openTimeoutMs);
             if (!indexedDB) return fail(new Error('Local sale storage is unavailable.'));
-            try { request = indexedDB.open('takodeal_sale_outbox_v2', 1); } catch (error) { fail(error); return; }
+            try { request = indexedDB.open(databaseName, 1); } catch (error) { fail(error); return; }
             request.onupgradeneeded = () => {
                 if (slot.retired) { try { request.transaction?.abort(); } catch {} return; }
                 request.result.createObjectStore('sales', { keyPath: 'saleId' });
@@ -239,12 +265,14 @@ export function createSaleEngine(api) {
         if (!Number.isFinite(stock)) throw new Error('Invalid inventory stock.');
         return stock;
     }
-    async function readMovements(tx, movements, branch) {
+    async function readMovements(tx, movements, branch, { reviewUnits = false } = {}) {
         const rows = [];
         for (const movement of movements) {
             const inventoryRef = ref('inventory', movement.inventoryId);
             const snapshot = await tx.get(inventoryRef);
-            rows.push({ movement, inventoryRef, snapshot, stock: validateMovement(movement, branch, snapshot) });
+            const stock = validateMovement(movement, branch, snapshot), unitIssue = movementUnitIssue(movement, snapshot.data());
+            if (unitIssue && !reviewUnits) throw new Error('The captured inventory unit changed or is missing. Ask the Owner to review its original deduction before reversal.');
+            rows.push({ movement, inventoryRef, snapshot, stock, unitIssue });
         }
         return rows;
     }
@@ -268,6 +296,7 @@ export function createSaleEngine(api) {
             if (payload.inventoryMovements) return payload;
             const movements = collectDeductions(payload, payload.recipeSnapshot || bom);
             const resolved = new Map();
+            const heldUnits = new Map();
             const inventoryIssues = [];
             const recipeIssues = payload.recipeSnapshotStatus === 'unavailable'
                 ? payload.cart.map(item=>({menuItem:item.name||item.itemName||'Unknown item',quantity:Number(item.qty??1),reason:'original-recipe-unavailable'})) : [];
@@ -302,10 +331,16 @@ export function createSaleEngine(api) {
                 // validation and later audit/void inventory movements.
                 ingredientName = matches[0].data().name;
                 const previous = resolved.get(inventoryId);
-                const quantity = (previous?.quantity || 0) + movement.quantity;
+                const held = heldUnits.get(inventoryId), unitSnapshot = captureUnitSnapshot(matches[0].data());
+                const quantity = (previous?.quantity || 0) + (held?.quantity || 0) + movement.quantity;
                 if (!Number.isFinite(quantity)) throw new Error('Invalid ingredient deduction.');
-                resolved.set(inventoryId, { ingredientName, quantity, inventoryId });
+                if (!unitSnapshot || held || previous && !sameUnitSnapshot(previous.unitSnapshot, unitSnapshot)) {
+                    resolved.delete(inventoryId);
+                    heldUnits.set(inventoryId, unitReviewIssue({ inventoryId, ingredientName, quantity },
+                        held?.reason || (!unitSnapshot ? 'unit-unavailable' : 'unit-changed')));
+                } else resolved.set(inventoryId, { ingredientName, quantity, inventoryId, unitSnapshot });
             }
+            inventoryIssues.push(...heldUnits.values());
             return { ...payload, inventoryMovements: [...resolved.values()], inventoryIssues, recipeIssues,
                 inventoryReviewRequired: inventoryIssues.length > 0 || recipeIssues.length > 0 };
         },
@@ -334,7 +369,7 @@ export function createSaleEngine(api) {
             }
             if (!Array.isArray(issues) || issues.some(issue => !issue.ingredientName ||
                 !Number.isFinite(issue.quantity) || issue.quantity <= 0 ||
-                !['missing', 'duplicate'].includes(issue.reason) || !Number.isInteger(issue.matches) || issue.matches < 0)) {
+                !['missing', 'duplicate', 'unit-unavailable', 'unit-changed'].includes(issue.reason) || !Number.isInteger(issue.matches) || issue.matches < 0)) {
                 throw new Error('Invalid inventory review record. Sale remains queued.');
             }
             if (movements.length + issues.length > 200) throw new Error('Sale contains too many inventory items.');
@@ -344,6 +379,16 @@ export function createSaleEngine(api) {
                 if (marker.exists()) { assertSale(marker.data(), payload); return 'already-committed'; }
                 const existing = await tx.get(saleRef);
                 if (existing.exists()) { assertSale(existing.data(), payload); return 'already-committed'; }
+                let correctionShiftRef, correctionRevision;
+                if (own(payload, 'voidCorrection')) {
+                    const correction = payload.voidCorrection, documentId = value => typeof value === 'string' && value.length > 0 && value.length <= 1500 && !/[\/\u0000-\u001f\u007f]/.test(value);
+                    if (!correction || typeof correction !== 'object' || !documentId(correction.sourceSaleId) || !documentId(payload.shiftId)) throw new Error('The original correction or shift reference is missing. Keep this saved replacement for Owner review.');
+                    const original = await tx.get(transactionRef(correction.sourceSaleId));
+                    correctionShiftRef = ref('shifts', payload.shiftId);
+                    const shift = await tx.get(correctionShiftRef), source = original.exists() ? original.data() : null, current = shift.exists() ? shift.data() : null;
+                    correctionRevision = current?.salesRevision ?? 0;
+                    if (!source || source.saleId !== correction.sourceSaleId || source.receiptId !== correction.sourceReceiptId || source.branch !== payload.branch || source.shiftId !== payload.shiftId || source.status !== 'Voided' || source.voidReason !== 'WrongPunched' || source.voidOperationId !== correction.operationId || !current || current.branch !== payload.branch || current.active !== true || String(current.status || '').trim().toLowerCase() === 'closed' || !Number.isSafeInteger(correctionRevision) || correctionRevision < 0 || correctionRevision >= Number.MAX_SAFE_INTEGER) throw new Error('The original correction shift is closed or changed. The replacement stays saved for Owner review; no new receipt was posted.');
+                }
                 let mobileRef;
                 if (payload.mobileOrderId) {
                     mobileRef = ref('incoming_orders', payload.mobileOrderId);
@@ -353,7 +398,9 @@ export function createSaleEngine(api) {
                 }
                 const audit = await tx.get(ref('settings', 'audit_' + safeId(payload.branch)));
                 const deferred = payload.auditDeferred || (audit.exists() && audit.data().active === true);
-                const rows = await readMovements(tx, movements, payload.branch);
+                const checkedRows = await readMovements(tx, movements, payload.branch, { reviewUnits: true });
+                const rows = checkedRows.filter(row => !row.unitIssue);
+                const effectiveIssues = [...issues, ...checkedRows.filter(row => row.unitIssue).map(row => unitReviewIssue(row.movement, row.unitIssue))];
                 // All reads precede writes. Firestore retries this entire callback
                 // on contention; no local mutations or notifications live here.
                 if (!deferred) for (const row of rows) {
@@ -363,20 +410,22 @@ export function createSaleEngine(api) {
                 const ballsCounted = countBalls(payload.cart);
                 tx.set(saleRef, {
                     ...sale, timestamp: new Date(payload.localTimestamp),
+                    inventoryMovements: rows.map(row => row.movement),
                     inventoryState: deferred ? 'deferred' : 'applied',
                     inventoryAppliedAt: deferred ? null : serverTimestamp(),
-                    inventoryIssues: issues, recipeIssues, inventoryReviewRequired: issues.length > 0 || recipeIssues.length > 0,
+                    inventoryIssues: effectiveIssues, recipeIssues, inventoryReviewRequired: effectiveIssues.length > 0 || recipeIssues.length > 0,
                     ballsCounted, statsApplied: true
                 });
                 // Retain this marker even when receipt history is archived.
                 tx.set(markerRef(payload.saleId), { saleId: payload.saleId, branch: payload.branch,
                     receiptId: payload.receiptId, fingerprint: saleFingerprint(payload), committedAt: serverTimestamp() });
                 stats(tx, { ...payload, ballsCounted }, 1);
-                if (issues.length || recipeIssues.length) tx.set(ref('manager_alerts', 'inventory-review-' + payload.saleId), {
+                if (correctionShiftRef) tx.update(correctionShiftRef, { salesRevision: correctionRevision + 1 });
+                if (effectiveIssues.length || recipeIssues.length) tx.set(ref('manager_alerts', 'inventory-review-' + payload.saleId), {
                     type: 'INVENTORY_REVIEW', branch: payload.branch, cashier: payload.cashier || 'Unknown',
-                    receiptId: payload.receiptId, saleId: payload.saleId, inventoryIssues: issues, recipeIssues, reviewStatus: 'Pending',
+                    receiptId: payload.receiptId, saleId: payload.saleId, inventoryIssues: effectiveIssues, recipeIssues, reviewStatus: 'Pending',
                     message: `Receipt ${alertText(payload.receiptId)} uploaded. Stock deductions need review: ` +
-                        [...issues.map(issue => `${alertText(issue.ingredientName)} (${issue.quantity}; ${issue.reason}, ${issue.matches} matches)`),
+                        [...effectiveIssues.map(issue => `${alertText(issue.ingredientName)} (${issue.quantity}; ${issue.reason}, ${issue.matches} matches)`),
                         ...recipeIssues.map(issue=>`${alertText(issue.menuItem)} (${issue.quantity} orders; original recipe unavailable)`)].join(', ') +
                         '. These unmatched quantities were not deducted. Sales and payments are recorded.',
                     timestamp: serverTimestamp(), isRead: false
@@ -434,9 +483,17 @@ export function createSaleEngine(api) {
                         tx.update(sale.ref, { inventoryState: 'cancelled' });
                         return;
                     }
-                    const rows = await readMovements(tx, data.inventoryMovements, branch);
+                    const checkedRows = await readMovements(tx, data.inventoryMovements, branch, { reviewUnits: true });
+                    const rows = checkedRows.filter(row => !row.unitIssue), unitIssues = checkedRows.filter(row => row.unitIssue).map(row => unitReviewIssue(row.movement, row.unitIssue));
                     for (const row of rows) tx.update(row.inventoryRef, { currentStock: increment(-row.movement.quantity) });
-                    tx.update(sale.ref, { inventoryState: 'applied', inventoryAppliedAt: serverTimestamp() });
+                    tx.update(sale.ref, { inventoryState: 'applied', inventoryAppliedAt: serverTimestamp(),
+                        ...(unitIssues.length ? { inventoryMovements: rows.map(row => row.movement), inventoryIssues: [...(data.inventoryIssues || []), ...unitIssues], inventoryReviewRequired: true } : {}) });
+                    if (unitIssues.length) tx.set(ref('manager_alerts', 'inventory-review-' + data.saleId), {
+                        type: 'INVENTORY_REVIEW', branch, cashier: data.cashier || 'Unknown', receiptId: data.receiptId, saleId: data.saleId,
+                        inventoryIssues: [...(data.inventoryIssues || []), ...unitIssues], recipeIssues: data.recipeIssues || [], reviewStatus: 'Pending',
+                        message: `Receipt ${alertText(data.receiptId)} audit resumed with changed inventory units. The held quantities were not deducted. Sales and payments stay recorded.`,
+                        timestamp: serverTimestamp(), isRead: false
+                    }, { merge: true });
                     return 'applied';
                 });
                 if (result === 'paused') paused = true;

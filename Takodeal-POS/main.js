@@ -1,5 +1,7 @@
 import {createCashierPrepAccess} from './cashier-prep-access.js';
 import {installCashierPrep} from './cashier-prep.js';
+import {createCashierVoidAccess} from './cashier-void-access.js';
+import {installCashierVoid} from './cashier-void.js';
 import {createStockAuditDeviceResolver} from './stock-audit-device.js';
 import {installCashRemittance} from './cash-remittance-ui.js';
 import {createCashierDeviceAuthContext} from './cashier-device-auth.js';
@@ -1157,6 +1159,7 @@ window.confirmAddOrUpdateToCart = function() {
 };
 
 window.renderCart = function() {
+    const escapeCartText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const list = document.getElementById('cartList'); 
     let grandTotal = 0; 
     list.innerHTML = '';
@@ -1171,7 +1174,7 @@ window.renderCart = function() {
             grandTotal += item.lineTotalFinal;
             
             // 📝 Notes styling
-            let notesText = item.notes ? `<div style="color:#d97706; font-style:italic; font-size:11px; margin-top:4px; font-weight:bold;">✎ ${item.notes}</div>` : '';
+            let notesText = item.notes ? `<div style="color:#d97706; font-style:italic; font-size:11px; margin-top:4px; font-weight:bold;">✎ ${escapeCartText(item.notes)}</div>` : '';
 
             // 🧀 Sleek Add-ons with cool arrows
             let addonsText = '';
@@ -1182,7 +1185,7 @@ window.renderCart = function() {
                         let priceText = (addon.price && addon.price > 0) ? `<span style="color:#94a3b8; font-weight:normal;">(+₱${(addon.price * addon.qty).toFixed(2)})</span>` : `<span style="color:#94a3b8; font-weight:normal;">(Free)</span>`;
                         let addonName = addon.name || key;
                         addonsText += `<div style="color:#475569; font-size:11px; margin-top:3px; font-weight:bold; display:flex; align-items:center; gap:4px;">
-                            <span style="color:#cbd5e1;">↳</span> ${addon.qty}x ${addonName} ${priceText}
+                            <span style="color:#cbd5e1;">↳</span> ${escapeCartText(addon.qty)}x ${escapeCartText(addonName)} ${priceText}
                         </div>`;
                     }
                 }
@@ -1194,24 +1197,23 @@ window.renderCart = function() {
             else if (item.orderType === 'Take-Out') { badgeBg = '#fffbeb'; badgeCol = '#d97706'; badgeBrd = '#fde68a'; }
             else if (item.orderType) { badgeBg = '#e0f2fe'; badgeCol = '#0284c7'; badgeBrd = '#bae6fd'; }
             
-            let typeBadge = item.orderType ? `<div style="margin-top: 4px;"><span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 900; display: inline-block; text-transform: uppercase;">${item.orderType}</span></div>` : '';
+            let typeBadge = item.orderType ? `<div style="margin-top: 4px;"><span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 900; display: inline-block; text-transform: uppercase;">${escapeCartText(item.orderType)}</span></div>` : '';
 
-            let safeItemName = item.name.replace(/'/g, "\\'");
 
             // 🔥 The Sexy, Perfectly Aligned Grid!
             // Note: 'width: 0;' inside the description flexbox forces long text to wrap instead of pushing columns!
             list.innerHTML += `
-                <li style="display: flex; padding: 12px 15px 12px 20px; border-bottom: 1px solid #f1f5f9; align-items: flex-start; background: white; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';" onclick="window.openAddOrderModal('${safeItemName}', ${item.basePrice}, window.cart[${index}])">
+                <li style="display: flex; padding: 12px 15px 12px 20px; border-bottom: 1px solid #f1f5f9; align-items: flex-start; background: white; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';" onclick="window.openAddOrderModal(window.cart[${index}].name, window.cart[${index}].basePrice, window.cart[${index}])">
                     
                     <div style="flex: 2.5; display: flex; flex-direction: column; padding-right: 10px; width: 0;">
-                        <span style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.3; white-space: normal; word-wrap: break-word;">${item.name}</span>
+                        <span style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.3; white-space: normal; word-wrap: break-word;">${escapeCartText(item.name)}</span>
                         ${typeBadge}
                         <div style="margin-top: 2px;">${addonsText}${notesText}</div>
                     </div>
                     
                     <div style="flex: 1; text-align: right; color: #94a3b8; font-weight: bold; font-size: 13px;">₱${item.variantPrice.toFixed(2)}</div>
                     
-                    <div style="flex: 0.8; display: flex; justify-content: center; font-weight: 900; font-size: 14px; color: #f59e0b;">x${item.qty}</div>
+                    <div style="flex: 0.8; display: flex; justify-content: center; font-weight: 900; font-size: 14px; color: #f59e0b;">x${escapeCartText(item.qty)}</div>
                     
                     <div style="flex: 1; text-align: right; font-weight: 900; color: #0f172a; font-size: 14px;">₱${item.lineTotalFinal.toFixed(2)}</div>
                     
@@ -1228,7 +1230,8 @@ window.renderCart = function() {
     }
 };
 
-window.clearCart = function() { 
+window.clearCart = function() {
+    if (window.cashierVoid?.activeCorrection()) return window.cashierVoid.abandonActive();
     if (!window.cart || window.cart.length === 0) return; 
     if (confirm("Clear order?")) { 
         window.cart = []; 
@@ -1356,7 +1359,7 @@ window.getSalesDashboardData = async function (branch, shiftStartTime, shiftId) 
     const snapshot = window.isAppOnline ? await getDocsFromServer(q) : await getDocs(q);
 
     let transactions = [];
-    snapshot.forEach(doc => { const data = doc.data(); if (!shiftId || !data.shiftId || data.shiftId === 'UNKNOWN' || data.shiftId === shiftId) transactions.push({ id: doc.id, ...data }); });
+    snapshot.forEach(doc => { const data = doc.data(); if (!shiftId || !data.shiftId || data.shiftId === 'UNKNOWN' || data.shiftId === shiftId) transactions.push({ ...data, id: doc.id }); });
     transactions.sort((a, b) => b.timestamp - a.timestamp);
 
     return transactions;
@@ -6160,6 +6163,8 @@ window.hasSignedNTE = false;
 
 
 window.logoutCashier = function() {
+    if (window.cashierVoid?.blockLogout()) return;
+    window.cashierVoid?.invalidate();
     window.cashierPrepAccess?.invalidate();
     window.cashierLowStock?.reset();
     localStorage.removeItem('cashierName');
@@ -9577,6 +9582,10 @@ window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
     refresh: () => window.loadBranchSchedule()
 });
 window.loadBranchSchedule = window.cashierScheduleSync.wrap(window.loadBranchSchedule);
+
+// Receipt corrections have a separate recovery journal; normal sign-in is unchanged.
+window.cashierVoidAccess=createCashierVoidAccess(window);
+installCashierVoid(window,document,{access:window.cashierVoidAccess});
 
 // Audited prep uses its own confirmed context; normal Cashier entry is unchanged.
 window.cashierPrepAccess=createCashierPrepAccess(window);
