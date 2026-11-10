@@ -4,7 +4,7 @@ const fail=(status,code,message)=>{throw Object.assign(Error(message),{status,co
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const only=(value,required,optional=[])=>object(value)&&required.every(key=>Object.hasOwn(value,key))&&Object.keys(value).every(key=>[...required,...optional].includes(key));
 const pin=value=>typeof value==='string'&&/^\d{4,10}$/.test(value);
-const newDailyPin=value=>typeof value==='string'&&/^[A-Za-z0-9]{4,100}$/.test(value);
+const newDailyPin=value=>typeof value==='string'&&/^[A-Za-z0-9]{4,100}$/.test(value)&&!/^(REVOKED|BLOCKED)$/i.test(value);
 const scopeId=accessDocumentId;
 const routes=new Set(['/access/staff-login','/access/verify-staff-pin','/access/meal-identity','/access/staff-logout','/access/change-staff-pin','/access/staff-options','/access/staff-payroll-history','/access/staff-payroll-inputs','/access/staff-operational-history','/access/staff-payroll-acknowledge','/access/cashier-close-shift']);
 export function createAccessHandler({verifyToken,store}={}){
