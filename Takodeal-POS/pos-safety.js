@@ -75,26 +75,88 @@ export function receiptIngredientBurn(sale) {
 
 // IndexedDB read/write transactions serialize across tabs; array replacement in
 // localStorage cannot provide that guarantee. Resolve only after oncomplete.
-export function createOutbox(indexedDB = globalThis.indexedDB) {
-    let dbPromise;
-    const open = () => dbPromise ||= new Promise((resolve, reject) => {
-        if (!indexedDB) return reject(new Error('Local sale storage is unavailable.'));
-        const request = indexedDB.open('takodeal_sale_outbox_v2', 1);
-        request.onupgradeneeded = () => request.result.createObjectStore('sales', { keyPath: 'saleId' });
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => { dbPromise = null; reject(request.error); };
-    });
-    async function transact(mode, action) {
-        const db = await open();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('sales', mode);
-            let result, failure;
-            tx.oncomplete = () => resolve(result);
-            tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('Could not save the sale locally.'));
-            const store = tx.objectStore('sales');
-            const request = action(store, value => { result = value; }, error => { failure = error; tx.abort(); });
-            if (request) request.onerror = () => { failure = request.error; };
+export function createOutbox(indexedDB = globalThis.indexedDB, { openTimeoutMs = 5000, transactionTimeoutMs = 15000 } = {}) {
+    for (const value of [openTimeoutMs, transactionTimeoutMs]) if (!Number.isInteger(value) || value < 1 || value > 60000) throw new Error('Invalid local storage deadline.');
+    let connection;
+    const retryable = new WeakSet();
+    const connectionFailure = error => ['InvalidStateError', 'UnknownError', 'AbortError'].includes(error?.name);
+    const retire = slot => {
+        if (slot.retired) return;
+        slot.retired = true;
+        if (connection === slot) connection = null;
+        try { slot.db?.close?.(); } catch {}
+    };
+    const retryError = error => { const result = new Error('The local sale connection closed. Retry the same saved receipt.'); result.cause = error; retryable.add(result); return result; };
+    function open() {
+        if (connection) return connection.promise;
+        const slot = { retired: false, db: null, promise: null };
+        connection = slot;
+        slot.promise = new Promise((resolve, reject) => {
+            let settled = false, request;
+            const fail = error => { if (settled) return; settled = true; clearTimeout(timer); retire(slot); reject(error); };
+            const timer = setTimeout(() => fail(new Error('Local sale storage did not open. Keep this device and its saved receipts for review.')), openTimeoutMs);
+            if (!indexedDB) return fail(new Error('Local sale storage is unavailable.'));
+            try { request = indexedDB.open('takodeal_sale_outbox_v2', 1); } catch (error) { fail(error); return; }
+            request.onupgradeneeded = () => {
+                if (slot.retired) { try { request.transaction?.abort(); } catch {} return; }
+                request.result.createObjectStore('sales', { keyPath: 'saleId' });
+            };
+            request.onsuccess = () => {
+                if (settled || slot.retired) { try { request.result.close(); } catch {} return; }
+                settled = true; clearTimeout(timer); slot.db = request.result;
+                slot.db.onversionchange = slot.db.onclose = () => retire(slot);
+                resolve(slot);
+            };
+            request.onerror = () => fail(request.error || new Error('Local sale storage could not open.'));
+            request.onblocked = () => fail(new Error('Local sale storage is waiting for another tab. Keep saved receipts and try again.'));
         });
+        return slot.promise;
+    }
+    async function transact(mode, action) {
+        for (let attempt = 0; ; attempt++) {
+            const slot = await open();
+            try {
+                return await new Promise((resolve, reject) => {
+                    let tx, result, failure, businessFailure = false, deadline = false, settled = false;
+                    const finish = (error) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(error) : resolve(result); };
+                    let timer;
+                    try {
+                        if (slot.retired) throw Object.assign(new Error('Connection retired.'), { name: 'InvalidStateError' });
+                        tx = slot.db.transaction('sales', mode);
+                    } catch (error) {
+                        if (error?.name === 'InvalidStateError') { retire(slot); finish(retryError(error)); } else finish(error);
+                        return;
+                    }
+                    tx.oncomplete = () => finish(failure);
+                    tx.onerror = event => { failure ||= event?.target?.error || tx.error; };
+                    tx.onabort = () => {
+                        const error = failure || tx.error || new Error('Could not save the sale locally.');
+                        if (!businessFailure && !deadline && (connectionFailure(error) || slot.retired && !failure && !tx.error)) { retire(slot); finish(retryError(error)); }
+                        else finish(error);
+                    };
+                    timer = setTimeout(() => {
+                        deadline = true;
+                        // An abort request is not a confirmed failure. If commit
+                        // already started, keep the SAME physical operation held
+                        // for its real oncomplete/onabort; never invite a new ID.
+                        try { tx.abort(); } catch {}
+                    }, transactionTimeoutMs);
+                    try {
+                        const store = tx.objectStore('sales');
+                        const request = action(store, value => { result = value; }, error => { businessFailure = true; failure = error; try { tx.abort(); } catch {} });
+                        if (request) request.onerror = () => { failure = request.error; };
+                    } catch (error) {
+                        businessFailure = true; failure = error;
+                        try { tx.abort(); } catch {}
+                    }
+                });
+            } catch (error) {
+                // At most one recovery, only before a transaction existed or
+                // after an actual atomic abort. Unknown commit ACKs stay held.
+                if (attempt === 0 && retryable.has(error)) continue;
+                throw error;
+            }
+        }
     }
     return {
         enqueue: payload => transact('readwrite', (store, done, fail) => {
