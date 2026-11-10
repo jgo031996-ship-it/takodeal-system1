@@ -8,7 +8,7 @@ const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,r
 
 test('only the reviewed prep component, styling and release shell change from frozen live void dd8',()=>{
  const proof=JSON.parse(read('tests/fixtures/cashier-prep-review-inverse.json'));assert.equal(proof.base,'dd8c13d5427c17ef7bfa6c0452bfd9a6dc0cc5ff');assert.equal(Object.keys(proof.files).length,5);
- for(const [file,pin]of Object.entries(proof.files)){const source=read(file),restored=restorePrepReviewIntegration(source,file);assert.equal(sha(restored),pin.baselineSha256,file);assert.throws(()=>restorePrepReviewIntegration(source+'\n// unexpected mutation\n',file),/Exact reviewed|Only the reviewed Owner desktop/,file);}
+ for(const [file,pin]of Object.entries(proof.files)){const source=read(file),restored=restorePrepReviewIntegration(source,file);assert.equal(sha(restored),pin.baselineSha256,file);assert.throws(()=>restorePrepReviewIntegration(source+'\n// unexpected mutation\n',file),/Exact reviewed|Only the reviewed Owner desktop|Only the reviewed receipt recovery/,file);}
  const unchanged=JSON.parse(read('tests/fixtures/cashier-prep-review-unchanged.json'));assert.equal(unchanged.base,proof.base);assert.equal(Object.keys(unchanged.files).length,5);for(const [file,hash]of Object.entries(unchanged.files))assert.equal(sha(restoreCashierOwnerDesktop(read(file),file)),hash,file);
 });
 

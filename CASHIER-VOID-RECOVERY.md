@@ -1,0 +1,17 @@
+# Receipt correction recovery
+
+This client change starts from live Cashier `d1079e2e1274c99323ce918333bef50dbaf83667` and requires the matching receipt-PIN backend before publication. It does not change ordinary sign-in, Time Clock, checkout, stock posting or either outbox identity.
+
+Each new receipt action asks for the signed-in cashier's PIN. The fixed verification request binds a proof to the exact operation, receipt, branch, shift and reason. It never sends or changes the global Staff session. The server checks that the signed-in employee is the original cashier by its reviewed current-identity rules. A current name mapping is not historical cryptographic identity proof.
+
+An interrupted or rejected preview keeps its reference. The cashier may check or explicitly cancel that same reference; only a server-confirmed cancellation closes it. A timeout, generic approval failure, late reply or ambiguous old journal is never treated as a completed cancellation. The commit-dispatch flag cannot regress in another tab. Old saved payment claims retain their exact payload and receipt identity. Old expired references may use a fresh same-operation PIN for metadata recovery, never to authorize an unproved old financial quote.
+
+Wrong-punched restoration opens the existing responsive POS cart control. It preserves current orders and inactive platform drafts. An already-owned unpaid correction can reopen its exact edited array, including when it is cached in its own platform. Identical copied cart contents do not prove ownership. An occupied current order, unrelated hidden draft, frozen checkout or pending payment remains held. No automatic parking or overwrite is introduced.
+
+Ordinary unverified Grab/Foodpanda corrections stay in their saved channel. Previous payment/reference fields are cleared and the operator must enter the external reference again; its value may match the original merchant order. This changes the local ledger only. Provider refunds, cancellations and settlement records require separate review. Bank-reconciled, verified, refund-linked, meal/mobile/delivery and other unsupported linked cases retain server holds.
+
+For an older receipt whose units were not saved, only the verified Owner context may receive the separate manual unit challenge. Every row must be checked and a reason supplied. The server rechecks the exact source and inventory revisions before posting. This is a manual decision based on the Owner's records, not recovered historical unit evidence. Receipt quantities, saved money and history are not guessed or rewritten.
+
+Only a validated saved response triggers a scoped server read of Shift Sales. Preview errors never invent a Voided status. Exact inverse fixtures restore all seven changed pre-existing product files to live d107; both stock-engine mirrors and ordinary checkout/queue/auth modules remain unchanged. The two new module hashes and fixed cache release are pinned separately.
+
+Local validation uses fictional records, source-VM navigation and the exact portable server closure. It is not a production void test or native visual result. Hosted full tests and Root's release checks remain required. Two browser views may display the same copied unpaid draft; the server still permits one immutable replacement payload/payment/receipt, not two independent checkouts.

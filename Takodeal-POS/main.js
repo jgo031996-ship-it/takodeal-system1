@@ -1,3 +1,4 @@
+import {refreshSavedVoidSales} from './cashier-void-sales.js';
 import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
 import {installCashierPrep} from './cashier-prep.js';
@@ -1345,6 +1346,8 @@ window.refreshVisibleShiftSales = () => {
 };
 installMealCheckout();
 installCancelledOrders({db,doc,collection,query,where,getDocsFromServer,runTransaction,increment,serverTimestamp,auth});
+
+window.refreshSavedVoidSales = (view,assertCurrent) => refreshSavedVoidSales(window,document,{db,auth,collection,query,where,getDocsFromServer,assertCurrent},view);
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime, shiftId) {

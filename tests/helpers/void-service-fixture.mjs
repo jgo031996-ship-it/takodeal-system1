@@ -1,7 +1,7 @@
 import {adminMemory} from './void-admin-memory.mjs';
-import {createCashierVoidStore} from '../fixtures/active-void-backend/cashier-void-store.mjs';
-import {createCashierVoidHandler} from '../fixtures/active-void-backend/cashier-void-handler.mjs';
-import {canonicalCashierVoidJSON,voidRevision,voidDigest} from '../fixtures/active-void-backend/cashier-void-model.mjs';
+import {createCashierVoidStore} from '../fixtures/receipt-void-backend/cashier-void-store.mjs';
+import {createCashierVoidHandler} from '../fixtures/receipt-void-backend/cashier-void-handler.mjs';
+import {canonicalCashierVoidJSON,voidRevision,voidDigest} from '../fixtures/receipt-void-backend/cashier-void-model.mjs';
 export const sampleNow=Date.parse('2026-11-10T12:00:00Z');
 export const sampleActor={uid:'sample-pos-uid',firebase:{sign_in_provider:'anonymous'}};
 export const sampleBody={operationId:'sample-operation-123',deviceId:'DEV-SAMPLE-PHONE',staffId:'sample-staff',sessionId:'sample-session-nonce-12345678',branch:'Sample Branch',shiftId:'sample-open-shift',saleId:'sample-original-sale',receiptId:'SAMPLE-RECEIPT',reason:'OrderCancelled'};

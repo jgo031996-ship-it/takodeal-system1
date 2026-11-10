@@ -21,7 +21,7 @@ test('Store POS default with no selector or global value uses the same existing 
 });
 
 test('uninitialized global never treats a Grab, Foodpanda or unknown selector as Standard',async()=>{
- for(const value of ['Grab','Foodpanda','Store POS','UNKNOWN']){const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value});const cart=f.w.cart,result=await start(f);assert.match(result.error,/empty Store POS cart/,value);assert.equal(f.backend.commits,0,value);assert.equal(f.calls.length,0,value);assert.equal(f.w.cart,cart,value);}
+ for(const value of ['Grab','Foodpanda','Store POS','UNKNOWN']){const f=voidUI();delete f.w.posPlatform;f.elements.set('posPlatformSelect',{value});const cart=f.w.cart,result=await start(f);assert.match(result.error,/empty Store POS cart|channel controls/,value);assert.equal(f.backend.commits,0,value);if(['Store POS','UNKNOWN'].includes(value))assert.equal(f.calls.length,0,value);assert.equal(f.w.cart,cart,value);}
 });
 
 test('selector mode changing during PIN verification cannot void or restore under the old mode',async()=>{

@@ -1,0 +1,34 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {voidUI} from './helpers/cashier-void-fixture.mjs';
+const start=f=>f.controller.start('SAMPLE_SOURCE','SAMPLE-OLD-RECEIPT');
+function fixture(platform){const f=voidUI();f.elements.get('mainOrderType').options=[{value:'Dine-In'},{value:'Grab'},{value:'Food Panda'}];f.w.platformCarts={Standard:[],Grab:[],Foodpanda:[]};f.w.switchPosPlatform=value=>{f.w.platformCarts[f.w.posPlatform]=f.w.cart;f.w.posPlatform=value;f.w.cart=f.w.platformCarts[value]||[];f.elements.get('mainOrderType').value=value==='Standard'?'':value;};f.afterRequest=async(request,response)=>{if(response.body?.source)response.body.source.platform=platform;};return f;}
+test('Grab and Foodpanda restore through the canonical switch with exact cart/cache pointer, cleared prior reference and same-channel fresh checkout',async()=>{
+ for(const platform of ['Grab','Foodpanda']){const f=fixture(platform);assert.equal((await start(f)).restored,true);assert.equal(f.w.posPlatform,platform);assert.equal(f.w.platformCarts[platform],f.w.cart);assert.equal(f.elements.get('finalCustomerName').value,'');assert.equal(f.w.selectedPaymentMethod,platform);assert.equal(f.w.activeMobileOrderCode,null);
+ const payload={branch:f.backend.branch,shiftId:f.w.currentShift.shiftId,cart:f.w.cart,paymentMethod:platform,paymentVerified:false,orderType:platform==='Grab'?'Grab':'Food Panda',platformOrderId:'ORIGINAL-EXTERNAL-ORDER-REENTERED',netTotal:85};const reservation=await f.controller.prepareCheckout(payload);Object.assign(payload,{saleId:reservation.saleId,receiptId:reservation.receiptId});const frozen=await f.controller.freezeCheckout(payload);assert.equal(frozen.paymentMethod,platform);assert.equal(frozen.platformOrderId,payload.platformOrderId);assert.equal(f.backend.commits,1);
+ }
+});
+test('inactive target draft is preserved and blocks before void, while active stale cache is not treated as another unpaid order',async()=>{
+ const held=fixture('Grab'),hidden=held.w.platformCarts.Grab=[{name:'KEEP HIDDEN',qty:2}],current=held.w.cart;assert.match((await start(held)).error,/Grab cart already contains/);assert.equal(held.w.cart,current);assert.equal(held.w.platformCarts.Grab,hidden);assert.equal(held.backend.commits,0);
+ const allowed=fixture('Standard');allowed.w.platformCarts.Standard=[{name:'STALE ALREADY-COMPLETED ALIAS'}];assert.equal((await start(allowed)).restored,true);assert.equal(allowed.w.platformCarts.Standard,allowed.w.cart);assert.equal(allowed.backend.commits,1);
+});
+test('hidden cache mutation during confirmation holds without touching either cart or committing',async()=>{
+ const f=fixture('Grab'),fire=f.w.Swal.fire;f.w.Swal.fire=async options=>{const answer=await fire(options);if(options.title==='Void and correct this order?')f.w.platformCarts.Foodpanda.push({name:'NEW UNRELATED DRAFT'});return answer;};assert.ok((await start(f)).error);assert.equal(f.backend.commits,0);assert.equal(f.w.cart.length,0);assert.equal(f.w.platformCarts.Foodpanda[0].name,'NEW UNRELATED DRAFT');
+});
+test('identical-content replacement of a platform cache object or entry still invalidates the in-flight action',async()=>{
+ for(const kind of ['object','entry']){const f=fixture('Grab'),fire=f.w.Swal.fire;f.w.Swal.fire=async options=>{const answer=await fire(options);if(options.title==='Void and correct this order?'){if(kind==='object')f.w.platformCarts={...f.w.platformCarts};else f.w.platformCarts.Foodpanda=[...f.w.platformCarts.Foodpanda];}return answer;};assert.ok((await start(f)).error);assert.equal(f.backend.commits,0);assert.equal(f.w.cart.length,0);}
+});
+test('wrong channel, missing reference and delivery/meal/mobile shortcuts cannot reuse a platform correction claim',async()=>{
+ const f=fixture('Grab');await start(f);const valid={branch:f.backend.branch,shiftId:f.w.currentShift.shiftId,cart:f.w.cart,paymentMethod:'Grab',paymentVerified:false,orderType:'Grab',platformOrderId:'REENTERED',netTotal:85};for(const change of [{paymentMethod:'Cash'},{orderType:'Food Panda'},{platformOrderId:''},{isMobileOrder:true},{mealIdentityId:'staff'},{deliveryFee:20}])await assert.rejects(()=>f.controller.prepareCheckout({...valid,...change}));assert.equal(f.calls.filter(r=>r.body.phase==='checkout').length,0);assert.equal(f.backend.commits,1);
+});
+test('OrderCancelled preserves all visible/hidden carts even when source is another platform',async()=>{
+ const f=fixture('Foodpanda');f.reason='OrderCancelled';const current=f.w.cart=[{name:'KEEP CURRENT'}],hidden=f.w.platformCarts.Foodpanda=[{name:'KEEP HIDDEN'}];assert.equal((await start(f)).saved,true);assert.equal(f.w.cart,current);assert.equal(f.w.platformCarts.Foodpanda,hidden);assert.equal(f.w.posPlatform,'Standard');
+});
+test('Check on the same active owned correction reopens POS/cart without restoring its old source items over edits',async()=>{
+ const f=fixture('Standard');let reveals=0;f.elements.set('tkCartToggle',{click:()=>reveals++});await start(f);const cart=f.w.cart;cart[0].qty=3;cart[0].notes='KEEP EDITED NOTE';const before=JSON.stringify(cart);assert.equal((await f.controller.recover()).restored,true);assert.equal(f.w.cart,cart);assert.equal(JSON.stringify(cart),before);assert.equal(reveals,2);assert.equal(f.backend.commits,1);
+});
+test('same operation may resume its exact edited hidden platform cart, preserving edits and requiring an empty current order',async()=>{
+ for(const occupied of [false,true]){const f=fixture('Grab');await start(f);const edited=f.w.cart;edited[0].qty=4;edited[0].notes='KEEP EDIT';f.w.switchPosPlatform('Standard');if(occupied)f.w.cart.push({name:'CURRENT OTHER CUSTOMER'});const before=JSON.stringify(edited),draftCalls=f.calls.filter(r=>r.body.phase==='draft').length,result=await f.controller.recover();if(occupied){assert.ok(result.error);assert.equal(f.w.posPlatform,'Standard');assert.equal(f.w.cart[0].name,'CURRENT OTHER CUSTOMER');}else{assert.equal(result.restored,true,JSON.stringify(result));assert.equal(f.w.posPlatform,'Grab');assert.equal(f.w.cart,edited);assert.equal(f.w.platformCarts.Grab,edited);}assert.equal(JSON.stringify(edited),before);assert.equal(f.calls.filter(r=>r.body.phase==='draft').length,draftCalls);assert.equal(f.backend.commits,1);}
+});
+test('an identical copied hidden cart without this operation ownership cannot be adopted or overwritten',async()=>{
+ const f=fixture('Grab');await start(f);const original=f.w.cart;f.w.switchPosPlatform('Standard');const foreign=structuredClone(original);f.w.platformCarts.Grab=foreign;assert.match((await f.controller.recover()).error,/already contains another order/);assert.equal(f.w.platformCarts.Grab,foreign);assert.equal(f.w.posPlatform,'Standard');assert.equal(f.backend.commits,1);
+});
