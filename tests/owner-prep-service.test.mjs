@@ -35,7 +35,7 @@ test('later use, replenishment ABA and metadata changes all hold reversal with z
 });
 test('legacy, incomplete and malicious movement records cannot reconstruct current BOM or create stock',async()=>{
  const f=fixture();assert.equal((await f.call('reversal-preview',{operationId:'legacy-log-001'})).status,409);assert.equal(f.queries.filter(row=>row.table==='bom').length,0);assert.equal(f.writes.filter(row=>row.path.startsWith('inventory/')).length,0);
- const row=f.row('output'),raw=f.row('raw'),recipe=f.recipe();for(const change of [()=>({...row,currentStock:-1}),()=>({...row,conversionRate:0}),()=>({...row,uom:'Kg'}),()=>({...row,conversionRate:'1000'})])assert.throws(()=>planPrepBatch({output:change(),ingredients:[raw],recipes:[recipe],qty:1}));
+ const row=f.row('output'),raw=f.row('raw'),recipe=f.recipe();for(const change of [()=>({...row,currentStock:NaN}),()=>({...row,conversionRate:0}),()=>({...row,uom:'Kg'}),()=>({...row,conversionRate:'1000'})])assert.throws(()=>planPrepBatch({output:change(),ingredients:[raw],recipes:[recipe],qty:1}));
  for(const recipes of [[{...recipe,qty:0}],[{...recipe,uom:'Kg'}],[recipe,{...recipe,id:'other'}]])assert.throws(()=>planPrepBatch({output:row,ingredients:[raw],recipes,qty:1}));assert.throws(()=>planPrepReversal({kind:'old'},[row]));
 });
 test('revoked Owner, inactive/duplicate branch and foreign ingredient are refused before stock writes',async()=>{
