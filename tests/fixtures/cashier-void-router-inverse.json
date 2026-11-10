@@ -1,0 +1,21 @@
+{
+  "base": "59281163035148857338546185224579a7e46f63",
+  "sourcePath": "functions/cash-remittance-review/index.mjs",
+  "cuts": [
+    [
+      "const app=getApps()",
+      "import {createCashierVoidHandler} from './cashier-void-handler.mjs';\nimport {createCashierVoidStore} from './cashier-void-store.mjs';\nconst app=getApps()"
+    ],
+    [
+      "const syncDirectory=",
+      "const cashierVoidHandle=createCashierVoidHandler({verifyToken,store:createCashierVoidStore(db,{serverTimestamp})});\nconst syncDirectory="
+    ],
+    [
+      "const route=request.path.startsWith('/staff-private-profile/')",
+      "const route=request.path.startsWith('/cashier-void/')?cashierVoidHandle:request.path.startsWith('/staff-private-profile/')"
+    ]
+  ],
+  "baselineSha256": "acc62ab5dc1977cd913a0b8c9bacabaa21294bf76e0f5cff3333725348a0f434",
+  "candidateSha256": "15e215934cef25d405fa061ab4eefdb416c27a3633521fe99c50b85a85df003c",
+  "unchangedExistingRouter": true
+}
