@@ -102,7 +102,9 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
   },
   async verifyPin(body,actor){
    return db.runTransaction(async tx=>{
-    const profile=await profileForPin(tx,body.pin,body.staffId);let branch=await resolveDevice(tx,body,actor,profile);
+    const receiptVoid=body.purpose==='receipt-void',ownerDesktop=receiptVoid?{}:undefined;
+    if(receiptVoid&&(body.app!=='cashier'||body.sessionId!==undefined||typeof body.scope!=='string'||!/^[a-f0-9]{64}$/.test(body.scope)))denied();
+    const profile=await profileForPin(tx,body.pin,body.staffId);let branch=await resolveDevice(tx,body,actor,profile,ownerDesktop);
     if(body.app==='staff'){
      const session=await currentSession(tx,body,actor,branch);if(session.staffId!==body.staffId)denied();
      if(body.branch!==undefined){
@@ -110,12 +112,12 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
       if(branches.length!==1||branches[0].data().active===false||branches[0].data().archived===true)denied();branch=body.branch;
      }
     }
-    if(body.app==='cashier'&&body.sessionId)await currentSession(tx,body,actor,branch);
+    if(!receiptVoid&&body.app==='cashier'&&body.sessionId)await currentSession(tx,body,actor,branch);
     const verificationId='pin-'+randomUUID(),expiresAt=new Date(now()+120000);
-    const proof={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,purpose:body.purpose,scope:body.scope||'',profileRevision:profile.revision,sessionId:body.sessionId||null,source:'cashiers',profile:operationalStaffProfile(profile.id,profile.row),issuedAt:new Date(now()),expiresAt};
-    tx.set(ref('staff_directory/'+profile.id),{...proof.profile,profileRevision:profile.revision,syncedAt:serverTimestamp()});
+    const proof={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,purpose:body.purpose,scope:body.scope||'',profileRevision:profile.revision,sessionId:receiptVoid?null:(body.sessionId||null),...(receiptVoid?{sessionMode:'receipt-only'}:{}),source:'cashiers',profile:operationalStaffProfile(profile.id,profile.row),issuedAt:new Date(now()),expiresAt,...(ownerDesktop?.value?{ownerDesktopAuthority:ownerDesktop.value}:{})};
+    if(!receiptVoid)tx.set(ref('staff_directory/'+profile.id),{...proof.profile,profileRevision:profile.revision,syncedAt:serverTimestamp()});
     tx.create(ref('staff_pin_verifications/'+verificationId),proof);
-    tx.set(ref('staff_pin_contexts/'+actor.uid+'_'+body.purpose),{...proof,verificationId});
+    if(!receiptVoid)tx.set(ref('staff_pin_contexts/'+actor.uid+'_'+body.purpose),{...proof,verificationId});
     return{schemaVersion:1,staffId:profile.id,profile:operationalStaffProfile(profile.id,profile.row),branch,verificationId,expiresAt:expiresAt.toISOString()};
    });
   },

@@ -1,0 +1,449 @@
+{
+  "schemaVersion": 1,
+  "base": "c533ffcb0edc470573c2d35cd27ddf8d3353c182",
+  "files": [
+    {
+      "path": "functions/cash-remittance-review/access-handler.mjs",
+      "beforeSha256": "cec617aceea1809707129e768f820692877386bf879d13c145dd5c5c401893a6",
+      "afterSha256": "e91a4946a7fd17b01d2a10aa0fc169a782edf2d1e501dfe7de9ae1632dffd92d",
+      "hunks": [
+        {
+          "beforeStart": 28,
+          "afterStart": 28,
+          "beforeLines": [
+            "    if(proof&&(['purchase','meal'].includes(body.purpose)&&!scopeId(body.scope)||app==='cashier'&&body.purpose!=='time-clock'&&body.sessionId===undefined))fail(400,'access/request','Sign in to the Cashier app and reopen this exact PIN action.');"
+          ],
+          "afterLines": [
+            "    if(proof&&(['purchase','meal'].includes(body.purpose)&&!scopeId(body.scope)||app==='cashier'&&!['time-clock','receipt-void'].includes(body.purpose)&&body.sessionId===undefined))fail(400,'access/request','Sign in to the Cashier app and reopen this exact PIN action.');",
+            "    if(proof&&body.purpose==='receipt-void'&&(app!=='cashier'||body.sessionId!==undefined||typeof body.scope!=='string'||!/^[a-f0-9]{64}$/.test(body.scope)))fail(400,'access/request','Confirm the original cashier PIN for this exact saved receipt in the Cashier app.');"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/access-model.mjs",
+      "beforeSha256": "23a388dc467011ba7b25c351e70a4887689ec8edcbaf9ab6bb3cd79a8e6b9d84",
+      "afterSha256": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+      "hunks": [
+        {
+          "beforeStart": 4,
+          "afterStart": 4,
+          "beforeLines": [
+            "export const STAFF_PIN_PURPOSES=Object.freeze(['time-clock','meal','purchase','leave','early-time-out']);"
+          ],
+          "afterLines": [
+            "export const STAFF_PIN_PURPOSES=Object.freeze(['time-clock','meal','purchase','leave','early-time-out','receipt-void']);"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/access-store.mjs",
+      "beforeSha256": "10e8baf0a1035be6f345084a7e3d023de80d39e948741911586c29d82157a7a4",
+      "afterSha256": "2083cdf86141f42beee8695b1532a751788e4e0bb1485a8777ab0fb4e3242159",
+      "hunks": [
+        {
+          "beforeStart": 105,
+          "afterStart": 105,
+          "beforeLines": [
+            "    const profile=await profileForPin(tx,body.pin,body.staffId);let branch=await resolveDevice(tx,body,actor,profile);"
+          ],
+          "afterLines": [
+            "    const receiptVoid=body.purpose==='receipt-void',ownerDesktop=receiptVoid?{}:undefined;",
+            "    if(receiptVoid&&(body.app!=='cashier'||body.sessionId!==undefined||typeof body.scope!=='string'||!/^[a-f0-9]{64}$/.test(body.scope)))denied();",
+            "    const profile=await profileForPin(tx,body.pin,body.staffId);let branch=await resolveDevice(tx,body,actor,profile,ownerDesktop);"
+          ]
+        },
+        {
+          "beforeStart": 113,
+          "afterStart": 115,
+          "beforeLines": [
+            "    if(body.app==='cashier'&&body.sessionId)await currentSession(tx,body,actor,branch);"
+          ],
+          "afterLines": [
+            "    if(!receiptVoid&&body.app==='cashier'&&body.sessionId)await currentSession(tx,body,actor,branch);"
+          ]
+        },
+        {
+          "beforeStart": 115,
+          "afterStart": 117,
+          "beforeLines": [
+            "    const proof={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,purpose:body.purpose,scope:body.scope||'',profileRevision:profile.revision,sessionId:body.sessionId||null,source:'cashiers',profile:operationalStaffProfile(profile.id,profile.row),issuedAt:new Date(now()),expiresAt};",
+            "    tx.set(ref('staff_directory/'+profile.id),{...proof.profile,profileRevision:profile.revision,syncedAt:serverTimestamp()});"
+          ],
+          "afterLines": [
+            "    const proof={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,purpose:body.purpose,scope:body.scope||'',profileRevision:profile.revision,sessionId:receiptVoid?null:(body.sessionId||null),...(receiptVoid?{sessionMode:'receipt-only'}:{}),source:'cashiers',profile:operationalStaffProfile(profile.id,profile.row),issuedAt:new Date(now()),expiresAt,...(ownerDesktop?.value?{ownerDesktopAuthority:ownerDesktop.value}:{})};",
+            "    if(!receiptVoid)tx.set(ref('staff_directory/'+profile.id),{...proof.profile,profileRevision:profile.revision,syncedAt:serverTimestamp()});"
+          ]
+        },
+        {
+          "beforeStart": 118,
+          "afterStart": 120,
+          "beforeLines": [
+            "    tx.set(ref('staff_pin_contexts/'+actor.uid+'_'+body.purpose),{...proof,verificationId});"
+          ],
+          "afterLines": [
+            "    if(!receiptVoid)tx.set(ref('staff_pin_contexts/'+actor.uid+'_'+body.purpose),{...proof,verificationId});"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/cashier-void-handler.mjs",
+      "beforeSha256": "ac927c602581afe34055753b3c9d11319a94c133267b3b95cb909fe1c89f1ea9",
+      "afterSha256": "6c36b369f696af5a0c6b3cf0f53daab2584bc9e83eb409e6bba373adafbfbf5a",
+      "hunks": [
+        {
+          "beforeStart": 24,
+          "afterStart": 24,
+          "beforeLines": [
+            "   if(path==='/cashier-void/commit')keys=[...common,'expectedFingerprint'];",
+            "   if(path==='/cashier-void/replacement-claim')keys=[...common,'expectedFingerprint','phase','restoreAttemptId','claimToken',...(body.phase==='checkout'?['checkoutAttemptId','payload']:[])];"
+          ],
+          "afterLines": [
+            "   if(Object.hasOwn(body,'pinVerificationId'))keys=[...common,'pinVerificationId'];",
+            "   if(path==='/cashier-void/preview'&&Object.hasOwn(body,'ownerUnitReview'))keys=[...keys,'ownerUnitReview'];",
+            "   if(path==='/cashier-void/commit')keys=[...keys,'expectedFingerprint'];",
+            "   if(path==='/cashier-void/replacement-claim')keys=[...keys,'expectedFingerprint','phase','restoreAttemptId','claimToken',...(body.phase==='checkout'?['checkoutAttemptId','payload']:[])];"
+          ]
+        },
+        {
+          "beforeStart": 27,
+          "afterStart": 29,
+          "beforeLines": [],
+          "afterLines": [
+            "   if(Object.hasOwn(body,'ownerUnitReview')&&(!isAccessOwner(actor)||!voidFields(body.ownerUnitReview,['confirmed','fingerprint','reason'])||body.ownerUnitReview.confirmed!==true||!hash(body.ownerUnitReview.fingerprint)||!voidText(body.ownerUnitReview.reason,1000)||body.ownerUnitReview.reason.trim().length<8))voidFail(400,'request','Only the verified Owner can explicitly confirm each unknown original unit with a documented reason.');",
+            "   if(Object.hasOwn(body,'pinVerificationId')&&(!accessId(body.pinVerificationId)||!body.pinVerificationId.startsWith('pin-')))voidFail(400,'request','Confirm the original cashier PIN for this exact saved receipt.');"
+          ]
+        },
+        {
+          "beforeStart": 28,
+          "afterStart": 32,
+          "beforeLines": [
+            "  }catch(error){if(error instanceof CashierVoidError)return response(error.status,{code:error.code,message:error.message});return response(503,{code:'cashier-void/unavailable',message:'The saved void result could not be confirmed. Keep the same reference and check its status before starting another attempt.'});}"
+          ],
+          "afterLines": [
+            "  }catch(error){if(error instanceof CashierVoidError)return response(error.status,{code:error.code,message:error.message,...(error.code==='cashier-void/legacy-unit-review-required'&&error.details?.unitReview?{unitReview:error.details.unitReview}:{})});return response(503,{code:'cashier-void/unavailable',message:'The saved void result could not be confirmed. Keep the same reference and check its status before starting another attempt.'});}"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/cashier-void-history.mjs",
+      "beforeSha256": "2ef5293c8fe223cfcc0e658d83e17afe38d64d478323abfccbb37d65756a22ca",
+      "afterSha256": "82420a726ab66645d47f53b605ad7c4885dc173ae09ff34d986bfca615f780fe",
+      "hunks": [
+        {
+          "beforeStart": 1,
+          "afterStart": 1,
+          "beforeLines": [
+            "import {voidRevision,voidMillis,voidHold,voidUnitIdentity} from './cashier-void-model.mjs';"
+          ],
+          "afterLines": [
+            "import {voidRevision,voidMillis,voidHold,voidFail,voidUnitIdentity} from './cashier-void-model.mjs';"
+          ]
+        },
+        {
+          "beforeStart": 8,
+          "afterStart": 8,
+          "beforeLines": [
+            "  if(!Number.isFinite(at)||age<0||age>3600000||!Array.isArray(movements)||movements.length>150)voidHold('This older receipt has no retained original stock-unit proof. Ask the Owner to review a documented stock reversal.');"
+          ],
+          "afterLines": [
+            "  if(!Number.isFinite(at)||age<0||!Array.isArray(movements)||movements.length>150)voidHold('The original stock-unit history reference is invalid. Ask the Owner to review it.');",
+            "  if(age>3600000)voidFail(409,'unit-history-unavailable','This older receipt has no retained original stock-unit proof. Ask the Owner to review a documented stock reversal.');"
+          ]
+        },
+        {
+          "beforeStart": 13,
+          "afterStart": 14,
+          "beforeLines": [
+            "    if(!row||row.branch!==branch||row.name!==movement.ingredientName||voidRevision(snapshot.readTime)!==voidRevision(sourceTime)||voidRevision(snapshot.updateTime)!==voidRevision(sourceTime))voidHold('The retained inventory version cannot prove this receipt’s original units. Ask the Owner to review the stock reversal.');"
+          ],
+          "afterLines": [
+            "    if(!row)voidFail(409,'unit-history-unavailable','The original inventory version is unavailable. Ask the Owner to review a documented stock reversal.');",
+            "    if(row.branch!==branch||row.name!==movement.ingredientName||voidRevision(snapshot.readTime)!==voidRevision(sourceTime)||voidRevision(snapshot.updateTime)!==voidRevision(sourceTime))voidHold('The retained inventory version cannot prove this receipt’s original units. Ask the Owner to review the stock reversal.');"
+          ]
+        },
+        {
+          "beforeStart": 17,
+          "afterStart": 19,
+          "beforeLines": [
+            "  catch(error){if(error?.code==='cashier-void/owner-review')throw error;voidHold('The original inventory version is unavailable or outside retained history. Ask the Owner to review a documented stock reversal.');}"
+          ],
+          "afterLines": [
+            "  catch(error){if(typeof error?.code==='string'&&error.code.startsWith('cashier-void/'))throw error;if([5,9,11,'not-found','failed-precondition','out-of-range'].includes(error?.code))voidFail(409,'unit-history-unavailable','The original inventory version is unavailable or outside retained history. Ask the Owner to review a documented stock reversal.');throw error;}"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/cashier-void-model.mjs",
+      "beforeSha256": "e0c6fcf7a9fa7afddaf97eaf79859f51919cd0c4ddd969f06c5f9eab25f4941b",
+      "afterSha256": "0283156732db5c994a11c881f915b27958c936020229d5b701641e21840961d7",
+      "hunks": [
+        {
+          "beforeStart": 6,
+          "afterStart": 6,
+          "beforeLines": [
+            "export class CashierVoidError extends Error{constructor(status,code,message){super(message);this.name='CashierVoidError';this.status=status;this.code='cashier-void/'+code;}}"
+          ],
+          "afterLines": [
+            "export class CashierVoidError extends Error{constructor(status,code,message,details){super(message);this.name='CashierVoidError';this.status=status;this.code='cashier-void/'+code;if(details)this.details=details;}}"
+          ]
+        },
+        {
+          "beforeStart": 47,
+          "afterStart": 47,
+          "beforeLines": [
+            "  for(const key of ['realName','variantName','orderType'])if(item[key]!==undefined){if(!voidText(item[key],200))voidHold('A saved item option needs Owner review.');result[key]=item[key];}"
+          ],
+          "afterLines": [
+            "  for(const key of ['realName','variantName','orderType'])if(item[key]!==undefined){if(typeof item[key]!=='string'||item[key].length>200||/[\\u0000-\\u001f\\u007f]/.test(item[key]))voidHold('A saved item option needs Owner review.');result[key]=item[key];}"
+          ]
+        },
+        {
+          "beforeStart": 69,
+          "afterStart": 69,
+          "beforeLines": [
+            "export function verifyVoidSource({source,marker,saleId,receiptId,branch,shiftId}){"
+          ],
+          "afterLines": [
+            "export function verifyVoidSource({source,marker,saleId,receiptId,branch,shiftId,reason}){"
+          ]
+        },
+        {
+          "beforeStart": 80,
+          "afterStart": 80,
+          "beforeLines": [
+            " if(!method||method==='salary deduction'||/grab|foodpanda|panda|split|refund|return/.test(method)||row.paymentVerified!==undefined&&typeof row.paymentVerified!=='boolean'||row.paymentVerified===true&&method!=='cash')voidHold('This verified or externally linked payment needs Owner review. Use its payment or prepared-cancellation process.');"
+          ],
+          "afterLines": [
+            " const platform=['grab','foodpanda','food panda'].includes(method);",
+            " if(!method||method==='salary deduction'||/split|refund|return/.test(method)||/grab|foodpanda|panda/.test(method)&&!platform||platform&&row.paymentVerified!==false||row.paymentVerified!==undefined&&typeof row.paymentVerified!=='boolean'||row.paymentVerified===true&&method!=='cash')voidHold('This verified or externally linked payment needs Owner review. Use its payment or prepared-cancellation process.');",
+            " const sourcePlatform=platform?(method==='grab'?'Grab':'Foodpanda'):'Standard',orderPlatform=typeof row.orderType==='string'?row.orderType.trim().toLowerCase():'';",
+            " if(platform&&!(sourcePlatform==='Grab'?['grab']:['foodpanda','food panda','panda']).includes(orderPlatform)||!platform&&['grab','foodpanda','food panda','panda'].includes(orderPlatform))voidHold('The saved platform channel is inconsistent. Ask the Owner to review it; no stock or platform payment was changed.');"
+          ]
+        },
+        {
+          "beforeStart": 89,
+          "afterStart": 92,
+          "beforeLines": [
+            " return {fingerprint,revision:joint,cart,netTotal:row.netTotal,inventoryState:row.inventoryState,movements:row.inventoryMovements,balls,legacyFingerprint:commit.fingerprint};"
+          ],
+          "afterLines": [
+            " return {fingerprint,revision:joint,cart,netTotal:row.netTotal,inventoryState:row.inventoryState,movements:row.inventoryMovements,balls,platform:sourcePlatform,legacyFingerprint:commit.fingerprint};"
+          ]
+        },
+        {
+          "beforeStart": 107,
+          "afterStart": 110,
+          "beforeLines": [
+            " if(!voidText(payload.paymentMethod,80)||payload.orderType==='Delivery'||payload.isMobileOrder===true||payload.mobileOrderId||payload.mobileOrderCode||payload.mealStaffName||payload.mealIdentityId||payload.mealLevelId||payload.mealRole||payload.globalDiscountType&&!['none','percentage','fixed'].includes(payload.globalDiscountType)||/grab|foodpanda|panda|split|salary|refund/i.test(payload.paymentMethod)||payload.paymentVerified!==undefined&&typeof payload.paymentVerified!=='boolean'||payload.paymentVerified===true&&payload.paymentMethod.trim().toLowerCase()!=='cash')voidHold('Use a separate reviewed checkout for linked payments, meals, or delivery. This correction supports ordinary receipts only.');"
+          ],
+          "afterLines": [
+            " const platform=operation.source.platform||'Standard',isPlatform=platform!=='Standard';",
+            " if(!voidText(payload.paymentMethod,80)||payload.orderType==='Delivery'||payload.isMobileOrder===true||payload.mobileOrderId||payload.mobileOrderCode||payload.mealStaffName||payload.mealIdentityId||payload.mealLevelId||payload.mealRole||payload.globalDiscountType&&!['none','percentage','fixed'].includes(payload.globalDiscountType)||/split|salary|refund|return/i.test(payload.paymentMethod)||payload.paymentVerified!==undefined&&typeof payload.paymentVerified!=='boolean'||payload.paymentVerified===true&&payload.paymentMethod.trim().toLowerCase()!=='cash')voidHold('Use a separate reviewed checkout for linked payments, meals, or delivery. This correction supports ordinary receipts only.');",
+            " const replacementOrder=typeof payload.orderType==='string'?payload.orderType.trim().toLowerCase():'';",
+            " if(isPlatform?(!(platform==='Grab'?['grab']:['foodpanda','food panda','panda']).includes(replacementOrder)||payload.paymentMethod!==platform||payload.paymentVerified!==false||!voidText(payload.platformOrderId,200)):['grab','foodpanda','food panda','panda'].includes(replacementOrder)||/grab|foodpanda|panda/i.test(payload.paymentMethod))voidHold('The corrected order must stay in its original sales channel and use its freshly entered payment reference. This changes only the local ledger, not a platform refund or external cancellation.');"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/cashier-void-store.mjs",
+      "beforeSha256": "9a9874ca335024be2c8ccf23ae192d9fa9ccc492f0cbc63bf8c8ccf8d2cfbe5a",
+      "afterSha256": "9984fb961cf9f7c2d438b38f322df4f5278f358ad9479cd70c42c61c4bdea961",
+      "hunks": [
+        {
+          "beforeStart": 4,
+          "afterStart": 4,
+          "beforeLines": [
+            "import {CASHIER_VOID_VERSION,canonicalCashierVoidJSON,voidHash,voidDigest,voidRevision,voidMillis,voidText,voidFields,voidFail,voidHold,verifyVoidSource,voidEffects,verifyReplacementPayload,replacementReceiptMatches} from './cashier-void-model.mjs';"
+          ],
+          "afterLines": [
+            "import {CashierVoidError,CASHIER_VOID_VERSION,canonicalCashierVoidJSON,voidHash,voidDigest,voidTimestamp,voidRevision,voidMillis,voidText,voidFields,voidFail,voidHold,voidUnitIdentity,verifyVoidSource,voidEffects,verifyReplacementPayload,replacementReceiptMatches} from './cashier-void-model.mjs';"
+          ]
+        },
+        {
+          "beforeStart": 7,
+          "afterStart": 7,
+          "beforeLines": [
+            "const TABLES=Object.freeze({quotes:'cashier_void_quotes',operations:'cashier_void_operations',sources:'cashier_void_sources'});"
+          ],
+          "afterLines": [
+            "const TABLES=Object.freeze({quotes:'cashier_void_quotes',operations:'cashier_void_operations',sources:'cashier_void_sources',pins:'cashier_void_pin_claims'});"
+          ]
+        },
+        {
+          "beforeStart": 10,
+          "afterStart": 10,
+          "beforeLines": [],
+          "afterLines": [
+            "const receiptScope=body=>voidHash({operationId:body.operationId,saleId:body.saleId,receiptId:body.receiptId,branch:body.branch,shiftId:body.shiftId,reason:body.reason});"
+          ]
+        },
+        {
+          "beforeStart": 13,
+          "afterStart": 14,
+          "beforeLines": [],
+          "afterLines": [
+            "const originalPINRequired=()=>voidFail(403,'original-pin-required','Enter the original cashier’s PIN again for this receipt. Keep any existing operation reference; this confirmation cannot authorize another receipt.');"
+          ]
+        },
+        {
+          "beforeStart": 18,
+          "afterStart": 20,
+          "beforeLines": [],
+          "afterLines": [
+            " if(record.originalCashierAuthorization?.pinSessionMode==='receipt-only'&&(!accessId(body.pinVerificationId)||record.initiatingSessionId!==body.sessionId))voidFail(409,'operation-conflict','Resume this receipt change with its exact original action reference and receipt PIN proof. Keep its saved payload; another session cannot adopt it.');"
+          ]
+        },
+        {
+          "beforeStart": 22,
+          "afterStart": 25,
+          "beforeLines": [
+            " return {schemaVersion:1,operationId:body.operationId,sourceSaleId:body.saleId,sourceReceiptId:body.receiptId,branch:body.branch,shiftId:body.shiftId,reason:body.reason,state:saved?'saved':quote?'preview':record?.state==='cancelled'?'cancelled':'unknown',sourceFingerprint:record?.sourceFingerprint||null,expectedFingerprint:record?.expectedFingerprint||null,expiresAt:quote?record.expiresAt:null,source:record?.source||null,effects:(record?.effects||[]).map(({revision,...effect})=>effect),replacement};"
+          ],
+          "afterLines": [
+            " return {schemaVersion:1,operationId:body.operationId,sourceSaleId:body.saleId,sourceReceiptId:body.receiptId,branch:body.branch,shiftId:body.shiftId,reason:body.reason,state:saved?'saved':quote?'preview':record?.state==='cancelled'?'cancelled':'unknown',sourceFingerprint:record?.sourceFingerprint||null,expectedFingerprint:record?.expectedFingerprint||null,expiresAt:quote?record.expiresAt:null,source:record?.source?{...record.source,platform:record.source.platform||'Standard'}:null,effects:(record?.effects||[]).map(({revision,...effect})=>effect),replacement};"
+          ]
+        },
+        {
+          "beforeStart": 30,
+          "afterStart": 33,
+          "beforeLines": [
+            " async function execute(path,body,actor){return db.runTransaction(async tx=>{"
+          ],
+          "afterLines": [
+            " async function execute(path,body,actor){const result=await db.runTransaction(async tx=>{"
+          ]
+        },
+        {
+          "beforeStart": 39,
+          "afterStart": 42,
+          "beforeLines": [
+            "  const session=(await read('staff_login_sessions',actor.uid))?.data;",
+            "  if(!accessId(actor.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!desktop||!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==body.staffId||session.deviceId!==body.deviceId||session.branch!==body.branch||session.sessionId!==body.sessionId||!Number.isFinite(voidMillis(session.expiresAt))||voidMillis(session.expiresAt)<=now()||desktop&&!ownerDesktopSessionMatches(session,desktop))deny();",
+            "  const profile=await read('cashiers',body.staffId);if(!activeAccessStaff(profile?.data)||!voidRevision(profile.updateTime)||session.profileRevision!==voidRevision(profile.updateTime))deny();"
+          ],
+          "afterLines": [
+            "  const pin=accessId(body.pinVerificationId)?(await read('staff_pin_verifications',body.pinVerificationId))?.data:null,session=body.pinVerificationId?null:(await read('staff_login_sessions',actor.uid))?.data;",
+            "  const pinAuthority=Boolean(pin&&pin.schemaVersion===1&&pin.uid===actor.uid&&pin.staffId===body.staffId&&pin.deviceId===body.deviceId&&pin.branch===body.branch&&pin.app==='cashier'&&pin.purpose==='receipt-void'&&pin.source==='cashiers'&&Number.isFinite(voidMillis(pin.issuedAt))&&Number.isFinite(voidMillis(pin.expiresAt))&&voidMillis(pin.issuedAt)<=now()&&voidMillis(pin.expiresAt)>voidMillis(pin.issuedAt)&&voidMillis(pin.expiresAt)-voidMillis(pin.issuedAt)<=120000&&(!desktop||ownerDesktopSessionMatches(pin,desktop))),scopedPIN=pinAuthority&&pin.scope===receiptScope(body);",
+            "  if(!accessId(actor.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!desktop)deny();",
+            "  if(body.pinVerificationId){if(!scopedPIN||pin.sessionMode!=='receipt-only'||pin.sessionId!==null)originalPINRequired();}",
+            "  else if(!session||session.schemaVersion!==1||session.uid!==actor.uid||session.app!=='cashier'||session.staffId!==body.staffId||session.deviceId!==body.deviceId||session.branch!==body.branch||session.sessionId!==body.sessionId||!Number.isFinite(voidMillis(session.expiresAt))||voidMillis(session.expiresAt)<=now()||desktop&&!ownerDesktopSessionMatches(session,desktop))deny();",
+            "  const profile=await read('cashiers',body.staffId);if(!activeAccessStaff(profile?.data)||!voidRevision(profile.updateTime)||(session?session.profileRevision:pin.profileRevision)!==voidRevision(profile.updateTime)||pin&&pin.profileRevision!==voidRevision(profile.updateTime))deny();"
+          ]
+        },
+        {
+          "beforeStart": 96,
+          "afterStart": 102,
+          "beforeLines": [],
+          "afterLines": [
+            "  if(quote&&quote.expiresAt<=now())voidFail(409,'preview-changed','The receipt preview expired. Cancel this same reference and enter the original cashier’s PIN for a fresh review.');"
+          ]
+        },
+        {
+          "beforeStart": 100,
+          "afterStart": 107,
+          "beforeLines": [],
+          "afterLines": [
+            "  // Name-only legacy receipts use an explicitly operational CURRENT exact-name",
+            "  // mapping, not a claim of cryptographic historical identity. Include inactive",
+            "  // duplicates in the query so a reused name cannot silently select an employee.",
+            "  const originalName=source.data.cashier;",
+            "  const originalRequired=()=>voidFail(403,'original-cashier-required',(voidText(originalName,200)&&originalName.trim()?'The saved receipt names “'+originalName+'”. ':'')+'Only the original cashier can change this receipt. Sign in as the employee who punched it and enter that employee’s current PIN. If its saved identity is ambiguous, ask the Owner to review it.');",
+            "  if(!voidText(originalName,200)||!originalName.trim()||originalName!==profile.data.cashierName)originalRequired();",
+            "  const names=await tx.get(db.collection('cashiers').where('cashierName','==',originalName).limit(3).select('cashierName'));",
+            "  if(names.size!==1||names.docs[0].id!==body.staffId)originalRequired();",
+            "  for(const field of ['staffId','cashierId','cashierStaffId'])if(Object.hasOwn(source.data,field)&&source.data[field]!==body.staffId)originalRequired();",
+            "  const renamed=['previousCashierName','previousName','oldCashierName','renamedFrom','cashierNameChangedAt','renamedAt','nameHistory'];",
+            "  if(renamed.some(field=>Object.hasOwn(profile.data,field)&&profile.data[field]!==null&&profile.data[field]!==''&&(!Array.isArray(profile.data[field])||profile.data[field].length)))originalRequired();",
+            "  if(profile.createTime){const created=voidTimestamp(profile.createTime),sold=voidTimestamp(source.createTime);if(!created||!sold||created.seconds>sold.seconds||created.seconds===sold.seconds&&created.nanoseconds>sold.nanoseconds)originalRequired();}",
+            "  const freshPIN=originalPINRequired;",
+            "  if(!accessId(body.pinVerificationId))freshPIN();",
+            "  const pinRef=db.doc(TABLES.pins+'/'+keyFor(actor.uid,body.pinVerificationId)),pinClaim=data(await tx.get(pinRef));",
+            "  if(!scopedPIN)freshPIN();",
+            "  const pinIntent={schemaVersion:1,actor:actorIdentity,sessionId:body.sessionId,pinSessionMode:pin.sessionMode,pinVerificationId:body.pinVerificationId,operationId:body.operationId,intent:intent(body),sourceFingerprint:proof.fingerprint,profileRevision:pin.profileRevision,issuedAt:pin.issuedAt,proofExpiresAt:pin.expiresAt};",
+            "  if(pinClaim){if(!same(pinClaim.authorization,pinIntent)||!Number.isFinite(pinClaim.expiresAt)||pinClaim.expiresAt<=now())freshPIN();}",
+            "  else if(quote||path!=='/cashier-void/preview'||!Number.isFinite(voidMillis(pin.issuedAt))||!Number.isFinite(voidMillis(pin.expiresAt))||now()-voidMillis(pin.issuedAt)<0||now()-voidMillis(pin.issuedAt)>120000||voidMillis(pin.expiresAt)<=now()||voidMillis(pin.expiresAt)-voidMillis(pin.issuedAt)>120000)freshPIN();",
+            "  const authorization=pinClaim||{authorization:pinIntent,expiresAt:now()+5*60000,createdAt:serverTimestamp()};",
+            "  if(quote&&(!quote.originalCashierAuthorization||!same(quote.originalCashierAuthorization,pinIntent)))freshPIN();"
+          ]
+        },
+        {
+          "beforeStart": 103,
+          "afterStart": 131,
+          "beforeLines": [],
+          "afterLines": [
+            "  // A missing-unit exception cannot override another movement's known unit",
+            "  // conflict. Validate all existing original snapshots before offering review.",
+            "  if(proof.inventoryState==='applied')for(const [index,movement]of proof.movements.entries())if(movement.unitSnapshot)voidEffects({...proof,movements:[movement]},[inventory[index]]);"
+          ]
+        },
+        {
+          "beforeStart": 104,
+          "afterStart": 135,
+          "beforeLines": [
+            "  const unitProof=proof.inventoryState==='applied'&&missingUnits.length?(quote?.unitProof||await historicalReader({sourceTime:source.createTime,branch:body.branch,movements:missingUnits})):[];",
+            "  const effects=voidEffects(proof,inventory,unitProof),sourceView={netTotal:proof.netTotal,inventoryState:proof.inventoryState,cart:proof.cart};",
+            "  const plan={actor:actorIdentity,sessionId:body.sessionId,intent:intent(body),sourceFingerprint:proof.fingerprint,sourceRevision:proof.revision,shiftRevision:voidRevision(shift.updateTime),salesRevision,auditRevision:audit?voidRevision(audit.updateTime):'',unitProof,effects};"
+          ],
+          "afterLines": [
+            "  let unitProof=[],ownerUnitReview=null;",
+            "  if(proof.inventoryState==='applied'&&missingUnits.length){",
+            "   if(quote?.unitProof)unitProof=quote.unitProof;",
+            "   else try{unitProof=await historicalReader({sourceTime:source.createTime,branch:body.branch,movements:missingUnits});}",
+            "   catch(error){",
+            "    if(!(error instanceof CashierVoidError)||error.code!=='cashier-void/unit-history-unavailable')throw error;",
+            "    if(!desktop)voidHold('This receipt is missing original stock-unit evidence. The Owner must explicitly review its unknown original units on the registered Owner desktop; no stock was returned.');",
+            "    const rows=missingUnits.map(movement=>{const saved=inventory[proof.movements.indexOf(movement)];if(!saved||saved.data.name!==movement.ingredientName||saved.data.branch!==body.branch||!voidRevision(saved.updateTime))voidHold('A saved ingredient identity changed. Ask the Owner to review it.');return {inventoryId:movement.inventoryId,ingredientName:movement.ingredientName,quantity:movement.quantity,unitSnapshot:voidUnitIdentity(saved.data),revision:voidRevision(saved.updateTime)};});",
+            "    const fingerprint=voidHash({sourceFingerprint:proof.fingerprint,sourceRevision:proof.revision,actor:actorIdentity,intent:intent(body),rows,shiftRevision:voidRevision(shift.updateTime),salesRevision,auditRevision:audit?voidRevision(audit.updateTime):''});",
+            "    if(!body.ownerUnitReview){if(!pinClaim)tx.create(pinRef,authorization);return new CashierVoidError(409,'legacy-unit-review-required','The original units were not saved and retained history is unavailable. Only the Owner may explicitly confirm a documented manual reversal; no stock has been returned.',{unitReview:{schemaVersion:1,fingerprint,sourceFingerprint:proof.fingerprint,rows:rows.map(({revision,...row})=>row),disclaimer:'These are CURRENT inventory units, not proof of the original sale units. Confirm each item only from reliable records. This is a manual Owner review, not historical evidence.'}});}",
+            "    if(body.ownerUnitReview.fingerprint!==fingerprint)voidFail(409,'preview-changed','The receipt, inventory units, or shift changed during manual review. Nothing was voided; check the same operation before starting another review.');",
+            "    ownerUnitReview={schemaVersion:1,evidence:'owner-manual-not-historical',ownerUid:actor.uid,reason:body.ownerUnitReview.reason,fingerprint,rows};",
+            "    unitProof=rows.map(row=>({id:row.inventoryId,unitSnapshot:row.unitSnapshot,evidence:'owner-manual-not-historical',sourceRevision:proof.revision,currentRevision:row.revision}));",
+            "   }",
+            "  }",
+            "  if(quote?.ownerUnitReview){ownerUnitReview=quote.ownerUnitReview;if(body.ownerUnitReview&&(body.ownerUnitReview.fingerprint!==ownerUnitReview.fingerprint||body.ownerUnitReview.reason!==ownerUnitReview.reason))voidFail(409,'preview-changed','The manual unit confirmation changed. Keep the original confirmed operation or cancel it before another review.');}",
+            "  if(body.ownerUnitReview&&!ownerUnitReview)voidHold('This receipt already has original unit evidence. Manual confirmation cannot replace or override it.');",
+            "  if(ownerUnitReview){if(!desktop||ownerUnitReview.ownerUid!==actor.uid)deny();for(const row of ownerUnitReview.rows){const index=proof.movements.findIndex(movement=>movement.inventoryId===row.inventoryId),saved=inventory[index];if(!saved||saved.data.name!==row.ingredientName||voidRevision(saved.updateTime)!==row.revision||!same(voidUnitIdentity(saved.data),row.unitSnapshot))voidFail(409,'preview-changed','A manually reviewed inventory record changed. No stock was returned.');}}",
+            "  const effects=voidEffects(proof,inventory,unitProof),sourceView={netTotal:proof.netTotal,inventoryState:proof.inventoryState,cart:proof.cart,platform:proof.platform};",
+            "  const plan={actor:actorIdentity,sessionId:body.sessionId,intent:intent(body),sourceFingerprint:proof.fingerprint,sourceRevision:proof.revision,shiftRevision:voidRevision(shift.updateTime),salesRevision,auditRevision:audit?voidRevision(audit.updateTime):'',unitProof,effects,originalCashierAuthorization:pinIntent,ownerUnitReview};"
+          ]
+        },
+        {
+          "beforeStart": 110,
+          "afterStart": 158,
+          "beforeLines": [
+            "   const record={schemaVersion:1,kind:'cashier-void-quote',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),initiatingSessionId:body.sessionId,intent:intent(body),intentHash:voidHash(intent(body)),sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,unitProof,expiresAt:now()+5*60000,createdAt:serverTimestamp()};tx.create(quoteRef,record);return view(record,body);"
+          ],
+          "afterLines": [
+            "   const record={schemaVersion:1,kind:'cashier-void-quote',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),initiatingSessionId:body.sessionId,intent:intent(body),intentHash:voidHash(intent(body)),sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,unitProof,originalCashierAuthorization:pinIntent,...(ownerUnitReview?{ownerUnitReview}:{}),expiresAt:authorization.expiresAt,createdAt:serverTimestamp()};if(!pinClaim)tx.create(pinRef,authorization);tx.create(quoteRef,record);return view(record,body);"
+          ]
+        },
+        {
+          "beforeStart": 116,
+          "afterStart": 164,
+          "beforeLines": [
+            "  const at=serverTimestamp(),record={schemaVersion:CASHIER_VOID_VERSION,kind:'cashier-void-operation',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),actorName:profile.data.cashierName,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:quote.intentHash,state:'saved',sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,replacement,committedAt:at};"
+          ],
+          "afterLines": [
+            "  const at=serverTimestamp(),record={schemaVersion:CASHIER_VOID_VERSION,kind:'cashier-void-operation',operationId:body.operationId,actor:actorIdentity,...(desktop?{ownerDesktopAuthority:desktop}:{}),actorName:profile.data.cashierName,initiatingSessionId:body.sessionId,intent:intent(body),intentHash:quote.intentHash,state:'saved',sourceFingerprint:proof.fingerprint,expectedFingerprint,source:sourceView,effects,replacement,originalCashierAuthorization:pinIntent,...(ownerUnitReview?{ownerUnitReview,unitReviewConfirmedAt:at}:{}),committedAt:at};"
+          ]
+        },
+        {
+          "beforeStart": 126,
+          "afterStart": 174,
+          "beforeLines": [
+            " });}"
+          ],
+          "afterLines": [
+            " });if(result instanceof CashierVoidError)throw result;return result;}"
+          ]
+        }
+      ]
+    }
+  ]
+}

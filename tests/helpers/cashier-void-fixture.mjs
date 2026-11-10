@@ -1,20 +1,24 @@
 import {adminMemory} from './admin-memory.mjs';
 import {createCashierVoidStore} from '../../functions/cash-remittance-review/cashier-void-store.mjs';
 import {createCashierVoidHandler} from '../../functions/cash-remittance-review/cashier-void-handler.mjs';
-import {canonicalCashierVoidJSON,voidRevision,voidDigest} from '../../functions/cash-remittance-review/cashier-void-model.mjs';
+import {createAccessStore} from '../../functions/cash-remittance-review/access-store.mjs';
+import {canonicalCashierVoidJSON,voidRevision,voidDigest,voidHash} from '../../functions/cash-remittance-review/cashier-void-model.mjs';
 export const sampleNow=Date.parse('2026-11-10T12:00:00Z');
 export const sampleActor={uid:'sample-pos-uid',firebase:{sign_in_provider:'anonymous'}};
 export const sampleBody={operationId:'sample-operation-123',deviceId:'DEV-SAMPLE-PHONE',staffId:'sample-staff',sessionId:'sample-session-nonce-12345678',branch:'Sample Branch',shiftId:'sample-open-shift',saleId:'sample-original-sale',receiptId:'SAMPLE-RECEIPT',reason:'OrderCancelled'};
 export const sampleCart=()=>[{name:'6 Pcs Takoyaki',basePrice:50,variantPrice:50,variantName:'Standard',qty:1,notes:'Sample only',addons:{},discountType:'none',discountVal:0,lineTotalFinal:50}];
 export const legacyFingerprint=row=>canonicalCashierVoidJSON({branch:row.branch,receiptId:row.receiptId,netTotal:row.netTotal,cart:row.cart});
+export const receiptPINScope=body=>voidHash({operationId:body.operationId,saleId:body.saleId,receiptId:body.receiptId,branch:body.branch,shiftId:body.shiftId,reason:body.reason});
+export async function issueReceiptPIN(h,body,actor,{clock=()=>sampleNow,pin='1234'}={}){const result=await createAccessStore(h.db,{serverTimestamp:h.serverTimestamp,now:clock}).verifyPin({pin,staffId:body.staffId,deviceId:body.deviceId,app:'cashier',branch:body.branch,purpose:'receipt-void',scope:receiptPINScope(body)},actor);body.pinVerificationId=result.verificationId;return result;}
 export async function voidFixture({reason='OrderCancelled',sourcePatch={},movementPatch={},historicalReader,clock=()=>sampleNow}={}){
  const h=adminMemory(),body={...sampleBody,reason},profile={cashierName:'Sample Cashier',branch:body.branch,active:true,status:'Active',pin:'1234'};
- h.put('cashiers/'+body.staffId,profile);h.put('staff_login_sessions/'+sampleActor.uid,{schemaVersion:1,uid:sampleActor.uid,staffId:body.staffId,deviceId:body.deviceId,sessionId:body.sessionId,branch:body.branch,app:'cashier',profileRevision:voidRevision(h.rows.get('cashiers/'+body.staffId).updateTime),expiresAt:new Date(sampleNow+3600000)});
+ h.put('cashiers/'+body.staffId,profile);h.put('staff_login_sessions/'+sampleActor.uid,{schemaVersion:1,uid:sampleActor.uid,staffId:body.staffId,deviceId:body.deviceId,sessionId:body.sessionId,branch:body.branch,app:'cashier',issuedAt:new Date(sampleNow),profileRevision:voidRevision(h.rows.get('cashiers/'+body.staffId).updateTime),expiresAt:new Date(sampleNow+3600000)});
  h.put('pos_bindings/'+sampleActor.uid,{uid:sampleActor.uid,status:'Active',deviceId:body.deviceId,branch:body.branch,legacyDeviceDocId:'sample-mirror'});h.put('pos_devices/sample-mirror',{deviceId:body.deviceId,branch:body.branch,status:'Active',appType:'Cashier'});
  h.put('shifts/'+body.shiftId,{branch:body.branch,active:true,status:'Open',startTime:new Date(sampleNow-3600000),salesRevision:0});
  const movement={inventoryId:'sample-ingredient',ingredientName:'Sample Batter',quantity:6,unitSnapshot:{schemaVersion:1,baseUom:'gram',uom:null},...movementPatch};
  const source={saleVersion:2,saleId:body.saleId,receiptId:body.receiptId,branch:body.branch,shiftId:body.shiftId,cashier:profile.cashierName,netTotal:50,paymentMethod:'Cash',paymentVerified:true,status:'Paid',orderType:'Dine-In',globalDiscountType:'none',cart:sampleCart(),inventoryMovements:[movement],inventoryState:'applied',inventoryIssues:[],recipeIssues:[],inventoryReviewRequired:false,ballsCounted:6,statsApplied:true,localTimestamp:new Date(sampleNow-60000).toISOString(),timestamp:new Date(sampleNow-60000),...sourcePatch};
  await h.db.runTransaction(async tx=>{tx.create(h.db.doc('transactions/'+body.saleId),source);tx.create(h.db.doc('pos_sale_commits/'+body.saleId),{saleId:body.saleId,branch:body.branch,receiptId:body.receiptId,fingerprint:legacyFingerprint(source),committedAt:h.serverTimestamp()});tx.create(h.db.doc('inventory/sample-ingredient'),{branch:body.branch,name:'Sample Batter',baseUom:'gram',currentStock:94});tx.create(h.db.doc('settings/global_stats'),{totalTakoyakiBalls:6,['balls_'+body.branch]:6});});
+ await issueReceiptPIN(h,body,sampleActor,{clock});
  const store=createCashierVoidStore(h.db,{serverTimestamp:h.serverTimestamp,now:clock,randomToken:()=> 'd'.repeat(64),...(historicalReader?{historicalReader}:{})});
  const tokenCalls=[],handler=createCashierVoidHandler({verifyToken:async(token,revoked)=>{tokenCalls.push({token,revoked});return sampleActor;},store,now:clock});
  const request=(path,input=body,extra={})=>handler({origin:'https://takodeal-cashier.vercel.app',path:'/cashier-void/'+path,method:'POST',contentType:'application/json',rawSize:Buffer.byteLength(JSON.stringify(input)),authorization:'Bearer '+'s'.repeat(30),body:input,trustedIP:'192.0.2.4',...extra});
