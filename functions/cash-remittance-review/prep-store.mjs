@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {prepId,prepTimestampToken} from './prep-model.mjs';
+import {freshOwnerDesktopAuthority} from './owner-desktop-authority.mjs';
 const OWNER='jgo031996@gmail.com',readTables=new Set(['inventory','prep_quotes','prep_operations','prep_reversals','prep_review_requests','staff_login_sessions','cashiers','pos_bindings','pos_devices']);
 export function createPrepStore(db,{serverTimestamp,now=Date.now}={}){
  if(typeof db?.runTransaction!=='function'||typeof serverTimestamp!=='function')throw Error('A trusted prep database is required.');
@@ -16,6 +17,7 @@ export function createPrepStore(db,{serverTimestamp,now=Date.now}={}){
    get,serverTimestamp,
    deviceRecords:deviceId=>query('pos_devices',[['deviceId',deviceId]],3),
    ownerRecords:()=>query('hq_managers',[['email',OWNER]],11),
+   ownerDesktopAuthority:(actor,deviceId,branch)=>freshOwnerDesktopAuthority({actor,deviceId,branch,owners:()=>query('hq_managers',[['email',OWNER]],3,{allowAmbiguousCap:true}),devices:()=>query('pos_devices',[['deviceId',deviceId]],3,{allowAmbiguousCap:true}),branches:()=>query('branches',[['name',branch]],3,{allowAmbiguousCap:true})}),
    branchRecords:name=>{if(typeof name!=='string'||!name||name.length>128)throw Error('Choose one saved branch.');return query('branches',[['name',name]],3);},
    recipeRows:name=>{if(typeof name!=='string'||!name||name.length>160)throw Error('Choose one saved prepared item.');return query('bom',[['menuItem',name]],32,{allowAmbiguousCap:true});},
    ingredientRows:(branch,name)=>{if(typeof branch!=='string'||typeof name!=='string'||!name||branch.length>128||name.length>160)throw Error('Use exact saved ingredients.');return query('inventory',[['branch',branch],['name',name]],3,{allowAmbiguousCap:true});},

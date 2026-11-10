@@ -1,4 +1,4 @@
-import {accessId,accessDevice,accessDocumentId} from './access-model.mjs';
+import {accessId,accessDevice,accessDocumentId,isAccessOwner} from './access-model.mjs';
 import {CashierVoidError,CASHIER_VOID_REASONS,voidFields,voidText,voidFail} from './cashier-void-model.mjs';
 export const CASHIER_VOID_ORIGIN='https://takodeal-cashier.vercel.app';
 const routes=new Set(['/cashier-void/preview','/cashier-void/commit','/cashier-void/status','/cashier-void/cancel','/cashier-void/replacement-claim']);
@@ -19,7 +19,7 @@ export function createCashierVoidHandler({verifyToken,store,now=Date.now}={}){
    localRate('global',1200);localRate('ip:'+String(request.trustedIP||'unavailable').slice(0,200),300);
    const bearer=/^Bearer ([^\s]{20,8192})$/.exec(request.authorization||'')?.[1];if(!bearer)voidFail(401,'sign-in','Reconnect and sign in again before reviewing this receipt.');
    let actor;try{actor=await verifyToken(bearer,true);}catch{voidFail(401,'sign-in','Sign in again to verify this approved tablet.');}
-   if(!accessId(actor?.uid)||actor.firebase?.sign_in_provider!=='anonymous')voidFail(403,'identity','Use the approved Cashier tablet identity.');localRate('uid:'+actor.uid,180);
+   if(!accessId(actor?.uid)||actor.firebase?.sign_in_provider!=='anonymous'&&!isAccessOwner(actor))voidFail(403,'identity','Use the approved Cashier tablet identity or the already signed-in verified Owner desktop account.');localRate('uid:'+actor.uid,180);
    const body=request.body,path=request.path;let keys=common;
    if(path==='/cashier-void/commit')keys=[...common,'expectedFingerprint'];
    if(path==='/cashier-void/replacement-claim')keys=[...common,'expectedFingerprint','phase','restoreAttemptId','claimToken',...(body.phase==='checkout'?['checkoutAttemptId','payload']:[])];
