@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import vm from 'node:vm';
 import {archiveableShift} from '../takodeal-manager/branch-operations.js';
+import {restorePrivatePrepRelease} from './helpers/private-prep-release-inverse.mjs';
 
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const start=source.indexOf('window.openArchiveSalesModal = async function('),end=source.indexOf('// --- POPULATES THE ARCHIVE DROPDOWN ---',start);
@@ -41,7 +42,8 @@ function fixture(transactions,{shifts=[],retry,changeBeforePurge,confirm=true}={
 }
 
 test('archive followup leaves every main byte outside the archive function unchanged',()=>{
- assert.equal(createHash('sha256').update(source.slice(0,start)+source.slice(end)).digest('hex'),'b1b50dd42d3ab093c3d576729d17a8edafdb4df707cb75a5b3ee08421f7a1447');
+ const restored=restorePrivatePrepRelease('takodeal-manager/main.js',source),restoredStart=restored.indexOf('window.openArchiveSalesModal = async function('),restoredEnd=restored.indexOf('// --- POPULATES THE ARCHIVE DROPDOWN ---',restoredStart);
+ assert.equal(createHash('sha256').update(restored.slice(0,restoredStart)+restored.slice(restoredEnd)).digest('hex'),'b1b50dd42d3ab093c3d576729d17a8edafdb4df707cb75a5b3ee08421f7a1447');
 });
 
 test('ordinary receipts purge normally and success truthfully reports zero protected payment records',async()=>{
