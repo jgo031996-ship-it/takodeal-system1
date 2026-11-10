@@ -1,3 +1,4 @@
+import {restoreInventorySecurityStage,restoreInventoryAliases} from './helpers/inventory-security-policy-stage.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,cpSync,writeFileSync,rmSync} from 'node:fs';
@@ -26,7 +27,7 @@ test('stage starts from exact live89a7 baseline and changes only the reviewed Ow
  assert.equal(sha(restoreBaseline()),'c2feb217f0aa5a5b83bd92feeaf787e18bdbfa46b30252c60a5283767bacbcab','all other Staff/Cashier, private vault, financial, attendance and legacy policy bytes stay exact');
 });
 test('real Owner helpers require exact email, verified email and Google while anonymous accounts remain a safe false',()=>{
- const functions=['isSignedIn','reqVerified','reqProvider','isOwner','offlineOwner'].map(name=>helper(policy,name)).join('\n');
+ const functions=['isSignedIn','reqVerified','reqProvider','isOwner','offlineOwner'].map(name=>helper(restoreInventoryAliases(policy),name)).join('\n');
  function decide({uid='synthetic',email,verified,provider}={}){const token={...(email!==undefined?{email}:{}),...(verified!==undefined?{email_verified:verified}:{}),firebase:{sign_in_provider:provider},get(key,fallback){return Object.hasOwn(this,key)?this[key]:fallback;}},context={request:{auth:uid?{uid,token}:null}};return vm.runInNewContext(functions+'; [isOwner(),offlineOwner()]',context);}
  for(const identity of [{uid:null},{provider:'anonymous'},{email:'foreign@example.test',verified:true,provider:'google.com'},{email:'jgo031996@gmail.com',verified:false,provider:'google.com'},{email:'jgo031996@gmail.com',verified:true,provider:'password'},{email:'jgo031996@gmail.com',verified:'true',provider:'google.com'},{email:'JGO031996@gmail.com',verified:true,provider:'google.com'}])assert.deepEqual(Array.from(decide(identity)),[false,false]);
  assert.deepEqual(Array.from(decide({email:'jgo031996@gmail.com',verified:true,provider:'google.com'})),[true,true]);

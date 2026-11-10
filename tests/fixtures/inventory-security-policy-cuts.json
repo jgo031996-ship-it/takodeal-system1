@@ -1,0 +1,472 @@
+{
+  "baseline": "f5228cdeaf194f376aa86f9b87a347b6883824cb",
+  "beforeHash": "20032a518922db82231a0ed12814ebed1df2d8013f23c94e1f2b2240c4899187",
+  "afterHash": "19138bd5456e09e3870a7e3c181afe35b8d3be6fe718a8e918895c822a05514b",
+  "edits": [
+    {
+      "before": "      allow update: if legacyCandidate(legacyCollection) && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))\n        && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])\n        || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())\n        || (legacyCollection in ['bom','global_addons'] && isOwner()));\n",
+      "after": "      allow update: if legacyCandidate(legacyCollection) && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))\n        && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])\n        || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())\n        || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));\n"
+    },
+    {
+      "before": "",
+      "after": "    // Caller-token inventory deletion: immutable audit, exact verified Owner only.\n    match /inventory_delete_ops/{id} {\n      allow get, create: if isOwner();\n    }\n",
+      "scope": "database root"
+    }
+  ],
+  "onlyChanges": [
+    "menu update now uses existing strict Owner arm",
+    "immutable Owner get/create inventory deletion audit; list/update/delete default denied"
+  ],
+  "intermediateHash": "4c431493dcd14d20f3058c05254a5ff90480cddcb76611de8114347629a58855",
+  "alias": {
+    "beforeHash": "4c431493dcd14d20f3058c05254a5ff90480cddcb76611de8114347629a58855",
+    "afterHash": "09b4f021e50b6a80996a93f9fb74dc89480d3d4c91eb58d19bc6f8d4fcc8960d",
+    "pureDefinition": "    function offlineOwner() {\n      return isOwner();\n    }\n",
+    "calls": 58,
+    "edits": [
+      {
+        "at": 2203,
+        "before": "    function offlineOwner() {\n      return isOwner();\n    }\n",
+        "after": ""
+      },
+      {
+        "at": 203297,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 186109,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 184732,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 182847,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 182082,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 179464,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 178656,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 177960,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 176653,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 175393,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 172910,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 171851,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 170034,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 168316,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 167593,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 166659,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 163497,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 162753,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 162160,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 158667,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 157162,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 154690,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 143344,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 142722,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 141138,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 139585,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 114866,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 109784,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 88092,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 87441,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 66314,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 14982,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 13077,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 11974,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 11870,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 11751,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 11031,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 10399,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 10254,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 10040,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 9949,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 9836,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 9567,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 9282,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 9169,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 9039,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 8803,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 8720,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 8145,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 7402,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 7323,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 6753,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 6628,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 6553,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 6449,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 6373,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 5647,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      },
+      {
+        "at": 2888,
+        "before": "offlineOwner",
+        "after": "isOwner"
+      }
+    ],
+    "reason": "Eliminate only the zero-argument identity wrapper offlineOwner() -> isOwner(); the strict verified Google Owner predicate is unchanged."
+  },
+  "secondaryAliases": [
+    {
+      "from": "isHQUser",
+      "to": "isSignedIn",
+      "beforeHash": "09b4f021e50b6a80996a93f9fb74dc89480d3d4c91eb58d19bc6f8d4fcc8960d",
+      "afterHash": "81e8b17e1072bfd812fa805f7eecaf1ee38e19089b01418f30b8e53e9d89537b",
+      "pureDefinition": "    function isHQUser() { return isSignedIn(); }\n",
+      "calls": 20,
+      "edits": [
+        {
+          "at": 2154,
+          "before": "    function isHQUser() { return isSignedIn(); }\n",
+          "after": ""
+        },
+        {
+          "at": 185538,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 185127,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 183624,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 133464,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 105875,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 104581,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 86831,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 84773,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 77782,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 72231,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 71998,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 59491,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 42226,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 41781,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 41141,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 40378,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 39704,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 21885,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 21689,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        },
+        {
+          "at": 21500,
+          "before": "isHQUser",
+          "after": "isSignedIn"
+        }
+      ]
+    },
+    {
+      "from": "docVaultOwner",
+      "to": "isOwner",
+      "beforeHash": "81e8b17e1072bfd812fa805f7eecaf1ee38e19089b01418f30b8e53e9d89537b",
+      "afterHash": "19138bd5456e09e3870a7e3c181afe35b8d3be6fe718a8e918895c822a05514b",
+      "pureDefinition": "    function docVaultOwner() { return isOwner(); }\n",
+      "calls": 3,
+      "edits": [
+        {
+          "at": 202965,
+          "before": "    function docVaultOwner() { return isOwner(); }\n",
+          "after": ""
+        },
+        {
+          "at": 205858,
+          "before": "docVaultOwner",
+          "after": "isOwner"
+        },
+        {
+          "at": 204445,
+          "before": "docVaultOwner",
+          "after": "isOwner"
+        },
+        {
+          "at": 203775,
+          "before": "docVaultOwner",
+          "after": "isOwner"
+        }
+      ]
+    }
+  ]
+}

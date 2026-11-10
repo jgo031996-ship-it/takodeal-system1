@@ -23,10 +23,6 @@ service cloud.firestore {
 
 
     function legacyCandidate(root) { return root.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_logs|suppliers|yield_logs)$'); }
-    function isHQUser() { return isSignedIn(); }
-    function offlineOwner() {
-      return isOwner();
-    }
     function offlineGate(branch) {
       return branch is string
         && exists(/databases/$(database)/documents/offline_policy/$(branch))
@@ -40,7 +36,7 @@ service cloud.firestore {
     function verifiedHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = offlineOwner();
+      let owner = isOwner();
       let eligible = !owner && isSignedIn() && reqVerified() == true && email != '';
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -103,7 +99,7 @@ service cloud.firestore {
       // Missing markers must be readable before the first atomic sale commit.
       // Existing legacy-branch receipts already have public reads in this policy.
       allow read: if (request.method == 'get' && (resource == null || !protectedSales(oldData().branch)))
-        || (request.method == 'list' && offlineOwner()) || verifiedHQ(oldData().branch) || trustedPOS(oldData().branch);
+        || (request.method == 'list' && isOwner()) || verifiedHQ(oldData().branch) || trustedPOS(oldData().branch);
 
       function selectorPosSaleCommitsCreate(data) {
         return saleWriter(data.get('branch', ''))
@@ -116,15 +112,15 @@ service cloud.firestore {
       allow create: if selectorPosSaleCommitsCreate(newData());
       allow update, delete: if false;
     }
-    match /offline_policy/{branch} { allow read: if true; allow write: if offlineOwner(); }
+    match /offline_policy/{branch} { allow read: if true; allow write: if isOwner(); }
     match /hq_email_access/{email} {
-      allow read: if offlineOwner() || (isSignedIn() && request.auth.token.get('email', '') == email);
-      allow write: if offlineOwner();
+      allow read: if isOwner() || (isSignedIn() && request.auth.token.get('email', '') == email);
+      allow write: if isOwner();
     }
     match /pos_bindings/{uid} {
-      allow read: if offlineOwner() || (isSignedIn() && request.auth.uid == uid);
+      allow read: if isOwner() || (isSignedIn() && request.auth.uid == uid);
       function selectorPosBindingsCreate(data) {
-        return offlineOwner() || (isSignedIn()
+        return isOwner() || (isSignedIn()
         && reqUid() == uid && reqProvider() == 'anonymous'
         && data.keys().hasOnly(['uid', 'deviceId', 'deviceName', 'branch', 'legacyDeviceDocId', 'status', 'requestedAt'])
         && data.uid == uid && data.status == 'Pending'
@@ -133,10 +129,10 @@ service cloud.firestore {
         && data.deviceName is string && data.requestedAt == reqTime());
       }
       allow create: if selectorPosBindingsCreate(newData());
-      allow update, delete: if offlineOwner();
+      allow update, delete: if isOwner();
     }
     match /cashier_presence/{uid} {
-      allow read: if offlineOwner() || (isSignedIn() && request.auth.uid == uid) || verifiedHQ(oldData().branch);
+      allow read: if isOwner() || (isSignedIn() && request.auth.uid == uid) || verifiedHQ(oldData().branch);
       function selectorCashierPresenceCreateUpdate(data) {
         return trustedPOS(data.branch) && reqUid() == uid
         && data.keys().hasOnly(['uid', 'branch', 'deviceId', 'deviceName', 'cashier', 'shiftId', 'seenAt', 'accepting', 'pendingSales', 'pendingOperations', 'ownerReviews', 'lastReceipt', 'setupProblem'])
@@ -146,7 +142,7 @@ service cloud.firestore {
         && data.deviceId == readData('pos_bindings',uid).deviceId;
       }
       allow create, update: if selectorCashierPresenceCreateUpdate(newData());
-      allow delete: if offlineOwner();
+      allow delete: if isOwner();
     }
     match /cashier_leases/{branch} {
       allow read: if true;
@@ -159,42 +155,42 @@ service cloud.firestore {
         && nextData('cashier_presence',reqUid()).seenAt == reqTime();
       }
       allow create, update: if selectorCashierLeasesCreateUpdate(newData());
-      allow delete: if offlineOwner();
+      allow delete: if isOwner();
     }
     match /pos_operation_commits/{id} {
-      allow read: if offlineOwner() || (request.method == 'get' && !exists(/databases/$(database)/documents/pos_operation_commits/$(id)) && ownTrustedDevice())
+      allow read: if isOwner() || (request.method == 'get' && !exists(/databases/$(database)/documents/pos_operation_commits/$(id)) && ownTrustedDevice())
         || verifiedHQ(oldData().branch) || trustedPOS(oldData().branch);
 
-      allow create: if offlineOwner() || (trustedPOS(newData().branch)
+      allow create: if isOwner() || (trustedPOS(newData().branch)
         && newData().state in ['synced', 'owner_review']);
-      allow update: if offlineOwner();
+      allow update: if isOwner();
       allow delete: if false;
     }
     match /pos_operation_reviews/{id} {
-      allow read: if offlineOwner() || (request.method == 'get' && !exists(/databases/$(database)/documents/pos_operation_reviews/$(id)) && ownTrustedDevice())
+      allow read: if isOwner() || (request.method == 'get' && !exists(/databases/$(database)/documents/pos_operation_reviews/$(id)) && ownTrustedDevice())
         || verifiedHQ(oldData().branch) || trustedPOS(oldData().branch);
 
       function selectorPosOperationReviewsCreate(data) {
-        return offlineOwner() || (trustedPOS(data.branch)
+        return isOwner() || (trustedPOS(data.branch)
         && data.status == 'Pending' && data.id == id
         && data.deviceId == readData('pos_bindings',reqUid()).deviceId);
       }
       allow create: if selectorPosOperationReviewsCreate(newData());
-      allow update: if offlineOwner();
+      allow update: if isOwner();
       allow delete: if false;
     }
     match /pos_branch_shifts/{branch} {
-      allow read: if offlineOwner() || verifiedHQ(branch) || trustedPOS(branch);
-      allow create, update: if offlineOwner() || (trustedPOS(branch) && newData().branch == branch);
+      allow read: if isOwner() || verifiedHQ(branch) || trustedPOS(branch);
+      allow create, update: if isOwner() || (trustedPOS(branch) && newData().branch == branch);
       allow delete: if false;
     }
     match /pos_attendance_heads/{staff} {
       allow read: if isSignedIn();
-      allow create, update: if offlineOwner() || trustedPOS(newData().branch);
+      allow create, update: if isOwner() || trustedPOS(newData().branch);
       allow delete: if false;
     }
     match /pos_staff_meal_claims/{id} {
-      allow read: if offlineOwner() || (request.method == 'get' && ownTrustedDevice());
+      allow read: if isOwner() || (request.method == 'get' && ownTrustedDevice());
 
       function posStaffMealSale(data) {
         let sale = transactionAfter(data.saleId);
@@ -207,7 +203,7 @@ service cloud.firestore {
           && mealRequest.branch == data.branch && mealRequest.type == 'Staff Meal';
       }
       function posStaffMealClaimCreate(data) {
-        return offlineOwner() || (
+        return isOwner() || (
             trustedPOS(data.branch)
             && data.deviceId == readData('pos_bindings',reqUid()).deviceId
             && data.staffId is string && data.day is string
@@ -223,11 +219,11 @@ service cloud.firestore {
           );
       }
       allow create: if posStaffMealClaimCreate(newData());
-      allow update: if offlineOwner();
+      allow update: if isOwner();
       allow delete: if false;
     }
-    match /pos_staff_meal_exceptions/{id} { allow read, create: if offlineOwner(); allow update, delete: if false; }
-    match /shift_metric_commits/{id} { allow read: if offlineOwner(); allow write: if false; }
+    match /pos_staff_meal_exceptions/{id} { allow read, create: if isOwner(); allow update, delete: if false; }
+    match /shift_metric_commits/{id} { allow read: if isOwner(); allow write: if false; }
 
     match /hq_managers/{managerId} { allow read: if isSignedIn(); allow write: if isOwner(); }
     // Network credentials are separate from the publicly readable branch record.
@@ -245,7 +241,7 @@ service cloud.firestore {
     match /settings/{docId} {
       function cashierAppearanceWrite(data, priorRevision) {
         let look = data.appearance;
-        return offlineOwner()
+        return isOwner()
           && data.keys().hasOnly(['schemaVersion','revision','appearance','updatedAt','updatedByUid','updatedByEmail']) && data.size() == 6
           && data.schemaVersion == 1 && disciplineInt(priorRevision) && disciplineInt(data.revision) && data.revision == priorRevision + 1
           && data.updatedAt == request.time && data.updatedByUid == request.auth.uid && data.updatedByEmail == request.auth.token.email
@@ -266,7 +262,7 @@ service cloud.firestore {
       // and staged branch policy behavior remain compatible.
       return id != 'global_pos_config'
         || !after.diff(before).affectedKeys().hasAny(['cancelledFoodPurchaseEnabled', 'cancelledFoodDiscountPct'])
-        || ((offlineOwner() || verifiedHQ('All'))
+        || ((isOwner() || verifiedHQ('All'))
           && (!after.keys().hasAny(['cancelledFoodPurchaseEnabled']) || after.cancelledFoodPurchaseEnabled is bool)
           && (!after.keys().hasAny(['cancelledFoodDiscountPct'])
             || (after.cancelledFoodDiscountPct is number && after.cancelledFoodDiscountPct >= 0 && after.cancelledFoodDiscountPct <= 100)));
@@ -344,11 +340,11 @@ service cloud.firestore {
       }
 
       allow read: if true;
-      allow create: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow create: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isSignedIn() || docId.matches("status_.*"))
         && cancelledPolicyWrite(docId, {}, newData());
-      allow update: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow update: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isSignedIn() || docId.matches("status_.*"))
         && cancelledPolicyWrite(docId, oldData(), newData());
-      allow delete: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow delete: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isSignedIn() || docId.matches("status_.*"))
         && cancelledPolicyWrite(docId, oldData(), {});
       // PIN-only legacy Cashiers can update counters only with their atomic sale
       // or first void, with exact deltas. No general settings write is opened.
@@ -601,22 +597,22 @@ service cloud.firestore {
     }
 
       allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
-        || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && isHQUser()));
+        || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && isSignedIn()));
       allow create: if legacyCandidate(legacyCollection) && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))
         && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
-        || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
+        || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isSignedIn())
         || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));
       allow update: if legacyCandidate(legacyCollection) && (legacyCollection != 'branches' || !newData().keys().hasAny(['wifi']))
-        && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
-        || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
-        || (legacyCollection in ['bom','global_addons'] && isOwner()));
+        && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+        || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isSignedIn())
+        || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));
       allow delete: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),{}) && ((legacyCollection in ['branches','parked_orders'])
-        || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && isHQUser())
+        || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && isSignedIn())
         || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_logs'] && isOwner()));
     }
     // Exact six-tree legacy HQ whitelist, retaining all preceding descendants.
     match /{legacyTree}/{legacyTail=**} {
-      allow read, write: if legacyCandidate(legacyTree) && (legacyTree in ['archived_months','customer_app_categories','daily_metrics','franchise_accounts','franchise_budgets','suppliers'] && isHQUser());
+      allow read, write: if legacyCandidate(legacyTree) && (legacyTree in ['archived_months','customer_app_categories','daily_metrics','franchise_accounts','franchise_budgets','suppliers'] && isSignedIn());
     }
     match /transactions/{txId} {
       function cancelledFoodWriter(branch) {
@@ -843,7 +839,7 @@ service cloud.firestore {
       function selectorTransactionsDelete(before) {
         return before.get('preparedCancellation',{}).get('prepared',false) != true
         && before.get('cancelledFoodSourceId','') == ''
-        && ((!protectedSales(before.get('branch', '')) && isHQUser()) || isOwner());
+        && ((!protectedSales(before.get('branch', '')) && isSignedIn()) || isOwner());
       }
       allow delete: if !oldData().keys().hasAny(['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])
         && selectorTransactionsDelete(resource == null ? null : oldData());
@@ -947,7 +943,7 @@ service cloud.firestore {
     // Only the verified Google Owner may issue these reviewed HR markers.
     // Existing ordinary profile/attendance fields retain their preceding policy.
     function protectedHROwner() {
-      return offlineOwner() && request.auth.token.firebase.sign_in_provider == 'google.com';
+      return isOwner() && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
     function protectedHRId(value) { return value is string && value.matches('^[-A-Za-z0-9_]{1,180}$'); }
     function protectedHRReason(value) { return value is string && value.trim().size() >= 8 && value.size() <= 1500; }
@@ -1027,10 +1023,10 @@ service cloud.firestore {
       }
       allow update: if selectorAttendanceLogsUpdate(newData(),resource == null ? null : oldData())
         && reliefOriginalSourceUnchanged(newData(),oldData());
-      allow delete: if isHQUser() && !oldData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
+      allow delete: if isSignedIn() && !oldData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
         && !reliefLinkedOut(oldData());
     }
-    match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if isSignedIn(); }
     // These immutable reports retain the original count; opening a period view
     // never writes another inventory adjustment. The operator is identified by
     // the approved tablet session, not attested by a server PIN challenge.
@@ -1114,7 +1110,7 @@ service cloud.firestore {
       allow read: if protectedHROwner();
       allow create, update, delete: if false; // Trusted reconciliation service only.
     }
-    match /inventory_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /inventory_logs/{document=**} { allow read, create, update: if true; allow delete: if isSignedIn(); }
     function supplyAuthority(branch) {
       let owner = protectedHROwner();
       let eligible = !owner && isSignedIn() && request.auth.token.get('email_verified',false)
@@ -1197,7 +1193,7 @@ service cloud.firestore {
       allow update: if !newData().keys().hasAny(privatePoKeys())
         && (oldData().get('quoteVersion',0) == 2 || newData().get('quoteVersion',0) == 2
           ? supplyStubUpdate(oldData(),newData()) : true);
-      allow delete: if oldData().get('quoteVersion',0) != 2 && isHQUser();
+      allow delete: if oldData().get('quoteVersion',0) != 2 && isSignedIn();
     }
     match /incoming_orders/{orderId} {
       function freshCashier(branch) {
@@ -1241,14 +1237,14 @@ service cloud.firestore {
       allow read: if true;
       allow create: if incomingCreate(newData());
       allow update: if incomingUpdate(oldData(), newData());
-      allow delete: if (!offlineGate(oldData().get('branch', '')) && isHQUser()) || verifiedHQ(oldData().get('branch', ''));
+      allow delete: if (!offlineGate(oldData().get('branch', '')) && isSignedIn()) || verifiedHQ(oldData().get('branch', ''));
     }
     // Daily-rate audit is private and immutable. Public legacy profile fields
     // remain compatible, but cannot issue or replace an audited raise marker.
     function staffRateHQAny() {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = offlineOwner();
+      let owner = isOwner();
       let eligible = !owner && isSignedIn() && reqVerified() == true && email != '';
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -1260,7 +1256,7 @@ service cloud.firestore {
     function staffRateHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      return offlineOwner() || (branch is string && staffRateHQAny()
+      return isOwner() || (branch is string && staffRateHQAny()
         && get(path).data.allowedBranches.hasAny(['All', branch]));
     }
     function staffRateValue(profile) {
@@ -1489,7 +1485,7 @@ service cloud.firestore {
 
       allow read: if true;
       function selectorCashiersCreate(data) {
-        return isHQUser() && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion'])
+        return isSignedIn() && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion'])
         && (!data.keys().hasAny(rateKeys())
           || staffRateProfileLink(cashierId, {}, data));
       }
@@ -1506,7 +1502,7 @@ service cloud.firestore {
           || staffRateProfileLink(cashierId, before, data));
       }
       allow update: if selectorCashiersUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if isHQUser() && oldData().get('payslipPinManaged',false) != true && !oldData().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
+      allow delete: if isSignedIn() && oldData().get('payslipPinManaged',false) != true && !oldData().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
     }
     // Sharing a reviewed payslip never creates a payment or settlement record.
     // Staff access uses the same private, HQ-approved device identity as their
@@ -1551,7 +1547,7 @@ service cloud.firestore {
     function earlyTimeOutHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = offlineOwner();
+      let owner = isOwner();
       let eligible = !owner && isSignedIn() && reqVerified() == true;
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -1625,7 +1621,7 @@ service cloud.firestore {
       function emergencyShiftHQAny() {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = offlineOwner();
+      let owner = isOwner();
       let eligible = !owner && isSignedIn() && reqVerified() == true;
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -1866,7 +1862,7 @@ service cloud.firestore {
           : data.status in ['Cancelled','Archived'] && disciplineCancel(before,data)) : true;
       }
       allow update: if selectorHrSanctionsUpdate(request.resource.data,resource == null ? null : resource.data);
-      allow delete: if oldData().get('caseVersion',0) != 2 && isHQUser();
+      allow delete: if oldData().get('caseVersion',0) != 2 && isSignedIn();
     }
     match /payroll_records/{recordId} {
       function ownerDeductionProtectedPayroll(payroll) {
@@ -1939,7 +1935,7 @@ service cloud.firestore {
         && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
         && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))
         && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))
-        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6)));
+        && (custom || rows.size() == 0 || (isOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6)));
     }
  allow read: if true;
       // Conflicting or missing legacy branches require global payroll access.
@@ -1963,7 +1959,7 @@ service cloud.firestore {
       function selectorPayrollRecordsCreate(data) {
         return ownerDeductionPayrollMetadata(data,recordId)
         && cashShortagePayrollMetadata(data,recordId)
-        && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : (data.get('ownerDeductionSettlements',{}).size() > 0 || isOwner() || payrollScopedHQ(data,null)));
+        && (recordId.matches('refund-payroll-.*') ? (isOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : (data.get('ownerDeductionSettlements',{}).size() > 0 || isOwner() || payrollScopedHQ(data,null)));
       }
       allow create: if selectorPayrollRecordsCreate(newData());
       function selectorPayrollRecordsUpdate(data,before) {
@@ -1981,7 +1977,7 @@ service cloud.firestore {
 
     function refundPaid(before,after,id) {
       let payroll = nextData('payroll_records',after.payrollRecordId);
-      return offlineOwner() && before.status == 'Unpaid' && after.status == 'Paid' && before.amount > 0
+      return isOwner() && before.status == 'Unpaid' && after.status == 'Paid' && before.amount > 0
         && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.paidAt == reqTime()
         && after.payrollRecordId.matches('refund-payroll-.*') && payroll.staffId == before.staffId
         && payroll.refundSettlements[id] == before.amount && payroll.frozenData.isPaid == true;
@@ -1991,7 +1987,7 @@ service cloud.firestore {
 
     // A one-time Owner review is separate from recurring profile deductions.
     // Private evidence and staff explanations stay in the protected source/notice.
-    function ownerDeductionOwner() { return offlineOwner() && reqProvider() == 'google.com'; }
+    function ownerDeductionOwner() { return isOwner() && reqProvider() == 'google.com'; }
     function ownerDeductionId(id) { return id.matches('^owner-deduction-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'); }
     function ownerDeductionKind(data,id) { return data.get('type','') == 'Owner Custom Deduction' || id.matches('^owner-deduction-.*') || data.keys().hasAny(['ownerDeductionVersion']); }
 
@@ -2114,7 +2110,7 @@ service cloud.firestore {
     // Validate the full tuple list once per payroll, not once for each of the three protected case records.
 
     function cashShortagePaidChange(before,after) {
-      return offlineOwner() && before.type == 'Cash Shortage' && before.status in ['Approved','Unpaid'] && before.amount > 0
+      return isOwner() && before.type == 'Cash Shortage' && before.status in ['Approved','Unpaid'] && before.amount > 0
         && !before.keys().hasAny(paidKeys())
         && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == reqTime();
     }
@@ -2143,7 +2139,7 @@ service cloud.firestore {
       function cashShortageCreate(data,id) {
         let charge = staffDeductionAfter(id);
         let notice = nextData('staff_deduction_notices',id);
-        return offlineOwner() && cashShortageSource(data,id) && cashShortageLinks(data,charge,notice,id)
+        return isOwner() && cashShortageSource(data,id) && cashShortageLinks(data,charge,notice,id)
           && data.keys().hasOnly(['schemaVersion','id','type','sourceShiftId','sourceReceiptId','sourcePlatform','branch','staffId','staffName','staffBranch','expectedCash','declaredCash','sourceShortage','sourceShortageCents','sourceFingerprint','details','evidence','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy'])
           && data.status == 'Pending Review' && data.amount == 0 && data.revision == 1 && data.effectiveDate == null
           && charge.status == 'Pending Review' && notice.status == 'Pending Review' && notice.replyRevision == 0 && notice.readRevision == 0
@@ -2157,7 +2153,7 @@ service cloud.firestore {
         let notice = nextData('staff_deduction_notices',id);
         let response = readData('staff_deduction_notices',id);
         let due = after.get('effectiveDate','2000-01-01') == null ? ['2000','01','01'] : after.effectiveDate.split('-');
-        return offlineOwner() && before.status in ['Pending Review','Approved'] && !before.keys().hasAny(paidKeys())
+        return isOwner() && before.status in ['Pending Review','Approved'] && !before.keys().hasAny(paidKeys())
           && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
           && after.revision == before.revision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
           && cashShortageLinks(after,charge,notice,id) && notice.status == after.status
@@ -2188,7 +2184,7 @@ service cloud.firestore {
           && payroll.cashShortageSettlements[id] == before.amount && {'id':id,'amount':before.amount} in payroll.frozenData.cashShortageRows;
       }
 
-      allow get, list: if offlineOwner() || staffRateHQ(oldData().staffBranch);
+      allow get, list: if isOwner() || staffRateHQ(oldData().staffBranch);
       allow create: if cashShortageCreate(newData(),id);
       function selectorCashShortageReviewsUpdate(data,before) {
         return data.status == 'Paid' ? cashShortageCasePaid(before,data,id) : cashShortageReview(before,data,id);
@@ -2199,7 +2195,7 @@ service cloud.firestore {
     match /staff_deduction_notices/{id} {
       function refundNoticeCreate(data,id) {
       let row = nextData('online_order_incidents',id);
-      return offlineOwner() && data.version == 1 && data.id == id && data.incidentId == id && data.staffId == row.staffId
+      return isOwner() && data.version == 1 && data.id == id && data.incidentId == id && data.staffId == row.staffId
         && data.staffName == row.staffName && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
         && data.type == 'Online Order Refund' && data.reasonLabel == row.reasonLabel && data.details == row.details && data.evidence == row.evidence
         && data.amount == row.amount && data.status == row.status && data.noticeRevision == 1 && data.readRevision == 0 && data.replyRevision == 0
@@ -2208,7 +2204,7 @@ service cloud.firestore {
 
       function refundNoticeOwnerUpdate(before,after,id) {
       let row = nextData('online_order_incidents',id);
-      return offlineOwner() && after.diff(before).affectedKeys().hasOnly(['status','amount','ownerReply','noticeRevision','updatedAt'])
+      return isOwner() && after.diff(before).affectedKeys().hasOnly(['status','amount','ownerReply','noticeRevision','updatedAt'])
         && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime()
         && after.status == row.status && after.amount == row.amount && after.ownerReply == row.reviewNote && row.reviewedAt == reqTime();
     }
@@ -2245,7 +2241,7 @@ service cloud.firestore {
       function cashShortageNoticeCreate(data,id) {
       let row = nextData('cash_shortage_reviews',id);
       let charge = staffDeductionAfter(id);
-      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
+      return isOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
         && cashShortageLinks(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
         && data.details == row.details && data.evidence == row.evidence && data.sourceShortageCents == row.sourceShortageCents
         && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
@@ -2255,14 +2251,14 @@ service cloud.firestore {
       function cashShortageNoticeReview(before,after,id) {
       let row = nextData('cash_shortage_reviews',id);
       let charge = staffDeductionAfter(id);
-      return offlineOwner() && before.status in ['Pending Review','Approved']
+      return isOwner() && before.status in ['Pending Review','Approved']
         && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','updatedAt'])
         && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
         && cashShortageLinks(row,charge,after,id) && row.reviewedAt == reqTime()
         && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding));
     }
 
-      allow get, list: if offlineOwner() || docVaultOwn(oldData().staffId) || ((cashShortageKind(oldData(),id) || ownerDeductionKind(oldData(),id)) && staffRateHQ(oldData().branch));
+      allow get, list: if isOwner() || docVaultOwn(oldData().staffId) || ((cashShortageKind(oldData(),id) || ownerDeductionKind(oldData(),id)) && staffRateHQ(oldData().branch));
       function selectorStaffDeductionNoticesCreate(data) {
         return ownerDeductionKind(data,id) ? ownerDeductionNoticeCreate(data,id) : cashShortageKind(data,id) ? cashShortageNoticeCreate(data,id) : refundNoticeCreate(data,id);
       }
@@ -2285,7 +2281,7 @@ service cloud.firestore {
         let sale = transactionBefore(data.sourceSaleId);
         let staff = readData('cashiers',data.staffId);
         let charge = staffDeductionAfter(id);
-        return offlineOwner() && data.version == 1 && data.id == id
+        return isOwner() && data.version == 1 && data.id == id
           && id == 'online-refund-' + data.sourceSaleId
           && data.sourceReceiptId == sale.receiptId && data.branch == sale.branch
           && sale.paymentMethod.lower() in ['grab','foodpanda','panda']
@@ -2308,7 +2304,7 @@ service cloud.firestore {
       }
       function onlineIncidentReview(before, after, id) {
         let charge = staffDeductionAfter(id);
-        return offlineOwner() && before.status == 'Pending Review' && before.amount == 0
+        return isOwner() && before.status == 'Pending Review' && before.amount == 0
           && after.diff(before).affectedKeys().hasOnly(['status','staffResponse','reviewNote','reviewedAt','reviewedBy','reviewRevision'])
           && after.status in ['Pending Review','Dismissed'] && after.reviewRevision == before.reviewRevision + 1
           && after.staffResponse is string && after.staffResponse.size() > 0 && after.staffResponse.size() <= 1500
@@ -2322,7 +2318,7 @@ service cloud.firestore {
         let staff = readData('cashiers',data.staffId);
         let charge = staffDeductionAfter(id);
         let notice = nextData('staff_deduction_notices',id);
-        return offlineOwner() && data.version == 2 && data.id == id && id == 'online-refund-' + data.sourceSaleId
+        return isOwner() && data.version == 2 && data.id == id && id == 'online-refund-' + data.sourceSaleId
           && data.sourceReceiptId == sale.receiptId && data.branch == sale.branch && data.orderAmount == sale.netTotal
           && sale.paymentMethod.lower() in ['grab','foodpanda','panda'] && sale.get('cancelledFoodSourceId','') == ''
           && !sale.keys().hasAny(['preparedCancellation']) && !(sale.get('status','') in ['Voided','Parked','mobile_queue'])
@@ -2348,7 +2344,7 @@ service cloud.firestore {
       function directIncidentReview(before,after,id) {
         let charge = staffDeductionAfter(id);
         let notice = nextData('staff_deduction_notices',id);
-        return offlineOwner() && before.status in ['Pending Review','Unpaid']
+        return isOwner() && before.status in ['Pending Review','Unpaid']
           && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','policyReviewed','staffResponse','reviewNote','reviewedAt','reviewedBy','reviewRevision'])
           && after.status in ['Unpaid','No Charge','Dismissed'] && after.reviewRevision == before.reviewRevision + 1
           && after.amount == (after.status == 'Dismissed' ? 0 : before.refundAmount) && after.authorizedAmount == after.amount
@@ -2361,7 +2357,7 @@ service cloud.firestore {
           && notice.amount == after.amount && notice.status == after.status;
       }
 
-      allow get, list: if offlineOwner();
+      allow get, list: if isOwner();
       allow create: if onlineIncidentCreate(newData(), id) || directIncidentCreate(newData(),id);
       function selectorOnlineOrderIncidentsUpdate(data,before) {
         return onlineIncidentReview(before, data, id) || directIncidentReview(before,data,id) || refundPaid(before,data,id);
@@ -2383,7 +2379,7 @@ service cloud.firestore {
 
       function onlineIncidentCharge(data, id) {
       let row = nextData('online_order_incidents',id);
-      return offlineOwner() && data.type == 'Online Order Refund' && data.amount == 0
+      return isOwner() && data.type == 'Online Order Refund' && data.amount == 0
         && data.category == 'Online Order Refunds' && data.status == 'Pending Review'
         && data.incidentId == id && row.id == id && row.status == data.status
         && data.staffId == row.staffId && data.staffName == row.staffName
@@ -2394,7 +2390,7 @@ service cloud.firestore {
 
       function directIncidentCharge(data,id) {
       let row = nextData('online_order_incidents',id);
-      return offlineOwner() && row.version == 2 && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds'
+      return isOwner() && row.version == 2 && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds'
         && data.incidentId == id && data.staffId == row.staffId && data.staffName == row.staffName
         && data.branch == row.staffBranch && data.sourceBranch == row.branch && data.sourceSaleId == row.sourceSaleId
         && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
@@ -2404,7 +2400,7 @@ service cloud.firestore {
 
       function directChargeReview(before,after,id) {
       let row = nextData('online_order_incidents',id);
-      return offlineOwner() && before.type == 'Online Order Refund' && before.status in ['Pending Review','Unpaid']
+      return isOwner() && before.type == 'Online Order Refund' && before.status in ['Pending Review','Unpaid']
         && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','noticeRevision','responseRecorded','reviewedAt','reviewedBy'])
         && after.status == row.status && after.amount == row.amount && after.authorizedAmount == row.amount
         && after.noticeRevision == before.get('noticeRevision',0) + 1 && row.reviewedAt == reqTime() && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail() && after.responseRecorded == true;
@@ -2436,7 +2432,7 @@ service cloud.firestore {
       function cashShortageChargeCreate(data,id) {
       let row = nextData('cash_shortage_reviews',id);
       let notice = nextData('staff_deduction_notices',id);
-      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
+      return isOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
         && cashShortageLinks(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
         && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','cashShortageVersion','sourceBranch','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
@@ -2445,7 +2441,7 @@ service cloud.firestore {
       function cashShortageChargeReview(before,after,id) {
       let row = nextData('cash_shortage_reviews',id);
       let notice = nextData('staff_deduction_notices',id);
-      return offlineOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
+      return isOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
         && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
         && cashShortageLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
@@ -2459,7 +2455,7 @@ service cloud.firestore {
         ? (onlineIncidentCharge(data, deductId) || directIncidentCharge(data,deductId))
         : data.get('type', '') == 'Cancelled Food Purchase'
         ? cancelledFoodChargeLink(data, deductId)
-        : isHQUser();
+        : isSignedIn();
       }
       allow create: if selectorStaffDeductionsCreate(newData());
       function selectorStaffDeductionsUpdate(data,before) {
@@ -2468,7 +2464,7 @@ service cloud.firestore {
         : cashShortageKind(before,deductId) || cashShortageKind(data,deductId)
         ? (data.status == 'Paid' ? cashShortageCompanionPaid(before,data,deductId,before.reviewRevision) : cashShortageChargeReview(before,data,deductId))
         : before.get('type', '') == 'Online Order Refund' || data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
-        ? (offlineOwner() && before.type == 'Online Order Refund' && data.amount == 0
+        ? (isOwner() && before.type == 'Online Order Refund' && data.amount == 0
           && before.status == 'Pending Review'
           && data.diff(before).affectedKeys().hasOnly(['status','responseRecorded','reviewedAt','reviewedBy'])
           && data.responseRecorded == true
@@ -2476,18 +2472,18 @@ service cloud.firestore {
           && data.status == nextData('online_order_incidents',deductId).status
           && data.reviewedAt == reqTime() && data.reviewedBy == reqEmail()) || (before.get('type','') == 'Online Order Refund' && (directChargeReview(before,data,deductId) || refundPaid(before,data,deductId)))
         : before.get('type', '') == 'Cancelled Food Purchase'
-        ? verifiedHQ(before.branch) : isHQUser();
+        ? verifiedHQ(before.branch) : isSignedIn();
       }
       allow update: if selectorStaffDeductionsUpdate(newData(),resource == null ? null : oldData());
       function selectorStaffDeductionsDelete(before) {
         return !ownerDeductionKind(before,deductId) && !cashShortageKind(before,deductId) && before.get('type', '') != 'Online Order Refund'
-        && (before.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(before.branch) : isHQUser());
+        && (before.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(before.branch) : isSignedIn());
       }
       allow delete: if selectorStaffDeductionsDelete(resource == null ? null : oldData());
     }
     // Owner compliance records are independent of payroll and bank postings.
     function complianceOwner() {
-      return offlineOwner() && reqProvider() == 'google.com';
+      return isOwner() && reqProvider() == 'google.com';
     }
     function complianceText(value, maximum) { return value is string && value.size() <= maximum; }
     function complianceId(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,180}$'); }
@@ -2758,7 +2754,6 @@ service cloud.firestore {
 
     // Private Staff document vault. These new collections never use the legacy
     // isHQUser() helper or public cashiers/branches/settings as authority.
-    function docVaultOwner() { return offlineOwner(); }
     function docVaultAnonymous() {
       return isSignedIn() && reqProvider() == 'anonymous';
     }
@@ -2775,7 +2770,7 @@ service cloud.firestore {
     function docVaultHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = docVaultOwner();
+      let owner = isOwner();
       let eligible = !owner && isSignedIn() && reqVerified() == true && email != '';
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -2787,7 +2782,7 @@ service cloud.firestore {
     function docVaultHQAll() {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = docVaultOwner();
+      let owner = isOwner();
       let eligible = !owner && isSignedIn() && reqVerified() == true && email != '';
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -2817,7 +2812,7 @@ service cloud.firestore {
       allow get: if id == 'current';
       allow list, delete: if false;
       function selectorStaffDocumentConfigCreateUpdate(data) {
-        return id == 'current' && docVaultOwner()
+        return id == 'current' && isOwner()
         && data.keys().hasOnly(['enabled', 'policyVersion', 'brokerEndpoint'])
         && data.enabled is bool && data.policyVersion == 2
         && data.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
@@ -2928,6 +2923,10 @@ service cloud.firestore {
         allow create: if false; // Private metadata broker only.
         allow update, delete: if false;
       }
+    }
+    // Caller-token inventory deletion: immutable audit, exact verified Owner only.
+    match /inventory_delete_ops/{id} {
+      allow get, create: if isOwner();
     }
   }
 }

@@ -1,3 +1,4 @@
+import {restoreInventorySecurityStage,restoreInventoryAliases} from './helpers/inventory-security-policy-stage.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -5,7 +6,8 @@ import {tokenizeRules} from '../tools/build-firestore-rules.mjs';
 
 // Structural policy regression checks, NOT a Firebase Rules interpreter. A real
 // emulator/Rules compile and unauthorized access tests remain release prerequisites.
-const firestore = readFileSync(new URL('../firestore.policy.rules', import.meta.url), 'utf8');
+// Preserve historical alias spelling only; the exact inverse proof pins all current predicates.
+const firestore = restoreInventoryAliases(readFileSync(new URL('../firestore.policy.rules', import.meta.url), 'utf8'));
 const storage = readFileSync(new URL('../docs/staff-document-storage.rules.snippet', import.meta.url), 'utf8');
 const marker = '// Private Staff document vault.';
 const vault = firestore.slice(firestore.indexOf(marker));
