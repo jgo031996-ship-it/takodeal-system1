@@ -1,0 +1,24 @@
+{
+  "base": "f8f56b31ba4db3b5a7dabe42dab79198294df5b1",
+  "file": "Takodeal-POS/cashier-void.js",
+  "baselineSha256": "defa754887581196ff708228db24d37bb7ddff695489c09faf466138958c0f46",
+  "candidateSha256": "8035f266a427b4a6cd4d22a23836e1984062bd30ed8140b448d01c7341a22423",
+  "edits": [
+    {
+      "before": "import {resetCheckoutForNextOrder} from './checkout-controls.js';",
+      "after": "import {checkoutPlatform,resetCheckoutForNextOrder} from './checkout-controls.js';"
+    },
+    {
+      "before": "  const start=session(),epoch=generation,order=w.cart,serialized=voidCanonical(order),platform=w.posPlatform;let checkCart=cart;\n  const guard=()=>{const current=session();if(epoch!==generation||current.person!==start.person||current.uid!==start.uid||current.staffId!==start.staffId||current.name!==start.name||current.branch!==start.branch||current.deviceId!==start.deviceId||current.shift!==start.shift||current.shiftId!==start.shiftId||requireOpen&&(!current.shift?.active||!voidId(start.shiftId))||w.sessionUser?.branch!==start.branch||!voidId(start.staffId)||checkCart&&(w.cart!==order||voidCanonical(w.cart)!==serialized||w.posPlatform!==platform))throw changed();};",
+      "after": "  const start=session(),epoch=generation,order=w.cart,serialized=voidCanonical(order),platform=checkoutPlatform(w,d);let checkCart=cart;\n  const guard=()=>{const current=session();if(epoch!==generation||current.person!==start.person||current.uid!==start.uid||current.staffId!==start.staffId||current.name!==start.name||current.branch!==start.branch||current.deviceId!==start.deviceId||current.shift!==start.shift||current.shiftId!==start.shiftId||requireOpen&&(!current.shift?.active||!voidId(start.shiftId))||w.sessionUser?.branch!==start.branch||!voidId(start.staffId)||checkCart&&(w.cart!==order||voidCanonical(w.cart)!==serialized||checkoutPlatform(w,d)!==platform))throw changed();};"
+    },
+    {
+      "before": " function emptyStandard(){if(w.posPlatform!=='Standard'||!Array.isArray(w.cart)||w.cart.length||w.isActiveOrderMobile||w.parkedRecovery?.activeId?.())throw Error('Keep the current order safe: return to POS and park it first, then reopen this receipt with an empty Standard cart.');}",
+      "after": " function emptyStandard(){if(checkoutPlatform(w,d)!=='Standard'||!Array.isArray(w.cart)||w.cart.length||w.isActiveOrderMobile||w.parkedRecovery?.activeId?.())throw Error('Keep the current order safe: return to POS and park it first, then reopen this receipt with an empty Store POS cart.');}"
+    },
+    {
+      "before": " function checkoutRow(payload){active=cartOwners.get(w.cart)||null;if(!active)return null;if(active.queued)throw Error('This replacement order is already queued. Clear the completed cart before entering another customer.');const s=active.session,current=session();if(current.person!==s.person||current.uid!==s.uid||current.staffId!==s.staffId||current.name!==s.name||current.branch!==s.branch||current.deviceId!==s.deviceId||current.shift!==s.shift||current.shiftId!==s.shiftId||!current.shift?.active||w.cart!==active.cart||w.posPlatform!=='Standard'||payload.branch!==s.branch||payload.shiftId!==s.shiftId||active.checkoutCart&&voidCanonical(w.cart)!==active.checkoutCart)throw changed();const row=journal.get(active.uid,active.operationId);if(!row||!['saved','claimed'].includes(row.state)||row.reason!=='WrongPunched')throw held();active.context.current();return row;}",
+      "after": " function checkoutRow(payload){active=cartOwners.get(w.cart)||null;if(!active)return null;if(active.queued)throw Error('This replacement order is already queued. Clear the completed cart before entering another customer.');const s=active.session,current=session();if(current.person!==s.person||current.uid!==s.uid||current.staffId!==s.staffId||current.name!==s.name||current.branch!==s.branch||current.deviceId!==s.deviceId||current.shift!==s.shift||current.shiftId!==s.shiftId||!current.shift?.active||w.cart!==active.cart||checkoutPlatform(w,d)!=='Standard'||payload.branch!==s.branch||payload.shiftId!==s.shiftId||active.checkoutCart&&voidCanonical(w.cart)!==active.checkoutCart)throw changed();const row=journal.get(active.uid,active.operationId);if(!row||!['saved','claimed'].includes(row.state)||row.reason!=='WrongPunched')throw held();active.context.current();return row;}"
+    }
+  ]
+}

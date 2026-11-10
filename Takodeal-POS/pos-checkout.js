@@ -1,3 +1,4 @@
+import {createCorrectionSaleEngine} from './cashier-correction-engine.js';
 import {createCashierVoidQueue} from './cashier-void-queue.js';
 import { SALE_VERSION, saleIdentity, safeId, createOutbox, createSaleEngine } from './pos-safety.js';
 import {installCheckoutControls,resetCheckoutForNextOrder} from './checkout-controls.js';
@@ -49,7 +50,7 @@ export function installSaleSafety(api, environment = globalThis) {
     const ls = environment.localStorage;
     const outbox = createOutbox(environment.indexedDB || null);
     const engine = createSaleEngine(api);
-    const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid);
+    const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid, api);
     w.cashierVoidQueue = correctionQueue;
     const owner = saleIdentity({}, environment.crypto);
     w.saleOutbox = outbox;
@@ -180,7 +181,7 @@ export function installSaleSafety(api, environment = globalThis) {
                 }
             }
             if (correction) {
-                payload = await engine.prepare(payload, payload.recipeSnapshot);
+                payload = await createCorrectionSaleEngine(api,w.cashierVoid.saleConnection(payload)).prepare(payload, payload.recipeSnapshot);
                 w.cashierVoid.assertCheckout(payload);
                 payload = await w.cashierVoid.freezeCheckout(payload);
                 w.cashierVoid.assertCheckout(payload);

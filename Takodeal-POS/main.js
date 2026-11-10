@@ -1,3 +1,4 @@
+import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
 import {installCashierPrep} from './cashier-prep.js';
 import {createCashierVoidAccess} from './cashier-void-access.js';
@@ -128,6 +129,7 @@ window.getDoc = getDoc;
 window.setDoc = setDoc;
 // Device approvals use their own matching auth/database context when Google is signed in.
 const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
 window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 window.ensureStockAuditDevice = createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 
@@ -9584,9 +9586,9 @@ window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
 window.loadBranchSchedule = window.cashierScheduleSync.wrap(window.loadBranchSchedule);
 
 // Receipt corrections have a separate recovery journal; normal sign-in is unchanged.
-window.cashierVoidAccess=createCashierVoidAccess(window);
+window.cashierVoidAccess=createCashierVoidAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});
 installCashierVoid(window,document,{access:window.cashierVoidAccess});
 
 // Audited prep uses its own confirmed context; normal Cashier entry is unchanged.
-window.cashierPrepAccess=createCashierPrepAccess(window);
+window.cashierPrepAccess=createCashierPrepAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});
 window.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cashierPrepAccess}).confirm();
