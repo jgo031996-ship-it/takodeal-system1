@@ -69,3 +69,5 @@ SHELL.push('./payroll-vault-freshness.js');
 
 SHELL.push('./payroll-adjustment-history.js');
 SHELL.push('./staff-vault-recovery.js','./staff-vault-recovery-ui.js','./staff-payslip-snapshot.js','./staff-saved-payslips.js');
+
+SHELL.push('./staff-private-profile-client.js','./staff-private-profile-ui.js');

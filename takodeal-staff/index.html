@@ -166,20 +166,26 @@
                     <div class="form-group">
                         <label>SSS Number</label>
                         <input type="text" id="profSss" placeholder="00-0000000-0">
-                        <input type="file" id="imgSss" accept="image/*" style="font-size: 10px; margin-top: 8px; width: 100%;">
-                        <a id="linkSss" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; margin-top:5px; font-weight:bold; text-decoration: none;">🖼️ View Uploaded ID</a>
+                        <input type="file" id="imgSss" accept="image/jpeg,image/png,image/webp" style="font-size: 10px; margin-top: 8px; width: 100%;">
+                        <button type="button" class="btn-outline" id="upload-sss_id">Upload private photo</button>
+                        <p id="status-sss_id" role="status" style="font-size:11px">Optional private photo · Saves separately.</p>
+                        <button type="button" id="linkSss" class="btn-outline" style="display:none; font-size:11px; margin-top:5px;">View private SSS ID</button>
                     </div>
                     <div class="form-group">
                         <label>PhilHealth</label>
                         <input type="text" id="profPhilhealth" placeholder="00-000000000-0">
-                        <input type="file" id="imgPhilhealth" accept="image/*" style="font-size: 10px; margin-top: 8px; width: 100%;">
-                        <a id="linkPhilhealth" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; margin-top:5px; font-weight:bold; text-decoration: none;">🖼️ View Uploaded ID</a>
+                        <input type="file" id="imgPhilhealth" accept="image/jpeg,image/png,image/webp" style="font-size: 10px; margin-top: 8px; width: 100%;">
+                        <button type="button" class="btn-outline" id="upload-philhealth_id">Upload private photo</button>
+                        <p id="status-philhealth_id" role="status" style="font-size:11px">Optional private photo · Saves separately.</p>
+                        <button type="button" id="linkPhilhealth" class="btn-outline" style="display:none; font-size:11px; margin-top:5px;">View private PhilHealth ID</button>
                     </div>
                     <div class="form-group">
                         <label>Pag-IBIG</label>
                         <input type="text" id="profPagibig" placeholder="0000-0000-0000">
-                        <input type="file" id="imgPagibig" accept="image/*" style="font-size: 10px; margin-top: 8px; width: 100%;">
-                        <a id="linkPagibig" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; margin-top:5px; font-weight:bold; text-decoration: none;">🖼️ View Uploaded ID</a>
+                        <input type="file" id="imgPagibig" accept="image/jpeg,image/png,image/webp" style="font-size: 10px; margin-top: 8px; width: 100%;">
+                        <button type="button" class="btn-outline" id="upload-pagibig_id">Upload private photo</button>
+                        <p id="status-pagibig_id" role="status" style="font-size:11px">Optional private photo · Saves separately.</p>
+                        <button type="button" id="linkPagibig" class="btn-outline" style="display:none; font-size:11px; margin-top:5px;">View private Pag-IBIG ID</button>
                     </div>
                 </div>
 
@@ -202,13 +208,15 @@
                 <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security & System</h3>
                 <div class="form-group">
                     <label>Change Login PIN</label>
-                    <input type="password" inputmode="numeric" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
+                    <input type="password" inputmode="numeric" autocomplete="new-password" maxlength="10" id="profPin" placeholder="New daily PIN · 4–10 digits" style="border-color: #86efac; background: #f0fdf4;">
+                    <button type="button" class="btn-outline" id="btnChangeDailyPin">Change daily PIN</button>
                 </div>
 
 
             </div>
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
-                <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">💾 Save Employee Data</button>
+                <p id="staffProfileStatus" role="status" aria-live="polite">Contact details, daily PIN and photos save separately.</p>
+                <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">Save contact details</button>
             </div>
         </div>
     </div>

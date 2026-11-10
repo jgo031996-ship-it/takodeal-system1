@@ -21,6 +21,9 @@ import * as payrollAdjustments from '../takodeal-staff/payroll-adjustment-model.
 import * as staffPayrollAdjustments from '../takodeal-staff/staff-payroll-adjustments.js';
 import {readStaffPayrollRecoveryHistory} from '../takodeal-staff/payroll-adjustment-history.js';
 import {loadStaffPayrollShiftConfirmations} from '../takodeal-staff/payroll-confirmed-shifts.js';
+import {buildStaffLoanLedgerSnapshot} from '../takodeal-staff/staff-loan-ledger-model.js';
+import {installStaffPrivateAPIFixture} from './helpers/staff-private-api-fixture.mjs';
+const verifiedEmptyLoans=()=>buildStaffLoanLedgerSnapshot({staffId:'sample',staffName:'Test Staff',branch:'Maa',asOf:'2026-11-09T00:00:00.000Z'});
 
 test('separate PIN verifier uses unique salts and rejects incorrect, malformed and unsafe input', async () => {
     const a = await createPinVerifier('246810', webcrypto), b = await createPinVerifier('246810', webcrypto);
@@ -74,9 +77,9 @@ test('unlocked Staff estimates include the same POS meals in current and pending
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
     api.getDocsFromServer=api.getDocs;
  const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,readStaffPayrollRecoveryHistory,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,createPayrollBonusHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
-        window:{...api,readStaffPayrollAttendance:async()=>snapshot([]),staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
+        window:{...api,readMyLoanLedgerSnapshot:async()=>verifiedEmptyLoans(),readStaffPayrollAttendance:async()=>snapshot([]),staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const start=engine.indexOf('window.loadPayslipVault = async function() {'),end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
-    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();
+    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;installStaffPrivateAPIFixture(context.window,api);vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();
     assert.deepEqual(errors,[]);assert.equal(node('liveEstVales').innerText,'-₱330.25');
     assert.match(node('payslipPendingList').innerHTML,/-₱330\.25/);
     assert.match(node('liveCutoffDetailedLogs').innerHTML,/Staff Meal \(POS Auto\)/);
@@ -85,7 +88,7 @@ test('locked Pay entry makes zero payroll reads even if its loader is called dir
     const start=engine.indexOf('window.loadPayslipVault = async function() {'), end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     let reads=0; const context={window:{staffVaultSession:new VaultSession()},localStorage:{getItem:key=>key.endsWith('_id')?'id':'Ann'},
         getDoc:()=>{reads++;throw Error('unexpected read');},document:{getElementById:()=>{throw Error('must not render');}},Date,console};
-    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;vm.runInNewContext(engine.slice(start,end),context);
+    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;installStaffPrivateAPIFixture(context.window,context,{staffId:'id',staffName:'Ann'});vm.runInNewContext(engine.slice(start,end),context);
     await context.window.loadPayslipVault(); assert.equal(reads,0);
 });
 test('relocking during a slow payroll fetch prevents old pay from returning to the screen', async () => {
@@ -93,17 +96,17 @@ test('relocking during a slow payroll fetch prevents old pay from returning to t
     let finish; const vault=new VaultSession(); vault.unlock('id');
     const context={window:{staffVaultSession:vault},localStorage:{getItem:key=>key.endsWith('_id')?'id':'Ann'},
         getDocFromServer:()=>new Promise(resolve=>{finish=resolve;}),doc:()=>null,db:{},document:{getElementById:id=>{if(id==='liveCutoffDates')return {};throw Error('stale pay rendered');}},Date,console};
-    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;vm.runInNewContext(engine.slice(start,end),context);
+    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;installStaffPrivateAPIFixture(context.window,context,{staffId:'id',staffName:'Ann'});vm.runInNewContext(engine.slice(start,end),context);
     const pending=context.window.loadPayslipVault(); vault.lock(); finish({exists:()=>true,data:()=>({})}); await pending;
 });
-test('payroll reads target staff names rather than whole staff payroll collections', () => {
+test('payroll financial reads use exact private Staff APIs rather than public payroll collections', () => {
     const pay=engine.slice(engine.indexOf('window.loadPayslipVault = async'),engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE'));
     assert.equal(pay.includes('n.includes(strippedNameLower)'),false);
-    for(const collection of ['staff_ledger','staff_bonuses','staff_deductions']) {
-        assert.match(pay,new RegExp('collection\\(db, "'+collection+'"\\), where\\("staffName", "in"'));
-    }
+    for(const collection of ['staff_bonuses','staff_deductions'])assert.doesNotMatch(pay,new RegExp('collection\\(db, ["\']'+collection+'["\']'));
+    assert.match(pay,/window\.readPrivatePayrollInputs\(\{staffId,assertCurrent:/);
+    assert.doesNotMatch(pay,/collection\(db, "staff_ledger"/);assert.match(pay,/window\.readMyLoanLedgerSnapshot\(\{assertCurrent:/);
     assert.match(pay,/readStaffSavedPayslips\(window,\{staffId,staffName/);
-    const savedReader=readFileSync(new URL('../takodeal-staff/staff-saved-payslips.js',import.meta.url),'utf8');assert.match(savedReader,/api\.where\(field,op,value\)/);
+    const savedReader=readFileSync(new URL('../takodeal-staff/staff-saved-payslips.js',import.meta.url),'utf8');assert.match(savedReader,/api\.readStaffPaidHistory\(\{staffId,assertCurrent:guard\}/);assert.doesNotMatch(savedReader,/api\.collection\(api\.db,'(?:payroll_records|cashiers)'/);
     assert.match(pay,/readStaffPayrollAttendance\(\{staffId,names:\[staffName,nickname\],assertCurrent:/);
     assert.match(engine,/staffId: localStorage.getItem\('takodeal_staff_id'\)/);
 });
@@ -135,25 +138,11 @@ function portalHarness(initialPin) {
     context.window={db:{},doc:()=>null,getDoc:async()=>({exists:()=>true,data:()=>({...staff})}),updateDoc:async(ref,data)=>{writes++;Object.assign(staff,data);},
         switchView(){},checkNormalLogin(){},loginStaff:async()=>{},logoutStaff(){},openProfile(){},loadPayslipVault(){loads++;},addEventListener:(event,fn)=>listeners.set(event,fn),Swal:{close(){}}};
     context.window.getDocFromServer=context.window.getDoc;
+    installStaffPrivateAPIFixture(context.window,context.window,{staffId:'demo',staffName:'Demo Staff'});
     const source=readFileSync(new URL('../takodeal-staff/staff-portal.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/gm,'').replace('export function','function');
     vm.runInNewContext(source+'\ninstallStaffPortal();',context);
     return {context,node,listeners,writes:()=>writes,loads:()=>loads,staff:()=>staff};
 }
-
-test('My loans unlock uses the existing financial PIN without opening Pay or changing ordinary sign-in', async () => {
-    const h=portalHarness(await createPinVerifier('246810'));let loans=0,cleared=0;
-    h.node('view-payslip').classList.contains=()=>false;
-    h.context.window.loadMyLoanLedger=async()=>{assert.equal(h.context.window.staffVaultSession.allows('demo'),true);loans++;};
-    h.context.window.clearStaffLoanLedger=()=>{cleared++;};
-    await h.context.window.openVaultPin('unlock','loans');
-    assert.match(h.node('vaultPinTitle').textContent,/My loans/);
-    h.node('vaultCurrentPin').value='1111';await h.context.window.submitVaultPin();
-    assert.equal(loans,0);assert.equal(h.loads(),0);assert.equal(h.writes(),0);
-    h.node('vaultCurrentPin').value='246810';await h.context.window.submitVaultPin();
-    assert.equal(loans,1);assert.equal(h.loads(),0);assert.equal(h.writes(),0);
-    h.context.window.lockPayslipVault();
-    assert.equal(h.context.window.staffVaultSession.allows('demo'),false);assert.ok(cleared>=2);
-});
 test('Pay entry without a PIN directs staff to Profile without creating or unlocking one', async () => {
     const h=portalHarness(); let opened=0;
     h.context.window.openProfile=()=>opened++;
@@ -192,8 +181,28 @@ test('five failed attempts trigger a local cooldown before another profile read 
     h.node('vaultCurrentPin').value='246810';await h.context.window.submitVaultPin();
     assert.equal(h.loads(),0);assert.match(h.node('vaultError').textContent,/Wait one minute/);
 });
+test('first-setup PIN refusals from the private server retain the existing five-attempt local cooldown without raw daily PIN reads',async()=>{
+ const h=portalHarness();let saves=0;h.context.window.savePrivateVaultPin=async()=>{saves++;throw Object.assign(Error('Current PIN refused'),{code:'private-profile/pin'});};await h.context.window.openVaultPin('change');h.node('vaultCurrentPin').value='wrong';h.node('vaultNewPin').value='246810';h.node('vaultConfirmPin').value='246810';for(let i=0;i<5;i++)await h.context.window.submitVaultPin();await h.context.window.submitVaultPin();assert.equal(saves,5);assert.match(h.node('vaultError').textContent,/Wait one minute/);assert.equal(h.writes(),0);assert.equal(h.loads(),0);
+});
+test('different profile and PIN-setting heads hold the real Vault form before unlock or save',async()=>{
+ const h=portalHarness(await createPinVerifier('246810')),read=h.context.window.readPrivateVaultSettings;h.context.window.readPrivateVaultSettings=async input=>({...await read(input),expectedFingerprint:'b'.repeat(64)});await h.context.window.openVaultPin('unlock');assert.equal(h.node('vaultPinForm').hidden,true);assert.match(h.node('vaultError').textContent,/private profile changed/);assert.equal(h.writes(),0);assert.equal(h.loads(),0);
+});
+test('My loans unlock uses the existing financial PIN without opening Pay or changing ordinary sign-in', async () => {
+    const h=portalHarness(await createPinVerifier('246810'));let loans=0,cleared=0;
+    h.node('view-payslip').classList.contains=()=>false;
+    h.context.window.loadMyLoanLedger=async()=>{assert.equal(h.context.window.staffVaultSession.allows('demo'),true);loans++;};
+    h.context.window.clearStaffLoanLedger=()=>{cleared++;};
+    await h.context.window.openVaultPin('unlock','loans');
+    assert.match(h.node('vaultPinTitle').textContent,/My loans/);
+    h.node('vaultCurrentPin').value='1111';await h.context.window.submitVaultPin();
+    assert.equal(loans,0);assert.equal(h.loads(),0);assert.equal(h.writes(),0);
+    h.node('vaultCurrentPin').value='246810';await h.context.window.submitVaultPin();
+    assert.equal(loans,1);assert.equal(h.loads(),0);assert.equal(h.writes(),0);
+    h.context.window.lockPayslipVault();
+    assert.equal(h.context.window.staffVaultSession.allows('demo'),false);assert.ok(cleared>=2);
+});
 
-function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00',profile={},timeline,privateDenied=false,profileUnavailable=false,paidRecords=[],deductionRows=[]}={}){
+function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00',profile={},timeline,privateDenied=false,profileUnavailable=false,paidRecords=[],deductionRows=[],loanRead=async()=>verifiedEmptyLoans()}={}){
     const nodes=new Map(),errors=[],queries=[],attendanceCalls=[];
     const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',textContent:'',style:{},parentElement:{insertAdjacentHTML(){},querySelector(){return null;}},appendChild(){},prepend(){}});return nodes.get(id);};
     const snapshot=rows=>({docs:rows.map((row,index)=>({id:row.id||String(index),data:()=>row})),forEach:fn=>rows.forEach((row,index)=>fn({id:row.id||String(index),data:()=>row}))});
@@ -202,9 +211,17 @@ function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12
         getDoc:async ref=>({id:ref.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'})}),getDocFromServer:async ref=>{if(profileUnavailable&&ref.table==='cashiers')throw Error('Sample profile offline');if(privateDenied&&ref.table==='staff_salary_rates')throw Error('Sample private access denied');return {id:ref.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>ref.table==='cashiers'||ref.table==='staff_salary_rates'&&!!timeline,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST',...profile}:timeline};},getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'||ref.table==='staff_deductions'?(ref.table==='attendance_logs'?logs:deductionRows).filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):ref.table==='payroll_records'?paidRecords:[]);}};
     const readStaffPayrollAttendance=async input=>{input.assertCurrent?.();attendanceCalls.push(input);return snapshot(logs.filter(row=>row.staffId===input.staffId||input.names.includes(row.staffName)));};
     api.getDocsFromServer=api.getDocs;
- const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,readStaffPayrollRecoveryHistory,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,createPayrollBonusHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,readStaffPayrollAttendance,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
-    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,attendanceCalls,window:context.window};
+ const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,readStaffPayrollRecoveryHistory,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,createPayrollBonusHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,readMyLoanLedgerSnapshot:loanRead,readStaffPayrollAttendance,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
+    Object.assign(context,savedPayslipViews,snapshotAmounts);context.window.localStorage=context.localStorage;installStaffPrivateAPIFixture(context.window,api,{paidRecords});const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,attendanceCalls,window:context.window};
 }
+test('actual Staff estimate uses the verified private ledger cap and holds denied or unrecorded loan terms',async()=>{
+    const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},logs=[{...base,id:'in',type:'TIME IN',timestamp:new Date('2026-10-06T09:00:00+08:00'),lateMinutes:0},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:new Date('2026-10-06T17:00:00+08:00')}];
+    const source=cutoffDeduction=>buildStaffLoanLedgerSnapshot({staffId:'sample',staffName:'Test Staff',branch:'Maa',asOf:'2026-11-09T00:00:00.000Z',ledgers:[{id:'loan',totalLoaned:1000,totalPaid:900,cutoffDeduction}]});
+    const h=staffLinkedEstimate(logs,{loanRead:async()=>source(150)});await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstLoan').innerText,'-₱100.00');assert.equal(h.node('liveEstNetPay').innerText,'₱350.00');assert.equal(h.queries.some(row=>row.table==='staff_ledger'),false);
+    for(const loanRead of [async()=>{throw Object.assign(Error('Denied'),{code:'loan-ledger-denied'});},async()=>source(null)]){
+        const held=staffLinkedEstimate(logs,{loanRead});await held.window.loadPayslipVault();assert.equal(held.node('liveEstNetPay').innerText,'Unavailable');assert.match(held.node('liveEstNetPay').parentElement.innerHTML,/loan records could not be verified/);
+    }
+});
 test('actual unlocked Staff estimate holds overlapping linked punches without inferred pay or lateness',async()=>{
     const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'old',type:'TIME IN',lateMinutes:200,penaltyAmount:500,timestamp:stamp('2026-10-06T22:00:00+08:00')},{...base,id:'new',type:'TIME IN',timestamp:stamp('2026-10-07T02:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'old',timestamp:stamp('2026-10-07T06:00:00+08:00')}];
     const h=staffLinkedEstimate(logs);await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstNetPay').innerText,'Held for HR review');assert.equal(h.node('liveEstGross').innerText,'Held for HR review');assert.equal(h.node('liveEstLates').innerText,'-₱0.00');assert.match(h.node('liveCutoffDetailedLogs').innerHTML,/overlap/);

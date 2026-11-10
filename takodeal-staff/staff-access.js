@@ -1,3 +1,4 @@
+import {resolvePrivatePhoneIdentity} from './private-phone-identity.js';
 export const STAFF_ACCESS_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/cashRemittanceReview/access';
 export const STAFF_OPERATIONAL_FIELDS=Object.freeze(['staffId','cashierName','fullName','name','branch','role','scheduleNickname','scheduleName','nickname','scheduleAliases','status','employmentStatus','contractStatus','active','isActive','archived','isArchived','blocked','revoked','offboarded','resigned','terminated','disabled','deleted','isDeleted','profilePicUrl','scheduleEligible']);
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -37,17 +38,17 @@ export function createStaffAccessClient({auth,ensureUser,deviceId,sessionId=()=>
   cancelOne({uid:attempt.user.uid,deviceId:attempt.deviceId,sessionId:attempt.sessionId},attempt.token).catch(()=>{});
  }
  async function call(route,body,{assertCurrent=()=>{},privateClient,onDispatch}={}){
-  const generation=epoch,selectedDevice=deviceId(),controller=new Controller();let user,selectedAuth=auth,expired=false,timer;
-  const guard=()=>{if(expired)throw error('The Staff check took too long. Check your connection and try again.','staff-access/timeout');if(generation!==epoch||deviceId()!==selectedDevice||user&&selectedAuth.currentUser!==user)throw error('Your Staff account or phone changed. Sign in again.','staff-access/changed');assertCurrent();};
+  const generation=epoch,selectedDevice=deviceId(),primaryUser=auth.currentUser,controller=new Controller();let user,selectedAuth=auth,privateIdentity,expired=false,timer;
+  const guard=()=>{if(expired)throw error('The Staff check took too long. Check your connection and try again.','staff-access/timeout');if(generation!==epoch||privateClient&&auth.currentUser!==primaryUser||deviceId()!==selectedDevice||user&&selectedAuth.currentUser!==user)throw error('Your Staff account or phone changed. Sign in again.','staff-access/changed');assertCurrent();};
   const action=Promise.resolve().then(async()=>{
    guard();if(!device(selectedDevice))throw unavailable();
-   if(privateClient){const client=await privateClient({assertCurrent:guard});guard();selectedAuth=client.auth;user=selectedAuth?.currentUser;}else user=await ensureUser({guard});
+   if(privateClient){const client=await privateClient({assertCurrent:guard});guard();selectedAuth=client.auth;user=selectedAuth?.currentUser;privateIdentity=await resolvePrivatePhoneIdentity({client,staffId:body.staffId,assertCurrent:guard});guard();}else user=await ensureUser({guard});
    guard();if(!user?.uid||user.isAnonymous!==true||typeof user.getIdToken!=='function')throw unavailable();
-   const token=await user.getIdToken();guard();if(typeof token!=='string'||!token)throw unavailable();
+   const token=await user.getIdToken();guard();if(typeof token!=='string'||!token)throw unavailable();if(privateIdentity){await privateIdentity.assertFresh();guard();}
    onDispatch?.({token,user,deviceId:selectedDevice});guard();
-   const response=await fetcher(STAFF_ACCESS_ENDPOINT+route,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({...body,deviceId:selectedDevice}),cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:controller.signal});guard();
+   const response=await fetcher(STAFF_ACCESS_ENDPOINT+route,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({...body,deviceId:privateIdentity?.deviceId||selectedDevice}),cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',signal:controller.signal});guard();
    if(response.redirected||response.type==='opaque'||response.url&&response.url!==STAFF_ACCESS_ENDPOINT+route)throw unavailable();
-   const result=await response.json();guard();if(!object(result)||JSON.stringify(result).length>(['/staff-payroll-history','/staff-operational-history'].includes(route)?7*1024*1024:route==='/staff-payroll-inputs'?3*1024*1024:524288))throw unavailable();
+   const result=await response.json();guard();if(privateIdentity){await privateIdentity.assertFresh();guard();}if(!object(result)||JSON.stringify(result).length>(['/staff-payroll-history','/staff-operational-history'].includes(route)?7*1024*1024:route==='/staff-payroll-inputs'?3*1024*1024:524288))throw unavailable();
    if(!response.ok){const denied=[400,401,403].includes(response.status),limited=response.status===429;throw error(limited?'Too many Staff checks. Wait a minute and try again.':denied?'Your PIN, account or approved phone could not be verified. Check the details or ask HQ for help.':'The Staff service is unavailable. Reconnect and try again.',denied?'staff-access/denied':limited?'staff-access/rate-limit':'staff-access/unavailable');}
    return result;
   });
@@ -76,7 +77,7 @@ export function createStaffAccessClient({auth,ensureUser,deviceId,sessionId=()=>
    const profile=operationalStaffProfile(result.profile,staffId);if(result.branch!==(branch||profile.branch))throw unavailable();return{...result,profile};
   },
   async changePin({staffId,newPin,operationId,expectedVersion,createPrivateClient,assertCurrent=()=>{}}={}){
-   if(!id(staffId)||typeof newPin!=='string'||!/^\d{4,8}$/.test(newPin)||!id(operationId)||!Number.isSafeInteger(expectedVersion)||expectedVersion<0||typeof createPrivateClient!=='function')throw unavailable();
+   if(!id(staffId)||typeof newPin!=='string'||!/^\d{4,10}$/.test(newPin)||!id(operationId)||!Number.isSafeInteger(expectedVersion)||expectedVersion<0||typeof createPrivateClient!=='function')throw unavailable();
    const result=await call('/change-staff-pin',{staffId,newPin,operationId,expectedVersion},{assertCurrent,privateClient:createPrivateClient});
    if(!exact(result,['schemaVersion','staffId','version','changed','alreadySaved'])||result.schemaVersion!==1||result.staffId!==staffId||result.version!==expectedVersion+1||result.changed!==true||typeof result.alreadySaved!=='boolean')throw unavailable();return result;
   },

@@ -13,6 +13,7 @@ import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js'
 import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
 import {chooseClockInSchedule} from '../takodeal-staff/attendance-shift-declaration-ui.js';
 import * as scheduleDeclarations from '../takodeal-staff/attendance-shift-declaration.js';
+import {installStaffPrivateProfileUI} from '../takodeal-staff/staff-private-profile-ui.js';
 
 const zones={Maa:{lat:7.0786417726231425,lng:125.58344120162646}},time=1800000000000;
 const position=(accuracy=12,stamp=time,offset=0)=>({timestamp:stamp,coords:{latitude:zones.Maa.lat+offset,longitude:zones.Maa.lng,accuracy}});
@@ -157,11 +158,13 @@ test('Profile history and contracts render without the removed public payroll fi
     const h=domHarness(),errors=[];
     const removed=new Set(['viewSssDed','viewPhDed','viewPagibigDed','viewCustomDed']);
     h.document.getElementById=id=>removed.has(id)?null:h.node(id);
-    const source=engine.slice(engine.indexOf('window.openProfile = async function'),engine.indexOf('window.saveProfileData = async function'));
-    const context={...h,doc:()=>null,db:{},getDoc:async()=>({exists:()=>true,data:()=>({cashierName:'Sample Staff',role:'Crew'})}),console:{error:(...args)=>errors.push(args)}};
-    vm.runInNewContext(source,context);await h.window.openProfile();
-    assert.deepEqual(errors,[]);assert.match(h.node('profRoleHistory').innerHTML,/Crew/);
-    assert.match(h.node('profContracts').innerHTML,/No signed contracts/);
+    h.store.set('takodeal_staff_id','sample');h.window.localStorage=h.localStorage;
+    for(const node of [h.node('profRoleHistory'),h.node('profContracts')]){node.children=[];node.replaceChildren=function(...values){this.children=[...values];};node.append=function(value){this.children.push(value);};}
+    const get=h.document.getElementById;h.document.getElementById=id=>{const node=get(id);if(node){node.removeAttribute=()=>{};node.addEventListener=()=>{};}return node;};h.document.createElement=tag=>({tag,children:[],append(value){this.children.push(value);},addEventListener(){}});
+    const client={invalidate(){},read:async()=>({schemaVersion:1,staffId:'sample',expectedFingerprint:'a'.repeat(64),profile:{staffId:'sample',cashierName:'Sample Staff',branch:'Maa',role:'Crew'},legacyDocumentPresent:{sss:false,philhealth:false,pagibig:false}})};
+    installStaffPrivateProfileUI(h.window,h.document,{client,access:{},createPrivateClient:async()=>({auth:{currentUser:{uid:'sample-private'}},store:{records:async()=>({})}})});await h.window.openProfile();
+    assert.deepEqual(errors,[]);assert.match(h.node('profRoleHistory').textContent,/Crew/);
+    assert.match(h.node('profContracts').textContent,/No signed contracts/);
     assert.equal(h.node('profileModal').style.display,'flex');
 });
 function punchHarness(fixes){

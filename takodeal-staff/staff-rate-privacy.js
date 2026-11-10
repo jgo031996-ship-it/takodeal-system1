@@ -29,14 +29,14 @@ export function installStaffRatePrivacy(api,d,storage,{now=()=>Date.now(),setInt
     async function open() {
         lock();profileId=identity();text('profileRateCongratulations','');if($('profileRateCongratulations'))$('profileRateCongratulations').hidden=true;
         const id=profileId,token=epoch;if(!id || !visible())return;
-        try{const row=await api.getDocFromServer(api.doc(api.db,'cashiers',id));if(epoch!==token || identity()!==id || !visible())return;if(row.exists())notice(row.data(),id);}
+        try{const row=await api.readPrivateStaffProfile(id,{assertCurrent:()=>{if(epoch!==token||identity()!==id||!visible())throw Error('Your private profile closed.');}});if(epoch!==token || identity()!==id || !visible())return;if(row.exists())notice(row.data(),id);}
         catch{if(epoch===token && identity()===id)text('profileRateState','Private · reconnect to verify your rate');}
     }
     function reveal(id,profile) {
         if(identity()!==id || !visible() || profileId!==id)return false;
         if(profile?.salaryRateVersion===1&&!profile.salaryRateTimeline){
             const token=epoch;text('profileRateState','Confirming private salary history…');
-            return (api.loadPrivateStaffSalaryProfile?api.loadPrivateStaffSalaryProfile({...profile,staffId:id}):loadStaffSalaryTimeline(api,{...profile,staffId:id})).then(fresh=>epoch===token?reveal(id,fresh):false).catch(()=>{if(epoch===token&&identity()===id){text('profileDailyRate','Unavailable');text('profileRateState','Use your approved Staff phone and reconnect to confirm salary.');if(waiting){waiting.resolve(false);waiting=null;}}return false;});
+            return (api.loadPrivateStaffSalaryProfile?api.loadPrivateStaffSalaryProfile({...profile,staffId:id}):Promise.reject(Error('The private salary transport is unavailable.'))).then(fresh=>epoch===token?reveal(id,fresh):false).catch(()=>{if(epoch===token&&identity()===id){text('profileDailyRate','Unavailable');text('profileRateState','Use your approved Staff phone and reconnect to confirm salary.');if(waiting){waiting.resolve(false);waiting=null;}}return false;});
         }
         session.unlock(id);const rate=profileDailyRate(profile);
         text('profileDailyRate',rate==null?'Rate not yet set':'₱'+rate.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})+' / day');
