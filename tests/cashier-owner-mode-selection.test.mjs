@@ -35,6 +35,14 @@ test('credential clearing during the second auth-ready await cannot make the pro
  const f=fixture();f.readyHook=()=>{if(f.readyCalls===2)f.deviceAuth.currentUser=null;};await assert.rejects(f.select(),/No new anonymous account was created/);assert.equal(f.ownerTokens,0);assert.equal(f.signups,0);assert.equal(f.reads.length,0);
 });
 
+test('known anonymous identity clearing or replacing during the first auth-ready await is held, never reclassified as no credential',async()=>{
+ for(const replace of [false,true]){const f=fixture();f.readyHook=()=>{if(f.readyCalls===1)f.deviceAuth.currentUser=replace?{...f.anonymous}:null;};await assert.rejects(f.select(),/existing tablet account changed/);assert.equal(f.ownerTokens,0);assert.equal(f.signups,0);assert.equal(f.reads.length,0);}
+});
+
+test('initially null auth restoring its existing anonymous credential through authStateReady keeps the approved tablet identity',async()=>{
+ const f=fixture({credential:'null'});f.readyHook=()=>{if(f.readyCalls===1)f.deviceAuth.currentUser=f.anonymous;};const result=await f.select();assert.equal(result.actorUid,'APPROVED_ANON');assert.equal(f.ownerTokens,0);assert.equal(f.signups,0);
+});
+
 test('forged Missing message/code and branded errors carrying a 403 cannot trigger Owner fallback',async()=>{
  for(const error of [Object.assign(Error('SAMPLE binding is missing'),{code:'cashier-device/setup-missing',deviceStatus:'Missing'}),Object.assign(new CashierDeviceSetupMissing('SAMPLE'),{status:403}),Object.assign(new CashierNoRetainedAnonymousCredential(),{status:401})]){const f=fixture();await assert.rejects(resolveCashierProtectedAction(f.w,{resolveOwnerDesktop:f.resolveOwnerDesktop,resolveDevice:async()=>{throw error;}}));assert.equal(f.ownerTokens,0);assert.equal(f.signups,0);}
 });
