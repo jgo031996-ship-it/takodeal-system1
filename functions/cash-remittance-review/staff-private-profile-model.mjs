@@ -26,24 +26,25 @@ function canonical(value){
  return value;
 }
 export const profileHash=value=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
-export function privateProfileFingerprint(snapshot){const time=snapshot.updateTime;if(!time||!Number.isSafeInteger(time.seconds)||!Number.isSafeInteger(time.nanoseconds))throw profileError(503,'unavailable','Your current profile could not be confirmed. Reconnect and try again.');return profileHash({profile:snapshot.data(),revision:[time.seconds,time.nanoseconds]});}
+export function privateProfileFingerprint(snapshot){const time=snapshot.updateTime;if(!profileId(snapshot.id)||!time||!Number.isSafeInteger(time.seconds)||!Number.isSafeInteger(time.nanoseconds)||time.nanoseconds<0||time.nanoseconds>=1000000000)throw profileError(503,'unavailable','Your current profile could not be confirmed. Reconnect and try again.');return profileHash({path:'cashiers/'+snapshot.id,revision:[time.seconds,time.nanoseconds]});}
 const scalarFields=[...CONTACT_FIELDS,'cashierName','fullName','name','branch','role','scheduleNickname','scheduleName','nickname','dateHired','contractStatus','hourlyRate','dailyRate','salaryRateVersion','salaryRateRevision','eligibleNightDiff','nightDiffRate','sssAmount','philHealthAmount','pagibigAmount','loginPinVersion'];
-function safeValue(value,depth=0){
- if(depth>5)throw Error('Profile value is too deep.');
- if(value===null||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return value;
- if(typeof value==='string'&&value.length<=2000)return value;
- if(value?.toDate&&typeof value.toDate==='function')return value.toDate().toISOString();
- if(value instanceof Date)return value.toISOString();
- if(Array.isArray(value)&&value.length<=500)return value.map(row=>safeValue(row,depth+1));
- if(object(value)&&Object.keys(value).length<=500)return Object.fromEntries(Object.entries(value).map(([key,row])=>{if(!/^[A-Za-z0-9_-]{1,128}$/.test(key))throw Error('Invalid profile key.');return[key,safeValue(row,depth+1)];}));
- throw Error('Invalid private display value.');
+const review=()=>{throw profileError(409,'review','Your saved profile needs HQ review before it can be displayed.');};
+const string=(value,max=2000)=>{if(typeof value!=='string'||value.length>max)review();return value;};
+const amount=value=>{if(!['number','string'].includes(typeof value)||typeof value==='string'&&!/^[+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim())||!Number.isFinite(Number(value))||Number(value)<0)review();return value;};
+const day=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+function dateValue(value){if(value===null||value==='')return value;let converted=value;if(value instanceof Date||typeof value?.toDate==='function'){const parsed=value instanceof Date?value:value.toDate();if(!(parsed instanceof Date)||!Number.isFinite(+parsed))review();converted=parsed.toISOString();}string(converted,200);if(!Number.isFinite(Date.parse(converted))||/^\d{4}-\d{2}-\d{2}$/.test(converted)&&!day(converted))review();return converted;}
+function salaryTimeline(timeline,staffId,branch){
+ if(!object(timeline)||timeline.staffId!==staffId||timeline.branch!==branch||timeline.version!==1||!Number.isSafeInteger(timeline.revision)||timeline.revision<1||!object(timeline.rates)||Object.keys(timeline.rates).length>500)review();
+ const entries=[];for(const [id,row]of Object.entries(timeline.rates)){if(!profileId(id)||!object(row)||!day(row.effectiveDate)||!Number.isSafeInteger(row.sequence)||row.sequence<1||row.sequence>timeline.revision)review();entries.push([id,{effectiveDate:row.effectiveDate,dailyRate:amount(row.dailyRate),sequence:row.sequence}]);}
+ return{staffId,branch,version:1,revision:timeline.revision,baselineDailyRate:timeline.baselineDailyRate===null?null:amount(timeline.baselineDailyRate),rates:Object.fromEntries(entries)};
 }
 export function projectPrivateProfile(staffId,source,timeline){
- const profile={staffId};for(const key of scalarFields)if(Object.hasOwn(source,key)){const value=source[key];if(!['string','number','boolean'].includes(typeof value)&&value!==null)throw profileError(409,'review','Your profile needs HQ review before it can be displayed.');profile[key]=safeValue(value);}
+ const profile={staffId};for(const key of scalarFields)if(Object.hasOwn(source,key)){const value=source[key];if(key==='dateHired'){profile[key]=dateValue(value);continue;}if(!['string','number','boolean'].includes(typeof value)&&value!==null||typeof value==='number'&&!Number.isFinite(value)||typeof value==='string'&&value.length>2000)review();profile[key]=value;}
  if(!Number.isSafeInteger(profile.loginPinVersion??0)||(profile.loginPinVersion??0)<0)throw profileError(409,'review','Your daily PIN settings need HQ review.');profile.loginPinVersion??=0;
- for(const [key,fields,max]of [['roleHistory',['role','date'],100],['customDeductions',['name','amount'],100]])if(source[key]!==undefined){if(!Array.isArray(source[key])||source[key].length>max)throw profileError(409,'review','Your saved profile history needs HQ review.');profile[key]=source[key].map(row=>{if(!object(row))throw profileError(409,'review','Your saved profile history needs HQ review.');return Object.fromEntries(fields.filter(field=>Object.hasOwn(row,field)).map(field=>[field,safeValue(row[field])]));});}
- if(source.signedContracts!==undefined){if(!object(source.signedContracts))throw profileError(409,'review','Your saved contract history needs HQ review.');profile.signedContracts=Object.fromEntries(['initial','extension','regularization'].filter(key=>Object.hasOwn(source.signedContracts,key)).map(key=>[key,safeValue(source.signedContracts[key])]));}
- if(source.latestRateRaise!==undefined&&object(source.latestRateRaise))profile.latestRateRaise=Object.fromEntries(['version','eventId'].filter(key=>Object.hasOwn(source.latestRateRaise,key)).map(key=>[key,safeValue(source.latestRateRaise[key])]));
- if(timeline!==undefined)profile.salaryRateTimeline=safeValue(timeline);
+ if(source.roleHistory!==undefined){if(!Array.isArray(source.roleHistory)||source.roleHistory.length>100)review();profile.roleHistory=source.roleHistory.map(row=>{if(!object(row))review();return{...(Object.hasOwn(row,'role')?{role:string(row.role,200)}:{}),...(Object.hasOwn(row,'date')?{date:dateValue(row.date)}:{})};});}
+ if(source.customDeductions!==undefined){if(!Array.isArray(source.customDeductions)||source.customDeductions.length>100)review();profile.customDeductions=source.customDeductions.map(row=>{if(!object(row))review();return{name:string(row.name,200),amount:amount(row.amount)};});}
+ if(source.signedContracts!==undefined){if(!object(source.signedContracts))review();profile.signedContracts=Object.fromEntries(['initial','extension','regularization'].filter(key=>Object.hasOwn(source.signedContracts,key)).map(key=>[key,dateValue(source.signedContracts[key])]));}
+ if(source.latestRateRaise!==undefined&&source.latestRateRaise!==null){const row=source.latestRateRaise;if(!object(row)||Object.hasOwn(row,'version')&&(!Number.isSafeInteger(row.version)||row.version<0))review();profile.latestRateRaise={...(Object.hasOwn(row,'version')?{version:row.version}:{}),...(Object.hasOwn(row,'eventId')?{eventId:string(row.eventId,128)}:{})};}
+ if(timeline!==undefined)profile.salaryRateTimeline=salaryTimeline(timeline,staffId,source.branch);
  return profile;
 }
