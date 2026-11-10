@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {tokenizeRules} from '../tools/firestore-rule-core.mjs';
-const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8'),source=read('firestore.policy.rules'),manifest=JSON.parse(read('tests/fixtures/compatible-document-gcash-policy-cuts.json')),sha=v=>createHash('sha256').update(v).digest('hex');
+import {restoreNoticePolicyStage} from './helpers/notice-policy-stage.mjs';
+const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8'),source=restoreNoticePolicyStage(read('firestore.policy.rules')),manifest=JSON.parse(read('tests/fixtures/compatible-document-gcash-policy-cuts.json')),sha=v=>createHash('sha256').update(v).digest('hex');
 function restore(){let text=source;for(const edit of [...manifest.edits].reverse()){assert.equal(text.slice(edit.at,edit.at+edit.after.length),edit.after,edit.label);text=text.slice(0,edit.at)+edit.before+text.slice(edit.at+edit.after.length);}return text;}
 function helper(policy,name){const code=tokenizeRules(policy).filter(t=>!['comment','whitespace'].includes(t.type)),at=code.findIndex((t,i)=>t.text==='function'&&code[i+1]?.text===name);assert.ok(at>=0,name);let open=at+2;while(code[open].text!=='{')open++;let depth=0;for(let end=open;end<code.length;end++){if(code[end].text==='{')depth++;else if(code[end].text==='}'&&--depth===0)return policy.slice(code[at].start,code[end].end);}throw Error(name);}
 function range(text,start,end){const at=text.indexOf(start),to=text.indexOf(end,at+start.length);assert.ok(at>=0&&to>at,start);return text.slice(at,to);}

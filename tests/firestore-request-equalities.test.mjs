@@ -115,7 +115,9 @@ test('forged proof sites or insertion cannot turn another expression into an eli
 });
 test('frozen app policy lowers the actual bounded atom census without touching the candidate',()=>{
  const source=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerRequestEqualities(source);
- assert.deepEqual(result.statistics.bySelector,{reqUid:35,reqEmail:36,reqTime:104});assert.equal(result.proof.sites.length,175);
+ assert.deepEqual(result.statistics.bySelector,{reqUid:36,reqEmail:37,reqTime:105});assert.equal(result.proof.sites.length,178);
+ const inquiry=JSON.parse(fs.readFileSync(new URL('./fixtures/private-inquiry-policy-cuts.json',import.meta.url),'utf8')).edits[0];assert.deepEqual(result.proof.sites.filter(site=>site.start>=inquiry.at&&site.end<=inquiry.at+inquiry.after.length).map(site=>({field:site.field,selector:site.selector})),[{field:'source.customerEmail',selector:'reqEmail'},{field:'data.timestamp',selector:'reqTime'}],'only the saved order email and review timestamp add request atoms');
+ const noticeStart=source.indexOf('function companyFreshHQPinActive('),noticeEnd=source.indexOf('match /reviews/',noticeStart);assert.deepEqual(result.proof.sites.filter(site=>site.start>=noticeStart&&site.end<=noticeEnd).map(site=>({field:site.field,selector:site.selector})),[{field:'source.uid',selector:'reqUid'}],'the fresh canonical HQ source adds exactly one UID equality');
  const start=source.indexOf('function staffPayslipPreview(data,id)'),end=source.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
  assert.deepEqual(result.proof.sites.filter(site=>site.start>=start&&site.end<=end).map(site=>({field:site.field,selector:site.selector})),[{field:'data.publishedAt',selector:'reqTime'},{field:'data.publishedByUid',selector:'reqUid'},{field:'data.publishedByEmail',selector:'reqEmail'}],'new publication actor/time stamps explain exactly the three additional request equalities');
  assert.equal(assertRequestEqualitiesEquivalent(source,result.source,result.proof).pinnedGlobalSelectors,true);
