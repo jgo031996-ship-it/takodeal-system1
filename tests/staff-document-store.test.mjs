@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createDocumentStore, documentFilePath} from '../takodeal-staff/staff-document-store.js';
 import {createDocumentBroker,DOCUMENT_BROKER_ENDPOINT} from '../takodeal-staff/staff-document-broker.js';
+import {createDocumentMetadataClient,DOCUMENT_METADATA_ENDPOINT} from '../takodeal-staff/document-metadata-client.js';
+import {createDocumentMetadataStore} from '../functions/cash-remittance-review/document-metadata-store.mjs';
+import {buildHQAccessIndex} from '../functions/cash-remittance-review/company-access-index.mjs';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 
 // Transaction and lifecycle tests only: this harness does not execute Security
@@ -9,15 +12,19 @@ import {firestoreHarness} from './helpers/firestore-harness.mjs';
 const staffId = 'staff-1', uid = 'device-uid', branch = 'Maa';
 const docPath = (kind = 'valid_id') => `staff_private_documents/${staffId}/files/${kind}`;
 const versionPath = op => `staff_private_documents/${staffId}/versions/${op}`;
-const photo = (lastByte = 1) => new Blob([Uint8Array.from([255, 216, 255, 224, lastByte])], {type: 'image/jpeg'});
+const photo = (lastByte = 1) => new Blob([Uint8Array.from([255, 216, 255, 224, 0, lastByte])], {type: 'image/jpeg'});
 // The store delegates real image decoding to its UI. This stub asserts the
 // callback is reached; browser/image-decoder QA covers the JPEG decoder itself.
 const decodedPhoto = {validatePhoto: async blob => {assert.equal(blob.type, 'image/jpeg');}};
 function fixture({hq = false, enabled = true, id = staffId, user = uid} = {}) {
     const h = firestoreHarness(), blobs = new Map(), calls = {uploads: 0, reads: 0}, auth = {currentUser: {uid: user}};
-    let selectedId = id, operation = 0, clock = 1000, afterUpload, beforeGet,beforeBroker;
+    let selectedId = id, operation = 0, clock = 1000, afterUpload, beforeGet,beforeBroker,beforeMetadata,afterMetadata;
     h.put('staff_document_config/current', {enabled, policyVersion: 2,brokerEndpoint:DOCUMENT_BROKER_ENDPOINT});
-    h.put(`staff_document_devices/${uid}`, {uid, staffId, branch, active: true});
+    h.put(`staff_document_devices/${uid}`, {uid, staffId, branch, active: true,approvedByUid:'sample-owner',approvedAt:new Date('2026-01-01')});
+    h.put(`staff_private_documents/${staffId}`,{staffId,branch,version:1});
+    h.put(`cashiers/${staffId}`,{cashierName:'Synthetic Staff',branch,active:true});
+    const ownerEmail='jgo031996@gmail.com',hqProfile={email:ownerEmail,role:'Owner',permissions:['all'],assignedBranch:'All',active:true};
+    h.put('hq_managers/sample-owner',hqProfile);h.put('hq_account_index/'+ownerEmail,buildHQAccessIndex([{id:'sample-owner',data:hqProfile}])[0]);
     const sdk = {...h.api,
         doc: (_, ...segments) => h.ref(segments.slice(0, -1).join('/'), segments.at(-1)),
         async getDocFromServer(ref) { if (beforeGet) await beforeGet(ref); return {exists: () => h.docs.has(ref.path), data: () => structuredClone(h.get(ref.path))}; },
@@ -37,8 +44,25 @@ function fixture({hq = false, enabled = true, id = staffId, user = uid} = {}) {
         if(!prior){calls.uploads++;const blob=new Blob([args.bytes],{type:'image/jpeg'});blobs.set(path,{blob,metadata:{sha256:args.sha256}});if(afterUpload)await afterUpload();}
         return {storagePath:path,contentType:'image/jpeg',size:args.bytes.length,sha256:args.sha256,alreadyExists:!!prior};
     },async download(_config,args){calls.reads++;const current=h.get(docPath(args.group)),path=current?.storagePath,file=blobs.get(path);if(!file)throw Error('Missing photo');if(beforeGet)await beforeGet({path});return file.blob;}};
-    const store = createDocumentStore({sdk, db: h.api.db, broker, auth, identity: () => selectedId, isHQ: hq, now: () => clock, uuid: () => `operation-${++operation}`});
-    return {...h, sdk, store, broker, blobs, calls, auth, identity:()=>selectedId,select: id => {selectedId = id;}, advance: ms => {clock += ms;}, afterUpload: fn => {afterUpload = fn;}, beforeGet: fn => {beforeGet = fn;},beforeBroker:fn=>{beforeBroker=fn;}};
+    // Run the real server core on this optimistic, failure-injectable harness.
+    // Provider verification/Storage attestation transport have their own actual
+    // Admin tests; these fictional actors explicitly model the two API roles.
+    const db={doc:path=>({path,id:path.split('/').at(-1)}),collection:table=>({table,fields:null,count:Infinity,select(...fields){return{...this,fields};},limit(count){return{...this,count};}}),runTransaction:work=>h.api.runTransaction(h.api.db,tx=>{
+        const snapshot=async ref=>{const value=await tx.get(ref);return{...value,exists:value.exists(),updateTime:null};};
+        return work({get:async ref=>{if(ref.path)return snapshot(ref);const docs=[];for(const path of h.docs.keys()){if(!path.startsWith(ref.table+'/')||path.split('/').length!==2)continue;const snap=await snapshot(db.doc(path));docs.push(ref.fields?{...snap,data:()=>Object.fromEntries(ref.fields.filter(key=>Object.hasOwn(snap.data(),key)).map(key=>[key,snap.data()[key]]))}:snap);if(docs.length===ref.count)break;}return{size:docs.length,docs};},set:tx.set,update:tx.update,create:(ref,row)=>{assert.equal(h.docs.has(ref.path),false,'create-only immutable history');tx.set(ref,row);}});
+    })};
+    const server=createDocumentMetadataStore(db,{serverTimestamp:()=>new Date('2026-01-02T03:04:05.678Z')});
+    const dispatch=async(kind,config,input,{assertCurrent=()=>{}}={})=>{
+        assertCurrent();if(beforeMetadata)await beforeMetadata(kind,input);assertCurrent();
+        const actor={uid:auth.currentUser.uid,...(kind==='upload'?{firebase:{sign_in_provider:'anonymous'}}:{email:ownerEmail,email_verified:true,firebase:{sign_in_provider:'google.com'}})};
+        const inspection=await server.inspect(kind,input,actor);let attestation=null;
+        if(kind==='upload'){const path=documentFilePath(actor.uid,input.staffId,input.group,input.uploadId),file=blobs.get(path);assert.ok(file,'server confirms the immutable uploaded bytes');attestation={purpose:'upload',staffId:input.staffId,branch:inspection.branch,group:input.group,uploadId:input.uploadId,uploadedByUid:actor.uid,storagePath:path,contentType:'image/jpeg',size:file.blob.size,sha256:file.metadata.sha256,clearanceType:input.clearanceType,expiresOn:input.expiresOn,generation:'1'};}
+        else if(input.status==='approved'){const row=inspection.record,file=blobs.get(row.storagePath);assert.ok(file);attestation={purpose:'review',staffId:row.staffId,branch:row.branch,group:row.group,uploadId:row.uploadId,uploadedByUid:row.uploadedByUid,storagePath:row.storagePath,contentType:row.contentType,size:row.size,sha256:row.sha256,clearanceType:row.clearanceType,expiresOn:row.expiresOn,generation:'1'};}
+        const result=await server.commit(kind,input,actor,inspection,attestation);if(afterMetadata)await afterMetadata(kind,result);return result;
+    };
+    const metadata={upload:(config,input,options)=>dispatch('upload',config,input,options),review:(config,input,options)=>dispatch('review',config,input,options)};
+    const store = createDocumentStore({sdk, db: h.api.db, broker,metadata, auth, identity: () => selectedId, isHQ: hq, now: () => clock, uuid: () => `operation-${++operation}`});
+    return {...h, sdk, store, broker,metadata, blobs, calls, auth, identity:()=>selectedId,select: id => {selectedId = id;}, advance: ms => {clock += ms;}, afterUpload: fn => {afterUpload = fn;}, beforeGet: fn => {beforeGet = fn;},beforeBroker:fn=>{beforeBroker=fn;},beforeMetadata:fn=>{beforeMetadata=fn;},afterMetadata:fn=>{afterMetadata=fn;}};
 }
 
 test('document paths reject unsupported groups, separators, URLs and unsafe identity values', () => {
@@ -150,7 +174,7 @@ test('a stale metadata version cannot replace a newer document', async () => {
 
 test('binding revocation during photo processing prevents metadata publication', async () => {
     const h = fixture(); h.afterUpload(() => h.put(`staff_document_devices/${uid}`, {uid, staffId, branch, active: false}));
-    await assert.rejects(h.store.upload('valid_id', photo(), {}, 0, 'op-revoked'), /changed this device/);
+    await assert.rejects(h.store.upload('valid_id', photo(), {}, 0, 'op-revoked'), error=>error.code==='document-metadata/permission-denied');
     assert.equal(h.docs.has(docPath()), false); assert.equal(h.docs.has(versionPath('op-revoked')), false);
 });
 
@@ -162,7 +186,7 @@ test('Staff cannot review and the HQ client cannot use the Staff upload flow', a
 
 test('HQ review updates current and history together and appends an immutable scoped audit intent', async () => {
     const h = fixture({hq: true});
-    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await staffStore.upload('valid_id', photo(), {}, 0, 'op-reviewed');
     const before = structuredClone(h.get(docPath()));
     await h.store.file(before, decodedPhoto);
@@ -177,7 +201,7 @@ test('HQ review updates current and history together and appends an immutable sc
 
 test('stale reviews and unexplained rejections do not write metadata or audit', async () => {
     const h = fixture({hq: true});
-    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await staffStore.upload('valid_id', photo(), {}, 0, 'op-review');
     await h.store.file(h.get(docPath()), decodedPhoto);
     await assert.rejects(h.store.review('valid_id', 0, 'approved'), /View or download/);
@@ -188,7 +212,7 @@ test('stale reviews and unexplained rejections do not write metadata or audit', 
 
 test('concurrent HQ reviews allow only one revision and preserve one matching audit', async () => {
     const h = fixture({hq: true});
-    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await staffStore.upload('valid_id', photo(), {}, 0, 'op-contend');
     await h.store.file(h.get(docPath()), decodedPhoto);
     const results = await Promise.allSettled([h.store.review('valid_id', 1, 'approved'), h.store.review('valid_id', 1, 'rejected', 'Blurry')]);
@@ -230,13 +254,13 @@ test('invalid expected versions and reused upload IDs fail before uploading anot
     await h.store.upload('valid_id', photo(), {}, 0, 'op-reuse');
     await assert.rejects(h.store.upload('health_card', photo(), {}, 0, 'op-reuse'), /retry does not match|already used/);
     await h.store.upload('valid_id', photo(2), {}, 1, 'op-latest');
-    await assert.rejects(h.store.upload('valid_id', photo(), {}, 2, 'op-reuse'), /already used/);
+    await assert.rejects(h.store.upload('valid_id', photo(), {}, 2, 'op-reuse'), error=>error.code==='document-metadata/changed');
     assert.equal(h.calls.uploads, 2); assert.equal(h.get(docPath()).uploadId, 'op-latest');
 });
 
 test('approval requires a matching private download proof that expires after five minutes', async () => {
     const h = fixture({hq: true});
-    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await staffStore.upload('valid_id', photo(), {}, 0, 'op-proof');
     await assert.rejects(h.store.review('valid_id', 1, 'approved'), /View or download/);
     await h.store.file(h.get(docPath()), decodedPhoto); h.advance(300001);
@@ -246,7 +270,7 @@ test('approval requires a matching private download proof that expires after fiv
 
 test('a file with altered bytes or an incorrect recorded SHA cannot establish review proof', async () => {
     const h = fixture({hq: true});
-    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await staffStore.upload('valid_id', photo(1), {}, 0, 'op-hash');
     const current = h.get(docPath()), stored = h.blobs.get(current.storagePath);
     stored.blob = photo(2);
@@ -257,7 +281,7 @@ test('a file with altered bytes or an incorrect recorded SHA cannot establish re
 
 test('missing or failed HQ photo decoder cannot establish an approval proof', async () => {
     const h = fixture({hq: true});
-    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+    const staffStore = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await staffStore.upload('valid_id', photo(), {}, 0, 'op-decode');
     await assert.rejects(h.store.file(h.get(docPath())), /Open the photo/);
     await assert.rejects(h.store.file(h.get(docPath()), {validatePhoto: async () => {throw Error('JPEG decode failed');}}), /JPEG decode failed/);
@@ -278,7 +302,7 @@ test('a delayed policy read cannot retarget an operation to a different employee
         const h = fixture({hq: action === 'review'});
         // Use another instance to seed a document without warming the store under test.
         if (action === 'file' || action === 'review') {
-            const seed = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+            const seed = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
             await seed.upload('valid_id', photo(), {}, 0, 'op-policy-seed');
         }
         const before = structuredClone([...h.docs]), uploadsBefore = h.calls.uploads;
@@ -321,14 +345,15 @@ test('switching employee or UID during upload-version or broker credential looku
     }
 });
 
-test('a changed identity inside device-request or upload transaction reads prevents every metadata write', async () => {
+test('a changed identity during device-request reads or before metadata dispatch prevents every metadata write', async () => {
     for (const action of ['requestDevice', 'upload']) {
         const h = fixture(), transaction = h.sdk.runTransaction;
-        h.docs.delete(`staff_document_devices/${uid}`);
-        if (action === 'upload') h.put(`staff_document_devices/${uid}`, {uid, staffId, branch, active: true});
-        h.sdk.runTransaction = (db, callback) => transaction(db, tx => callback({...tx, get: async ref => {
-            const value = await tx.get(ref); h.select('staff-2'); return value;
-        }}));
+        if(action==='requestDevice'){
+            h.docs.delete(`staff_document_devices/${uid}`);
+            h.sdk.runTransaction = (db, callback) => transaction(db, tx => callback({...tx, get: async ref => {
+                const value = await tx.get(ref); h.select('staff-2'); return value;
+            }}));
+        }else h.beforeMetadata(async()=>{await Promise.resolve();h.select('staff-2');});
         await assert.rejects(action === 'requestDevice' ? h.store.requestDevice() : h.store.upload('valid_id', photo(), {}, 0, 'op-tx-switch'), /account changed/);
         assert.equal(h.docs.has(`staff_document_requests/${uid}`), false);
         assert.equal(h.docs.has(docPath()), false); assert.equal(h.docs.has(versionPath('op-tx-switch')), false);
@@ -338,15 +363,30 @@ test('a changed identity inside device-request or upload transaction reads preve
     }
 });
 
-test('a changed HQ UID during review transaction reads cannot update the document or create its audit', async () => {
-    const h = fixture({hq: true}), seed = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, auth: h.auth, identity: () => staffId});
+test('a changed HQ UID before metadata dispatch cannot update the document or create its audit', async () => {
+    const h = fixture({hq: true}), seed = createDocumentStore({sdk: h.sdk, db: h.api.db, broker: h.broker, metadata:h.metadata, auth: h.auth, identity: () => staffId});
     await seed.upload('valid_id', photo(), {}, 0, 'op-review-race');
-    const before = structuredClone([...h.docs]), transaction = h.sdk.runTransaction;
-    h.sdk.runTransaction = (db, callback) => transaction(db, tx => callback({...tx, get: async ref => {
-        const value = await tx.get(ref); h.auth.currentUser = {uid: 'different-hq'}; return value;
-    }}));
+    const before = structuredClone([...h.docs]);
+    h.beforeMetadata(async()=>{await Promise.resolve();h.auth.currentUser={uid:'different-hq'};});
     await assert.rejects(h.store.review('valid_id', 1, 'rejected', 'Unreadable photo'), /account changed/);
     assert.deepEqual([...h.docs], before); assert.equal([...h.docs.keys()].filter(path => path.includes('/reviews/')).length, 0);
+});
+
+test('an authorized metadata commit remains saved when a later account change hides its acknowledgment',async()=>{
+    for(const action of ['upload','review']){
+        const h=fixture({hq:action==='review'});
+        if(action==='review'){const staff=createDocumentStore({sdk:h.sdk,db:h.api.db,broker:h.broker,metadata:h.metadata,auth:h.auth,identity:()=>staffId});await staff.upload('valid_id',photo(),{},0,'op-dispatched');}
+        h.afterMetadata(async()=>{await Promise.resolve();h.auth.currentUser={uid:'different-account'};});
+        await assert.rejects(action==='upload'?h.store.upload('valid_id',photo(),{},0,'op-dispatched'):h.store.review('valid_id',1,'rejected','Unreadable photo'),/account changed/);
+        const saved=h.get(docPath());assert.equal(saved.uploadId,'op-dispatched');assert.deepEqual(saved,h.get(versionPath('op-dispatched')));
+        if(action==='review'){assert.equal(saved.status,'rejected');assert.equal(saved.version,2);assert.equal(h.get(`staff_private_documents/${staffId}/reviews/${saved.reviewId}`).actorUid,uid);}else assert.equal(saved.version,1);
+    }
+});
+
+test('upload/review never invoke browser SDK transactions after the protected metadata broker migration',async()=>{
+    const h=fixture({hq:true}),staff=createDocumentStore({sdk:h.sdk,db:h.api.db,broker:h.broker,metadata:h.metadata,auth:h.auth,identity:()=>staffId});
+    h.sdk.runTransaction=()=>{throw Error('A browser file/version/review transaction is forbidden');};
+    await staff.upload('valid_id',photo(),{},0,'op-server-only');await h.store.review('valid_id',1,'rejected','Unreadable photo');assert.equal(h.get(docPath()).status,'rejected');assert.equal(h.get(docPath()).version,2);
 });
 
 test('turning the vault off after a cached enabled read blocks uploads and downloads before the broker',async()=>{
@@ -381,21 +421,22 @@ test('a changed current version or hash prevents a broker download even when its
 });
 
 test('a metadata revision during private byte transfer cannot return a photo or establish HQ approval proof',async()=>{
-    const h=fixture({hq:true}),staffStore=createDocumentStore({sdk:h.sdk,db:h.api.db,broker:h.broker,auth:h.auth,identity:()=>staffId});await staffStore.upload('valid_id',photo(),{},0,'op-network-revision');const opened=structuredClone(h.get(docPath()));
+    const h=fixture({hq:true}),staffStore=createDocumentStore({sdk:h.sdk,db:h.api.db,broker:h.broker,metadata:h.metadata,auth:h.auth,identity:()=>staffId});await staffStore.upload('valid_id',photo(),{},0,'op-network-revision');const opened=structuredClone(h.get(docPath()));
     h.beforeGet(ref=>{if(ref.path===opened.storagePath)h.put(docPath(),{...opened,version:2});});
     await assert.rejects(h.store.file(opened,decodedPhoto),/changed while opening/);await assert.rejects(h.store.review('valid_id',1,'approved'),/View or download/);assert.equal(h.get(docPath()).status,'pending_review');assert.equal([...h.docs.keys()].some(path=>path.includes('/reviews/')),false);
 });
 
-test('actual client adapter and store preserve protected metadata transactions through authenticated POST bytes only',async()=>{
+test('actual byte and metadata client adapters preserve exact server commits through authenticated POST only',async()=>{
     const h=fixture(),requests=[],files=new Map();h.auth.currentUser.getIdToken=async()=>'SAMPLE_ID_TOKEN';
     const transport=createDocumentBroker({auth:h.auth,identity:h.identity,fetchFn:async(url,request)=>{
         requests.push({url,request});assert.equal(request.headers.Authorization,'Bearer SAMPLE_ID_TOKEN');const input=JSON.parse(request.body),path=documentFilePath(uid,input.staffId,input.group,input.uploadId);
         if(url===DOCUMENT_BROKER_ENDPOINT+'/upload'){
-            const bytes=Uint8Array.from(Buffer.from(input.base64,'base64')),actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),value=>value.toString(16).padStart(2,'0')).join('');assert.equal(actual,input.sha256);files.set(path,bytes);
+            const bytes=Uint8Array.from(Buffer.from(input.base64,'base64')),actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),value=>value.toString(16).padStart(2,'0')).join('');assert.equal(actual,input.sha256);files.set(path,bytes);h.blobs.set(path,{blob:new Blob([bytes],{type:'image/jpeg'}),metadata:{sha256:actual}});
             return new Response(JSON.stringify({storagePath:path,contentType:'image/jpeg',size:bytes.length,sha256:actual,alreadyExists:false}),{status:200});
         }
         assert.equal(url,DOCUMENT_BROKER_ENDPOINT+'/download');assert.equal(input.version,h.get(docPath()).version);assert.equal(input.sha256,h.get(docPath()).sha256);return new Response(files.get(path),{status:200,headers:{'content-type':'image/jpeg','cache-control':'private, no-store'}});
     }});Object.assign(h.broker,transport);
-    const result=await h.store.upload('valid_id',photo(),{},0,'op-wire');assert.equal(result.saved,true);assert.deepEqual(h.get(docPath()),h.get(versionPath('op-wire')));assert.equal((await h.store.file(h.get(docPath()))).size,5);assert.equal(requests.length,2);
+    const serverMetadata={...h.metadata},metadata=createDocumentMetadataClient({auth:h.auth,identity:h.identity,fetchFn:async(url,request)=>{requests.push({url,request});assert.equal(url,DOCUMENT_METADATA_ENDPOINT+'/upload');assert.equal(request.headers.Authorization,'Bearer SAMPLE_ID_TOKEN');const input=JSON.parse(request.body);assert.deepEqual(Object.keys(input).sort(),['staffId','group','uploadId','expectedVersion','sha256','size','clearanceType','expiresOn'].sort());assert.equal(input.size,6);const result=await serverMetadata.upload({enabled:true,policyVersion:2,brokerEndpoint:DOCUMENT_BROKER_ENDPOINT},input);return new Response(JSON.stringify(result),{status:200,headers:{'content-type':'application/json'}});}});Object.assign(h.metadata,metadata);
+    const result=await h.store.upload('valid_id',photo(),{},0,'op-wire');assert.equal(result.saved,true);assert.deepEqual(h.get(docPath()),h.get(versionPath('op-wire')));assert.equal((await h.store.file(h.get(docPath()))).size,6);assert.equal(requests.length,3);
     assert.ok(requests.every(({request})=>request.credentials==='omit'&&request.redirect==='error'));assert.equal(JSON.stringify(h.get(docPath())).includes('token'),false);assert.equal(h.get(docPath()).status,'pending_review');
 });
