@@ -13,7 +13,11 @@ test('actual production wrapper routes GCash and document actions plus existing 
    ['/gcash-reconciliation/settings','https://takodeal-owner.vercel.app',{settings:{...defaultReconciliationSettings(),revision:1},expectedRevision:0}],
    ['/document-metadata/upload','https://takodeal-staff.vercel.app',{staffId:'sample-staff',group:'valid_id',uploadId:'sample-upload',expectedVersion:0,sha256:'a'.repeat(64),size:100,clearanceType:'',expiresOn:''}],
    ['/document-metadata/review','https://takodeal-owner.vercel.app',{staffId:'sample-staff',group:'valid_id',uploadId:'sample-upload',expectedVersion:1,sha256:'a'.repeat(64),reviewId:'sample-review',status:'rejected',note:'Sample reason'}],
-   ['/staff-loan-ledger','https://takodeal-staff.vercel.app',{deviceId:'DEV-SAMPLE-ONE',staffId:'sample-staff'}]
+   ['/staff-loan-ledger','https://takodeal-staff.vercel.app',{deviceId:'DEV-SAMPLE-ONE',staffId:'sample-staff'}],
+   ['/staff-private-profile/read','https://takodeal-staff.vercel.app',{deviceId:'DEV-SAMPLE-ONE',staffId:'sample-staff'}],
+   ['/staff-private-profile/update','https://takodeal-staff.vercel.app',{deviceId:'DEV-SAMPLE-ONE',staffId:'sample-staff',operationId:'sample-contact-op',expectedFingerprint:'a'.repeat(64),patch:{phone:'synthetic'}}],
+   ['/staff-private-profile/vault-settings','https://takodeal-staff.vercel.app',{deviceId:'DEV-SAMPLE-ONE',staffId:'sample-staff'}],
+   ['/staff-private-profile/vault-save','https://takodeal-staff.vercel.app',{deviceId:'DEV-SAMPLE-ONE',staffId:'sample-staff',operationId:'sample-vault-op',expectedFingerprint:'a'.repeat(64),mode:'setup',currentPin:'SYNTHETIC-PIN',newPin:'384621'}]
   ];
   for(const[path,origin,body]of routes)for(const method of['OPTIONS','POST']){
    const headers={origin,'content-type':'application/json','access-control-request-method':'POST','access-control-request-headers':'authorization,content-type'};
