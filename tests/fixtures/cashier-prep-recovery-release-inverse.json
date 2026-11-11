@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "base": "bedf5b71d71e794fb08aac44db2717d3205a500c",
+  "release": "cashier-prep-recovery-20261111-r1",
+  "files": {
+    "Takodeal-POS/index.html": {
+      "baselineSha256": "fa9789fa98b524f65b933e98dcfa6872798c1e01b8e07f059a21dbc9e7c7dde4",
+      "candidateSha256": "97b1301ea3ac99b692a9c977f32df097921bf9587bfac52326b8d13a617ab369",
+      "edits": [
+        {
+          "before": "cashier-void-original-20261111-r2",
+          "after": "cashier-prep-recovery-20261111-r1"
+        }
+      ]
+    },
+    "Takodeal-POS/sw.js": {
+      "baselineSha256": "1d7fd2003ad0e8502774ad65a952f52f18c95fac2ec44a0e91a23c9645cc6ac2",
+      "candidateSha256": "43d89ef361f1b66bd2c2d1b0544b2fd144775cff45b3d7f0bab3a3bc67c40a87",
+      "edits": [
+        {
+          "before": "cashier-void-original-20261111-r2",
+          "after": "cashier-prep-recovery-20261111-r1"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-data.js": {
+      "baselineSha256": "d6a29e4beaa4075e0001f74031923e8cbe0580303dec32235fa1b63ef33a14a3",
+      "candidateSha256": "32cc0060446e0f1fc250e182283fbbc906e4ef777958299580f913297bc70f8d",
+      "edits": [
+        {
+          "before": "cashier-void-original-20261111-r2",
+          "after": "cashier-prep-recovery-20261111-r1"
+        }
+      ]
+    }
+  },
+  "historicalProofs": {
+    "cashier-void-recovery-inverse.json": "81a60f1e9e09e19c486e1a022f9811c55487605ee63e21b22a7453f57b1b71af",
+    "cashier-prep-review-inverse.json": "419a39bc3cad18a4e42dc64f84f4cfb4b7e4e6bfc064d725e076216515c8fd75",
+    "cashier-owner-desktop-inverse.json": "5e0d0d01396c071c83fd19d4cc9001cf9c0b89bc1cd7c694e27d87606b5f8b91"
+  }
+}
