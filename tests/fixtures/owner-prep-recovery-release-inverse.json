@@ -1,0 +1,56 @@
+{
+  "base": "2834ba0452201e3fa5f052b9daef49d2e77dd7df",
+  "release": "prep-recovery-20261111-r1",
+  "cache": "takodeal-manager-core-v142-prep-recovery-20261111-r1",
+  "historicalProofSha256": "6b5d43bd55f4af3b5f27ec74a59ccca598a9b5211efdcfae07e6d6d8013305e1",
+  "files": {
+    "takodeal-manager/index.html": {
+      "baselineSha256": "a73cc26e16d0f23a241af9b93695fa16f2ebbb9ca02bb8e7cc4209a640494c5e",
+      "candidateSha256": "e4d7dbafc747442455d4a252cbc967d09c46ad2a7282852e5b4de1a866688014",
+      "edits": [
+        {
+          "before": "<meta name=\"takodeal-release\" content=\"private-prep-reviews-20261110\">",
+          "after": "<meta name=\"takodeal-release\" content=\"prep-recovery-20261111-r1\">"
+        },
+        {
+          "before": "private-prep-reviews.css?v=private-prep-reviews-20261110",
+          "after": "private-prep-reviews.css?v=prep-recovery-20261111-r1"
+        },
+        {
+          "before": "auth.js?v=private-prep-reviews-20261110",
+          "after": "auth.js?v=prep-recovery-20261111-r1"
+        }
+      ]
+    },
+    "takodeal-manager/auth.js": {
+      "baselineSha256": "d50a88a036230fb3f51252282a3a579648053061025788fa625b9b44d8c023f6",
+      "candidateSha256": "2f88ee14a26184bd3c6b52db0521e90d1ace9978d19a5614df35fb1556216085",
+      "edits": [
+        {
+          "before": "await import('./main.js?v=private-prep-reviews-20261110');",
+          "after": "await import('./main.js?v=prep-recovery-20261111-r1');"
+        }
+      ]
+    },
+    "takodeal-manager/sw.js": {
+      "baselineSha256": "13c30d794d7903fdcaa498a5b99cb7bf97f5f8688d8810d48949e43cea4e85a2",
+      "candidateSha256": "8694fc8c1e1725ceff01fb0a2fd3de8994ac6469307e5db635cc0a9b6beaaee1",
+      "edits": [
+        {
+          "before": "const CACHE_NAME = 'takodeal-manager-core-v141-private-prep-reviews-20261110';",
+          "after": "const CACHE_NAME = 'takodeal-manager-core-v142-prep-recovery-20261111-r1';"
+        }
+      ]
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "baselineSha256": "8f4796b32b4915353f37574d99b5e8e63d1ff18d91742f0d93dca83f919fcd7b",
+      "candidateSha256": "d37f510ea4cb697e22cbc47fefa097eb4f37304dde112ad3da592ac7d8ec1e77",
+      "edits": [
+        {
+          "before": "export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v141-private-prep-reviews-20261110';",
+          "after": "export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v142-prep-recovery-20261111-r1';"
+        }
+      ]
+    }
+  }
+}
