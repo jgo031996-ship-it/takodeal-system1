@@ -10,18 +10,20 @@ test('all existing Staff business, attendance and authorization code is byte-exa
  const path='takodeal-staff/app.js',before=previous(path),after=read(path);
  assert.equal(after,before+'window.staffStartup?.ready();\n');
 });
-test('the page changes only release labels and independent recovery loading',()=>{
- const path='takodeal-staff/index.html',before=previous(path);
- const expected=before.replaceAll('staff-private-profile-20261110-r1','staff-startup-20261111-r1')
-  .replace('    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>','    <script defer src="staff-startup.js?v=staff-startup-20261111-r1"></script>\n    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>')
-  .replace(/      <script type="module">\r?\n        import \{installStaffAppUpdate\} from "\.\/staff-phone\.js";\r?\n        installStaffAppUpdate\(\);\r?\n      <\/script>\r?\n/,'');
- assert.equal(read(path),expected);
+test('R2 page changes only exact inline placement and release labels from live39fc',()=>{
+ const live='39fc7aa4a06132566ab20e10c80e5b093f23f0c0',path='takodeal-staff/index.html',before=git('show',live+':'+path),after=read(path);
+ const block='    <!-- BEGIN GENERATED STAFF STARTUP -->\n    <script>'+read('takodeal-staff/staff-startup.js')+'</script>\n    <!-- END GENERATED STAFF STARTUP -->\n';
+ assert.equal(after.split(block).length,2);const restored=after.replace(block,'').replaceAll('staff-startup-20261111-r2','staff-startup-20261111-r1').replace('    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>','    <script defer src="staff-startup.js?v=staff-startup-20261111-r1"></script>\n    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>');
+ assert.equal(restored,before);assert.equal(read('takodeal-staff/app.js'),git('show',live+':takodeal-staff/app.js'));
+ const runtimeProof=JSON.parse(read('tests/fixtures/staff-inline-runtime-inverse.json'));assert.equal(runtimeProof.base,live);assert.equal(runtimeProof.edits.length,4);let restoredRuntime=read(runtimeProof.file);for(const edit of [...runtimeProof.edits].reverse()){assert.equal(restoredRuntime.split(edit.after).length,2);restoredRuntime=restoredRuntime.replace(edit.after,()=>edit.before);}assert.equal(restoredRuntime,git('show',live+':takodeal-staff/staff-startup.js'));
+ const stripGenerated=value=>value.replace(/\/\/ BEGIN GENERATED STAFF COHORT[\s\S]*?\/\/ END GENERATED STAFF COHORT/,'// PINNED COHORT');
+ assert.equal(stripGenerated(read('takodeal-staff/sw.js')).replaceAll('staff-startup-20261111-r2','staff-startup-20261111-r1').replace('takodeal-staff-v55-inline-20261111-r2','takodeal-staff-v54-startup-20261111-r1'),stripGenerated(git('show',live+':takodeal-staff/sw.js')));
 });
 test('Cashier, other apps, shared runtime, Firebase functions, rules and dependencies cannot change in this Staff fix',()=>{
  const changed=[...git('diff','--name-only',base,'--').trim().split(/\r?\n/),...git('ls-files','--others','--exclude-standard').trim().split(/\r?\n/)].filter(Boolean);
  const allowed=new Set(['takodeal-staff/app.js','takodeal-staff/index.html','takodeal-staff/sw.js','takodeal-staff/staff-startup.js']);
  for(const path of changed){
-  if(/^(?:tests\/|tools\/build-staff-shell-cohort\.mjs$|\.github\/workflows\/staff-startup-recovery-checks\.yml$|STAFF-STARTUP-RECOVERY\.md$)/.test(path))continue;
+  if(/^(?:tests\/|tools\/build-staff-(?:shell-cohort|startup-inline)\.mjs$|\.github\/workflows\/staff-(?:startup|inline)-recovery-checks\.yml$|STAFF-STARTUP-RECOVERY\.md$)/.test(path))continue;
   assert.ok(allowed.has(path),'Unexpected product change: '+path);
  }
 });

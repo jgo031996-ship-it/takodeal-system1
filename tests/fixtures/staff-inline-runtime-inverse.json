@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "base": "39fc7aa4a06132566ab20e10c80e5b093f23f0c0",
+  "file": "takodeal-staff/staff-startup.js",
+  "beforeSha256": "1e47aa1de0b7d17ac5267f0df04528f713333229c299b8cfe3cd70d2c0d95f1b",
+  "afterSha256": "89e746d418933d82c2ccf9c6a3cf6bf29128867652c85c3cf8aea29190c6868c",
+  "edits": [
+    {
+      "before": "    var release = 'staff-startup-20261111-r1';",
+      "after": "    var release = 'staff-startup-20261111-r2';"
+    },
+    {
+      "before": "    var timers = [], earlyStatus = 'Staff app is opening. Please wait; your device registration is kept.';\n",
+      "after": "    var timers = [], earlyStatus = 'Staff app is opening. Please wait; your device registration is kept.';\n    var releasedStyles = [];\n"
+    },
+    {
+      "before": "    function nodes(selector) { return d.querySelectorAll ? Array.from(d.querySelectorAll(selector)) : []; }\n",
+      "after": "    function nodes(selector) { return d.querySelectorAll ? Array.from(d.querySelectorAll(selector)) : []; }\n    function releasePendingStyles() {\n        if (ready) return;\n        nodes('link[rel~=\"stylesheet\"]').forEach(function (link) {\n            try {\n                if (link.sheet !== null || link.disabled || releasedStyles.indexOf(link) !== -1) return;\n                var href = link.getAttribute('href'), media = link.getAttribute('media'), value = String(media || '').trim().toLowerCase();\n                if (!href || ['', 'all', 'screen'].indexOf(value) === -1) return;\n                var base = new URL('./', w.location.href), url = new URL(href, w.location.href);\n                if (url.origin !== base.origin || url.pathname.indexOf(base.pathname) !== 0) return;\n                var marker = 'data-staff-startup-style-release';\n                if (link.hasAttribute(marker)) return;\n                function restore() {\n                    link.removeEventListener('load', restore); link.removeEventListener('error', restore);\n                    if (link.getAttribute(marker) !== release) return;\n                    if (link.getAttribute('media') === 'not all') {\n                        if (media === null) link.removeAttribute('media'); else link.setAttribute('media', media);\n                    }\n                    link.removeAttribute(marker);\n                }\n                link.addEventListener('load', restore); link.addEventListener('error', restore);\n                releasedStyles.push(link); link.setAttribute(marker, release); link.setAttribute('media', 'not all');\n            } catch (_) { /* Unknown stylesheet state stays untouched. */ }\n        });\n    }\n"
+    },
+    {
+      "before": "    function show(text) {\n",
+      "after": "    function show(text) {\n        releasePendingStyles();\n"
+    }
+  ]
+}
