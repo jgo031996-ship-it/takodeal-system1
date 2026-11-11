@@ -11,6 +11,8 @@
 .cashier-void-movements strong{grid-column:1/-1;overflow-wrap:anywhere}
 .cashier-void-movements span{display:flex;flex-direction:column;overflow-wrap:anywhere}
 .cashier-void-movements small{font-size:12px;color:#64748b}
-.cashier-void-recovery{margin:12px 0}
-.cashier-void-recovery button{min-height:44px;padding:10px 16px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;color:#334155;font-weight:700;cursor:pointer}
+.cashier-void-recovery{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;flex:0 0 auto;width:100%;min-width:0;margin:0;padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#fffaf3}
+.cashier-void-recovery>p{flex-basis:100%;min-width:0;margin:0;color:#64748b;font-size:13px;overflow-wrap:anywhere}
+.cashier-void-recovery button{max-width:100%;min-height:44px;padding:10px 16px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;color:#334155;font-weight:700;white-space:normal;overflow-wrap:anywhere;text-align:left;cursor:pointer}
+@media(max-width:420px){.cashier-void-recovery{padding:12px}.cashier-void-recovery button{width:100%}}
 @media(max-width:420px){.swal2-popup.cashier-void-modal{padding:18px;width:calc(100vw - 20px)}.cashier-void-modal .swal2-title{font-size:21px}.cashier-void-modal .swal2-actions{display:flex;flex-direction:column}.cashier-void-modal .swal2-styled{width:100%}.cashier-void-modal .swal2-html-container{font-size:14px}.cashier-void-movements{max-height:27vh}}

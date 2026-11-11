@@ -1,0 +1,15 @@
+{
+  "sourceBase": "b206f51d7963925ea9bc34825d46b4a39bb782ad",
+  "purpose": "Tests-only exact eight pure prep dependencies; no backend route or deployment",
+  "files": {
+    "prep-handler.mjs": "8674e15e760ba01e640c60a81d321bd1c9adebe9d14ef6f0aaae19eb301769d2",
+    "prep-store.mjs": "1a89491f560207338538efd3283aff92b15baa9969524cb11b139da6c11dc021",
+    "prep-model.mjs": "e6a1aec2b4f917ef4d91f64176de4e7465d30694ec2fb81503ff44b9945e3fb7",
+    "prep-review-model.mjs": "16488e56adb47db2a11c2706d56df759d386e6bd2b8a865c85499ca46447b761",
+    "access-model.mjs": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+    "owner-desktop-authority.mjs": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855",
+    "relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+    "relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+    "package.json": "c37588a73232c9abd151be0f3d9a2d3270c8d22661ab79093f80850b72749ba3"
+  }
+}
