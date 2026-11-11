@@ -43,8 +43,12 @@ test('a new draft or active punch during update download prevents reload even af
 });
 test('Staff login entry installs the lean update action before Firebase and removes the employee-profile copy',()=>{
     const html=readFileSync(new URL('../takodeal-staff/index.html',import.meta.url),'utf8');
-    const install=html.indexOf('defer src="staff-startup.js?'),business=html.indexOf('src="app.js?');
-    assert.ok(install>0 && install<business);assert.doesNotMatch(html,/import\s*\{\s*installStaffAppUpdate\s*\}\s*from\s*['"]\.\/staff-phone\.js['"]/);
+    const runtime=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),embedded='<script>'+runtime+'</script>';
+    const install=html.indexOf(embedded),firstLink=html.indexOf('<link'),business=html.indexOf('src="app.js?');
+    assert.ok(install>0 && firstLink>install && business>install);
+    assert.equal(html.split(embedded).length,2);
+    assert.doesNotMatch(html,/src=["']staff-startup\.js/);
+    assert.doesNotMatch(html,/import\s*\{\s*installStaffAppUpdate\s*\}\s*from\s*['"]\.\/staff-phone\.js['"]/);
     assert.equal((html.match(/data-staff-update(?:\s|>)/g)||[]).length,3);assert.equal((html.match(/onclick="window\.forceUpdateApp\(\)"/g)||[]).length,3);
     for(const stage of ['registration','pending','login'])assert.ok(html.includes(`staffUpdateHelp-${stage}`));
     const source=readFileSync(new URL('../takodeal-staff/staff-phone.js',import.meta.url),'utf8');
