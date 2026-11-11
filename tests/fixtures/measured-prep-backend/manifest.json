@@ -1,6 +1,6 @@
 {
   "sourceBase": "cfce3462d095cf2417f75c7bc4a19d6285c0572a",
-  "status": "Exact frozen runtime checkpoint c954d24a/473061e5/b80b8a6c; parent source commit and hosted release gates remain separate",
+  "status": "Exact frozen backend source; full hosted and deployment gates are owned by the release coordinator",
   "purpose": "Tests-only exact ten pure backend dependencies plus module package; no runtime frontend import or deployment",
   "files": {
     "prep-handler.mjs": "c954d24a7b8cf48e22dd8e738f99767af80ff152ad56a0991175645e3faa7ce3",
@@ -14,5 +14,6 @@
     "relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
     "relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
     "package.json": "c37588a73232c9abd151be0f3d9a2d3270c8d22661ab79093f80850b72749ba3"
-  }
+  },
+  "sourceCommit": "2799672489b32c9d9d36ec0a5b76faf8013b53dd"
 }
