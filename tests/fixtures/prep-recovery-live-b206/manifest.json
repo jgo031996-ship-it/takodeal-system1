@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "base": "b206f51d7963925ea9bc34825d46b4a39bb782ad",
+  "files": [
+    {
+      "path": "functions/cash-remittance-review/prep-handler.mjs",
+      "sha256": "e2fc8d3e46f46a5587915f5adfe253d1d4ac4480352b615aecafd9e7950c6ad5"
+    },
+    {
+      "path": "functions/cash-remittance-review/prep-store.mjs",
+      "sha256": "609c1ad8c1ac00dbcfaa0124b322af8ad9639126b22e77192d4de69d435a3e23"
+    }
+  ]
+}
