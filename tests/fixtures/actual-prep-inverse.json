@@ -1,0 +1,687 @@
+{
+  "schemaVersion": 1,
+  "base": "df5bd24cbfaa0176d6b950f9009df11e8ad471ce",
+  "files": [
+    {
+      "path": "functions/cash-remittance-review/prep-handler.mjs",
+      "beforeSha256": "5c1191c24a4b2899447d3419d0f74a7fb612f071a9ee4f0be1a2f8ec43910418",
+      "afterSha256": "6d9ced9a9c1f88878b7c12cf8294388605ac8958a0b3810a631fbebe1a301985",
+      "hunks": [
+        {
+          "beforeStart": 2,
+          "afterStart": 2,
+          "beforeLines": [
+            "import {planPrepBatch,planPrepReversal,prepCanonical,prepId,prepTimestampToken,PREP_VERSION} from './prep-model.mjs';"
+          ],
+          "afterLines": [
+            "import {planPrepBatch,planActualPrepBatch,planPrepReversal,planActualPrepReversal,prepCanonical,prepId,prepTimestampToken,PREP_VERSION} from './prep-model.mjs';",
+            "import {ACTUAL_PREP_DECLARATION,actualPrepId,actualPrepIntent,assertActualPrepPlan,actualPrepWarnings,actualWarningFingerprint,validActualAcknowledgement,validStockWarningRows} from './prep-actual-model.mjs';"
+          ]
+        },
+        {
+          "beforeStart": 11,
+          "afterStart": 12,
+          "beforeLines": [],
+          "afterLines": [
+            "const actualRoutes=new Set(['/prep/actual-preview','/prep/actual-commit','/prep/actual-review-skip']),warningRoutes=new Set(['/prep/stock-warnings','/prep/stock-warning-read','/prep/stock-warning-review']);",
+            "for(const path of [...actualRoutes,...warningRoutes])routes.add(path);"
+          ]
+        },
+        {
+          "beforeStart": 28,
+          "afterStart": 31,
+          "beforeLines": [],
+          "afterLines": [
+            " if(row.version===2||row.kind==='actual-prep'){savedActualOperation(row,id);return;}"
+          ]
+        },
+        {
+          "beforeStart": 31,
+          "afterStart": 35,
+          "beforeLines": [
+            "function savedQuote(row,id){if(row.version!==1||row.kind!=='owner-prep-quote'||row.operationId!==id||!validSavedActor(row)||!validProvenance({...row,outputName:row.plan?.outputName})||!Number.isSafeInteger(row.expiresAt)||!fields(row.intent,['outputInventoryId','qty','reason'])||!plain(row.plan)||!hash(row.intentHash)||!hash(row.expectedFingerprint)||row.intentHash!==fingerprint(row.intent)||row.expectedFingerprint!==fingerprint({plan:row.plan,intent:row.intent,...savedActorKey(row),...provenance(row)}))fail(409,'prep/quote-incomplete','The saved prep preview needs HQ review. No stock changes were confirmed.');}"
+          ],
+          "afterLines": [
+            "function savedQuote(row,id){if(row.version===2||row.kind==='actual-prep-quote'){savedActualQuote(row,id);return;}if(row.version!==1||row.kind!=='owner-prep-quote'||row.operationId!==id||!validSavedActor(row)||!validProvenance({...row,outputName:row.plan?.outputName})||!Number.isSafeInteger(row.expiresAt)||!fields(row.intent,['outputInventoryId','qty','reason'])||!plain(row.plan)||!hash(row.intentHash)||!hash(row.expectedFingerprint)||row.intentHash!==fingerprint(row.intent)||row.expectedFingerprint!==fingerprint({plan:row.plan,intent:row.intent,...savedActorKey(row),...provenance(row)}))fail(409,'prep/quote-incomplete','The saved prep preview needs HQ review. No stock changes were confirmed.');}",
+            "function savedActualQuote(row,id){try{assertActualPrepPlan(row.plan);if(row.version!==2||row.kind!=='actual-prep-quote'||!actualPrepId(id)||row.operationId!==id||row.actorType!=='cashier'||!validSavedActor(row)||!validProvenance({...row,outputName:row.plan.outputName})||!Number.isSafeInteger(row.expiresAt)||!fields(row.intent,['outputInventoryId','qty','reason','actualProductionDeclaration'])||typeof row.intent.reason!=='string'||row.intent.reason!==''&&!reason(row.intent.reason)||row.intent.actualProductionDeclaration!==ACTUAL_PREP_DECLARATION||row.intent.outputInventoryId!==row.plan.outputInventoryId||row.intent.qty!==row.plan.qty||row.intentHash!==fingerprint(row.intent)||row.expectedFingerprint!==fingerprint({plan:row.plan,intent:row.intent,...savedActorKey(row),...provenance(row)})||row.warningFingerprint!==actualWarningFingerprint(id,row.expectedFingerprint,row.plan))throw Error();}catch{fail(409,'prep/quote-incomplete','The actual-production preview is incomplete or changed. Keep its original reference for Owner review.');}}",
+            "function savedActualOperation(row,id){const plan=Object.fromEntries(planFields.map(key=>[key,row[key]])),intent=actualPrepIntent(row);try{assertActualPrepPlan(plan);const warnings=actualPrepWarnings(plan);if(row.version!==2||row.kind!=='actual-prep'||!actualPrepId(id)||row.operationId!==id||row.actorType!=='cashier'||!validSavedActor(row)||!validProvenance(row)||row.actualProductionDeclaration!==ACTUAL_PREP_DECLARATION||typeof row.reason!=='string'||row.reason!==''&&!reason(row.reason)||row.intentHash!==fingerprint(intent)||row.expectedFingerprint!==fingerprint({plan,intent,...savedActorKey(row),...provenance(row)})||row.warningFingerprint!==actualWarningFingerprint(id,row.expectedFingerprint,plan)||prepCanonical(row.stockWarnings)!==prepCanonical(warnings)||!Object.hasOwn(row,'warningAcknowledgement')||!validActualAcknowledgement(row.warningAcknowledgement,row.warningFingerprint,warnings.length>0))throw Error();}catch{fail(409,'prep/audit-incomplete','The actual-production movement or its warning acknowledgement is incomplete. Keep the saved reference for Owner review.');}}"
+          ]
+        },
+        {
+          "beforeStart": 52,
+          "afterStart": 58,
+          "beforeLines": [
+            "async function freshPlan(tx,input,assertBranch,{actor}={}){"
+          ],
+          "afterLines": [
+            "async function freshPlan(tx,input,assertBranch,{actor,actual=false}={}){",
+            " const planner=actual?planActualPrepBatch:planPrepBatch;"
+          ]
+        },
+        {
+          "beforeStart": 60,
+          "afterStart": 67,
+          "beforeLines": [
+            "  try{planPrepBatch({output,recipes:[],ingredients:[],qty:input.qty});}catch(error){if(error?.name!=='PrepModelError'||error.issueCode!=='recipe-unavailable')throw error;}"
+          ],
+          "afterLines": [
+            "  try{planner({output,recipes:[],ingredients:[],qty:input.qty});}catch(error){if(error?.name!=='PrepModelError'||error.issueCode!=='recipe-unavailable')throw error;}"
+          ]
+        },
+        {
+          "beforeStart": 79,
+          "afterStart": 86,
+          "beforeLines": [
+            "  const plan=planPrepBatch({output,recipes,ingredients,qty:input.qty,recipeName});return {plan,recipeMatch:context.recipeMatch};"
+          ],
+          "afterLines": [
+            "  const plan=planner({output,recipes,ingredients,qty:input.qty,recipeName});return {plan,recipeMatch:context.recipeMatch};"
+          ]
+        },
+        {
+          "beforeStart": 82,
+          "afterStart": 89,
+          "beforeLines": [
+            "  const branch=context.output?.branch||actor?.prepBranch,intent={outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''},snapshot=prepReviewSourceSnapshot(context);"
+          ],
+          "afterLines": [
+            "  const branch=context.output?.branch||actor?.prepBranch,intent=actual?actualPrepIntent(input):{outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''},snapshot=prepReviewSourceSnapshot(context);"
+          ]
+        },
+        {
+          "beforeStart": 84,
+          "afterStart": 91,
+          "beforeLines": [
+            "  const review=actor?.prepApp==='cashier'&&typeof branch==='string'&&branch?{schemaVersion:1,skippable:true,operationId:input.operationId,branch,outputInventoryId:input.outputInventoryId,outputName,qty:input.qty,issue,issueFingerprint:prepReviewFingerprint({actor:actorKey(actor),intent,branch,snapshot,issue})}:null;"
+          ],
+          "afterLines": [
+            "  const review=actor?.prepApp==='cashier'&&typeof branch==='string'&&branch?{schemaVersion:actual?2:1,...(actual?{protocol:'actual-prep-v2',actualProductionDeclaration:ACTUAL_PREP_DECLARATION}:{}),skippable:true,operationId:input.operationId,branch,outputInventoryId:input.outputInventoryId,outputName,qty:input.qty,issue,issueFingerprint:prepReviewFingerprint({actor:actorKey(actor),intent,branch,snapshot,issue,actual})}:null;"
+          ]
+        },
+        {
+          "beforeStart": 89,
+          "afterStart": 96,
+          "beforeLines": [
+            "const reviewView=row=>({schemaVersion:1,operationId:row.operationId,branch:row.branch,outputInventoryId:row.outputInventoryId,outputName:row.outputName,qty:row.qty,canCommit:false,notSaved:true,reviewSaved:true,skipped:true,reviewId:row.operationId,status:'Pending',stockPosted:false,sourceFingerprint:row.sourceFingerprint,issue:issueView(row.issue)});",
+            "const reviewIntent=input=>({outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||'',branch:input.branch,declaredName:input.declaredName,skipReason:input.skipReason,note:input.note||''});"
+          ],
+          "afterLines": [
+            "const reviewView=row=>({schemaVersion:row.version===2?2:1,...(row.version===2?{protocol:'actual-prep-v2',actualProductionDeclaration:ACTUAL_PREP_DECLARATION}:{}),operationId:row.operationId,branch:row.branch,outputInventoryId:row.outputInventoryId,outputName:row.outputName,qty:row.qty,canCommit:false,notSaved:true,reviewSaved:true,skipped:true,reviewId:row.operationId,status:'Pending',stockPosted:false,sourceFingerprint:row.sourceFingerprint,issue:issueView(row.issue)});",
+            "const reviewIntent=input=>({outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||'',branch:input.branch,declaredName:input.declaredName,skipReason:input.skipReason,note:input.note||'',...(input.actualProductionDeclaration!==undefined?{actualProductionDeclaration:input.actualProductionDeclaration}:{})});"
+          ]
+        },
+        {
+          "beforeStart": 94,
+          "afterStart": 101,
+          "beforeLines": [
+            " if(!row)return null;const plan=row.kind==='owner-prep-quote'?row.plan:row;"
+          ],
+          "afterLines": [
+            " if(!row)return null;const plan=['owner-prep-quote','actual-prep-quote'].includes(row.kind)?row.plan:row;"
+          ]
+        },
+        {
+          "beforeStart": 110,
+          "afterStart": 117,
+          "beforeLines": [
+            "  if(prepCanonical({...original(row),kind:'owner-prep-quote'})!==prepCanonical({...original(closure.quoteEvidence),status:'closed'}))fail(409,'prep/recovery-incomplete','The closed prep quote no longer matches its preserved original evidence.');return;"
+          ],
+          "afterLines": [
+            "  const originalKind=closure.quoteEvidence.kind;if(!['owner-prep-quote','actual-prep-quote'].includes(originalKind)||prepCanonical({...original(row),kind:originalKind})!==prepCanonical({...original(closure.quoteEvidence),status:'closed'}))fail(409,'prep/recovery-incomplete','The closed prep quote no longer matches its preserved original evidence.');return;"
+          ]
+        },
+        {
+          "beforeStart": 129,
+          "afterStart": 136,
+          "beforeLines": [],
+          "afterLines": [
+            "const actualView=(id,plan,extra={})=>({...view(id,plan,extra),schemaVersion:2,protocol:'actual-prep-v2',actualProductionDeclaration:ACTUAL_PREP_DECLARATION,expectedFingerprint:extra.expectedFingerprint||plan.expectedFingerprint,canCommit:extra.canCommit===true,warningFingerprint:extra.warningFingerprint||plan.warningFingerprint,stockWarnings:actualPrepWarnings(plan),requiresWarningAcknowledgement:actualPrepWarnings(plan).length>0});",
+            "const outcomeView=(id,plan,extra={})=>plan.version===2?actualView(id,plan,extra):view(id,plan,extra);",
+            "function savedActualReversal(row,op){if(!row)return;const keys=['version','kind','operationId','branch','outputInventoryId','outputName','committedAt','effects'],plan=Object.fromEntries(keys.map(key=>[key,row[key]])),expectedEffects=op.effects.map(effect=>({id:effect.id,name:effect.name,branch:effect.branch,unit:effect.unit,role:effect.role,beforeStock:effect.afterStock,afterStock:effect.beforeStock,delta:-effect.delta,beforeUpdateTime:prepTimestampToken(op.createTime)}));if(row.version!==2||row.kind!=='actual-prep-reversal'||row.operationId!==op.operationId||row.branch!==op.branch||row.outputInventoryId!==op.outputInventoryId||row.outputName!==op.outputName||row.committedAt!==prepTimestampToken(op.createTime)||prepCanonical(row.effects)!==prepCanonical(expectedEffects)||row.actorEmail!==PREP_OWNER||!prepId(row.actorUid)||!operationId(row.requestId)||!reason(row.reason)||row.expectedFingerprint!==fingerprint({plan,sourceFingerprint:op.expectedFingerprint}))fail(409,'prep/audit-incomplete','The saved actual-production reversal does not match its original movement proof.');}",
+            "async function linkedStockWarning(tx,op,provided){",
+            " if(op.version!==2)return null;const warning=provided===undefined?await tx.get('prep_stock_warnings',op.operationId):provided,rows=actualPrepWarnings(op);",
+            " if(!rows.length){if(warning)fail(409,'prep/audit-incomplete','This actual prep has an unexpected stock-warning record. Keep its reference.');return null;}",
+            " if(!warning||warning.version!==1||warning.kind!=='posted-prep-stock-warning'||warning.operationId!==op.operationId||warning.stockPosted!==true||warning.sourceFingerprint!==op.expectedFingerprint||warning.warningFingerprint!==op.warningFingerprint||prepCanonical(warning.rows)!==prepCanonical(rows)||!validStockWarningRows(warning.rows)||!validSavedActor(warning)||prepCanonical(savedActorKey(warning))!==prepCanonical(savedActorKey(op))||['branch','outputInventoryId','outputName','qty'].some(key=>warning[key]!==op[key])||!prepTimestampToken(warning.createTime)||prepTimestampToken(warning.createTime)!==prepTimestampToken(op.createTime))fail(409,'prep/audit-incomplete','The actual prep and its private posted warning do not match. Keep the original reference for Owner review.');return warning;",
+            "}",
+            "const isoTimestamp=value=>{const token=prepTimestampToken(value);return token?new Date(Number(token.split(':')[0])*1000+Number(token.split(':')[1])/1e6).toISOString():null;};",
+            "function warningDecision(row,id,warning){if(!row)return null;if(row.version!==1||row.kind!=='posted-prep-stock-warning-review'||row.operationId!==id||row.actorEmail!==PREP_OWNER||!prepId(row.actorUid)||!operationId(row.requestId)||!reason(row.reason)||row.decision!=='ReviewedPostedWarning'||row.warningFingerprint!==warning.warningFingerprint||typeof row.reviewedAt!=='string'||!Number.isFinite(Date.parse(row.reviewedAt))||new Date(row.reviewedAt).toISOString()!==row.reviewedAt)fail(409,'prep/audit-incomplete','The posted-warning review audit is incomplete. Keep its original reference.');return {requestId:row.requestId,reason:row.reason,reviewedAt:row.reviewedAt};}",
+            "function warningSummary(warning,decision){const createdAt=isoTimestamp(warning.createdAt);if(!createdAt||!actualPrepId(warning.operationId)||typeof warning.branch!=='string'||!warning.branch||warning.branch.length>128||!prepId(warning.outputInventoryId)||typeof warning.outputName!=='string'||!warning.outputName.trim()||warning.outputName.length>160||typeof warning.qty!=='number'||!Number.isFinite(warning.qty)||warning.qty<=0||warning.qty>1e6||!validStockWarningRows(warning.rows)||typeof warning.staffName!=='string'||!warning.staffName||warning.staffName.length>200)fail(409,'prep/audit-incomplete','The private posted-warning summary is incomplete.');return {operationId:warning.operationId,branch:warning.branch,outputInventoryId:warning.outputInventoryId,outputName:warning.outputName,qty:warning.qty,status:decision?'Reviewed':'Pending',stockPosted:true,createdAt,warningCount:warning.rows.length};}",
+            "async function warningEvidence(tx,id){const [warning,op,decision,reversal]=await Promise.all(['prep_stock_warnings','prep_operations','prep_stock_warning_reviews','prep_reversals'].map(table=>tx.get(table,id)));if(!warning||!op)fail(409,'prep/warning-unavailable','This posted stock warning was not found with its saved actual-production record.');savedOperation(op,id);if(op.version!==2)fail(409,'prep/audit-incomplete','This warning is not linked to versioned actual production.');await linkedStockWarning(tx,op,warning);savedActualReversal(reversal,op);const review=warningDecision(decision,id,warning);return {warning,op,decision,review,reversal};}",
+            "const warningDetail=evidence=>({schemaVersion:1,warning:{...warningSummary(evidence.warning,evidence.review),warningFingerprint:evidence.warning.warningFingerprint,rows:evidence.warning.rows,reportedBy:{staffId:evidence.warning.staffId,staffName:evidence.warning.staffName},reversed:Boolean(evidence.reversal),review:evidence.review}});"
+          ]
+        },
+        {
+          "beforeStart": 133,
+          "afterStart": 153,
+          "beforeLines": [
+            "  if(path==='/prep/reviews'||path==='/prep/review-read'||recoveryRoutes.has(path)&&actor.prepApp!=='cashier'){"
+          ],
+          "afterLines": [
+            "  if(path==='/prep/reviews'||path==='/prep/review-read'||warningRoutes.has(path)||recoveryRoutes.has(path)&&actor.prepApp!=='cashier'){"
+          ]
+        },
+        {
+          "beforeStart": 142,
+          "afterStart": 162,
+          "beforeLines": [],
+          "afterLines": [
+            "  if(warningRoutes.has(path)){",
+            "   if(path==='/prep/stock-warnings'){if(input.afterOperationId!==undefined)await warningEvidence(tx,input.afterOperationId);const rows=await tx.stockWarningRows(input.afterOperationId),evidence=await Promise.all(rows.map(row=>warningEvidence(tx,row.operationId))),warnings=evidence.slice(0,20).map(row=>warningSummary(row.warning,row.review));return {schemaVersion:1,warnings,hasMore:rows.length>20,nextAfterOperationId:rows.length>20?warnings.at(-1).operationId:null};}",
+            "   const evidence=await warningEvidence(tx,input.operationId);if(path==='/prep/stock-warning-read')return warningDetail(evidence);",
+            "   if(evidence.decision){if(evidence.decision.requestId!==input.requestId||evidence.decision.reason!==input.reason||evidence.decision.actorUid!==actor.uid)fail(409,'prep/warning-already-reviewed','This posted warning was already reviewed under different details. Your new note was not saved.');if(evidence.warning.warningFingerprint!==input.expectedWarningFingerprint)fail(409,'prep/warning-changed','The posted warning fingerprint does not match. Reopen its saved details.');return warningDetail(evidence);}",
+            "   if(evidence.warning.warningFingerprint!==input.expectedWarningFingerprint)fail(409,'prep/warning-changed','The posted warning fingerprint does not match. Reopen its saved details.');const decision={version:1,kind:'posted-prep-stock-warning-review',operationId:input.operationId,requestId:input.requestId,actorUid:actor.uid,actorEmail:PREP_OWNER,decision:'ReviewedPostedWarning',reason:input.reason,warningFingerprint:evidence.warning.warningFingerprint,reviewedAt:new Date(now()).toISOString(),recordedAt:tx.serverTimestamp()};tx.createStockWarningReview(input.operationId,decision);evidence.review=warningDecision(decision,input.operationId,evidence.warning);return warningDetail(evidence);",
+            "  }"
+          ]
+        },
+        {
+          "beforeStart": 145,
+          "afterStart": 171,
+          "beforeLines": [],
+          "afterLines": [
+            "   if(op?.version===2){await linkedStockWarning(tx,op);savedActualReversal(reversal,op);}"
+          ]
+        },
+        {
+          "beforeStart": 168,
+          "afterStart": 195,
+          "beforeLines": [],
+          "afterLines": [
+            "  const actual=actualRoutes.has(path),action=actual?path.replace('/prep/actual-','/prep/'):path;"
+          ]
+        },
+        {
+          "beforeStart": 171,
+          "afterStart": 199,
+          "beforeLines": [],
+          "afterLines": [
+            "  if(op?.version===2)await linkedStockWarning(tx,op);"
+          ]
+        },
+        {
+          "beforeStart": 178,
+          "afterStart": 207,
+          "beforeLines": [
+            "   if(['/prep/preview','/prep/commit','/prep/review-skip'].includes(path)){"
+          ],
+          "afterLines": [
+            "   if(['/prep/preview','/prep/commit','/prep/review-skip'].includes(action)){",
+            "    if(actual!==(review.version===2))fail(409,'prep/protocol-conflict','Keep this prep reference in its original protocol. It cannot be converted into a different production attempt.');"
+          ]
+        },
+        {
+          "beforeStart": 180,
+          "afterStart": 210,
+          "beforeLines": [
+            "    if(path==='/prep/commit')fail(409,'prep/review-pending','This item was skipped for Owner review. No stock was prepared under this reference.');",
+            "    const intent={outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''};",
+            "    if(review.intentHash!==fingerprint(intent)||path==='/prep/review-skip'&&(review.reviewIntentHash!==fingerprint(reviewIntent(input))||review.sourceFingerprint!==input.expectedIssueFingerprint))fail(409,'prep/operation-conflict','This prep reference belongs to different saved review details.');"
+          ],
+          "afterLines": [
+            "    if(action==='/prep/commit')fail(409,'prep/review-pending','This item was skipped for Owner review. No stock was prepared under this reference.');",
+            "    const intent=actual?actualPrepIntent(input):{outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''};",
+            "    if(review.intentHash!==fingerprint(intent)||action==='/prep/review-skip'&&(review.reviewIntentHash!==fingerprint(reviewIntent(input))||review.sourceFingerprint!==input.expectedIssueFingerprint))fail(409,'prep/operation-conflict','This prep reference belongs to different saved review details.');"
+          ]
+        },
+        {
+          "beforeStart": 186,
+          "afterStart": 216,
+          "beforeLines": [
+            "  if(path==='/prep/review-skip'){"
+          ],
+          "afterLines": [
+            "  if(op&&['/prep/preview','/prep/commit','/prep/review-skip'].includes(action)&&actual!==(op.version===2))fail(409,'prep/protocol-conflict','Keep the original production protocol and reference; no new stock is authorized.');",
+            "  if(action==='/prep/review-skip'){"
+          ]
+        },
+        {
+          "beforeStart": 188,
+          "afterStart": 219,
+          "beforeLines": [
+            "   const intent={outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''},intentHash=fingerprint(intent);",
+            "   if(op){await authority(tx,actor,op.branch,now);if(prepCanonical(savedActorKey(op))!==prepCanonical(actorKey(actor))||op.intentHash!==intentHash)fail(409,'prep/operation-conflict','This reference already prepared different confirmed details.');return view(op.operationId,op,{saved:true,alreadySaved:true,skipped:false,reviewSaved:false,canCommit:false});}",
+            "   const old=await tx.get('prep_quotes',input.operationId);if(old){savedQuote(old,input.operationId);if(prepCanonical(savedActorKey(old))!==prepCanonical(actorKey(actor))||old.intentHash!==intentHash)fail(409,'prep/operation-conflict','The original prep preview belongs to different details.');}",
+            "   let blocked;try{await freshPlan(tx,input,branch=>authority(tx,actor,branch,now),{actor});}catch(error){if(error instanceof PrepRequestError&&error.review?.skippable===true)blocked=error;else throw error;}"
+          ],
+          "afterLines": [
+            "   const intent=actual?actualPrepIntent(input):{outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''},intentHash=fingerprint(intent);",
+            "   if(op){await authority(tx,actor,op.branch,now);if(prepCanonical(savedActorKey(op))!==prepCanonical(actorKey(actor))||op.intentHash!==intentHash)fail(409,'prep/operation-conflict','This reference already prepared different confirmed details.');return outcomeView(op.operationId,op,{saved:true,alreadySaved:true,skipped:false,reviewSaved:false,canCommit:false});}",
+            "   const old=await tx.get('prep_quotes',input.operationId);if(old){savedQuote(old,input.operationId);if(actual!==(old.version===2)||prepCanonical(savedActorKey(old))!==prepCanonical(actorKey(actor))||old.intentHash!==intentHash)fail(409,'prep/operation-conflict','The original prep preview belongs to different details.');}",
+            "   let blocked;try{await freshPlan(tx,input,branch=>authority(tx,actor,branch,now),{actor,actual});}catch(error){if(error instanceof PrepRequestError&&error.review?.skippable===true)blocked=error;else throw error;}"
+          ]
+        },
+        {
+          "beforeStart": 195,
+          "afterStart": 226,
+          "beforeLines": [
+            "   const record={version:1,kind:'cashier-prep-review',operationId:input.operationId,...actorFields(actor),staffName:actor.prepActorName,branch:input.branch,outputInventoryId:input.outputInventoryId,outputName:blocked.review.outputName,declaredName:input.declaredName,qty:input.qty,reason:intent.reason,intentHash,reviewIntentHash:fingerprint(reviewIntent(input)),skipReason:'SkipForNow',note:input.note||'',issue:blocked.review.issue,sourceFingerprint:input.expectedIssueFingerprint,sources:prepReviewSourceReferences(blocked.reviewSnapshot),status:'Pending',stockPosted:false,createdAt:tx.serverTimestamp()};"
+          ],
+          "afterLines": [
+            "   const record={version:actual?2:1,kind:actual?'actual-prep-review':'cashier-prep-review',...(actual?{actualProductionDeclaration:ACTUAL_PREP_DECLARATION}:{}),operationId:input.operationId,...actorFields(actor),staffName:actor.prepActorName,branch:input.branch,outputInventoryId:input.outputInventoryId,outputName:blocked.review.outputName,declaredName:input.declaredName,qty:input.qty,reason:intent.reason,intentHash,reviewIntentHash:fingerprint(reviewIntent(input)),skipReason:'SkipForNow',note:input.note||'',issue:blocked.review.issue,sourceFingerprint:input.expectedIssueFingerprint,sources:prepReviewSourceReferences(blocked.reviewSnapshot),status:'Pending',stockPosted:false,createdAt:tx.serverTimestamp()};"
+          ]
+        },
+        {
+          "beforeStart": 197,
+          "afterStart": 228,
+          "beforeLines": [
+            "   tx.createReview(input.operationId,record);"
+          ],
+          "afterLines": [
+            "   if(actual)tx.createActualReview(input.operationId,record);else tx.createReview(input.operationId,record);"
+          ]
+        },
+        {
+          "beforeStart": 200,
+          "afterStart": 231,
+          "beforeLines": [
+            "  if(path==='/prep/preview'){",
+            "   const intent={outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''},intentHash=fingerprint(intent);",
+            "   if(op){await authority(tx,actor,op.branch,now);if(prepCanonical(savedActorKey(op))!==prepCanonical(actorKey(actor))||op.intentHash!==intentHash)fail(409,'prep/operation-conflict','This prep reference belongs to different confirmed details.');return view(op.operationId,op,{alreadySaved:true,canCommit:false,expectedFingerprint:op.expectedFingerprint});}"
+          ],
+          "afterLines": [
+            "  if(action==='/prep/preview'){",
+            "   const intent=actual?actualPrepIntent(input):{outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||''},intentHash=fingerprint(intent);",
+            "   if(op){await authority(tx,actor,op.branch,now);if(prepCanonical(savedActorKey(op))!==prepCanonical(actorKey(actor))||op.intentHash!==intentHash)fail(409,'prep/operation-conflict','This prep reference belongs to different confirmed details.');return outcomeView(op.operationId,op,{alreadySaved:true,canCommit:false,expectedFingerprint:op.expectedFingerprint});}"
+          ]
+        },
+        {
+          "beforeStart": 205,
+          "afterStart": 236,
+          "beforeLines": [
+            "   if(old&&(prepCanonical(savedActorKey(old))!==prepCanonical(actorKey(actor))||old.intentHash!==intentHash))fail(409,'prep/operation-conflict','This prep reference belongs to different confirmed details.');",
+            "   const close=async(message,expired=false)=>{await authority(tx,actor,old.plan.branch,now);if(old.status!=='closed')tx.closeQuote(input.operationId);return view(input.operationId,old.plan,{canCommit:false,notSaved:true,quoteClosed:true,expired,blockers:[message]});};"
+          ],
+          "afterLines": [
+            "   if(old&&(actual!==(old.version===2)||prepCanonical(savedActorKey(old))!==prepCanonical(actorKey(actor))||old.intentHash!==intentHash))fail(409,'prep/operation-conflict','This prep reference belongs to different confirmed details.');",
+            "   const close=async(message,expired=false)=>{await authority(tx,actor,old.plan.branch,now);if(old.status!=='closed')tx.closeQuote(input.operationId);return outcomeView(input.operationId,old.plan,{canCommit:false,notSaved:true,quoteClosed:true,expired,blockers:[message],...(actual?{warningFingerprint:old.warningFingerprint,expectedFingerprint:old.expectedFingerprint}:{})});};"
+          ]
+        },
+        {
+          "beforeStart": 208,
+          "afterStart": 239,
+          "beforeLines": [
+            "   let fresh;try{fresh=await freshPlan(tx,input,branch=>authority(tx,actor,branch,now),{actor});}catch(error){if(old&&error.status===409)return close(error.message);throw error;}"
+          ],
+          "afterLines": [
+            "   let fresh;try{fresh=await freshPlan(tx,input,branch=>authority(tx,actor,branch,now),{actor,actual});}catch(error){if(old&&error.status===409)return close(error.message);throw error;}"
+          ]
+        },
+        {
+          "beforeStart": 210,
+          "afterStart": 241,
+          "beforeLines": [
+            "   if(old){if(old.expectedFingerprint!==expectedFingerprint)return close('Stock, units or the recipe changed. The earlier preview is closed without preparing stock.');return view(input.operationId,plan,{canCommit:true,expectedFingerprint,expiresAt:old.expiresAt,...provenance(fresh)});}",
+            "   tx.createQuote(input.operationId,{version:PREP_VERSION,kind:'owner-prep-quote',operationId:input.operationId,...actorFields(actor),intent,intentHash,plan,...provenance(fresh),expectedFingerprint,expiresAt,createdAt:tx.serverTimestamp()});",
+            "   return view(input.operationId,plan,{canCommit:true,expectedFingerprint,expiresAt,...provenance(fresh)});"
+          ],
+          "afterLines": [
+            "   const warningFingerprint=actual?actualWarningFingerprint(input.operationId,expectedFingerprint,plan):undefined;",
+            "   if(old){if(old.expectedFingerprint!==expectedFingerprint)return close('Stock, units or the recipe changed. The earlier preview is closed without preparing stock.');return outcomeView(input.operationId,plan,{canCommit:true,expectedFingerprint,expiresAt:old.expiresAt,...provenance(fresh),...(actual?{warningFingerprint}:{})});}",
+            "   const quote={version:actual?2:PREP_VERSION,kind:actual?'actual-prep-quote':'owner-prep-quote',operationId:input.operationId,...actorFields(actor),intent,intentHash,plan,...provenance(fresh),expectedFingerprint,expiresAt,createdAt:tx.serverTimestamp(),...(actual?{warningFingerprint}:{})};if(actual)tx.createActualQuote(input.operationId,quote);else tx.createQuote(input.operationId,quote);",
+            "   return outcomeView(input.operationId,plan,{canCommit:true,expectedFingerprint,expiresAt,...provenance(fresh),...(actual?{warningFingerprint}:{})});"
+          ]
+        },
+        {
+          "beforeStart": 214,
+          "afterStart": 246,
+          "beforeLines": [
+            "  if(path==='/prep/commit'){",
+            "   if(op){await authority(tx,actor,op.branch,now);if(prepCanonical(savedActorKey(op))!==prepCanonical(actorKey(actor))||op.expectedFingerprint!==input.expectedFingerprint)fail(409,'prep/operation-conflict','This prep reference belongs to different confirmed details.');return view(op.operationId,op,{saved:true,alreadySaved:true});}"
+          ],
+          "afterLines": [
+            "  if(action==='/prep/commit'){",
+            "   if(op){await authority(tx,actor,op.branch,now);if(prepCanonical(savedActorKey(op))!==prepCanonical(actorKey(actor))||op.expectedFingerprint!==input.expectedFingerprint||actual&&!validActualAcknowledgement(input.warningAcknowledgement,op.warningFingerprint,op.stockWarnings.length>0))fail(409,'prep/operation-conflict','This prep reference belongs to different confirmed details.');return outcomeView(op.operationId,op,{saved:true,alreadySaved:true});}"
+          ]
+        },
+        {
+          "beforeStart": 217,
+          "afterStart": 249,
+          "beforeLines": [
+            "   const fresh=await freshPlan(tx,{...quote.intent,operationId:input.operationId},branch=>authority(tx,actor,branch,now),{actor}),{plan}=fresh;await authority(tx,actor,plan.branch,now);"
+          ],
+          "afterLines": [
+            "   if(actual!==(quote.version===2))fail(409,'prep/protocol-conflict','Keep this quote in its original production protocol.');",
+            "   const fresh=await freshPlan(tx,{...quote.intent,operationId:input.operationId},branch=>authority(tx,actor,branch,now),{actor,actual}),{plan}=fresh;await authority(tx,actor,plan.branch,now);"
+          ]
+        },
+        {
+          "beforeStart": 219,
+          "afterStart": 252,
+          "beforeLines": [
+            "   const record={...plan,...provenance(fresh),operationId:input.operationId,intentHash:quote.intentHash,expectedFingerprint:input.expectedFingerprint,reason:quote.intent.reason,...actorFields(actor),committedAt:tx.serverTimestamp(),outputLogId:'prep-'+input.operationId+'-0'};",
+            "   for(const [index,effect]of plan.effects.entries()){tx.updateStock(effect.id,effect.beforeUpdateTime,effect.afterStock,{role:effect.role,outputInventoryId:plan.outputInventoryId});tx.createLog('prep-'+input.operationId+'-'+index,{version:1,prepOperationId:input.operationId,branch:plan.branch,inventoryId:effect.id,item:effect.name,uom:effect.unit,oldQty:effect.beforeStock,newQty:effect.afterStock,variance:effect.delta,type:index===0?(actor.prepApp==='cashier'?'End-of-Shift Kitchen Prep':'Manager Prep Batch'):'Kitchen Prep Ingredient',...(index===0?{purchQty:plan.qty,purchUom:plan.purchaseUnit}:{}),note:index===0?(actor.prepApp==='cashier'?'Cashier-confirmed audited prep':'Owner-confirmed audited prep'):'Ingredient used in '+plan.outputName,user:actor.prepActorName||PREP_OWNER,...actorFields(actor),timestamp:tx.serverTimestamp()});}",
+            "   tx.createOperation(input.operationId,record);return view(input.operationId,plan,{saved:true,alreadySaved:false});"
+          ],
+          "afterLines": [
+            "   const stockWarnings=actual?actualPrepWarnings(plan):[],warningFingerprint=actual?actualWarningFingerprint(input.operationId,input.expectedFingerprint,plan):undefined;",
+            "   if(actual){if(!validActualAcknowledgement(input.warningAcknowledgement,warningFingerprint,stockWarnings.length>0))fail(409,'prep/warning-ack-required','Confirm the exact recorded raw-stock warning before posting this additional actual production.');if(await tx.get('prep_stock_warnings',input.operationId)||await tx.get('prep_stock_warning_reviews',input.operationId))fail(409,'prep/audit-incomplete','This unposted reference already has warning evidence. Keep it for Owner review.');}",
+            "   const record={...plan,...provenance(fresh),operationId:input.operationId,intentHash:quote.intentHash,expectedFingerprint:input.expectedFingerprint,reason:quote.intent.reason,...actorFields(actor),committedAt:tx.serverTimestamp(),outputLogId:'prep-'+input.operationId+'-0',...(actual?{actualProductionDeclaration:ACTUAL_PREP_DECLARATION,warningFingerprint,stockWarnings,warningAcknowledgement:input.warningAcknowledgement||null}:{})};",
+            "   for(const [index,effect]of plan.effects.entries()){if(actual)tx.updateActualStock(effect.id,effect.beforeUpdateTime,effect.afterStock,{operationId:input.operationId,direction:'post'});else tx.updateStock(effect.id,effect.beforeUpdateTime,effect.afterStock,{role:effect.role,outputInventoryId:plan.outputInventoryId});tx.createLog('prep-'+input.operationId+'-'+index,{version:1,prepOperationId:input.operationId,branch:plan.branch,inventoryId:effect.id,item:effect.name,uom:effect.unit,oldQty:effect.beforeStock,newQty:effect.afterStock,variance:effect.delta,type:index===0?(actor.prepApp==='cashier'?'End-of-Shift Kitchen Prep':'Manager Prep Batch'):'Kitchen Prep Ingredient',...(index===0?{purchQty:plan.qty,purchUom:plan.purchaseUnit}:{}),note:index===0?(actual?'Cashier-confirmed additional unlogged actual production':actor.prepApp==='cashier'?'Cashier-confirmed audited prep':'Owner-confirmed audited prep'):'Ingredient used in '+plan.outputName,user:actor.prepActorName||PREP_OWNER,...actorFields(actor),timestamp:tx.serverTimestamp()});}",
+            "   if(actual){tx.createActualOperation(input.operationId,record);if(stockWarnings.length)tx.createStockWarning(input.operationId,{version:1,kind:'posted-prep-stock-warning',operationId:input.operationId,...actorFields(actor),staffName:actor.prepActorName,branch:plan.branch,outputInventoryId:plan.outputInventoryId,outputName:plan.outputName,qty:plan.qty,rows:stockWarnings,warningFingerprint,sourceFingerprint:input.expectedFingerprint,stockPosted:true,createdAt:tx.serverTimestamp()});}else tx.createOperation(input.operationId,record);return outcomeView(input.operationId,actual?record:plan,{saved:true,alreadySaved:false});"
+          ]
+        },
+        {
+          "beforeStart": 225,
+          "afterStart": 260,
+          "beforeLines": [
+            "  if(prior){if(path==='/prep/reverse'&&prior.requestId===input.requestId&&(prior.expectedFingerprint!==input.expectedFingerprint||prior.reason!==input.reason||prior.actorUid!==actor.uid))fail(409,'prep/operation-conflict','This reversal reference belongs to different confirmed details.');return view(op.operationId,op,{alreadyReversed:true,canReverse:false,saved:true,requestId:prior.requestId});}"
+          ],
+          "afterLines": [
+            "  if(op.version===2)savedActualReversal(prior,op);",
+            "  if(prior){if(path==='/prep/reverse'&&prior.requestId===input.requestId&&(prior.expectedFingerprint!==input.expectedFingerprint||prior.reason!==input.reason||prior.actorUid!==actor.uid))fail(409,'prep/operation-conflict','This reversal reference belongs to different confirmed details.');return outcomeView(op.operationId,op,{alreadyReversed:true,canReverse:false,saved:true,requestId:prior.requestId});}"
+          ]
+        },
+        {
+          "beforeStart": 227,
+          "afterStart": 263,
+          "beforeLines": [
+            "  try{plan=planPrepReversal(op,current);}catch(error){if(path==='/prep/reversal-preview')return view(op.operationId,op,{canReverse:false,blockers:[error.message]});fail(409,'prep/reversal-held',error.message);}"
+          ],
+          "afterLines": [
+            "  try{plan=op.version===2?planActualPrepReversal(op,current):planPrepReversal(op,current);}catch(error){if(path==='/prep/reversal-preview')return outcomeView(op.operationId,op,{canReverse:false,blockers:[error.message]});fail(409,'prep/reversal-held',error.message);}"
+          ]
+        },
+        {
+          "beforeStart": 229,
+          "afterStart": 265,
+          "beforeLines": [
+            "  if(path==='/prep/reversal-preview')return view(op.operationId,op,{canReverse:true,expectedFingerprint,reversalEffects:plan.effects,blockers:[]});"
+          ],
+          "afterLines": [
+            "  if(path==='/prep/reversal-preview')return outcomeView(op.operationId,op,{canReverse:true,expectedFingerprint,reversalEffects:plan.effects,blockers:[]});"
+          ]
+        },
+        {
+          "beforeStart": 231,
+          "afterStart": 267,
+          "beforeLines": [
+            "  for(const [index,effect]of plan.effects.entries()){tx.updateStock(effect.id,effect.beforeUpdateTime,effect.afterStock,{role:effect.role,outputInventoryId:plan.outputInventoryId});tx.createLog('prep-reverse-'+input.operationId+'-'+index,{version:1,prepOperationId:input.operationId,prepReversalId:input.operationId,branch:plan.branch,inventoryId:effect.id,item:effect.name,uom:effect.unit,oldQty:effect.beforeStock,newQty:effect.afterStock,variance:effect.delta,type:'Owner Prep Reversal',note:input.reason,user:PREP_OWNER,timestamp:tx.serverTimestamp()});}",
+            "  tx.createReversal(input.operationId,{...plan,actorUid:actor.uid,actorEmail:PREP_OWNER,requestId:input.requestId,reason:input.reason,expectedFingerprint,recordedAt:tx.serverTimestamp()});",
+            "  return view(op.operationId,op,{saved:true,alreadyReversed:false,requestId:input.requestId});"
+          ],
+          "afterLines": [
+            "  for(const [index,effect]of plan.effects.entries()){if(op.version===2)tx.updateActualStock(effect.id,effect.beforeUpdateTime,effect.afterStock,{operationId:input.operationId,direction:'reverse'});else tx.updateStock(effect.id,effect.beforeUpdateTime,effect.afterStock,{role:effect.role,outputInventoryId:plan.outputInventoryId});tx.createLog('prep-reverse-'+input.operationId+'-'+index,{version:1,prepOperationId:input.operationId,prepReversalId:input.operationId,branch:plan.branch,inventoryId:effect.id,item:effect.name,uom:effect.unit,oldQty:effect.beforeStock,newQty:effect.afterStock,variance:effect.delta,type:'Owner Prep Reversal',note:input.reason,user:PREP_OWNER,timestamp:tx.serverTimestamp()});}",
+            "  const reversal={...plan,actorUid:actor.uid,actorEmail:PREP_OWNER,requestId:input.requestId,reason:input.reason,expectedFingerprint,recordedAt:tx.serverTimestamp()};if(op.version===2)tx.createActualReversal(input.operationId,reversal);else tx.createReversal(input.operationId,reversal);",
+            "  return outcomeView(op.operationId,op,{saved:true,alreadyReversed:false,requestId:input.requestId});"
+          ]
+        },
+        {
+          "beforeStart": 238,
+          "afterStart": 274,
+          "beforeLines": [
+            "   if(![PREP_ORIGIN,PREP_CASHIER_ORIGIN].includes(origin)||origin===PREP_CASHIER_ORIGIN&&!['/prep/preview','/prep/commit','/prep/review-skip','/prep/status'].includes(request.path))fail(403,'prep/origin-required','Open prep review in the approved Owner app.');"
+          ],
+          "afterLines": [
+            "   if(![PREP_ORIGIN,PREP_CASHIER_ORIGIN].includes(origin)||origin===PREP_CASHIER_ORIGIN&&!['/prep/preview','/prep/commit','/prep/review-skip','/prep/status',...actualRoutes].includes(request.path))fail(403,'prep/origin-required','Open prep review in the approved Owner app.');",
+            "   if(actualRoutes.has(request.path)&&origin!==PREP_CASHIER_ORIGIN)fail(403,'prep/origin-required','Record actual production through the approved Cashier employee action.');"
+          ]
+        },
+        {
+          "beforeStart": 245,
+          "afterStart": 282,
+          "beforeLines": [
+            "   const body=request.body,path=request.path,cashierOrigin=origin===PREP_CASHIER_ORIGIN;"
+          ],
+          "afterLines": [
+            "   const body=request.body,path=request.path,cashierOrigin=origin===PREP_CASHIER_ORIGIN,actual=actualRoutes.has(path),action=actual?path.replace('/prep/actual-','/prep/'):path;"
+          ]
+        },
+        {
+          "beforeStart": 247,
+          "afterStart": 284,
+          "beforeLines": [
+            "   if(path!=='/prep/reviews'&&!operationId(body?.operationId))fail(400,'prep/invalid-request','Keep the original stable prep reference.');",
+            "   const cashierFields=cashierOrigin?['cashier']:[],quantity=typeof body.qty==='number'&&Number.isFinite(body.qty)&&body.qty>0&&body.qty<=1e6;"
+          ],
+          "afterLines": [
+            "   if(!['/prep/reviews','/prep/stock-warnings'].includes(path)&&!operationId(body?.operationId))fail(400,'prep/invalid-request','Keep the original stable prep reference.');",
+            "   if(actual&&(!actualPrepId(body?.operationId)||body.actualProductionDeclaration!==ACTUAL_PREP_DECLARATION)||!actual&&['/prep/preview','/prep/commit','/prep/review-skip'].includes(path)&&String(body?.operationId||'').startsWith('actual-prep-'))fail(400,'prep/protocol-required','Use the original versioned actual-production action and its fixed additional-unlogged-production declaration.');",
+            "   const cashierFields=[...(cashierOrigin?['cashier']:[]),...(actual?['actualProductionDeclaration']:[])],quantity=typeof body.qty==='number'&&Number.isFinite(body.qty)&&body.qty>0&&body.qty<=1e6;"
+          ]
+        },
+        {
+          "beforeStart": 252,
+          "afterStart": 290,
+          "beforeLines": [
+            "   const valid=path==='/prep/reviews'?fields(body,['afterOperationId'],[])&&(body.afterOperationId===undefined||operationId(body.afterOperationId))"
+          ],
+          "afterLines": [
+            "   const valid=['/prep/reviews','/prep/stock-warnings'].includes(path)?fields(body,['afterOperationId'],[])&&(body.afterOperationId===undefined||(path==='/prep/stock-warnings'?actualPrepId(body.afterOperationId):operationId(body.afterOperationId)))",
+            "    :path==='/prep/stock-warning-read'?fields(body,['operationId'])&&actualPrepId(body.operationId)",
+            "    :path==='/prep/stock-warning-review'?fields(body,['operationId','expectedWarningFingerprint','requestId','reason'])&&actualPrepId(body.operationId)&&hash(body.expectedWarningFingerprint)&&operationId(body.requestId)&&reason(body.reason)"
+          ]
+        },
+        {
+          "beforeStart": 256,
+          "afterStart": 296,
+          "beforeLines": [
+            "    :path==='/prep/preview'?fields(body,['operationId','outputInventoryId','qty','reason',...cashierFields,...(cashierOrigin?['branch','declaredName']:[])],['operationId','outputInventoryId','qty'])&&prepId(body.outputInventoryId)&&quantity&&(body.reason==null||reason(body.reason))&&(body.branch===undefined||branch(body.branch))&&(body.declaredName===undefined||label(body.declaredName))",
+            "    :path==='/prep/commit'?fields(body,['operationId','expectedFingerprint',...cashierFields])&&hash(body.expectedFingerprint)"
+          ],
+          "afterLines": [
+            "    :action==='/prep/preview'?fields(body,['operationId','outputInventoryId','qty','reason',...cashierFields,...(cashierOrigin?['branch','declaredName']:[])],['operationId','outputInventoryId','qty',...(actual?['actualProductionDeclaration']:[])])&&prepId(body.outputInventoryId)&&quantity&&(body.reason==null||reason(body.reason))&&(body.branch===undefined||branch(body.branch))&&(body.declaredName===undefined||label(body.declaredName))",
+            "    :action==='/prep/commit'?fields(body,['operationId','expectedFingerprint',...cashierFields,...(actual?['warningAcknowledgement']:[])],['operationId','expectedFingerprint',...cashierFields])&&hash(body.expectedFingerprint)&&(body.warningAcknowledgement===undefined||actual&&fields(body.warningAcknowledgement,['warningFingerprint','acknowledged'])&&hash(body.warningAcknowledgement.warningFingerprint)&&body.warningAcknowledgement.acknowledged===true)"
+          ]
+        },
+        {
+          "beforeStart": 260,
+          "afterStart": 300,
+          "beforeLines": [
+            "    :fields(body,['operationId','outputInventoryId','qty','branch','declaredName','expectedIssueFingerprint','skipReason','cashier','reason','note'],['operationId','outputInventoryId','qty','branch','declaredName','expectedIssueFingerprint','skipReason','cashier'])&&prepId(body.outputInventoryId)&&quantity&&branch(body.branch)&&label(body.declaredName)&&hash(body.expectedIssueFingerprint)&&body.skipReason==='SkipForNow'&&(body.reason===undefined||reason(body.reason))&&(body.note===undefined||note(body.note));"
+          ],
+          "afterLines": [
+            "    :fields(body,['operationId','outputInventoryId','qty','branch','declaredName','expectedIssueFingerprint','skipReason','cashier','reason','note',...(actual?['actualProductionDeclaration']:[])],['operationId','outputInventoryId','qty','branch','declaredName','expectedIssueFingerprint','skipReason','cashier',...(actual?['actualProductionDeclaration']:[])])&&prepId(body.outputInventoryId)&&quantity&&branch(body.branch)&&label(body.declaredName)&&hash(body.expectedIssueFingerprint)&&body.skipReason==='SkipForNow'&&(body.reason===undefined||reason(body.reason))&&(body.note===undefined||note(body.note));"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/prep-store.mjs",
+      "beforeSha256": "153b1d542751b431e544e481d56f070915b878890a034ba3c25086e89965948c",
+      "afterSha256": "4cb3d0ea4d9ee7a6dba9e5bbf8ff58c547b28da45de1da7947846c25db211ed6",
+      "hunks": [
+        {
+          "beforeStart": 4,
+          "afterStart": 4,
+          "beforeLines": [],
+          "afterLines": [
+            "import {actualPrepId,assertActualPrepPlan,actualPrepWarnings,actualWarningFingerprint,ACTUAL_PREP_DECLARATION,validStockWarningRows} from './prep-actual-model.mjs';"
+          ]
+        },
+        {
+          "beforeStart": 6,
+          "afterStart": 7,
+          "beforeLines": [],
+          "afterLines": [
+            "readTables.add('prep_stock_warnings');readTables.add('prep_stock_warning_reviews');"
+          ]
+        },
+        {
+          "beforeStart": 17,
+          "afterStart": 19,
+          "beforeLines": [],
+          "afterLines": [
+            "  const actualCreate=(table,id,value,kind)=>{if(!actualPrepId(id)||value.version!==2||value.kind!==kind||value.operationId!==id||!(value.actorType==='cashier'&&prepId(value.actorUid)&&prepId(value.staffId)&&prepId(value.deviceId)&&prepId(value.sessionId)||table==='prep_reversals'&&value.actorEmail===OWNER)||!cache.has(table+'/'+id)||values.get(table+'/'+id))throw Error('Save only the exact absent versioned actual-production audit.');wrote=true;tx.create(db.doc(table+'/'+id),value);};"
+          ]
+        },
+        {
+          "beforeStart": 27,
+          "afterStart": 30,
+          "beforeLines": [],
+          "afterLines": [
+            "   async stockWarningRows(afterOperationId){if(wrote||afterOperationId!==undefined&&(!actualPrepId(afterOperationId)||!values.get('prep_stock_warnings/'+afterOperationId)))throw Error('Read the exact posted-warning cursor first.');let q=db.collection('prep_stock_warnings').orderBy('createdAt','desc');if(afterOperationId!==undefined)q=q.startAfter(snapshots.get('prep_stock_warnings/'+afterOperationId));const snap=await tx.get(q.limit(21));reads+=snap.size;if(reads>150||snap.size>21)throw Error('The posted-warning inbox exceeded its bounded source.');return snap.docs.map(wrap);},"
+          ]
+        },
+        {
+          "beforeStart": 28,
+          "afterStart": 32,
+          "beforeLines": [],
+          "afterLines": [
+            "   createActualQuote(id,value){assertActualPrepPlan(value.plan);if(value.intent?.actualProductionDeclaration!==ACTUAL_PREP_DECLARATION||value.warningFingerprint!==actualWarningFingerprint(id,value.expectedFingerprint,value.plan))throw Error('Save only a complete actual-production quote.');actualCreate('prep_quotes',id,value,'actual-prep-quote');},",
+            "   createActualOperation(id,value){const quote=values.get('prep_quotes/'+id);if(quote?.kind!=='actual-prep-quote'||quote.version!==2||value.expectedFingerprint!==quote.expectedFingerprint||value.warningFingerprint!==quote.warningFingerprint||value.actualProductionDeclaration!==ACTUAL_PREP_DECLARATION)throw Error('Read the exact actual-production quote before posting.');actualCreate('prep_operations',id,value,'actual-prep');},",
+            "   createActualReview(id,value){if(value.actualProductionDeclaration!==ACTUAL_PREP_DECLARATION||value.stockPosted!==false||value.status!=='Pending')throw Error('Report only an unposted actual-production source issue.');actualCreate('prep_review_requests',id,value,'actual-prep-review');},",
+            "   createActualReversal(id,value){if(values.get('prep_operations/'+id)?.kind!=='actual-prep'||value.actorEmail!==OWNER)throw Error('Reverse only an exact saved actual-production operation.');actualCreate('prep_reversals',id,value,'actual-prep-reversal');},"
+          ]
+        },
+        {
+          "beforeStart": 30,
+          "afterStart": 38,
+          "beforeLines": [
+            "   sealQuote(id,closureFingerprint){const quote=values.get('prep_quotes/'+id);if(!prepId(id)||quote?.kind!=='owner-prep-quote'||!cache.has('prep_operations/'+id)||values.get('prep_operations/'+id)||!cache.has('prep_review_requests/'+id)||values.get('prep_review_requests/'+id)||!cache.has('prep_recovery_closures/'+id)||values.get('prep_recovery_closures/'+id)||typeof closureFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(closureFingerprint))throw Error('Seal only the exact unposted original quote with its private Owner closure.');wrote=true;tx.update(db.doc('prep_quotes/'+id),{kind:'prep-recovery-closed-existing-quote',status:'closed',closureFingerprint,closedAt:serverTimestamp()});},"
+          ],
+          "afterLines": [
+            "   sealQuote(id,closureFingerprint){const quote=values.get('prep_quotes/'+id);if(!prepId(id)||!['owner-prep-quote','actual-prep-quote'].includes(quote?.kind)||!cache.has('prep_operations/'+id)||values.get('prep_operations/'+id)||!cache.has('prep_review_requests/'+id)||values.get('prep_review_requests/'+id)||!cache.has('prep_recovery_closures/'+id)||values.get('prep_recovery_closures/'+id)||typeof closureFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(closureFingerprint))throw Error('Seal only the exact unposted original quote with its private Owner closure.');wrote=true;tx.update(db.doc('prep_quotes/'+id),{kind:'prep-recovery-closed-existing-quote',status:'closed',closureFingerprint,closedAt:serverTimestamp()});},"
+          ]
+        },
+        {
+          "beforeStart": 36,
+          "afterStart": 44,
+          "beforeLines": [],
+          "afterLines": [
+            "   createStockWarning(id,value){const quote=values.get('prep_quotes/'+id);if(!actualPrepId(id)||value.version!==1||value.kind!=='posted-prep-stock-warning'||value.operationId!==id||value.actorType!=='cashier'||quote?.kind!=='actual-prep-quote'||value.sourceFingerprint!==quote.expectedFingerprint||value.warningFingerprint!==quote.warningFingerprint||value.stockPosted!==true||!validStockWarningRows(value.rows)||JSON.stringify(value.rows)!==JSON.stringify(actualPrepWarnings(quote.plan))||!cache.has('prep_stock_warnings/'+id)||values.get('prep_stock_warnings/'+id))throw Error('Create only the exact linked posted-production warning.');wrote=true;tx.create(db.doc('prep_stock_warnings/'+id),value);},",
+            "   createStockWarningReview(id,value){const warning=values.get('prep_stock_warnings/'+id);if(!actualPrepId(id)||value.version!==1||value.kind!=='posted-prep-stock-warning-review'||value.operationId!==id||value.actorEmail!==OWNER||!prepId(value.actorUid)||value.decision!=='ReviewedPostedWarning'||value.warningFingerprint!==warning?.warningFingerprint||!cache.has('prep_stock_warning_reviews/'+id)||values.get('prep_stock_warning_reviews/'+id))throw Error('Review only an exact immutable posted warning.');wrote=true;tx.create(db.doc('prep_stock_warning_reviews/'+id),value);},",
+            "   updateActualStock(id,expectedUpdateTime,currentStock,{operationId,direction}={}){check('inventory',id);const saved=values.get('inventory/'+id),quote=values.get('prep_quotes/'+operationId),op=values.get('prep_operations/'+operationId),source=direction==='post'?quote?.plan:op,effect=source?.effects?.find(row=>row.id===id),posting=direction==='post';if(!actualPrepId(operationId)||!['post','reverse'].includes(direction)||!saved||!effect||source.version!==2||source.kind!=='actual-prep'||posting&&(quote.kind!=='actual-prep-quote'||!cache.has('prep_operations/'+operationId)||op)||!cache.has('prep_recovery_closures/'+operationId)||values.get('prep_recovery_closures/'+operationId)||saved.updateTime!==prepTimestampToken(expectedUpdateTime)||saved.branch!==effect.branch||typeof currentStock!=='number'||!Number.isFinite(currentStock)||Math.abs(currentStock)>1e12||currentStock!==(posting?effect.afterStock:effect.beforeStock)||saved.currentStock!==(posting?effect.beforeStock:effect.afterStock)||prepTimestampToken(expectedUpdateTime)!==(posting?effect.beforeUpdateTime:op.createTime))throw Error('Only exact versioned actual-production debit or its guarded reversal may change signed stock.');wrote=true;tx.update(db.doc('inventory/'+id),{currentStock});},"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/prep-model.mjs",
+      "beforeSha256": "e6a1aec2b4f917ef4d91f64176de4e7465d30694ec2fb81503ff44b9945e3fb7",
+      "afterSha256": "5a27fbe15a5bcfad5ed18218ecdbd554142af32dc07b44bfe1f46e27fcf54bd5",
+      "hunks": [
+        {
+          "beforeStart": 20,
+          "afterStart": 20,
+          "beforeLines": [
+            "function stock(row,branch,{role='ingredient'}={}){"
+          ],
+          "afterLines": [
+            "function stock(row,branch,{role='ingredient',signedIngredients=false}={}){"
+          ]
+        },
+        {
+          "beforeStart": 22,
+          "afterStart": 22,
+          "beforeLines": [
+            " if(!(role==='output'?signedStock(row.currentStock):quantity(row.currentStock)))fail('invalid-stock-quantity',role==='output'?'The prepared item '+row.name+' has an invalid saved stock balance. Ask HQ to review it.':'The raw ingredient '+row.name+' has an invalid or negative saved quantity. Ask HQ to review it before preparing stock.',{details:{inventoryId:row.id,itemName:row.name,role,...(typeof row.currentStock==='number'&&Number.isFinite(row.currentStock)?{recordedStock:row.currentStock}:{})}});"
+          ],
+          "afterLines": [
+            " if(!(role==='output'||signedIngredients?signedStock(row.currentStock):quantity(row.currentStock)))fail('invalid-stock-quantity',role==='output'?'The prepared item '+row.name+' has an invalid saved stock balance. Ask HQ to review it.':signedIngredients?'The raw ingredient '+row.name+' has an invalid saved stock balance. Ask HQ to review it.':'The raw ingredient '+row.name+' has an invalid or negative saved quantity. Ask HQ to review it before preparing stock.',{details:{inventoryId:row.id,itemName:row.name,role,...(typeof row.currentStock==='number'&&Number.isFinite(row.currentStock)?{recordedStock:row.currentStock}:{})}});"
+          ]
+        },
+        {
+          "beforeStart": 25,
+          "afterStart": 25,
+          "beforeLines": [
+            "export function planPrepBatch({output,ingredients,recipes,qty,recipeName=output?.name}){"
+          ],
+          "afterLines": [
+            "export function planPrepBatch(input){return planBatch(input,false);}",
+            "export function planActualPrepBatch(input){return planBatch(input,true);}",
+            "function planBatch({output,ingredients,recipes,qty,recipeName=output?.name},actual){"
+          ]
+        },
+        {
+          "beforeStart": 40,
+          "afterStart": 42,
+          "beforeLines": [
+            "  seenRecipe.add(row.id);const source=byName.get(row.ingredientName),item=stock(source,branch);"
+          ],
+          "afterLines": [
+            "  seenRecipe.add(row.id);const source=byName.get(row.ingredientName),item=stock(source,branch,{signedIngredients:actual});"
+          ]
+        },
+        {
+          "beforeStart": 45,
+          "afterStart": 47,
+          "beforeLines": [
+            "  const used=row.qty*qty,after=item.beforeStock-used;if(!quantity(used)||used<=0||after===item.beforeStock)fail('quantity-out-of-range','The captured ingredient quantity is too large or too small for this saved stock.');if(!quantity(after))fail('insufficient-stock','There is not enough '+item.name+' in this branch to prepare this quantity.',{details:{inventoryId:item.id,role:'ingredient'}});"
+          ],
+          "afterLines": [
+            "  const used=row.qty*qty,after=item.beforeStock-used;if(!quantity(used)||used<=0||after===item.beforeStock||actual&&!signedStock(after))fail('quantity-out-of-range','The captured ingredient quantity is too large or too small for this saved stock.');if(!actual&&!quantity(after))fail('insufficient-stock','There is not enough '+item.name+' in this branch to prepare this quantity.',{details:{inventoryId:item.id,role:'ingredient'}});"
+          ]
+        },
+        {
+          "beforeStart": 49,
+          "afterStart": 51,
+          "beforeLines": [
+            " return {version:PREP_VERSION,kind:PREP_KIND,branch,outputInventoryId:target.id,outputName:target.name,qty,purchaseUnit,outputBaseQuantity:outputQuantity,effects,recipe:recipe.sort((a,b)=>a.id.localeCompare(b.id))};"
+          ],
+          "afterLines": [
+            " return {version:actual?2:PREP_VERSION,kind:actual?'actual-prep':PREP_KIND,branch,outputInventoryId:target.id,outputName:target.name,qty,purchaseUnit,outputBaseQuantity:outputQuantity,effects,recipe:recipe.sort((a,b)=>a.id.localeCompare(b.id))};"
+          ]
+        },
+        {
+          "beforeStart": 51,
+          "afterStart": 53,
+          "beforeLines": [
+            "export function planPrepReversal(operation,currentRows){",
+            " if(operation?.kind!==PREP_KIND||operation.version!==PREP_VERSION||!prepId(operation.operationId)||!text(operation.branch,128)||!prepId(operation.outputInventoryId)||!Array.isArray(operation.effects)||operation.effects.length<2||operation.effects.length>PREP_MAX_INGREDIENTS+1||!prepTimestampToken(operation.createTime)||operation.updateTime!==undefined&&prepTimestampToken(operation.updateTime)!==prepTimestampToken(operation.createTime))fail('reversal-source-invalid','This older prep has no trusted, complete ingredient movement record. Automatic reversal is unavailable; ask HQ to review a documented stock correction.',{skippable:false});"
+          ],
+          "afterLines": [
+            "export function planPrepReversal(operation,currentRows){return planReversal(operation,currentRows,false);}",
+            "export function planActualPrepReversal(operation,currentRows){return planReversal(operation,currentRows,true);}",
+            "function planReversal(operation,currentRows,actual){",
+            " if(operation?.kind!==(actual?'actual-prep':PREP_KIND)||operation.version!==(actual?2:PREP_VERSION)||!prepId(operation.operationId)||!text(operation.branch,128)||!prepId(operation.outputInventoryId)||!Array.isArray(operation.effects)||operation.effects.length<2||operation.effects.length>PREP_MAX_INGREDIENTS+1||!prepTimestampToken(operation.createTime)||operation.updateTime!==undefined&&prepTimestampToken(operation.updateTime)!==prepTimestampToken(operation.createTime))fail('reversal-source-invalid','This older prep has no trusted, complete ingredient movement record. Automatic reversal is unavailable; ask HQ to review a documented stock correction.',{skippable:false});"
+          ]
+        },
+        {
+          "beforeStart": 59,
+          "afterStart": 63,
+          "beforeLines": [
+            "  if(!effect||!prepId(effect.id)||seen.has(effect.id)||effect.branch!==operation.branch||!savedName(effect.name)||!text(effect.unit,40)||!(effect.role==='output'?signedStock(effect.beforeStock)&&signedStock(effect.afterStock):quantity(effect.beforeStock)&&quantity(effect.afterStock))||typeof effect.delta!=='number'||!Number.isFinite(effect.delta)||Math.abs(effect.delta)>1e12||effect.afterStock-effect.beforeStock!==effect.delta&&Math.abs((effect.afterStock-effect.beforeStock)-effect.delta)>Math.max(1,Math.abs(effect.delta))*Number.EPSILON*8||effect.role!==(effect.id===operation.outputInventoryId?'output':'ingredient')||effect.role==='output'&&effect.delta<=0||effect.role==='ingredient'&&effect.delta>=0)fail('reversal-movement-invalid','The saved prep movement record needs review.',{skippable:false});",
+            "  seen.add(effect.id);const source=rows.get(effect.id);let current;try{current=stock(source,operation.branch,{role:effect.role});}catch{fail('reversal-source-invalid','The original stock item or unit is unavailable. Reversal is held for HQ review.',{skippable:false});}"
+          ],
+          "afterLines": [
+            "  if(!effect||!prepId(effect.id)||seen.has(effect.id)||effect.branch!==operation.branch||!savedName(effect.name)||!text(effect.unit,40)||!(effect.role==='output'||actual?signedStock(effect.beforeStock)&&signedStock(effect.afterStock):quantity(effect.beforeStock)&&quantity(effect.afterStock))||typeof effect.delta!=='number'||!Number.isFinite(effect.delta)||Math.abs(effect.delta)>1e12||effect.afterStock-effect.beforeStock!==effect.delta&&Math.abs((effect.afterStock-effect.beforeStock)-effect.delta)>Math.max(1,Math.abs(effect.delta))*Number.EPSILON*8||effect.role!==(effect.id===operation.outputInventoryId?'output':'ingredient')||effect.role==='output'&&effect.delta<=0||effect.role==='ingredient'&&effect.delta>=0)fail('reversal-movement-invalid','The saved prep movement record needs review.',{skippable:false});",
+            "  seen.add(effect.id);const source=rows.get(effect.id);let current;try{current=stock(source,operation.branch,{role:effect.role,signedIngredients:actual});}catch{fail('reversal-source-invalid','The original stock item or unit is unavailable. Reversal is held for HQ review.',{skippable:false});}"
+          ]
+        },
+        {
+          "beforeStart": 65,
+          "afterStart": 69,
+          "beforeLines": [
+            " return {version:PREP_VERSION,kind:'owner-prep-reversal',operationId:operation.operationId,branch:operation.branch,outputInventoryId:operation.outputInventoryId,outputName:operation.outputName,committedAt:committed,effects:restored};"
+          ],
+          "afterLines": [
+            " return {version:actual?2:PREP_VERSION,kind:actual?'actual-prep-reversal':'owner-prep-reversal',operationId:operation.operationId,branch:operation.branch,outputInventoryId:operation.outputInventoryId,outputName:operation.outputName,committedAt:committed,effects:restored};"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/prep-review-model.mjs",
+      "beforeSha256": "16488e56adb47db2a11c2706d56df759d386e6bd2b8a865c85499ca46447b761",
+      "afterSha256": "4df0a79902296fa2e3f1eb33ee86d287bb1204332a0db7b9ebab357b6566c855",
+      "hunks": [
+        {
+          "beforeStart": 21,
+          "afterStart": 21,
+          "beforeLines": [
+            "export function prepReviewFingerprint({actor,intent,branch,snapshot,issue}){",
+            " return prepReviewHash({version:1,kind:'cashier-prep-review',actor,intent,branch,snapshot,issue:{code:issue.code,message:issue.message,details:issue.details}});"
+          ],
+          "afterLines": [
+            "export function prepReviewFingerprint({actor,intent,branch,snapshot,issue,actual=false}){",
+            " return prepReviewHash({version:actual?2:1,kind:actual?'actual-prep-review':'cashier-prep-review',actor,intent,branch,snapshot,issue:{code:issue.code,message:issue.message,details:issue.details}});"
+          ]
+        },
+        {
+          "beforeStart": 29,
+          "afterStart": 29,
+          "beforeLines": [
+            " if(!row||row.version!==1||row.kind!=='cashier-prep-review'||row.operationId!==id||row.status!=='Pending'||row.stockPosted!==false||!prepId(row.actorUid)||!prepId(row.staffId)||!prepId(row.deviceId)||!prepId(row.sessionId)||!prepId(row.outputInventoryId)||typeof row.branch!=='string'||!row.branch||row.branch.length>128||typeof row.qty!=='number'||!Number.isFinite(row.qty)||row.qty<=0||row.qty>1e6||typeof row.sourceFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(row.sourceFingerprint)||typeof row.intentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.intentHash)||typeof row.reviewIntentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.reviewIntentHash)||!row.issue||Object.keys(row.issue).some(key=>!['code','message','details'].includes(key))||typeof row.issue.code!=='string'||!/^[a-z0-9-]{1,80}$/.test(row.issue.code)||typeof row.issue.message!=='string'||row.issue.message.length>2000||!validDetails||!row.sources||row.sources.output&&!prepTimestampToken(row.sources.output.updateTime))throw new PrepSourceReviewError('saved-review-invalid','The saved prep review is incomplete. Ask the Owner to review its original reference.');"
+          ],
+          "afterLines": [
+            " const actual=row?.version===2&&row.kind==='actual-prep-review'&&row.actualProductionDeclaration==='AdditionalUnloggedProduction'&&prepId(id)&&id.startsWith('actual-prep-');",
+            " if(!row||!(actual||row.version===1&&row.kind==='cashier-prep-review')||row.operationId!==id||row.status!=='Pending'||row.stockPosted!==false||!prepId(row.actorUid)||!prepId(row.staffId)||!prepId(row.deviceId)||!prepId(row.sessionId)||!prepId(row.outputInventoryId)||typeof row.branch!=='string'||!row.branch||row.branch.length>128||typeof row.qty!=='number'||!Number.isFinite(row.qty)||row.qty<=0||row.qty>1e6||typeof row.sourceFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(row.sourceFingerprint)||typeof row.intentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.intentHash)||typeof row.reviewIntentHash!=='string'||!/^[a-f0-9]{64}$/.test(row.reviewIntentHash)||!row.issue||Object.keys(row.issue).some(key=>!['code','message','details'].includes(key))||typeof row.issue.code!=='string'||!/^[a-z0-9-]{1,80}$/.test(row.issue.code)||typeof row.issue.message!=='string'||row.issue.message.length>2000||!validDetails||!row.sources||row.sources.output&&!prepTimestampToken(row.sources.output.updateTime))throw new PrepSourceReviewError('saved-review-invalid','The saved prep review is incomplete. Ask the Owner to review its original reference.');"
+          ]
+        }
+      ]
+    }
+  ],
+  "added": {
+    "path": "functions/cash-remittance-review/prep-actual-model.mjs",
+    "sha256": "5bd33935bc0f78bb62161c06c1ac60256d20111c5fe1c6e1733fe606ddee87fa"
+  }
+}
