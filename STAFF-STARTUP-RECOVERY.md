@@ -12,4 +12,8 @@ Product scope: `index.html`, `sw.js`, new `staff-startup.js`, and one final read
 
 Validation includes native module-link failures without app evaluation, classic recovery with the main application absent, verified-worker/cohort and multi-window activation tests, exact source boundaries, and the normal hosted regression suite. Native browser recovery uses fictional local assets with the actual startup and worker runtime; no Staff credentials or attendance are created.
 
-Generate the shell pins only after all Staff files are final: `node tools/build-staff-shell-cohort.mjs`. Verify them with `--check`. Full regression and installed SDK checks run on the hosted review branch, not on the user's PC.
+The R2 correction embeds the same reviewed recovery runtime immediately after the initial charset, before any stylesheet or external script. The previous deferred loader could itself wait behind a stalled stylesheet. Native browser inspection also showed that merely running early did not release stylesheet-blocked painting. While startup is incomplete and recovery is being shown, R2 temporarily makes only unresolved, enabled, same-origin screen stylesheets nonblocking. Loaded, print, foreign and ready-page styles remain untouched. A completed stylesheet restores its original media only if the recovery code still owns that unchanged marker.
+
+This R2 correction changes only the page packaging, recovery style-release helper, release labels and generated worker pins. Existing app, business, attendance, authentication and activation modules remain exact to the prior release. It does not force worker takeover or reload other windows.
+
+Generate the inline copy first with `node tools/build-staff-startup-inline.mjs`, then shell pins with `node tools/build-staff-shell-cohort.mjs`. Verify each with `--check`. Full regression and installed SDK checks run on the hosted review branch, not on the user's PC.

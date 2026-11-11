@@ -1,5 +1,5 @@
-const STAFF_RELEASE = 'staff-startup-20261111-r1';
-const CACHE_NAME = 'takodeal-staff-v54-startup-20261111-r1';
+const STAFF_RELEASE = 'staff-startup-20261111-r2';
+const CACHE_NAME = 'takodeal-staff-v55-inline-20261111-r2';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./worked-shift-reference.js');
@@ -42,12 +42,12 @@ SHELL.push('./staff-startup.js');
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "501ebed6ebc4a30fae3a7b3cc58d27dfefbaad3fc91893f0db9bc322769f92bb",
-    "bytes": 63245
+    "sha256": "b4ad9f5ac4fa1f9d3195dfc95411fbef6a22877c0551fef69d4bd7cb6d51d88a",
+    "bytes": 78974
   },
   "./index.html": {
-    "sha256": "501ebed6ebc4a30fae3a7b3cc58d27dfefbaad3fc91893f0db9bc322769f92bb",
-    "bytes": 63245
+    "sha256": "b4ad9f5ac4fa1f9d3195dfc95411fbef6a22877c0551fef69d4bd7cb6d51d88a",
+    "bytes": 78974
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -414,11 +414,11 @@ const SHELL_INTEGRITY = {
     "bytes": 13747
   },
   "./staff-startup.js": {
-    "sha256": "1e47aa1de0b7d17ac5267f0df04528f713333229c299b8cfe3cd70d2c0d95f1b",
-    "bytes": 14049
+    "sha256": "89e746d418933d82c2ccf9c6a3cf6bf29128867652c85c3cf8aea29190c6868c",
+    "bytes": 15702
   }
 };
-const COHORT_HASH = "d80d404aef70cde0ceb6ff6272ca3bf7e14c0882bb6c0be3201dbd35b1447198";
+const COHORT_HASH = "e0c17f10d3d4cd2c6750223d7b809b4b32b48afef3a8dd6e5dbf14e80ca6cb59";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces

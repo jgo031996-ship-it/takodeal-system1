@@ -1,16 +1,42 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-startup-20261111-r1';
+    var release = 'staff-startup-20261111-r2';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;
     var timers = [], earlyStatus = 'Staff app is opening. Please wait; your device registration is kept.';
+    var releasedStyles = [];
     function nodes(selector) { return d.querySelectorAll ? Array.from(d.querySelectorAll(selector)) : []; }
+    function releasePendingStyles() {
+        if (ready) return;
+        nodes('link[rel~="stylesheet"]').forEach(function (link) {
+            try {
+                if (link.sheet !== null || link.disabled || releasedStyles.indexOf(link) !== -1) return;
+                var href = link.getAttribute('href'), media = link.getAttribute('media'), value = String(media || '').trim().toLowerCase();
+                if (!href || ['', 'all', 'screen'].indexOf(value) === -1) return;
+                var base = new URL('./', w.location.href), url = new URL(href, w.location.href);
+                if (url.origin !== base.origin || url.pathname.indexOf(base.pathname) !== 0) return;
+                var marker = 'data-staff-startup-style-release';
+                if (link.hasAttribute(marker)) return;
+                function restore() {
+                    link.removeEventListener('load', restore); link.removeEventListener('error', restore);
+                    if (link.getAttribute(marker) !== release) return;
+                    if (link.getAttribute('media') === 'not all') {
+                        if (media === null) link.removeAttribute('media'); else link.setAttribute('media', media);
+                    }
+                    link.removeAttribute(marker);
+                }
+                link.addEventListener('load', restore); link.addEventListener('error', restore);
+                releasedStyles.push(link); link.setAttribute(marker, release); link.setAttribute('media', 'not all');
+            } catch (_) { /* Unknown stylesheet state stays untouched. */ }
+        });
+    }
     function status(text) {
         nodes('[data-staff-update-status]').forEach(function (node) { node.textContent = text; node.hidden = !text; });
     }
     function show(text) {
+        releasePendingStyles();
         if (!banner && d.body) {
             banner = d.createElement('section'); banner.id = 'staffStartupRecovery';
             banner.setAttribute('role', 'status'); banner.setAttribute('aria-live', 'polite');
