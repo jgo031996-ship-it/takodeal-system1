@@ -1,0 +1,118 @@
+name: Measured prep backend checks
+
+on:
+  push:
+    branches: [feat/measured-prep-core]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: measured-prep-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/feat/measured-prep-core'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Official actions/* v4 commits verified on 2026-11-10.
+      - name: Check out the exact pushed commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          # The receipt-engine boundary test reads the exact stable base commit.
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Install locked private document runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-document-broker
+      - name: Verify private document SDK without cloud access
+        run: node tools/private-broker-sdk-check.mjs
+
+      - name: Install locked Staff device setup runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-device-setup
+      - name: Verify Staff device setup SDK without cloud access
+        run: node tools/staff-device-setup-sdk-check.mjs
+
+      - name: Install locked cash remittance runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/cash-remittance-review
+      - name: Verify cash remittance SDK without cloud access
+        run: node tools/cash-remittance-sdk-check.mjs
+
+      - name: Verify generated security rules
+        run: node tools/build-firestore-rules.mjs --check
+
+      - name: Use Java 21 for isolated database tests
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install locked isolated database test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix tests/fixtures/prep-hosted-tools
+
+      - name: Download and verify the exact official database emulator
+        run: node tools/prepare-prep-hosted-emulator.mjs
+
+      - name: Verify original prep transactions with the actual Admin SDK
+        run: node --test --test-concurrency=1 tests/owner-prep-admin.emulator.mjs
+
+      - name: Verify prep skip reporting and signed output with actual Admin transactions
+        run: node --test --test-concurrency=1 tests/prep-review-admin.emulator.mjs
+
+      - name: Verify active rules keep private prep reviews inaccessible
+        run: node --test --test-concurrency=1 tests/prep-review-private-rules.emulator.mjs
+
+      - name: Verify Owner desktop login, receipt corrections and prep with actual Admin transactions
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/owner-desktop-admin.emulator.mjs
+
+      - name: Verify original cashier PIN and manual unit review with actual Admin transactions
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/cashier-void-original-puncher-admin.emulator.mjs
+
+      - name: Verify receipt-specific PIN records remain private under active rules
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/cashier-void-pin-private-rules.emulator.mjs
+
+      - name: Verify prep recovery races and status with actual Admin transactions
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/prep-recovery-admin.emulator.mjs
+
+      - name: Verify recovery cancellation and review records remain private
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/prep-recovery-private-rules.emulator.mjs
+
+      - name: Verify actual prep warning transactions and reversal with actual Admin SDK
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/actual-prep-admin.emulator.mjs
+
+      - name: Verify posted stock warnings and reviews remain server-only
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/actual-prep-private-rules.emulator.mjs
+
+      - name: Verify measured output, zero-yield and warning transactions with actual Admin SDK
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/measured-prep-admin.emulator.mjs
+
+      - name: Verify yield warning records and reviews remain server-only
+        run: node --test --test-reporter=tap --test-concurrency=1 tests/measured-prep-private-rules.emulator.mjs
+
+      - name: Check scripts in all six apps
+        run: |
+          set -euo pipefail
+          for script in takodeal-manager/*.js Takodeal-POS/*.js Customer/*.js takodeal-staff/*.js takodeal-franchise/*.js takodeal-delivery/*.js; do
+            node --check "$script"
+          done
+
+      - name: Run the normal test suite
+        run: |
+          set -euo pipefail
+          # The optional browser suite needs a separately installed browser.
+          tests=()
+          for test in tests/*.test.mjs; do
+            [[ "$test" == tests/outbox-browser.test.mjs ]] || tests+=("$test")
+          done
+          node --test --test-reporter=tap --test-concurrency=2 "${tests[@]}"
