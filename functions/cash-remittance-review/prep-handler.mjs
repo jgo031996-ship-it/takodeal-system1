@@ -6,7 +6,8 @@ import {activeStaffProfile} from './relief-core/staff-lifecycle-model.js';
 import {ownerDesktopSessionMatches,OwnerDesktopAuthorityError} from './owner-desktop-authority.mjs';
 import {PrepSourceReviewError,normalizedPrepName,prepSemanticIssue,prepReviewSourceSnapshot,prepReviewFingerprint,prepReviewSourceReferences,savedPrepReview} from './prep-review-model.mjs';
 export const PREP_OWNER='jgo031996@gmail.com',PREP_ORIGIN='https://takodeal-owner.vercel.app',PREP_CASHIER_ORIGIN='https://takodeal-cashier.vercel.app',PREP_MAX_BYTES=4096;
-const routes=new Set(['/prep/preview','/prep/commit','/prep/reversal-preview','/prep/reverse','/prep/review-skip','/prep/reviews','/prep/review-read']);
+const routes=new Set(['/prep/preview','/prep/commit','/prep/reversal-preview','/prep/reverse','/prep/review-skip','/prep/reviews','/prep/review-read','/prep/status','/prep/recovery-close','/prep/review-resolve']);
+const recoveryRoutes=new Set(['/prep/status','/prep/recovery-close','/prep/review-resolve']);
 const plain=value=>Boolean(value&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value)));
 const fields=(value,keys,required=keys)=>plain(value)&&Object.keys(value).every(key=>keys.includes(key))&&required.every(key=>Object.hasOwn(value,key));
 const fingerprint=value=>createHash('sha256').update(prepCanonical(value)).digest('hex'),hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
@@ -89,12 +90,47 @@ const reviewView=row=>({schemaVersion:1,operationId:row.operationId,branch:row.b
 const reviewIntent=input=>({outputInventoryId:input.outputInventoryId,qty:input.qty,reason:input.reason||'',branch:input.branch,declaredName:input.declaredName,skipReason:input.skipReason,note:input.note||''});
 function privateReview(row,id){try{savedPrepReview(row,id);const token=prepTimestampToken(row.createdAt),createdAt=token&&new Date(Number(token.split(':')[0])*1000+Number(token.split(':')[1])/1e6).toISOString();if(!createdAt||!operationId(id)||typeof row.outputName!=='string'||!row.outputName.trim()||row.outputName.length>160||typeof row.declaredName!=='string'||row.declaredName.length>160||typeof row.reason!=='string'||row.reason.length>1000||typeof row.note!=='string'||row.note.length>500||typeof row.staffName!=='string'||row.staffName.length>200||typeof row.issue.code!=='string'||!/^[a-z0-9-]{1,80}$/.test(row.issue.code)||row.issue.message.length>2000||!plain(row.issue.details))throw Error();return {operationId:id,branch:row.branch,outputInventoryId:row.outputInventoryId,outputName:row.outputName,qty:row.qty,status:'Pending',stockPosted:false,createdAt};}catch{fail(409,'prep/review-incomplete','The saved prep review needs Owner confirmation. Keep its original reference.');}}
 
+function recoverySource(row){
+ if(!row)return null;const plan=row.kind==='owner-prep-quote'?row.plan:row;
+ if(typeof plan.branch!=='string'||!plan.branch.trim()||plan.branch.length>128||!prepId(plan.outputInventoryId)||typeof plan.outputName!=='string'||!plan.outputName.trim()||plan.outputName.length>160||typeof plan.qty!=='number'||!Number.isFinite(plan.qty)||plan.qty<=0||plan.qty>1e6||!hash(row.intentHash))fail(409,'prep/recovery-incomplete','The original prep identity is incomplete. Keep its reference for Owner review.');
+ return {branch:plan.branch,outputInventoryId:plan.outputInventoryId,outputName:plan.outputName,qty:plan.qty,intentHash:row.intentHash,actorFingerprint:fingerprint(savedActorKey(row))};
+}
+const closureCore=row=>({version:row.version,kind:row.kind,operationId:row.operationId,requestId:row.requestId,actorUid:row.actorUid,actorEmail:row.actorEmail,reason:row.reason,status:row.status,stockPosted:row.stockPosted,closedFromFingerprint:row.closedFromFingerprint,source:row.source,sourceActor:row.sourceActor,quoteEvidence:row.quoteEvidence});
+const recoveryActorKey=value=>plain(value)&&prepId(value.actorUid)&&(Object.hasOwn(value,'staffId')?fields(value,['actorUid','staffId','deviceId','sessionId'])&&prepId(value.staffId)&&prepId(value.deviceId)&&prepId(value.sessionId)&&value.sessionId.length>=16:fields(value,['actorUid']));
+function savedClosure(row,id){
+ if(!row||row.version!==1||row.kind!=='prep-recovery-closure'||row.operationId!==id||!operationId(row.requestId)||!prepId(row.actorUid)||row.actorEmail!==PREP_OWNER||!reason(row.reason)||row.status!=='Closed'||row.stockPosted!==false||!hash(row.closedFromFingerprint)||row.source===undefined||row.sourceActor===undefined||row.quoteEvidence===undefined)fail(409,'prep/recovery-incomplete','The saved prep closure needs Owner review. Keep its exact reference.');
+ if(row.source===null){if(row.sourceActor!==null||row.quoteEvidence!==null)fail(409,'prep/recovery-incomplete','The saved closure has conflicting source evidence.');}
+ else if(!fields(row.source,['branch','outputInventoryId','outputName','qty','intentHash','actorFingerprint'])||typeof row.source.branch!=='string'||!row.source.branch.trim()||row.source.branch.length>128||!prepId(row.source.outputInventoryId)||typeof row.source.outputName!=='string'||!row.source.outputName.trim()||row.source.outputName.length>160||typeof row.source.qty!=='number'||!Number.isFinite(row.source.qty)||row.source.qty<=0||row.source.qty>1e6||!hash(row.source.intentHash)||!hash(row.source.actorFingerprint)||!recoveryActorKey(row.sourceActor)||row.source.actorFingerprint!==fingerprint(row.sourceActor))fail(409,'prep/recovery-incomplete','The saved closure has incomplete original source evidence.');
+ if(row.source!==null){if(!plain(row.quoteEvidence))fail(409,'prep/recovery-incomplete','The saved closure is missing its original quote evidence.');savedQuote(row.quoteEvidence,id);if(prepCanonical(recoverySource(row.quoteEvidence))!==prepCanonical(row.source)||prepCanonical(savedActorKey(row.quoteEvidence))!==prepCanonical(row.sourceActor))fail(409,'prep/recovery-incomplete','The saved closure does not match its original quote evidence.');}
+}
+function savedClosedQuote(row,id,closure){
+ if(row.kind==='prep-recovery-closed-existing-quote'){
+  if(!closure?.quoteEvidence||row.closureFingerprint!==fingerprint(closureCore(closure)))fail(409,'prep/recovery-incomplete','The closed prep quote is missing its matching private evidence.');
+  const original=value=>Object.fromEntries(Object.entries(value).filter(([key])=>!['id','updateTime','createTime','accessRevision','closedAt','closureFingerprint'].includes(key)));
+  if(prepCanonical({...original(row),kind:'owner-prep-quote'})!==prepCanonical({...original(closure.quoteEvidence),status:'closed'}))fail(409,'prep/recovery-incomplete','The closed prep quote no longer matches its preserved original evidence.');return;
+ }
+ const data=['version','kind','operationId','actorUid','actorEmail','status','stockPosted','closureFingerprint','createdAt'];
+ if(!closure||closure.source!==null||!fields(row,[...data,'id','updateTime','createTime','accessRevision'],data)||row.version!==1||row.kind!=='prep-recovery-closed-quote'||row.operationId!==id||row.actorUid!==closure.actorUid||row.actorEmail!==PREP_OWNER||row.status!=='closed'||row.stockPosted!==false||row.closureFingerprint!==fingerprint(closureCore(closure)))fail(409,'prep/recovery-incomplete','The closed prep reference does not match its private Owner closure. Keep its exact reference.');
+}
+const resolutionCore=row=>({version:row.version,kind:row.kind,operationId:row.operationId,requestId:row.requestId,actorUid:row.actorUid,actorEmail:row.actorEmail,reason:row.reason,decision:row.decision,stockPosted:row.stockPosted,reviewSourceFingerprint:row.reviewSourceFingerprint});
+function savedResolution(row,id,review){if(!row||!review||row.version!==1||row.kind!=='prep-review-resolution'||row.operationId!==id||!operationId(row.requestId)||!prepId(row.actorUid)||row.actorEmail!==PREP_OWNER||!reason(row.reason)||row.decision!=='ReviewedNoStock'||row.stockPosted!==false||row.reviewSourceFingerprint!==review.sourceFingerprint)fail(409,'prep/recovery-incomplete','The saved no-stock review is incomplete or changed. Keep its exact reference.');}
+function recoveryView(id,{op,review,quote,closure,resolution,reversal}){
+ const state=op?'saved':review?'skipped':closure?'closed':quote?'pending':'unknown',source=closure?closure.source:recoverySource(op||review||quote),terminal=['saved','skipped','closed'].includes(state);
+ const evidence=closure?{closure:closureCore(closure)}:{op:op||null,review:review||null,quote:!op&&!review?quote||null:null,resolution:resolution?resolutionCore(resolution):null,reversal:op?reversal||null:null};
+ return {schemaVersion:1,operationId:id,state,terminal,stockPosted:state==='saved'?true:state==='unknown'?null:false,canCommit:false,recoveryFingerprint:fingerprint({version:1,operationId:id,evidence}),source,quoteClosed:Boolean(closure||quote?.status==='closed'),reviewed:Boolean(resolution),reversed:Boolean(op&&reversal)};
+}
+function assertRecoveryActor(actor,record,summary){
+ if(actor.prepApp!=='cashier'||!record)return;
+ const key=savedActorKey(record);
+ if(key.actorUid!==actor.uid||key.staffId!==actor.cashier.staffId||key.deviceId!==actor.cashier.deviceId||summary.branch!==actor.prepBranch)fail(409,'prep/operation-conflict','This prep reference belongs to another employee, device, sign-in identity or branch. Ask the Owner to review its exact outcome; it cannot be moved to this account.');
+}
+
 const view=(operationId,plan,extra={})=>({operationId,branch:plan.branch,outputInventoryId:plan.outputInventoryId,outputName:plan.outputName,qty:plan.qty,purchaseUnit:plan.purchaseUnit,outputBaseQuantity:plan.outputBaseQuantity,effects:plan.effects,...provenance(plan),...(plan.effects?.[0]?.beforeStock<0?{warnings:[{code:'negative-output-balance',message:'The recorded prepared stock starts negative. This batch adds its real output quantity while retaining any remaining deficit; it does not reset stock to zero.'}]}:{}),...extra});
 export function createPrepHandler({verifyToken,store,now=Date.now}={}){
  if(typeof verifyToken!=='function'||typeof store?.transaction!=='function')throw Error('Trusted Owner authentication and prep transactions are required.');
  async function execute(path,input,actor){return store.transaction(async tx=>{
   await authority(tx,actor,undefined,now);
-  if(path==='/prep/reviews'||path==='/prep/review-read'){
+  if(path==='/prep/reviews'||path==='/prep/review-read'||recoveryRoutes.has(path)&&actor.prepApp!=='cashier'){
    const records=await tx.ownerRecords();
    if(!records.length||records.some(row=>!activeStaffProfile(row)||[row.pin,row.securityPin].some(value=>/^(REVOKED|BLOCKED)$/i.test(String(value??'').trim()))))fail(403,'prep/owner-unavailable','HQ must confirm this active Owner account before opening private prep reviews.');
   }
@@ -103,10 +139,38 @@ export function createPrepHandler({verifyToken,store,now=Date.now}={}){
    const records=await tx.reviewRows(input.afterOperationId),reviews=records.slice(0,20).map(row=>privateReview(row,row.id));return {schemaVersion:1,reviews,hasMore:records.length>20,nextAfterOperationId:records.length>20?reviews[reviews.length-1].operationId:null};
   }
   if(path==='/prep/review-read'){const row=await tx.get('prep_review_requests',input.operationId);if(!row)fail(409,'prep/review-unavailable','This private prep review was not found. Refresh the Owner inbox.');const summary=privateReview(row,input.operationId);return {schemaVersion:1,review:{...summary,declaredName:row.declaredName,reason:row.reason,note:row.note,issue:issueView(row.issue),reportedBy:{staffId:row.staffId,staffName:row.staffName},sourceFingerprint:row.sourceFingerprint}};}
+  if(recoveryRoutes.has(path)){
+   const [op,review,quote,closure,resolution,reversal]=await Promise.all(['prep_operations','prep_review_requests','prep_quotes','prep_recovery_closures','prep_review_resolutions','prep_reversals'].map(table=>tx.get(table,input.operationId)));
+   if(op)savedOperation(op,input.operationId);if(review)privateReview(review,input.operationId);if(closure)savedClosure(closure,input.operationId);const closedSentinel=['prep-recovery-closed-quote','prep-recovery-closed-existing-quote'].includes(quote?.kind);if(quote){if(closedSentinel)savedClosedQuote(quote,input.operationId,closure);else savedQuote(quote,input.operationId);}if(resolution)savedResolution(resolution,input.operationId,review);
+   if(closure&&(!quote||quote.status!=='closed'||!closedSentinel))fail(409,'prep/recovery-incomplete','The private closure is missing its matching closed prep fence. Keep its exact reference for Owner review.');
+   if(op&&review||closure&&(op||review)||resolution&&!review||reversal&&!op)fail(409,'prep/audit-incomplete','This prep has conflicting saved outcomes. No new stock action is authorized; keep its reference for Owner review.');
+   if(reversal&&(!operationId(reversal.requestId)||!hash(reversal.expectedFingerprint)||!prepId(reversal.actorUid)))fail(409,'prep/audit-incomplete','The saved prep reversal audit needs Owner review.');
+   const record=op||review||(!closedSentinel?quote:null),summary=closure?closure.source:recoverySource(record);
+   if(record)assertRecoveryActor(actor,record,recoverySource(record));
+   if(closure?.sourceActor&&actor.prepApp==='cashier'){const key=closure.sourceActor;if(key.actorUid!==actor.uid||key.staffId!==actor.cashier.staffId||key.deviceId!==actor.cashier.deviceId||closure.source.branch!==actor.prepBranch)fail(409,'prep/operation-conflict','This closed prep belongs to another employee, device, sign-in identity or branch.');}
+   const records={op,review,quote,closure,resolution,reversal},viewNow=()=>recoveryView(input.operationId,records);
+   if(path==='/prep/status')return viewNow();
+   if(actor.prepApp==='cashier')fail(403,'prep/owner-required','Only the verified Owner can close an uncertain prep or mark its issue reviewed.');
+   if(path==='/prep/recovery-close'){
+    if(op||review)return viewNow();
+    if(closure){if(closure.requestId!==input.requestId||closure.actorUid!==actor.uid||closure.reason!==input.reason||closure.closedFromFingerprint!==input.expectedRecoveryFingerprint)fail(409,'prep/operation-conflict','This closure was already saved under different confirmed details. Read its exact outcome before continuing.');return viewNow();}
+    const before=viewNow();if(before.recoveryFingerprint!==input.expectedRecoveryFingerprint)fail(409,'prep/recovery-changed','The prep outcome changed. Read its exact saved status again before closing it.');
+    const closed={version:1,kind:'prep-recovery-closure',operationId:input.operationId,requestId:input.requestId,actorUid:actor.uid,actorEmail:PREP_OWNER,reason:input.reason,status:'Closed',stockPosted:false,closedFromFingerprint:before.recoveryFingerprint,source:summary,sourceActor:record?savedActorKey(record):null,quoteEvidence:quote||null,recordedAt:tx.serverTimestamp()};
+    if(quote)tx.sealQuote(input.operationId,fingerprint(closureCore(closed)));
+    if(!quote){const sentinel={version:1,kind:'prep-recovery-closed-quote',operationId:input.operationId,actorUid:actor.uid,actorEmail:PREP_OWNER,status:'closed',stockPosted:false,closureFingerprint:fingerprint(closureCore(closed)),createdAt:tx.serverTimestamp()};tx.createClosedQuote(input.operationId,sentinel);records.quote=sentinel;}
+    tx.createRecoveryClosure(input.operationId,closed);records.closure=closed;return viewNow();
+   }
+   if(!review)fail(409,'prep/review-unavailable','Only a saved skipped issue can be marked Reviewed without posting stock. This action never approves or records production.');
+   if(resolution){if(resolution.requestId!==input.requestId||resolution.actorUid!==actor.uid||resolution.reason!==input.reason)fail(409,'prep/operation-conflict','This no-stock decision is already saved under different details. Read the original outcome.');return viewNow();}
+   if(viewNow().recoveryFingerprint!==input.expectedRecoveryFingerprint)fail(409,'prep/recovery-changed','The skipped issue changed. Read its exact status before marking it reviewed.');
+   const decision={version:1,kind:'prep-review-resolution',operationId:input.operationId,requestId:input.requestId,actorUid:actor.uid,actorEmail:PREP_OWNER,reason:input.reason,decision:'ReviewedNoStock',stockPosted:false,reviewSourceFingerprint:review.sourceFingerprint,recordedAt:tx.serverTimestamp()};tx.createReviewResolution(input.operationId,decision);records.resolution=decision;return viewNow();
+  }
   if(actor.prepApp==='cashier'&&input.branch!==undefined&&input.branch!==actor.prepBranch)fail(403,'prep/device-required','The selected branch changed. Reopen prep on this approved Cashier device.');
   const op=await tx.get('prep_operations',input.operationId);
   if(op)savedOperation(op,input.operationId);
   const review=await tx.get('prep_review_requests',input.operationId);
+  const closure=await tx.get('prep_recovery_closures',input.operationId);
+  if(closure){savedClosure(closure,input.operationId);if(op||review)fail(409,'prep/audit-incomplete','This prep has conflicting saved outcomes. Keep the exact reference for Owner review.');fail(409,'prep/operation-closed','The Owner closed this unposted prep attempt. No stock may be posted under this reference. Read its saved status before starting any new actual prep.',{recovery:recoveryView(input.operationId,{closure})});}
   if(review){
    try{savedPrepReview(review,input.operationId);}catch{fail(409,'prep/review-incomplete','The saved prep review needs Owner confirmation. Keep its original reference; no new stock was confirmed.');}
    await authority(tx,actor,review.branch,now);
@@ -171,7 +235,7 @@ export function createPrepHandler({verifyToken,store,now=Date.now}={}){
  return async request=>{
   const origin=request.origin,response=(status,body)=>({status,body,headers:{'Cache-Control':'no-store','Content-Type':'application/json','X-Takodeal-Prep-Version':'1',Vary:'Origin',...([PREP_ORIGIN,PREP_CASHIER_ORIGIN].includes(origin)?{'Access-Control-Allow-Origin':origin}:{})}});
   try{
-   if(![PREP_ORIGIN,PREP_CASHIER_ORIGIN].includes(origin)||origin===PREP_CASHIER_ORIGIN&&!['/prep/preview','/prep/commit','/prep/review-skip'].includes(request.path))fail(403,'prep/origin-required','Open prep review in the approved Owner app.');
+   if(![PREP_ORIGIN,PREP_CASHIER_ORIGIN].includes(origin)||origin===PREP_CASHIER_ORIGIN&&!['/prep/preview','/prep/commit','/prep/review-skip','/prep/status'].includes(request.path))fail(403,'prep/origin-required','Open prep review in the approved Owner app.');
    if(request.path==='/prep/review-skip'&&origin!==PREP_CASHIER_ORIGIN)fail(403,'prep/origin-required','Use the approved Cashier item warning to request Owner review.');
    if(!routes.has(request.path))fail(404,'prep/route-unavailable','This prep action is unavailable.');
    if(request.method==='OPTIONS'){if(request.preflightMethod!=='POST'||String(request.preflightHeaders||'').split(',').map(value=>value.trim().toLowerCase()).some(value=>!['authorization','content-type'].includes(value)))fail(403,'prep/preflight-denied','Use the approved Owner app.');return {...response(204,null),headers:{...response(204,null).headers,'Access-Control-Allow-Methods':'POST','Access-Control-Allow-Headers':'Authorization, Content-Type','Access-Control-Max-Age':'300'}};}
@@ -186,6 +250,8 @@ export function createPrepHandler({verifyToken,store,now=Date.now}={}){
    const branch=value=>typeof value==='string'&&value.trim().length>0&&value.length<=128&&!/[\u0000-\u001f\u007f]/.test(value);
    const note=value=>typeof value==='string'&&value.length<=500&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
    const valid=path==='/prep/reviews'?fields(body,['afterOperationId'],[])&&(body.afterOperationId===undefined||operationId(body.afterOperationId))
+    :path==='/prep/status'?fields(body,['operationId',...cashierFields])
+    :['/prep/recovery-close','/prep/review-resolve'].includes(path)?fields(body,['operationId','expectedRecoveryFingerprint','requestId','reason'])&&hash(body.expectedRecoveryFingerprint)&&operationId(body.requestId)&&reason(body.reason)
     :path==='/prep/review-read'?fields(body,['operationId'])
     :path==='/prep/preview'?fields(body,['operationId','outputInventoryId','qty','reason',...cashierFields,...(cashierOrigin?['branch','declaredName']:[])],['operationId','outputInventoryId','qty'])&&prepId(body.outputInventoryId)&&quantity&&(body.reason==null||reason(body.reason))&&(body.branch===undefined||branch(body.branch))&&(body.declaredName===undefined||label(body.declaredName))
     :path==='/prep/commit'?fields(body,['operationId','expectedFingerprint',...cashierFields])&&hash(body.expectedFingerprint)
@@ -194,6 +260,6 @@ export function createPrepHandler({verifyToken,store,now=Date.now}={}){
     :fields(body,['operationId','outputInventoryId','qty','branch','declaredName','expectedIssueFingerprint','skipReason','cashier','reason','note'],['operationId','outputInventoryId','qty','branch','declaredName','expectedIssueFingerprint','skipReason','cashier'])&&prepId(body.outputInventoryId)&&quantity&&branch(body.branch)&&label(body.declaredName)&&hash(body.expectedIssueFingerprint)&&body.skipReason==='SkipForNow'&&(body.reason===undefined||reason(body.reason))&&(body.note===undefined||note(body.note));
    if(!valid)fail(400,'prep/invalid-request','Review the exact saved item, quantity, branch and original prep reference before continuing.');
    await store.rateOwner?.(actor.uid);return response(200,await execute(path,body,actor));
-  }catch(error){if(error instanceof PrepRequestError||error?.code==='prep/rate-limit'&&error.status===429)return response(error.status,{code:error.code,message:error.message,...(error.review?{review:error.review}:{})});return response(503,{code:'prep/unavailable',message:'Prep could not be verified. Nothing further was confirmed. Retry the same details or ask HQ to review the saved operation.'});}
+  }catch(error){if(error instanceof PrepRequestError||error?.code==='prep/rate-limit'&&error.status===429)return response(error.status,{code:error.code,message:error.message,...(error.review?{review:error.review}:{}),...(error.recovery?{recovery:error.recovery}:{})});return response(503,{code:'prep/unavailable',message:'Prep could not be verified. Nothing further was confirmed. Retry the same details or ask HQ to review the saved operation.'});}
  };
 }
