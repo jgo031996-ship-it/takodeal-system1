@@ -1,0 +1,74 @@
+name: Staff startup recovery checks
+
+on:
+  push:
+    branches: [fix/staff-startup-recovery]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staff-startup-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/fix/staff-startup-recovery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Official actions/* v4 commits verified on 2026-11-10.
+      - name: Check out the exact pushed commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          # Staff compatibility checks inspect the exact live base.
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Install locked private document runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-document-broker
+      - name: Verify private document SDK without cloud access
+        run: node tools/private-broker-sdk-check.mjs
+
+      - name: Install locked Staff device setup runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-device-setup
+      - name: Verify Staff device setup SDK without cloud access
+        run: node tools/staff-device-setup-sdk-check.mjs
+
+      - name: Install locked cash remittance runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/cash-remittance-review
+      - name: Verify cash remittance SDK without cloud access
+        run: node tools/cash-remittance-sdk-check.mjs
+
+      - name: Verify generated security rules
+        run: node tools/build-firestore-rules.mjs --check
+
+      - name: Verify complete Staff shell generation
+        run: node tools/build-staff-shell-cohort.mjs --check
+
+      - name: Check scripts in all six apps
+        run: |
+          set -euo pipefail
+          for script in takodeal-manager/*.js Takodeal-POS/*.js Customer/*.js takodeal-staff/*.js takodeal-franchise/*.js takodeal-delivery/*.js; do
+            node --check "$script"
+          done
+
+      - name: Run the normal test suite
+        run: |
+          set -euo pipefail
+          # The optional browser suite needs a separately installed browser.
+          tests=()
+          for test in tests/*.test.mjs; do
+            [[ "$test" == tests/outbox-browser.test.mjs ]] || tests+=("$test")
+          done
+          node --test --test-concurrency=2 "${tests[@]}"
+

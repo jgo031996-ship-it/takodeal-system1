@@ -3811,3 +3811,4 @@ window.staffScheduleSync = installScheduleViewSync(window, {window, document,
     error: () => { const box=document.getElementById('scheduleContainer');if(box)box.setAttribute('aria-label','Schedule connection interrupted. Reopen Schedule to refresh.'); }
 });
 window.loadStaffSchedule = window.staffScheduleSync.wrap(window.loadStaffSchedule);
+window.staffStartup?.ready();
