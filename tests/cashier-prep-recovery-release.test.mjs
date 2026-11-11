@@ -16,12 +16,12 @@ test('release normalization layers before the original void proof without changi
 });
 
 test('tampered release files fail held and main, checkout, engines and identity modules remain byte-exact live',()=>{
- for(const file of Object.keys(proof.files)){assert.throws(()=>restoreCashierPrepRecoveryRelease(read(file)+'\n// extra behavior',file));assert.throws(()=>restoreCashierPrepRecoveryRelease(read(file).replace(proof.release,'unreviewed'),file));}
+ for(const file of Object.keys(proof.files)){assert.throws(()=>restoreCashierPrepRecoveryRelease(read(file)+'\n// extra behavior',file));assert.throws(()=>restoreCashierPrepRecoveryRelease(read(file).replace(CASHIER_RELEASE,'unreviewed'),file));}
  for(const file of ['Takodeal-POS/main.js','Takodeal-POS/pos-checkout.js','Takodeal-POS/pos-safety.js','takodeal-manager/pos-safety.js','Takodeal-POS/cashier-staff-access.js','Takodeal-POS/cashier-protected-action.js','Takodeal-POS/cashier-device-auth.js'])assert.deepEqual(Buffer.from(read(file)),git(file),file);
 });
 
 test('actual entry, update presentation and shell agree while photo and queue/cache behavior stay unchanged',()=>{
- assert.equal(CASHIER_RELEASE,'cashier-prep-recovery-20261111-r1');assert.equal(proof.release,CASHIER_RELEASE);assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+CASHIER_RELEASE));
+ assert.equal(CASHIER_RELEASE,'cashier-actual-prep-20261111-r1');assert.equal(proof.release,'cashier-prep-recovery-20261111-r1');assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+CASHIER_RELEASE));
  const sw=read('Takodeal-POS/sw.js');assert.ok(sw.includes("const CORE = 'takodeal-pos-core-"+CASHIER_RELEASE+"';"));assert.ok(sw.includes("const PHOTOS = 'takodeal-pos-photos-offline02';"));
  assert.equal(restoreCashierPrepRecoveryRelease(sw,'Takodeal-POS/sw.js'),git('Takodeal-POS/sw.js').toString(),'all routing, request and persistent-cache behavior is unchanged');
 });
