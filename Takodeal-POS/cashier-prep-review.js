@@ -1,3 +1,4 @@
+import {isMeasuredPrep,measuredSchema,measuredIntent,measuredYieldMarkup} from './cashier-prep-measured.js';
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const text=(value,max)=>typeof value==='string'&&value.length>0&&value.length<=max&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
@@ -6,7 +7,7 @@ const canonical=value=>JSON.stringify(value,(_key,item)=>object(item)?Object.fro
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const ACTUAL_PRODUCTION_DECLARATION='AdditionalUnloggedProduction';
 export const isActualPrep=record=>record?.protocol==='actual-v2';
-const actualSchema=(view,record)=>isActualPrep(record)?view?.schemaVersion===2&&view.protocol==='actual-prep-v2'&&view.actualProductionDeclaration===ACTUAL_PRODUCTION_DECLARATION:view?.schemaVersion===1;
+const actualSchema=(view,record)=>isMeasuredPrep(record)?measuredSchema(view,record):isActualPrep(record)?view?.schemaVersion===2&&view.protocol==='actual-prep-v2'&&view.actualProductionDeclaration===ACTUAL_PRODUCTION_DECLARATION:view?.schemaVersion===1;
 function issue(value){if(!object(value)||typeof value.code!=='string'||!/^[a-z0-9-]{1,80}$/.test(value.code)||!text(value.message,2000)||!object(value.details))return false;let size;try{size=JSON.stringify(value.details).length;}catch{return false;}return size<=12000;}
 
 // Only the fixed server's typed semantic response can offer Skip. A timeout,
@@ -22,6 +23,7 @@ export function prepReviewSaved(view,record,actor){
  return true;
 }
 export function prepReviewMarkup(review,declaredName){
+ if(review?.schemaVersion===3)return '<div class="cashier-prep-review-note"><strong>'+escape(declaredName||review.outputName)+'</strong><p>'+escape(review.qty)+' input batches · '+escape(review.branch)+'</p><p>'+escape(review.issue.message)+'</p></div><p>Skip STOCK POSTING and send this unposted batch to the protected Owner review. No output or raw deduction is posted. '+(review.measurement===null?'No actual output measurement is inferred.':'The recorded total measurement is retained in its original reference.')+'</p><p>Keep the reference and do not log this same batch again until its unposted outcome is reviewed.</p>';
  if(review?.schemaVersion===2)return '<div class="cashier-prep-review-note"><strong>'+escape(declaredName||review.outputName)+'</strong><p>'+escape(review.qty)+' requested quantity · '+escape(review.branch)+'</p><p>'+escape(review.issue.message)+'</p></div><p>Skip stock posting for this batch and send its quantity, saved issue and your note to the protected Owner review. No prepared stock or ingredient deduction is posted. This does not claim the physical batch was cancelled.</p><p>Keep its reference. Do not enter the same production again until the Owner has reviewed this unposted batch.</p>';
  return '<div class="cashier-prep-review-note"><strong>'+escape(declaredName||review.outputName)+'</strong><p>'+escape(review.qty)+' requested quantity · '+escape(review.branch)+'</p><p>'+escape(review.issue.message)+'</p></div><p>Skip only this batch for now. Its quantity, saved issue and your note will be retained in a protected Owner review. No prepared stock or ingredient deduction is posted for a skipped batch. Other batches stay in the cart.</p><p>If it was already physically prepared, keep the batch for review instead of reporting it as skipped.</p>';
 }
@@ -39,11 +41,13 @@ export async function prepRecoveryStatus(view,record,actor,{crypto=globalThis.cr
  const source=view.source;
  if(!fields(source,['branch','outputInventoryId','outputName','qty','intentHash','actorFingerprint'])||source.branch!==original.branch||source.outputInventoryId!==record.outputInventoryId||source.qty!==record.qty||!text(source.outputName,200)||!hash(source.intentHash)||!hash(source.actorFingerprint)||typeof crypto?.subtle?.digest!=='function')return null;
  const digest=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(value))))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
- if(source.intentHash!==await digest({outputInventoryId:record.outputInventoryId,qty:record.qty,reason:record.reason||'',...(isActualPrep(record)?{actualProductionDeclaration:ACTUAL_PRODUCTION_DECLARATION}:{})})||source.actorFingerprint!==await digest({actorUid:original.uid,staffId:original.staffId,deviceId:original.deviceId,sessionId:original.staffSessionId}))return null;
+ if(isMeasuredPrep(record)&&record.measurement===null&&view.state==='saved')return null;
+ if(source.intentHash!==await digest(isMeasuredPrep(record)?measuredIntent(record):{outputInventoryId:record.outputInventoryId,qty:record.qty,reason:record.reason||'',...(isActualPrep(record)?{actualProductionDeclaration:ACTUAL_PRODUCTION_DECLARATION}:{})})||source.actorFingerprint!==await digest({actorUid:original.uid,staffId:original.staffId,deviceId:original.deviceId,sessionId:original.staffSessionId}))return null;
  return JSON.parse(JSON.stringify(view));
 }
 
 export function prepYieldMarkup(view,record){
+ if(isMeasuredPrep(record))return measuredYieldMarkup(view,record);
  const output=view.effects?.find(row=>row.id===record.outputInventoryId&&row.role==='output');
  if(!output||!Number.isFinite(output.delta)||output.delta<=0||typeof output.unit!=='string'||typeof view.purchaseUnit!=='string'||!view.purchaseUnit.trim())throw Error('The prepared output units need review before saving this batch.');
  const number=value=>escape(Number(value).toLocaleString(undefined,{maximumFractionDigits:8}));

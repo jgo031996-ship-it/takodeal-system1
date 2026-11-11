@@ -1,0 +1,18 @@
+{
+  "sourceBase": "cfce3462d095cf2417f75c7bc4a19d6285c0572a",
+  "status": "Exact frozen runtime checkpoint c954d24a/473061e5/b80b8a6c; parent source commit and hosted release gates remain separate",
+  "purpose": "Tests-only exact ten pure backend dependencies plus module package; no runtime frontend import or deployment",
+  "files": {
+    "prep-handler.mjs": "c954d24a7b8cf48e22dd8e738f99767af80ff152ad56a0991175645e3faa7ce3",
+    "prep-store.mjs": "473061e5c56d513acd8e1fd61eda2aa2f1eaf232e14230b0a4333e336193d4e6",
+    "prep-model.mjs": "5a27fbe15a5bcfad5ed18218ecdbd554142af32dc07b44bfe1f46e27fcf54bd5",
+    "prep-review-model.mjs": "4df0a79902296fa2e3f1eb33ee86d287bb1204332a0db7b9ebab357b6566c855",
+    "prep-actual-model.mjs": "5bd33935bc0f78bb62161c06c1ac60256d20111c5fe1c6e1733fe606ddee87fa",
+    "prep-measured-model.mjs": "b80b8a6cb6d18042a4d34dea92ca9952d1591cd8bbc9da5c844b375a38d2ebe9",
+    "access-model.mjs": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+    "owner-desktop-authority.mjs": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855",
+    "relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+    "relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+    "package.json": "c37588a73232c9abd151be0f3d9a2d3270c8d22661ab79093f80850b72749ba3"
+  }
+}
