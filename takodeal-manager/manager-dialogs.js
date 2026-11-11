@@ -16,6 +16,26 @@ export function markManagerFieldError(field,message) {
     field.classList.add('manager-field-error');field.setAttribute('aria-invalid','true');field.dataset.managerErrorId=note.id;field.setAttribute('aria-describedby',((field.getAttribute('aria-describedby')||'')+' '+note.id).trim());field.insertAdjacentElement('afterend',note);
     const clear=()=>clearManagerFieldError(field);field.addEventListener('input',clear,{once:true});field.addEventListener('change',clear,{once:true});field.focus();
 }
+async function withManagerDialogTarget(options,show) {
+    const target=options?.target;
+    if(target==null)return show({});
+    if(target.ownerDocument!==document||target.tagName!=='DIALOG'||target.open!==true||!document.body.contains(target))throw Error('Reopen this review before confirming.');
+    const previous=document.activeElement;
+    const restoreFocus=()=>setTimeout(()=>{
+        if(!target.open||!document.body.contains(target))return;
+        const active=document.activeElement;if(active&&active!==document.body&&!target.contains(active))return;
+        const control=previous&&target.contains(previous)&&!previous.disabled?previous:target.querySelector('input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])');
+        control?.focus({preventScroll:true});
+    },0);
+    // The native review stays in the browser's top layer. Its Escape event
+    // must dismiss only the nested prompt, never discard the underlying form.
+    const cancel=event=>{if(Swal.getContainer?.()?.parentNode!==target)return;event.preventDefault();event.stopImmediatePropagation();Swal.close({isConfirmed:false,isDismissed:true,dismiss:'esc'});};
+    const close=()=>{if(Swal.getContainer?.()?.parentNode===target)Swal.close({isConfirmed:false,isDismissed:true,dismiss:'close'});};
+    target.addEventListener('cancel',cancel,true);
+    target.addEventListener('close',close);
+    try{return await show({target,keydownListenerCapture:true,returnFocus:false,didClose:restoreFocus});}
+    finally{target.removeEventListener('cancel',cancel,true);target.removeEventListener('close',close);}
+}
 export function initManagerDialogs() {
     const root = document.createElement('div'); root.className = 'manager-notifications'; root.setAttribute('aria-live', 'polite'); document.body.append(root);
     window.ManagerUI = {
@@ -30,11 +50,11 @@ export function initManagerDialogs() {
             while (root.children.length > 4) root.firstElementChild.remove();
             setTimeout(() => item.remove(), 12000);
         },
-        async confirm(message) {
-            return (await Swal.fire({ title: 'Confirm action', text: String(message), icon: 'question', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel', focusCancel: true })).isConfirmed;
+        async confirm(message, options) {
+            return (await withManagerDialogTarget(options,target=>Swal.fire({ title: 'Confirm action', text: String(message), icon: 'question', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel', focusCancel: true, ...target }))).isConfirmed;
         },
-        async prompt(message, value = '') {
-            const result = await Swal.fire({ title: 'Enter details', text: String(message), input: 'text', inputValue: value ?? '', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel' });
+        async prompt(message, value = '', options) {
+            const result = await withManagerDialogTarget(options,target=>Swal.fire({ title: 'Enter details', text: String(message), input: 'text', inputValue: value ?? '', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel', ...target }));
             return result.isConfirmed ? result.value : null;
         }
     };

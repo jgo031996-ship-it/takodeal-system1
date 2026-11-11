@@ -8,9 +8,10 @@ export function cashRemittanceView(row){
  const varianceCents=legacy?null:count.varianceCents;
  return {legacy,sentCents,count:legacy?null:count,varianceCents,varianceTitle:legacy?'Physical cash count not recorded':varianceCents<0?'Drawer shortage recorded':varianceCents>0?'Drawer overage recorded':'Drawer count matched',needsNote:legacy||varianceCents!==0,status:row.status,version:row.reviewVersion??1};
 }
-export function installCashRemittanceReview(w=window,d=document,{api=w,client=createOwnerCashRemittanceClient(api),confirm=message=>w.ManagerUI?.confirm?w.ManagerUI.confirm(message):Promise.resolve(w.confirm(message))}={}){
+export function installCashRemittanceReview(w=window,d=document,{api=w,client=createOwnerCashRemittanceClient(api),confirm}={}){
  if(w.cashRemittanceReviewUI)return w.cashRemittanceReviewUI;
  let dialog,body,statusNode,details,form,receiveAmount,accountSelect,reviewNote,countConfirmed,legacyAcknowledged,receiveButton,rejectButton,refreshButton,closeButtons=[],row=null,auditResult=null,epoch=0,busy=false,edited=false,pending=null,duplicateOriginalId=null,shownIdentity=null,identityWatch=null;
+ if(confirm===undefined)confirm=message=>w.ManagerUI?.confirm?w.ManagerUI.confirm(message,{target:dialog}):Promise.resolve(w.confirm(message));
  const authorized=()=>{try{return ownerCashIdentity(api);}catch{return null;}};
  const element=(tag,value,className)=>{const node=d.createElement(tag);if(value!==undefined)node.textContent=value;if(className)node.className=className;return node;};
  const append=(parent,...nodes)=>{parent.append(...nodes);return parent;};

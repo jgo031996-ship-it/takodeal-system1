@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "base": "2759f14e703b41dc4894752f4f882d806db187e2",
+  "files": {
+    "takodeal-manager/manager-dialogs.js": {
+      "baselineSha256": "c48dbf7a548297b58a97a147032e0efe4dbef2434a0e453b4c2c0b132cc00a5f",
+      "candidateSha256": "43517ab89bb39e28d65cddea991b0b31abb1a0f919683143350584a058006038",
+      "edits": [
+        {
+          "before": "export function initManagerDialogs()",
+          "after": "async function withManagerDialogTarget(options,show) {\n    const target=options?.target;\n    if(target==null)return show({});\n    if(target.ownerDocument!==document||target.tagName!=='DIALOG'||target.open!==true||!document.body.contains(target))throw Error('Reopen this review before confirming.');\n    const previous=document.activeElement;\n    const restoreFocus=()=>setTimeout(()=>{\n        if(!target.open||!document.body.contains(target))return;\n        const active=document.activeElement;if(active&&active!==document.body&&!target.contains(active))return;\n        const control=previous&&target.contains(previous)&&!previous.disabled?previous:target.querySelector('input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled])');\n        control?.focus({preventScroll:true});\n    },0);\n    // The native review stays in the browser's top layer. Its Escape event\n    // must dismiss only the nested prompt, never discard the underlying form.\n    const cancel=event=>{if(Swal.getContainer?.()?.parentNode!==target)return;event.preventDefault();event.stopImmediatePropagation();Swal.close({isConfirmed:false,isDismissed:true,dismiss:'esc'});};\n    const close=()=>{if(Swal.getContainer?.()?.parentNode===target)Swal.close({isConfirmed:false,isDismissed:true,dismiss:'close'});};\n    target.addEventListener('cancel',cancel,true);\n    target.addEventListener('close',close);\n    try{return await show({target,keydownListenerCapture:true,returnFocus:false,didClose:restoreFocus});}\n    finally{target.removeEventListener('cancel',cancel,true);target.removeEventListener('close',close);}\n}\nexport function initManagerDialogs()"
+        },
+        {
+          "before": "        async confirm(message) {\n            return (await Swal.fire({ title: 'Confirm action', text: String(message), icon: 'question', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel', focusCancel: true })).isConfirmed;\n        },\n",
+          "after": "        async confirm(message, options) {\n            return (await withManagerDialogTarget(options,target=>Swal.fire({ title: 'Confirm action', text: String(message), icon: 'question', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel', focusCancel: true, ...target }))).isConfirmed;\n        },\n"
+        },
+        {
+          "before": "        async prompt(message, value = '') {\n            const result = await Swal.fire({ title: 'Enter details', text: String(message), input: 'text', inputValue: value ?? '', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel' });\n            return result.isConfirmed ? result.value : null;\n        }",
+          "after": "        async prompt(message, value = '', options) {\n            const result = await withManagerDialogTarget(options,target=>Swal.fire({ title: 'Enter details', text: String(message), input: 'text', inputValue: value ?? '', showCancelButton: true, confirmButtonText: 'Continue', cancelButtonText: 'Cancel', ...target }));\n            return result.isConfirmed ? result.value : null;\n        }"
+        }
+      ]
+    },
+    "takodeal-manager/cash-remittance-review-ui.js": {
+      "baselineSha256": "c7957298aa8c3ad6c794d81cf965dae5d9e3079045ba9d659b3cc87e9a5bcf50",
+      "candidateSha256": "f7b2d579ad45d0ebd43eb60c08d845ba3118f55150f62b49aab7a89132017b5a",
+      "edits": [
+        {
+          "before": "export function installCashRemittanceReview(w=window,d=document,{api=w,client=createOwnerCashRemittanceClient(api),confirm=message=>w.ManagerUI?.confirm?w.ManagerUI.confirm(message):Promise.resolve(w.confirm(message))}={}){",
+          "after": "export function installCashRemittanceReview(w=window,d=document,{api=w,client=createOwnerCashRemittanceClient(api),confirm}={}){"
+        },
+        {
+          "before": " const authorized=()=>{try{return ownerCashIdentity(api);}catch{return null;}};",
+          "after": " if(confirm===undefined)confirm=message=>w.ManagerUI?.confirm?w.ManagerUI.confirm(message,{target:dialog}):Promise.resolve(w.confirm(message));\n const authorized=()=>{try{return ownerCashIdentity(api);}catch{return null;}};"
+        }
+      ]
+    }
+  }
+}

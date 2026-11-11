@@ -1,0 +1,4 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+export const ownerRemittanceDialogProof=JSON.parse(readFileSync(new URL('../fixtures/owner-remittance-dialog-inverse.json',import.meta.url),'utf8'));
+const sha=value=>createHash('sha256').update(value).digest('hex');
+export function restoreOwnerRemittanceDialog(file,source){const row=ownerRemittanceDialogProof.files[file];assert.ok(row,'Only the two reviewed remittance dialog paths may be restored');assert.equal(sha(source),row.candidateSha256,'Exact reviewed nested-dialog candidate: '+file);for(const edit of [...row.edits].reverse()){assert.equal(source.split(edit.after).length,2,'Unique nested-dialog hunk: '+file);source=source.replace(edit.after,()=>edit.before);}assert.equal(sha(source),row.baselineSha256,'Every prior UI and financial byte is retained: '+file);return source;}

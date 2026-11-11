@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v141-private-prep-reviews-20261110';
+const CACHE_NAME = 'takodeal-manager-core-v142-prep-recovery-20261111-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
