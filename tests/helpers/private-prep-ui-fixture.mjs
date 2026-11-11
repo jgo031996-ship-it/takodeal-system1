@@ -1,8 +1,9 @@
 import {installPrivatePrepReviews,PRIVATE_PREP_ENDPOINT} from '../../takodeal-manager/private-prep-reviews.js';
+import {createPostedPrepWarnings} from '../../takodeal-manager/private-prep-stock-warnings.js';
 export const reviewSummary=(number=1)=>({operationId:'review-operation-'+number,branch:'Test Branch',outputInventoryId:'prepared-'+number,outputName:'Test Sauce '+number,qty:2,status:'Pending',stockPosted:false,createdAt:new Date(Date.UTC(2026,10,10,10,0,number)).toISOString()});
 export const reviewDetail=(number=1)=>({...reviewSummary(number),declaredName:'Test Sauce '+number,reason:'',note:'PRIVATE_NOTE_'+number,issue:{code:'invalid-stock-quantity',message:'Saved raw stock needs review.',details:{inventoryId:'raw-'+number,itemName:'Test Raw',role:'ingredient',recordedStock:-25}},reportedBy:{staffId:'test-crew',staffName:'PRIVATE_STAFF'},sourceFingerprint:'a'.repeat(64)});
 const eventTarget=()=>{const events=new Map();return{addEventListener(type,fn){const set=events.get(type)||new Set();set.add(fn);events.set(type,set);},removeEventListener(type,fn){events.get(type)?.delete(fn);},emit(type){for(const fn of[...(events.get(type)||[])])fn({type});}};};
-export function privatePrepFixture({active=true,locked=false,owner=true}={}){
+export function privatePrepFixture({active=true,locked=false,owner=true,stockWarnings=false}={}){
  const nodes=new Map();
  class Element{
   constructor(tag){Object.assign(this,eventTarget());this.tagName=tag.toUpperCase();this.children=[];this.style={};this.hidden=false;this.disabled=false;this.attributes={};this.value='';this._text='';this.classes=new Set();this.classList={add:(...names)=>names.forEach(name=>this.classes.add(name)),contains:name=>this.classes.has(name),remove:name=>this.classes.delete(name)};}
@@ -24,6 +25,6 @@ export function privatePrepFixture({active=true,locked=false,owner=true}={}){
  let clears=0;w.clearManagerMemoryCache=()=>{clears++;return 'original-clear-result';};w.isBranchAllowed=()=>true;
  w.switchView=page=>{navigation.push({page});if(page!=='alerts')nodes.get('view-alerts').classList.remove('active');};w.switchInvTab=tab=>{navigation.push({tab,branch:nodes.get('invBranchFilter').value,item:nodes.get('liveInvSearch').value});w.switchView('inventory');};
  const f={w,d,nodes,calls,navigation,notices,timers,observers,publicFeed,advance,get clears(){return clears;},get now(){return clock;},page:{schemaVersion:1,reviews:[reviewSummary()],hasMore:false,nextAfterOperationId:null},detail:reviewDetail(),async flush(){for(let n=0;n<20;n++)await new Promise(resolve=>queueMicrotask(resolve));},notify(){observers.filter(item=>!item.stopped).forEach(item=>item.fn());},find(text){const all=[];const walk=node=>{all.push(node);for(const child of node.children||[])walk(child);};walk(nodes.get('privatePrepReviewsHost'));return all.find(node=>node.tagName==='BUTTON'&&node.textContent===text);}};
- const fetcher=async(url,options)=>{const call={url,options,body:JSON.parse(options.body)};calls.push(call);if(f.fetchHook)return f.fetchHook(call);const body=url===PRIVATE_PREP_ENDPOINT+'reviews'?f.page:{schemaVersion:1,review:f.detail};return{ok:true,status:200,url,text:async()=>JSON.stringify(body)};};
- f.ui=installPrivatePrepReviews(w,d,{fetcher,now:()=>clock,setTimer,clearTimer});return f;
+ const fetcher=async(url,options)=>{const call={url,options,body:JSON.parse(options.body)};calls.push(call);if(f.fetchHook)return f.fetchHook(call);const body=url===PRIVATE_PREP_ENDPOINT+'stock-warnings'?{schemaVersion:1,warnings:[],hasMore:false,nextAfterOperationId:null}:url===PRIVATE_PREP_ENDPOINT+'reviews'?f.page:{schemaVersion:1,review:f.detail};return{ok:true,status:200,url,text:async()=>JSON.stringify(body)};};
+ f.ui=installPrivatePrepReviews(w,d,{fetcher,now:()=>clock,setTimer,clearTimer,makeStockWarnings:stockWarnings?createPostedPrepWarnings:()=>null});return f;
 }

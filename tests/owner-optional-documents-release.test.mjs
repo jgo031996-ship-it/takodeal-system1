@@ -18,11 +18,11 @@ test('Owner optional-document modules are exact reviewed592 sources while the se
  const cards=documentCards({}, {hq:true,groups:SUPPORTED_DOCUMENT_GROUPS});for(const group of SUPPORTED_DOCUMENT_GROUPS)assert.ok(cards.includes('<article class="staff-document-card" data-group="'+group+'"'),group+' gets a distinct card');
 });
 
-test('Owner v142 retains the complete six-kind graph with matching page/auth/cache/notice IDs and unchanged persistent caches',()=>{
+test('Owner v143 retains the complete six-kind graph with matching page/auth/cache/notice IDs and unchanged persistent caches',()=>{
  const worker=read('sw.js'),context={self:{addEventListener(){},location:{origin:'https://takodeal-manager.vercel.app'}},URL};vm.runInNewContext(worker+'\nglobalThis.cached=[...CORE_ASSETS];',context);
  const cached=new Set(context.cached.map(path=>path.replace(/^\.\//,''))),seen=new Set();function walk(file){if(seen.has(file))return;seen.add(file);assert.ok(cached.has(file),file+' cached');for(const match of read(file).matchAll(/(?:from\s*|import\s*)['"]\.\/([^'"]+\.js)['"]/g))walk(match[1]);}walk('staff-document-hq.js');
  for(const file of Object.keys(documentReleasePins.owner))assert.ok(cached.has(file));
- const release='prep-recovery-20261111-r1';assert.match(read('index.html'),new RegExp('<meta name="takodeal-release" content="'+release+'">'));assert.match(read('index.html'),new RegExp('auth\\.js\\?v='+release+'"'));assert.match(read('auth.js'),new RegExp('main\\.js\\?v='+release));assert.ok(worker.includes("const CACHE_NAME = 'takodeal-manager-core-v142-prep-recovery-20261111-r1';"));assert.ok(read('owner-update-notice.js').includes('takodeal-manager-core-v142-prep-recovery-20261111-r1'));
+ const release='actual-prep-warnings-20261111-r1';assert.match(read('index.html'),new RegExp('<meta name="takodeal-release" content="'+release+'">'));assert.match(read('index.html'),new RegExp('auth\\.js\\?v='+release+'"'));assert.match(read('auth.js'),new RegExp('main\\.js\\?v='+release));assert.ok(worker.includes("const CACHE_NAME = 'takodeal-manager-core-v143-actual-prep-warnings-20261111-r1';"));assert.ok(read('owner-update-notice.js').includes('takodeal-manager-core-v143-actual-prep-warnings-20261111-r1'));
  assert.ok(worker.includes("const VENDOR_CACHE = 'takodeal-manager-vendors-v1';"));assert.ok(worker.includes("const IMAGE_CACHE = 'takodeal-manager-images-v1';"));assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
 });
 
