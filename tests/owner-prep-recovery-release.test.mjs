@@ -1,3 +1,4 @@
+import {ownerPrepYieldProof,restoreOwnerPrepYield} from './helpers/owner-prep-yield-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -25,13 +26,13 @@ test('historical private prep source pins stay unchanged and release layering st
 test('source inverses reject extra edits rather than silently normalizing unreviewed behavior',()=>{
  for(const file of Object.keys(proof.files)){
   assert.throws(()=>restoreOwnerPrepRecoveryRelease(file,read(file)+'\n/* extra change */'));
-  const edit=ownerStockWarningsProof.files[file].edits[0];assert.ok(read(file).includes(edit.after));assert.throws(()=>restoreOwnerPrepRecoveryRelease(file,read(file).replace(edit.after,edit.before)));
+  const edit=ownerPrepYieldProof.files[file].edits[0];assert.ok(read(file).includes(edit.after));assert.throws(()=>restoreOwnerPrepRecoveryRelease(file,read(file).replace(edit.after,edit.before)));
  }
  assert.equal(restoreOwnerPrepRecoveryRelease('takodeal-manager/main.js','unchanged'),'unchanged');
 });
 
 test('the page, stylesheet, auth import, cache and update notice identify the same recovery release after the exact newer warning inverse',()=>{
- const restored=file=>restoreOwnerStockWarnings(file,read(file)),release='takodeal-manager-core-v142-'+proof.release;assert.equal(proof.release,'prep-recovery-20261111-r1');assert.ok(restored('takodeal-manager/owner-update-notice.js').includes(release));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v143-actual-prep-warnings-20261111-r1');
+ const restored=file=>restoreOwnerStockWarnings(file,read(file)),release='takodeal-manager-core-v142-'+proof.release;assert.equal(proof.release,'prep-recovery-20261111-r1');assert.ok(restored('takodeal-manager/owner-update-notice.js').includes(release));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v144-measured-prep-yield-20261112-r1');
  const html=restored('takodeal-manager/index.html');for(const value of ['content="'+proof.release+'"','private-prep-reviews.css?v='+proof.release,'auth.js?v='+proof.release])assert.ok(html.includes(value));
  assert.ok(restored('takodeal-manager/auth.js').includes("main.js?v="+proof.release));assert.ok(restored('takodeal-manager/sw.js').includes("const CACHE_NAME = '"+release+"';"));
  const oldWorker=git(proof.base,'takodeal-manager/sw.js').toString();assert.equal(restoreOwnerPrepRecoveryRelease('takodeal-manager/sw.js',read('takodeal-manager/sw.js')),oldWorker,'all cache/storage/worker behavior remains identical');

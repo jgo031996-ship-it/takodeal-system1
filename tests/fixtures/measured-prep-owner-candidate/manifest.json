@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-only-frozen-measured-candidate",
+  "sourceCommit": null,
+  "sourceFreeze": {
+    "functions/cash-remittance-review/prep-store.mjs": "473061e5c56d513acd8e1fd61eda2aa2f1eaf232e14230b0a4333e336193d4e6",
+    "functions/cash-remittance-review/prep-model.mjs": "5a27fbe15a5bcfad5ed18218ecdbd554142af32dc07b44bfe1f46e27fcf54bd5",
+    "functions/cash-remittance-review/owner-desktop-authority.mjs": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855",
+    "functions/cash-remittance-review/access-model.mjs": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+    "functions/cash-remittance-review/relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+    "functions/cash-remittance-review/prep-actual-model.mjs": "5bd33935bc0f78bb62161c06c1ac60256d20111c5fe1c6e1733fe606ddee87fa",
+    "functions/cash-remittance-review/prep-measured-model.mjs": "b80b8a6cb6d18042a4d34dea92ca9952d1591cd8bbc9da5c844b375a38d2ebe9",
+    "functions/cash-remittance-review/prep-handler.mjs": "c954d24a7b8cf48e22dd8e738f99767af80ff152ad56a0991175645e3faa7ce3",
+    "functions/cash-remittance-review/relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+    "functions/cash-remittance-review/prep-review-model.mjs": "4df0a79902296fa2e3f1eb33ee86d287bb1204332a0db7b9ebab357b6566c855"
+  },
+  "files": {
+    "tests/helpers/measured-prep-fixture.mjs": "02c13ba2f51ef4ed5c3a546f81925726557b01be2c885a8bba32efcf5d42ec07",
+    "tests/helpers/prep-recovery-fixture.mjs": "ffb656b2d6599c8857738bbc00bdc55b508069fb224dededebde84fbfbc64af8",
+    "tests/helpers/prep-review-memory.mjs": "072918c969b7bc504421ccc9131307307af63b35c1c9bdaba00003b6589ea2b8",
+    "tests/helpers/admin-memory.mjs": "2d81471363d557ff89d7a908e7954c13e3a939dfa3fa0a456b841536860388fb",
+    "functions/cash-remittance-review/prep-store.mjs": "473061e5c56d513acd8e1fd61eda2aa2f1eaf232e14230b0a4333e336193d4e6",
+    "functions/cash-remittance-review/prep-model.mjs": "5a27fbe15a5bcfad5ed18218ecdbd554142af32dc07b44bfe1f46e27fcf54bd5",
+    "functions/cash-remittance-review/owner-desktop-authority.mjs": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855",
+    "functions/cash-remittance-review/access-model.mjs": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+    "functions/cash-remittance-review/relief-core/staff-lifecycle-model.js": "5614cbaa2a2c4d00b2fdab2c9873e2c8bc60d453cfadd7f4d0b31b4eb0432569",
+    "functions/cash-remittance-review/prep-actual-model.mjs": "5bd33935bc0f78bb62161c06c1ac60256d20111c5fe1c6e1733fe606ddee87fa",
+    "functions/cash-remittance-review/prep-measured-model.mjs": "b80b8a6cb6d18042a4d34dea92ca9952d1591cd8bbc9da5c844b375a38d2ebe9",
+    "functions/cash-remittance-review/prep-handler.mjs": "c954d24a7b8cf48e22dd8e738f99767af80ff152ad56a0991175645e3faa7ce3",
+    "functions/cash-remittance-review/relief-core/hq-account-model.js": "b6e8fbbadf6d333ed0396e0ff07cf1aec146cfa912fb7a441caa3725568cec19",
+    "functions/cash-remittance-review/prep-review-model.mjs": "4df0a79902296fa2e3f1eb33ee86d287bb1204332a0db7b9ebab357b6566c855"
+  },
+  "generatedPackageSha256": "1239d4d885dcad42201a27ed9324f8f0f760b78700d8db9ced39a511cffe7eae",
+  "limitation": "Actual frozen service handler/store/model closure against a fictional in-memory Admin-shaped substrate; no emulator, production records, credentials or cloud."
+}
