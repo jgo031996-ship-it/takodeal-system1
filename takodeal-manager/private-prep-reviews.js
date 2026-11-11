@@ -1,5 +1,6 @@
 import {canOpenWorkspacePage,canOpenInventoryTab} from './workspace-access-model.js';
 import {navigateSecurityAlertSource} from './security-alert-links.js';
+import {createPostedPrepWarnings} from './private-prep-stock-warnings.js';
 
 export const PRIVATE_PREP_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/cashRemittanceReview/prep/';
 const OWNER='jgo031996@gmail.com';
@@ -35,7 +36,7 @@ export function validatePrepRecovery(value,operationId){
  if(!['unknown','closed'].includes(value.state)&&value.source===null||value.state==='saved'&&value.reviewed||value.state==='skipped'&&value.reversed||value.state==='closed'&&(!value.quoteClosed||value.reviewed||value.reversed)||value.state==='pending'&&(value.reviewed||value.reversed)||value.state==='unknown'&&(value.source!==null||value.quoteClosed||value.reviewed||value.reversed))throw Error('The saved prep source is missing or inconsistent.');return value;
 }
 
-export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.bind(w),now=Date.now,setTimer=w.setTimeout?.bind(w)||setTimeout,clearTimer=w.clearTimeout?.bind(w)||clearTimeout,refreshMs=60000,guardMs=1000,timeoutMs=10000}={}){
+export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.bind(w),now=Date.now,setTimer=w.setTimeout?.bind(w)||setTimeout,clearTimer=w.clearTimeout?.bind(w)||clearTimeout,refreshMs=60000,guardMs=1000,timeoutMs=10000,makeStockWarnings=createPostedPrepWarnings}={}){
  if(w.ownerPrepReviews)return w.ownerPrepReviews;
  const host=d.getElementById('privatePrepReviewsHost'),view=d.getElementById('view-alerts');if(!host||!view||typeof fetcher!=='function')return null;
  const node=(tag,value,className)=>{const item=d.createElement(tag);if(value!==undefined)item.textContent=String(value);if(className)item.className=className;return item;};
@@ -47,6 +48,7 @@ export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.
  const recovery=node('section',undefined,'private-prep-recovery'),reference=node('input'),checkReference=node('button','Check saved prep reference','private-prep-button'),recoveryResult=node('div');reference.id='privatePrepRecoveryReference';reference.type='text';reference.maxLength=128;reference.setAttribute('aria-label','Saved prep operation reference');reference.setAttribute('placeholder','prep-…');checkReference.type='button';recovery.append(node('h4','Recover a saved prep attempt'),node('p','Use the reference shown in Cashier. Checking or closing an attempt never adds stock.','private-prep-status'),reference,checkReference,recoveryResult);
  host.replaceChildren(heading,status,notice,list,footer,details,recovery);host.classList.add('private-prep-reviews');host.hidden=true;
  let stopped=false,epoch=0,key=null,currentActor=null,guardTimer=null,nextRefresh=0,listFlight=null,detailFlight=null,detailId=null,detailEpoch=0,page=0,cursor=null,hasMore=false,held=false,heldScope=null,seenRecent=null,notificationScope=null,panelActive=false,panelVersion=0,recoveryEpoch=0,recoveryBusy=false;
+ let stockWarnings=null;
  const controllers=new Set(),listeners=[];
  const listen=(target,type,fn)=>{target?.addEventListener?.(type,fn);listeners.push(()=>target?.removeEventListener?.(type,fn));};
  function identity(){
@@ -59,9 +61,9 @@ export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.
  function allowed(){const actor=identity();return visible()?actor:null;}
  function capture({requirePanel=false}={}){const actor=allowed();if(!actor||requirePanel&&!panelVisible())throw Error('Unlock the verified Owner account and open Security Alerts.');const generation=epoch,version=panelVersion;return{actor,current(){const current=allowed();if(generation!==epoch||!current||current.user!==actor.user||current.session!==actor.session||current.key!==actor.key||requirePanel&&(!panelVisible()||version!==panelVersion))throw Error('The Owner account or locked workspace changed. Reopen private prep reviews.');}};}
  function closeDetails(){detailEpoch++;detailId=null;details.hidden=true;details.replaceChildren();}
- function clearPanel(){panelVersion++;closeDetails();recoveryEpoch++;recoveryBusy=false;reference.value='';reference.disabled=checkReference.disabled=false;recoveryResult.replaceChildren();page=0;cursor=null;hasMore=false;list.replaceChildren();count.textContent='Not loaded';notice.hidden=true;notice.textContent='';older.hidden=recent.hidden=true;}
+ function clearPanel(){panelVersion++;closeDetails();recoveryEpoch++;recoveryBusy=false;reference.value='';reference.disabled=checkReference.disabled=false;recoveryResult.replaceChildren();page=0;cursor=null;hasMore=false;list.replaceChildren();count.textContent='Not loaded';notice.hidden=true;notice.textContent='';older.hidden=recent.hidden=true;stockWarnings?.reset();}
  function clear(message='Unlock the verified Owner account to view private prep reviews.',{preserveNotice=false,preserveHold=false}={}){
-  epoch++;for(const controller of controllers)controller.abort();controllers.clear();listFlight=null;detailFlight=null;if(!preserveNotice){seenRecent=null;notificationScope=null;}if(!preserveHold){held=false;heldScope=null;}nextRefresh=0;key=null;currentActor=null;panelActive=false;clearPanel();refresh.disabled=false;status.textContent=message;
+  epoch++;for(const controller of controllers)controller.abort();controllers.clear();listFlight=null;detailFlight=null;if(!preserveNotice){seenRecent=null;notificationScope=null;}if(!preserveHold){held=false;heldScope=null;}nextRefresh=0;key=null;currentActor=null;panelActive=false;clearPanel();stockWarnings?.reset({preserveNotice});refresh.disabled=false;status.textContent=message;
  }
  function errorStatus(error){return error?.status===401||error?.status===403;}
  function showError(error){if(errorStatus(error)){const actor=allowed();clear('Owner access must be confirmed again. Unlock the Owner account, then refresh.');held=true;if(actor){heldScope=actor.key;key=actor.key;currentActor=actor;}return;}status.textContent='Private prep reviews could not refresh. Reconnect, then choose Refresh recent. Any shown records are from the previous confirmed check.';}
@@ -113,10 +115,11 @@ export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.
  function schedule(){if(guardTimer!==null)clearTimer(guardTimer);guardTimer=allowed()?setTimer(()=>{guardTimer=null;check();},guardMs):null;}
  function check(){if(stopped)return;const actor=allowed();if(!actor){const owner=identity(),sameHidden=d.visibilityState==='hidden'&&owner&&(key===owner.key||notificationScope===owner.key||heldScope===owner.key);if(key||!host.hidden||notificationScope&&!sameHidden||heldScope&&!sameHidden)clear(undefined,{preserveNotice:!!sameHidden&&notificationScope===owner.key,preserveHold:!!sameHidden&&heldScope===owner.key});host.hidden=true;if(guardTimer!==null)clearTimer(guardTimer);guardTimer=null;return;}if(key!==actor.key||currentActor?.user!==actor.user||currentActor?.session!==actor.session){clear(undefined,{preserveNotice:notificationScope===actor.key,preserveHold:heldScope===actor.key});key=actor.key;currentActor=actor;}
   const inPanel=panelVisible();if(panelActive!==inPanel){clearPanel();panelActive=inPanel;if(inPanel)nextRefresh=0;}host.hidden=!inPanel;
-  if(!held&&!listFlight&&now()>=nextRefresh)void load('recent',true);schedule();
+  if(!held&&!listFlight&&now()>=nextRefresh)void load('recent',true);stockWarnings?.check({actorKey:actor.key,visible:inPanel,enabled:!held});schedule();
  }
  const previousClear=w.clearManagerMemoryCache,clearWrapper=function(...args){clear();return previousClear?.apply(this,args);};w.clearManagerMemoryCache=clearWrapper;
- const api={refresh(){held=false;heldScope=null;return load('recent');},loadOlder:()=>load('older'),open,checkRecovery,reset:()=>{clear();check();},check,dispose(){stopped=true;clear();if(guardTimer!==null)clearTimer(guardTimer);guardTimer=null;observer?.disconnect();listeners.splice(0).forEach(stop=>stop());host.hidden=true;if(w.clearManagerMemoryCache===clearWrapper)w.clearManagerMemoryCache=previousClear;if(w.ownerPrepReviews===api)delete w.ownerPrepReviews;}};
+ const api={refresh(){held=false;heldScope=null;return load('recent');},loadOlder:()=>load('older'),open,checkRecovery,reset:()=>{clear();check();},check,dispose(){stopped=true;clear();stockWarnings?.dispose();if(guardTimer!==null)clearTimer(guardTimer);guardTimer=null;observer?.disconnect();listeners.splice(0).forEach(stop=>stop());host.hidden=true;if(w.clearManagerMemoryCache===clearWrapper)w.clearManagerMemoryCache=previousClear;if(w.ownerPrepReviews===api)delete w.ownerPrepReviews;}};
+ stockWarnings=makeStockWarnings?.(w,d,{capture,request,onError:showError,now,refreshMs})||null;if(stockWarnings)host.replaceChildren(stockWarnings.element,...host.children);api.stockWarnings=stockWarnings;
  checkReference.onclick=()=>{void api.checkRecovery();};
  refresh.onclick=()=>{void api.refresh();};recent.onclick=()=>{void api.refresh();};older.onclick=()=>{void api.loadOlder();};
  const observer=typeof w.MutationObserver==='function'?new w.MutationObserver(check):null;observer?.observe(view,{attributes:true,attributeFilter:['class','style','hidden']});const overlay=d.getElementById('loginOverlay');if(overlay)observer?.observe(overlay,{attributes:true,attributeFilter:['class','style','hidden']});

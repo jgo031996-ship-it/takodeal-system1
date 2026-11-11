@@ -1,4 +1,5 @@
 import {OWNER_EMAIL,canOpenInventoryTab} from './workspace-access-model.js';
+import {isActualPrepView,validateActualPrepReversalView} from './owner-prep-actual-model.js';
 export const OWNER_PREP_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/cashRemittanceReview/prep';
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value),hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value),number=value=>typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<=1e12;
 const unknown='HQ has not confirmed the outcome. Retry these same details to check the saved result; do not prepare a second batch.';
@@ -28,6 +29,7 @@ export function createOwnerPrepClient(api,{fetch=globalThis.fetch,storage=api.lo
   try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Object.assign(Error(unknown),{code:'prep/outcome-unknown'}));},timeoutMs);})]);}finally{clearTimeout(timer);}
  }
  function validate(view,input){
+  if(isActualPrepView(view))return validateActualPrepReversalView(view,input,branch=>canUseOwnerPrep(api,branch));
   if(view.operationId!==input.operationId||!id(view.outputInventoryId)||typeof view.branch!=='string'||!canUseOwnerPrep(api,view.branch)||typeof view.outputName!=='string'||view.outputName.length>160||!Array.isArray(view.effects)||view.effects.length<2||view.effects.length>31||view.effects.some(row=>!id(row?.id)||row.branch!==view.branch||typeof row.name!=='string'||typeof row.unit!=='string'||row.unit.length>40||!number(row.beforeStock)||row.beforeStock<0||!number(row.afterStock)||row.afterStock<0||!number(row.delta))||new Set(view.effects.map(row=>row.id)).size!==view.effects.length||input.outputInventoryId&&view.outputInventoryId!==input.outputInventoryId||input.qty!=null&&view.qty!==input.qty||view.canCommit===true&&!hash(view.expectedFingerprint)||view.canReverse===true&&(!hash(view.expectedFingerprint)||!Array.isArray(view.reversalEffects)||view.reversalEffects.length!==view.effects.length||view.reversalEffects.some((row,index)=>row.id!==view.effects[index].id||row.delta!==-view.effects[index].delta||row.beforeStock!==view.effects[index].afterStock||row.afterStock!==view.effects[index].beforeStock||row.unit!==view.effects[index].unit||row.branch!==view.branch)))throw Error(unknown);
   return view;
  }

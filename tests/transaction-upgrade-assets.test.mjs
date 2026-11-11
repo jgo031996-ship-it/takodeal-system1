@@ -39,8 +39,8 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
-    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v142-prep-recovery-20261111-r1/);
-    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v142-prep-recovery-20261111-r1/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v143-actual-prep-warnings-20261111-r1/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v143-actual-prep-warnings-20261111-r1/);
     for(const file of ['schedule-calendar.js','schedule-leave-markers.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule repair is available after app update');
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
     assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v50-security-loans-20261109/);
@@ -49,7 +49,7 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('time-out-request-display.js'),app+' caches schedule-review labels');
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
     assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=tablet-attendance-stock-20261009-r1/);
-    assert.match(source('takodeal-manager/auth.js'),/main\.js\?v=prep-recovery-20261111-r1/);
+    assert.match(source('takodeal-manager/auth.js'),/main\.js\?v=actual-prep-warnings-20261111-r1/);
 });
 
 test('photo-only attendance and stock report units install offline without requiring face models',()=>{

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "base": "d72811abeab2ef139510d4514c124784e650b396",
+  "files": {
+    "takodeal-manager/index.html": {
+      "baselineSha256": "e4d7dbafc747442455d4a252cbc967d09c46ad2a7282852e5b4de1a866688014",
+      "candidateSha256": "0b2a3956625caf6d39b22c606378fb2cafcd80fc27eb235578e153a8d8946fda",
+      "edits": [
+        {
+          "before": "<meta name=\"takodeal-release\" content=\"prep-recovery-20261111-r1\">",
+          "after": "<meta name=\"takodeal-release\" content=\"actual-prep-warnings-20261111-r1\">"
+        },
+        {
+          "before": "  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=prep-recovery-20261111-r1\">",
+          "after": "  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=actual-prep-warnings-20261111-r1\">"
+        },
+        {
+          "before": "  <script type=\"module\" src=\"auth.js?v=prep-recovery-20261111-r1\"></script>",
+          "after": "  <script type=\"module\" src=\"auth.js?v=actual-prep-warnings-20261111-r1\"></script>"
+        }
+      ]
+    },
+    "takodeal-manager/auth.js": {
+      "baselineSha256": "2f88ee14a26184bd3c6b52db0521e90d1ace9978d19a5614df35fb1556216085",
+      "candidateSha256": "136a33958f89e4473830fd6a2e5a337c45730e1eafb221e9c26e51bd187babcd",
+      "edits": [
+        {
+          "before": "            await import('./main.js?v=prep-recovery-20261111-r1');",
+          "after": "            await import('./main.js?v=actual-prep-warnings-20261111-r1');"
+        }
+      ]
+    },
+    "takodeal-manager/sw.js": {
+      "baselineSha256": "8694fc8c1e1725ceff01fb0a2fd3de8994ac6469307e5db635cc0a9b6beaaee1",
+      "candidateSha256": "b6715dd80b140f9e30b59f5a778b0f908d1405ff88ea5a5952d1731ef6801709",
+      "edits": [
+        {
+          "before": "const CACHE_NAME = 'takodeal-manager-core-v142-prep-recovery-20261111-r1';",
+          "after": "const CACHE_NAME = 'takodeal-manager-core-v143-actual-prep-warnings-20261111-r1';"
+        },
+        {
+          "before": "    './private-prep-reviews.js','./private-prep-reviews.css',",
+          "after": "    './private-prep-reviews.js','./private-prep-reviews.css','./private-prep-stock-warnings.js','./owner-prep-actual-model.js',"
+        }
+      ]
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "baselineSha256": "d37f510ea4cb697e22cbc47fefa097eb4f37304dde112ad3da592ac7d8ec1e77",
+      "candidateSha256": "554b9cf3b572f01fce96149fbced7fda49337f9fdb37680d3aa23bc3265386c4",
+      "edits": [
+        {
+          "before": "export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v142-prep-recovery-20261111-r1';",
+          "after": "export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v143-actual-prep-warnings-20261111-r1';"
+        }
+      ]
+    },
+    "takodeal-manager/private-prep-reviews.js": {
+      "baselineSha256": "1880536f35f5810dee00a6ec0fc1b6048cb783b1e42168e2e74334905d925c69",
+      "candidateSha256": "faa7e54b9f422d9780dffc3e1337f458bdbb1a60146292aec2ac34a06354d0e3",
+      "edits": [
+        {
+          "before": "import {navigateSecurityAlertSource} from './security-alert-links.js';",
+          "after": "import {navigateSecurityAlertSource} from './security-alert-links.js';\nimport {createPostedPrepWarnings} from './private-prep-stock-warnings.js';"
+        },
+        {
+          "before": "export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.bind(w),now=Date.now,setTimer=w.setTimeout?.bind(w)||setTimeout,clearTimer=w.clearTimeout?.bind(w)||clearTimeout,refreshMs=60000,guardMs=1000,timeoutMs=10000}={}){",
+          "after": "export function installPrivatePrepReviews(w=window,d=document,{fetcher=w.fetch?.bind(w),now=Date.now,setTimer=w.setTimeout?.bind(w)||setTimeout,clearTimer=w.clearTimeout?.bind(w)||clearTimeout,refreshMs=60000,guardMs=1000,timeoutMs=10000,makeStockWarnings=createPostedPrepWarnings}={}){"
+        },
+        {
+          "before": " let stopped=false,epoch=0,key=null,currentActor=null,guardTimer=null,nextRefresh=0,listFlight=null,detailFlight=null,detailId=null,detailEpoch=0,page=0,cursor=null,hasMore=false,held=false,heldScope=null,seenRecent=null,notificationScope=null,panelActive=false,panelVersion=0,recoveryEpoch=0,recoveryBusy=false;",
+          "after": " let stopped=false,epoch=0,key=null,currentActor=null,guardTimer=null,nextRefresh=0,listFlight=null,detailFlight=null,detailId=null,detailEpoch=0,page=0,cursor=null,hasMore=false,held=false,heldScope=null,seenRecent=null,notificationScope=null,panelActive=false,panelVersion=0,recoveryEpoch=0,recoveryBusy=false;\n let stockWarnings=null;"
+        },
+        {
+          "before": " function clearPanel(){panelVersion++;closeDetails();recoveryEpoch++;recoveryBusy=false;reference.value='';reference.disabled=checkReference.disabled=false;recoveryResult.replaceChildren();page=0;cursor=null;hasMore=false;list.replaceChildren();count.textContent='Not loaded';notice.hidden=true;notice.textContent='';older.hidden=recent.hidden=true;}",
+          "after": " function clearPanel(){panelVersion++;closeDetails();recoveryEpoch++;recoveryBusy=false;reference.value='';reference.disabled=checkReference.disabled=false;recoveryResult.replaceChildren();page=0;cursor=null;hasMore=false;list.replaceChildren();count.textContent='Not loaded';notice.hidden=true;notice.textContent='';older.hidden=recent.hidden=true;stockWarnings?.reset();}"
+        },
+        {
+          "before": "  epoch++;for(const controller of controllers)controller.abort();controllers.clear();listFlight=null;detailFlight=null;if(!preserveNotice){seenRecent=null;notificationScope=null;}if(!preserveHold){held=false;heldScope=null;}nextRefresh=0;key=null;currentActor=null;panelActive=false;clearPanel();refresh.disabled=false;status.textContent=message;",
+          "after": "  epoch++;for(const controller of controllers)controller.abort();controllers.clear();listFlight=null;detailFlight=null;if(!preserveNotice){seenRecent=null;notificationScope=null;}if(!preserveHold){held=false;heldScope=null;}nextRefresh=0;key=null;currentActor=null;panelActive=false;clearPanel();stockWarnings?.reset({preserveNotice});refresh.disabled=false;status.textContent=message;"
+        },
+        {
+          "before": "  if(!held&&!listFlight&&now()>=nextRefresh)void load('recent',true);schedule();",
+          "after": "  if(!held&&!listFlight&&now()>=nextRefresh)void load('recent',true);stockWarnings?.check({actorKey:actor.key,visible:inPanel,enabled:!held});schedule();"
+        },
+        {
+          "before": " const api={refresh(){held=false;heldScope=null;return load('recent');},loadOlder:()=>load('older'),open,checkRecovery,reset:()=>{clear();check();},check,dispose(){stopped=true;clear();if(guardTimer!==null)clearTimer(guardTimer);guardTimer=null;observer?.disconnect();listeners.splice(0).forEach(stop=>stop());host.hidden=true;if(w.clearManagerMemoryCache===clearWrapper)w.clearManagerMemoryCache=previousClear;if(w.ownerPrepReviews===api)delete w.ownerPrepReviews;}};",
+          "after": " const api={refresh(){held=false;heldScope=null;return load('recent');},loadOlder:()=>load('older'),open,checkRecovery,reset:()=>{clear();check();},check,dispose(){stopped=true;clear();stockWarnings?.dispose();if(guardTimer!==null)clearTimer(guardTimer);guardTimer=null;observer?.disconnect();listeners.splice(0).forEach(stop=>stop());host.hidden=true;if(w.clearManagerMemoryCache===clearWrapper)w.clearManagerMemoryCache=previousClear;if(w.ownerPrepReviews===api)delete w.ownerPrepReviews;}};"
+        },
+        {
+          "before": " checkReference.onclick=()=>{void api.checkRecovery();};",
+          "after": " stockWarnings=makeStockWarnings?.(w,d,{capture,request,onError:showError,now,refreshMs})||null;if(stockWarnings)host.replaceChildren(stockWarnings.element,...host.children);api.stockWarnings=stockWarnings;\n checkReference.onclick=()=>{void api.checkRecovery();};"
+        }
+      ]
+    },
+    "takodeal-manager/private-prep-reviews.css": {
+      "baselineSha256": "3c3917ccb2c33f3515ba2236d9cf4ffc60d46218f9873c1ec4e9cc48b638fa53",
+      "candidateSha256": "f58cda2797ece4ceb345d2191706ef5287822346bfec9b1814d9563ac35971d5",
+      "edits": [
+        {
+          "before": ".private-prep-recovery{border-top:1px solid #cbded5;margin-top:1.25rem;padding-top:1rem}.private-prep-recovery input[type=text],.private-prep-recovery textarea{box-sizing:border-box;display:block;width:100%;max-width:42rem;border:1px solid #b4cdc1;border-radius:8px;padding:.75rem;margin:.6rem 0;font:inherit}.private-prep-recovery textarea{min-height:5rem}.private-prep-recovery label{display:block;margin:.75rem 0;max-width:50rem}.private-prep-recovery button{margin:.35rem .35rem .35rem 0}.private-prep-recovery p{overflow-wrap:anywhere}.private-prep-recovery button:disabled{opacity:.55;cursor:default}\n",
+          "after": ".private-prep-recovery{border-top:1px solid #cbded5;margin-top:1.25rem;padding-top:1rem}.private-prep-recovery input[type=text],.private-prep-recovery textarea{box-sizing:border-box;display:block;width:100%;max-width:42rem;border:1px solid #b4cdc1;border-radius:8px;padding:.75rem;margin:.6rem 0;font:inherit}.private-prep-recovery textarea{min-height:5rem}.private-prep-recovery label{display:block;margin:.75rem 0;max-width:50rem}.private-prep-recovery button{margin:.35rem .35rem .35rem 0}.private-prep-recovery p{overflow-wrap:anywhere}.private-prep-recovery button:disabled{opacity:.55;cursor:default}\n.private-posted-prep{border-top:2px solid #d9b673;margin-top:1.5rem;padding-top:1.25rem}.private-posted-prep textarea{box-sizing:border-box;width:100%;max-width:45rem;min-height:6rem;margin:.6rem 0;padding:.75rem;border:1px solid #b4cdc1;border-radius:8px;font:inherit}.private-posted-prep .private-prep-details>.private-prep-button{margin:0 .5rem .5rem 0}.private-posted-prep p{overflow-wrap:anywhere}\n.private-posted-prep:first-child{border-top:0;margin-top:0;padding-top:0;border-bottom:2px solid #d9b673;padding-bottom:1.25rem;margin-bottom:1.5rem}\n"
+        }
+      ]
+    },
+    "takodeal-manager/owner-prep-client.js": {
+      "baselineSha256": "c5778dda0d52a4d092b62f59cd9754fb85bf91bc2542980a4833980dc2107694",
+      "candidateSha256": "2e66c62d56f4b75eb02f52d6e03ede01eb45fbe98b9f7c43487454ea1e44619b",
+      "edits": [
+        {
+          "before": "import {OWNER_EMAIL,canOpenInventoryTab} from './workspace-access-model.js';",
+          "after": "import {OWNER_EMAIL,canOpenInventoryTab} from './workspace-access-model.js';\nimport {isActualPrepView,validateActualPrepReversalView} from './owner-prep-actual-model.js';"
+        },
+        {
+          "before": " function validate(view,input){",
+          "after": " function validate(view,input){\n  if(isActualPrepView(view))return validateActualPrepReversalView(view,input,branch=>canUseOwnerPrep(api,branch));"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "takodeal-manager/private-prep-stock-warnings.js": "7f8cda3f293ea4bc1c9ea576a62115581884d7f4e80c31068c8eef1fe970053d",
+    "takodeal-manager/owner-prep-actual-model.js": "87a2315d359869790e98fbf684aaed1fc0b1cb63940f4e0942e10eecba043c21"
+  },
+  "historicalProofs": {
+    "private-prep-release-inverse.json": "6b5d43bd55f4af3b5f27ec74a59ccca598a9b5211efdcfae07e6d6d8013305e1",
+    "owner-prep-recovery-release-inverse.json": "018bab34aa013145aa9997bcf3cbd523ea27ca3a582f1a09c48b83711589e4cd",
+    "owner-remittance-dialog-inverse.json": "4f501251b90e3f9bcb95f0f03e8e48e671482a1e00f39b218cb91a28201a4262"
+  }
+}
