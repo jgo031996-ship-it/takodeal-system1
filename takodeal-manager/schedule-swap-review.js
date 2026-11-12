@@ -16,13 +16,13 @@ function authority(api, request) {
     if (request && !(session.email.toLowerCase() === OWNER_EMAIL || branches.includes('All') || [request.branch,request.targetBranch||request.branch].every(branch=>branches.includes(branch)))) throw Error('One of these branches is outside your assigned access.');
     return {uid:user.uid,email:user.email};
 }
-function validateRequest(request, at) {
+function validateRequest(request, at, {allowPast=false}={}) {
     if (!request || !['Awaiting HQ Approval',SWAP_REVIEW_STATUS].includes(request.status)) throw Error('This swap is no longer awaiting HQ approval. Refresh the list.');
     if (request.status===SWAP_REVIEW_STATUS ? request.requestVersion!==SWAP_REQUEST_VERSION : request.requestVersion!==undefined) throw Error('This swap request version needs a fresh staff request and acceptance.');
     if (!request.workDate || request.acceptanceVersion !== 1 || !request.acceptedByStaffId) throw Error('Ask staff to resend and accept this swap with its exact work date.');
     const date = scheduleDateKey(request.workDate);
     if (request.sourceScheduleMonth !== date.slice(0,7)) throw Error('The swap date and source schedule month do not match.');
-    if (date < scheduleDateKey(at)) throw Error('This swap date has already passed. Past schedules are not rewritten.');
+    if (!allowPast && date < scheduleDateKey(at)) throw Error('This swap date has already passed. Past schedules are not rewritten.');
     const day = Number(date.slice(-2));
     if (request.dayIndex !== undefined && Number(request.dayIndex) !== day) throw Error('The swap date and calendar day do not match.');
     if (!exactName(request.branch) || !request.requesterShiftId || !request.targetShiftId || (request.targetBranch||request.branch)===request.branch&&request.requesterShiftId === request.targetShiftId || request.requesterShiftId === 'STANDBY') throw Error('The swap request has invalid branch or shift details.');
@@ -90,12 +90,26 @@ export async function approveScheduleSwap(api,id,{store=api.getScheduleHistorySt
         },
         writeExtra:(transaction,extra)=>transaction.set(extra.ref,{...extra.request,status:'Approved',hqApprovedBy:identity.email,hqApprovedUid:identity.uid,hqApprovedAt:api.serverTimestamp?.()||at.toISOString(),scheduleRevisionId:extra.revisionId,historyEffectiveFrom:date})});
 }
-export async function rejectScheduleSwap(api,id,{reason='Declined by management',now=()=>new Date()}={}) {
-    const identity=authority(api);return api.runTransaction(api.db,async transaction=>{
+const rejectionFields=new Set(['id','status','hqRejectedBy','hqRejectedUid','hqRejectedAt','hqRejectionReason','hqRejectionVersion','hqRejectionSourceFingerprint','hqRejectionPreviousStatus']);
+function rejectionValue(value){if(value instanceof Date)return {date:value.toISOString()};if(value&&typeof value==='object'&&(Number.isInteger(value.seconds)||Number.isInteger(value._seconds)))return {seconds:value.seconds??value._seconds,nanoseconds:value.nanoseconds??value._nanoseconds??0};return Array.isArray(value)?value.map(rejectionValue):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,rejectionValue(value[key])])):value;}
+export function scheduleSwapRejectionFingerprint(request){return canonical({status:request.hqRejectionPreviousStatus||request.status,source:rejectionValue(Object.fromEntries(Object.entries(request).filter(([key])=>!rejectionFields.has(key))))});}
+export function scheduleSwapReviewState(request,at=new Date()){let expired=false,validDate=typeof request?.workDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(request.workDate);if(validDate)try{expired=scheduleDateKey(request.workDate)<scheduleDateKey(at);}catch{validDate=false;}return {expired,canApprove:validDate&&!expired};}
+export async function rejectScheduleSwap(api,id,{reason='Declined by management',now=()=>new Date(),expectedFingerprint}={}) {
+    const identity=authority(api),original=await readSwap(api,id),note=String(reason).trim()||'Declined by management';authority(api,original);
+    if(note.length>1500)throw Error('Keep the decline reason within 1500 characters.');
+    const expected=scheduleSwapRejectionFingerprint(original);if(expectedFingerprint!==undefined&&expectedFingerprint!==expected)throw Error('The swap request changed. Refresh before declining it.');
+    if(original.status!=='Rejected by HQ')validateRequest(original,now(),{allowPast:true});
+    return api.runTransaction(api.db,async transaction=>{
         const ref=api.doc(api.db,'shift_swaps',id),snap=await transaction.get(ref);if(!snap.exists())throw Error('The swap request no longer exists.');const request=snap.data();
-        const live=authority(api,request);if(live.uid!==identity.uid||live.email!==identity.email)throw Error('The signed-in account changed.');validateRequest(request,now());
-        transaction.set(ref,{...request,status:'Rejected by HQ',hqRejectedBy:identity.email,hqRejectedUid:identity.uid,hqRejectedAt:api.serverTimestamp?.()||now().toISOString(),hqRejectionReason:String(reason).trim()||'Declined by management'});
-        return {status:'Rejected by HQ'};
+        const live=authority(api,request);if(live.uid!==identity.uid||live.email!==identity.email)throw Error('The signed-in account changed.');
+        if(scheduleSwapRejectionFingerprint(request)!==expected)throw Error('The swap request changed while declining it. Refresh its saved result.');
+        if(request.status==='Rejected by HQ'){
+            if(request.hqRejectionVersion===1&&request.hqRejectionSourceFingerprint===expected&&request.hqRejectedUid===identity.uid&&request.hqRejectedBy===identity.email&&request.hqRejectionReason===note&&['Awaiting HQ Approval',SWAP_REVIEW_STATUS].includes(request.hqRejectionPreviousStatus))return {status:'Rejected by HQ',alreadyRejected:true};
+            throw Error('This request already has a different saved decision. Refresh its outcome.');
+        }
+        validateRequest(request,now(),{allowPast:true});
+        transaction.set(ref,{...request,status:'Rejected by HQ',hqRejectedBy:identity.email,hqRejectedUid:identity.uid,hqRejectedAt:api.serverTimestamp?.()||now().toISOString(),hqRejectionReason:note,hqRejectionVersion:1,hqRejectionSourceFingerprint:expected,hqRejectionPreviousStatus:request.status});
+        return {status:'Rejected by HQ',alreadyRejected:false};
     });
 }
 export function installScheduleSwapReview(api,document) {
@@ -113,14 +127,14 @@ export function installScheduleSwapReview(api,document) {
         try{const snap=await api.getDocs(api.query(api.collection(api.db,'shift_swaps'),api.where('status','in',['Awaiting HQ Approval',SWAP_REVIEW_STATUS])));if(token!==generation)return;authority(api);
             const rows=[];snap.forEach(doc=>{const row={...doc.data(),id:doc.id};try{authority(api,row);rows.push(row);}catch{/* Only assigned branches are listed. */}});rows.sort((a,b)=>String(a.workDate).localeCompare(String(b.workDate)));
             status.textContent=rows.length?`${rows.length} accepted swap${rows.length===1?'':'s'} waiting for HQ review.`:'No accepted swaps are awaiting HQ approval.';
-            for(const row of rows){const card=document.createElement('article');card.style.cssText='border-top:1px solid #e3ebe6;padding:15px 0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;';
-                const detail=document.createElement('div'),name=document.createElement('strong'),info=document.createElement('p');name.textContent=`${row.requesterName} ↔ ${row.targetName}`;info.textContent=`${row.workDate||row.dateStr} · ${row.branch}: ${row.requesterShiftName||row.requesterShiftId} ↔ ${row.targetBranch||row.branch}: ${row.targetShiftName||row.targetShiftId}`;info.style.cssText='font-size:12px;color:#6b8175;margin:6px 0;';detail.append(name,info);
-                const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;';for(const action of ['Approve','Reject']){const button=document.createElement('button');button.type='button';button.className='action-btn';button.textContent=action;button.style.cssText=action==='Approve'?'background:#15654f;color:white;':'background:white;color:#a34434;border:1px solid #e7d1c9;';button.onclick=async()=>{
-                    if(busy)return;const confirmed=await api.ManagerUI.confirm(`${action} this swap for ${row.branch}${row.targetBranch&&row.targetBranch!==row.branch?' ↔ '+row.targetBranch:''} on ${row.workDate||row.dateStr}?`);if(!confirmed)return;busy=true;for(const btn of panel.querySelectorAll('button'))btn.disabled=true;
-                    try{if(action==='Approve')await approveScheduleSwap(api,row.id);else await rejectScheduleSwap(api,row.id);await refresh();status.textContent=action==='Approve'?'Swap approved and its effective date saved in schedule memory.':'Swap rejected. The schedule was not changed.';}
+            for(const row of rows){const reviewState=scheduleSwapReviewState(row),card=document.createElement('article');card.style.cssText='border-top:1px solid #e3ebe6;padding:15px 0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;';
+                const detail=document.createElement('div'),name=document.createElement('strong'),info=document.createElement('p');name.textContent=`${row.requesterName} ↔ ${row.targetName}`;info.textContent=`${row.workDate||row.dateStr} · ${row.branch}: ${row.requesterShiftName||row.requesterShiftId} ↔ ${row.targetBranch||row.branch}: ${row.targetShiftName||row.targetShiftId}`;info.style.cssText='font-size:12px;color:#6b8175;margin:6px 0;';detail.append(name,info);if(reviewState.expired){const notice=document.createElement('p');notice.textContent='Expired request · the past roster is read-only. Approval is blocked; declining closes only this request. Review linked attendance separately if hours need correction.';notice.style.cssText='font-size:12px;color:#8a541b;';detail.append(notice);}
+                const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;';for(const action of ['Approve','Reject']){const button=document.createElement('button');button.type='button';button.className='action-btn';button.textContent=action==='Reject'&&reviewState.expired?'Decline expired request':action;if(action==='Approve'&&!reviewState.canApprove){button.disabled=true;button.dataset.swapApprovalHeld='true';button.title=reviewState.expired?'Past schedules cannot be rewritten.':'This request needs a valid saved work date.';}button.style.cssText=action==='Approve'?'background:#15654f;color:white;':'background:white;color:#a34434;border:1px solid #e7d1c9;';button.onclick=async()=>{
+                    if(busy||action==='Approve'&&!reviewState.canApprove)return;const confirmed=await api.ManagerUI.confirm(`${action} this swap for ${row.branch}${row.targetBranch&&row.targetBranch!==row.branch?' ↔ '+row.targetBranch:''} on ${row.workDate||row.dateStr}?`);if(!confirmed)return;busy=true;for(const btn of panel.querySelectorAll('button'))btn.disabled=true;
+                    try{if(action==='Approve')await approveScheduleSwap(api,row.id);else await rejectScheduleSwap(api,row.id,{expectedFingerprint:scheduleSwapRejectionFingerprint(row)});await refresh();status.textContent=action==='Approve'?'Swap approved and its effective date saved in schedule memory.':'Swap rejected. The schedule was not changed.';}
                     catch(error){status.textContent='Could not '+action.toLowerCase()+' swap: '+error.message;status.style.color='#a34434';}
-                    finally{busy=false;for(const btn of panel.querySelectorAll('button'))btn.disabled=false;}
-                };actions.append(button);}card.append(detail,actions);list.append(card);}
+                    finally{busy=false;for(const btn of panel.querySelectorAll('button'))btn.disabled=btn.dataset.swapApprovalHeld==='true';}
+                };actions.append(button);}if(reviewState.expired&&typeof api.openAttendanceRecovery==='function'&&typeof row.requesterStaffId==='string'&&row.requesterStaffId&&!/[\/\0]/.test(row.requesterStaffId)){const attendance=document.createElement('button');attendance.type='button';attendance.className='action-btn';attendance.textContent='Review attendance';attendance.onclick=()=>{if(busy)return;try{authority(api,row);return api.openAttendanceRecovery({staffId:row.requesterStaffId,staffName:row.requesterName,branch:row.branch,workDate:row.workDate,from:row.workDate,to:row.workDate});}catch(error){status.textContent=error.message;status.style.color='#a34434';}};actions.append(attendance);}card.append(detail,actions);list.append(card);}
         }catch(error){if(token===generation){status.textContent='Could not load swap approvals: '+error.message;status.style.color='#a34434';}}
     };
     refreshButton.onclick=refresh;const controller={refresh};api.scheduleSwapReviewUI=controller;return controller;

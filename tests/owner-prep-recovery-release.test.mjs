@@ -1,3 +1,4 @@
+import {ownerHRRequestProof,restoreOwnerHRRequest} from './helpers/owner-hr-request-inverse.mjs';
 import {ownerPrepYieldProof,restoreOwnerPrepYield} from './helpers/owner-prep-yield-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ const git=(commit,path)=>execFileSync('git',['show',commit+':'+path],{cwd:root,w
 test('only six release substitutions in four existing files restore every exact live Owner byte',()=>{
  assert.equal(proof.base,'2834ba0452201e3fa5f052b9daef49d2e77dd7df');assert.equal(Object.keys(proof.files).length,4);assert.equal(Object.values(proof.files).reduce((n,row)=>n+row.edits.length,0),6);
  for(const file of Object.keys(proof.files))assert.deepEqual(Buffer.from(restoreOwnerPrepRecoveryRelease(file,read(file))),git(proof.base,file),file);
- assert.deepEqual(Buffer.from(read('takodeal-manager/main.js')),git(proof.base,'takodeal-manager/main.js'),'main business logic is byte-identical');
+ assert.deepEqual(Buffer.from(restoreOwnerHRRequest('takodeal-manager/main.js',read('takodeal-manager/main.js'))),git(proof.base,'takodeal-manager/main.js'),'main business logic is byte-identical');
 });
 
 test('historical private prep source pins stay unchanged and release layering still restores d70 exactly',()=>{
@@ -26,13 +27,13 @@ test('historical private prep source pins stay unchanged and release layering st
 test('source inverses reject extra edits rather than silently normalizing unreviewed behavior',()=>{
  for(const file of Object.keys(proof.files)){
   assert.throws(()=>restoreOwnerPrepRecoveryRelease(file,read(file)+'\n/* extra change */'));
-  const edit=ownerPrepYieldProof.files[file].edits[0];assert.ok(read(file).includes(edit.after));assert.throws(()=>restoreOwnerPrepRecoveryRelease(file,read(file).replace(edit.after,edit.before)));
+  const edit=ownerHRRequestProof.files[file].edits[0];assert.ok(read(file).includes(edit.after));assert.throws(()=>restoreOwnerPrepRecoveryRelease(file,read(file).replace(edit.after,edit.before)));
  }
- assert.equal(restoreOwnerPrepRecoveryRelease('takodeal-manager/main.js','unchanged'),'unchanged');
+ assert.throws(()=>restoreOwnerPrepRecoveryRelease('takodeal-manager/main.js','unchanged'));
 });
 
 test('the page, stylesheet, auth import, cache and update notice identify the same recovery release after the exact newer warning inverse',()=>{
- const restored=file=>restoreOwnerStockWarnings(file,read(file)),release='takodeal-manager-core-v142-'+proof.release;assert.equal(proof.release,'prep-recovery-20261111-r1');assert.ok(restored('takodeal-manager/owner-update-notice.js').includes(release));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v144-measured-prep-yield-20261112-r1');
+ const restored=file=>restoreOwnerStockWarnings(file,read(file)),release='takodeal-manager-core-v142-'+proof.release;assert.equal(proof.release,'prep-recovery-20261111-r1');assert.ok(restored('takodeal-manager/owner-update-notice.js').includes(release));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v145-hr-request-recovery-20261112-r1');
  const html=restored('takodeal-manager/index.html');for(const value of ['content="'+proof.release+'"','private-prep-reviews.css?v='+proof.release,'auth.js?v='+proof.release])assert.ok(html.includes(value));
  assert.ok(restored('takodeal-manager/auth.js').includes("main.js?v="+proof.release));assert.ok(restored('takodeal-manager/sw.js').includes("const CACHE_NAME = '"+release+"';"));
  const oldWorker=git(proof.base,'takodeal-manager/sw.js').toString();assert.equal(restoreOwnerPrepRecoveryRelease('takodeal-manager/sw.js',read('takodeal-manager/sw.js')),oldWorker,'all cache/storage/worker behavior remains identical');

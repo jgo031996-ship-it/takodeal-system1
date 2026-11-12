@@ -14,7 +14,7 @@ import {installSecurityAlertLinks,escapeSecurityAlertText} from './security-aler
 import {installPrivatePrepReviews} from './private-prep-reviews.js';
 import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-approval.js';
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
-import {reviewOrdinaryStaffRequest} from './request-review-service.js';
+import {reviewOrdinaryStaffRequest,ordinaryStaffRequestNeedsRecovery,quoteOrdinaryStaffRequestRecovery} from './request-review-service.js';
 import {readBranchNetworkSettings,saveBranchNetworkSettings} from './branch-private-settings.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
 import {installPendingPaymentReader} from './pending-payment-reader.js';
@@ -10080,6 +10080,17 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
                 : `${result.minutes} minutes late rounds up to ${result.hours} hour(s). Regenerate the unpaid payroll preview to apply the deduction once.`, 'success');
             return;
         }
+        let identityQuote=null;
+        const assertOrdinaryReply=()=>{if(window.auth?.currentUser!==replyUser||window.sessionUser!==replySession||document.getElementById('dynamicReplyModal')!==replyModal||document.getElementById('loginOverlay')?.style.display==='flex')throw Error('Your account or request window changed. Reopen this request.');};
+        if(ordinaryStaffRequestNeedsRecovery(originalRequest.data(),action)){
+            identityQuote=await quoteOrdinaryStaffRequestRecovery(window,{id:docId,action,assertCurrent:assertOrdinaryReply});
+            assertOrdinaryReply();
+            if(identityQuote){
+                const confirmed=await Swal.fire({target:replyModal,titleText:'Confirm staff account for this older request',text:'This older request did not record '+(identityQuote.missingStaffLink&&identityQuote.missingBranch?'a linked staff account or branch':identityQuote.missingBranch?'a branch':'a linked staff account')+'. The matching current saved account is '+identityQuote.staffName+' — '+identityQuote.branch+'. '+identityQuote.type+': ₱'+identityQuote.amount.toFixed(2)+'. Confirm only if this is the same employee. One unpaid ledger entry will be created for this request.',icon:'warning',showCancelButton:true,confirmButtonText:'Confirm this staff account',cancelButtonText:'Keep request pending',focusCancel:true,customClass:{popup:'rounded-2xl'}});
+                assertOrdinaryReply();
+                if(!confirmed.isConfirmed){btn.innerText='Confirm '+action;btn.disabled=false;return;}
+            }
+        }
         let proofUrl = "";
 
         if (action === 'Approved' && fileInput && fileInput.files.length > 0) {
@@ -10091,7 +10102,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 
         btn.innerText = "⏳ Saving to Database...";
 
-        await reviewOrdinaryStaffRequest(window,{id:docId,action,reply:replyMsg,proofUrl,
+        await reviewOrdinaryStaffRequest(window,{id:docId,action,reply:replyMsg,proofUrl,identityQuote,
             actor:window.sessionUser?.cashierName||'Manager',
             assertCurrent:()=>{if(window.auth?.currentUser!==replyUser||window.sessionUser!==replySession||document.getElementById('dynamicReplyModal')!==replyModal)throw Error('Your account or request window changed. Reopen this request.');}});
 
