@@ -6,7 +6,7 @@
     <script>/* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-self-repair-swaps-20261112-r1';
+    var release = 'staff-self-repair-swaps-20261112-r2';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;
@@ -380,7 +380,7 @@
         message('Refreshing app files keeps phone approvals, sign-in and saved data.');
         try { return await updater(); } catch (_) { message('The app files could not be confirmed. Reconnect and try again; your saved data is kept.'); return false; }
     }
-    function append(tag, value, parent) { var node = d.createElement(tag); if (value) node.textContent = value; (parent || panel).appendChild(node); return node; }
+    function append(tag, value, parent) { var node = d.createElement(tag); if (value) node.textContent = value; if (tag === 'button') node.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;margin:12px 0 0;padding:12px 16px;border:1px solid #166534;border-radius:12px;background:#f0fdf4;color:#14532d;font:inherit;font-weight:700;line-height:1.35;cursor:pointer;touch-action:manipulation'; (parent || panel).appendChild(node); return node; }
     function open() {
         if (!panel && d.body) {
             panel = d.createElement('section'); panel.id = 'staffSelfRepair'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Repair Staff app');
@@ -390,9 +390,10 @@
             var refresh = append('button', 'Refresh app files'); refresh.type = 'button'; refresh.addEventListener('click', refreshFiles);
             append('h3', 'Reset Staff sign-in with a personal code');
             append('p', 'For this same staff account only. Have your current Owner-issued personal setup code ready. If the code or phone-slot limit fails, your current sign-in stays here. The Owner may need to free an old phone slot; this action does not revoke it.');
-            codeInput = append('input'); codeInput.type = 'password'; codeInput.inputMode = 'numeric'; codeInput.autocomplete = 'off'; codeInput.maxLength = 14; codeInput.setAttribute('aria-label', 'Personal setup code');
-            var label = append('label'); consent = d.createElement('input'); consent.type = 'checkbox'; label.appendChild(consent); label.appendChild(d.createTextNode(' I understand: confirm my personal setup code first, then use my usual Staff login PIN. My private-document approval is kept.'));
-            resetButton = append('button', 'Confirm code and reset Staff sign-in'); resetButton.type = 'button'; resetButton.addEventListener('click', function () { void perform(codeInput.value, consent.checked, false); });
+            var codeLabel = append('label', 'Personal setup code'); codeLabel.htmlFor = 'staffSelfRepairCode'; codeLabel.style.cssText = 'display:block;margin:16px 0 8px;font-weight:700;line-height:1.4';
+            codeInput = append('input'); codeInput.id = 'staffSelfRepairCode'; codeInput.type = 'password'; codeInput.inputMode = 'numeric'; codeInput.autocomplete = 'off'; codeInput.maxLength = 14; codeInput.setAttribute('aria-label', 'Personal setup code'); codeInput.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;padding:12px 14px;border:1px solid #55836a;border-radius:10px;background:#fff;color:#193a30;font:inherit;line-height:1.35';
+            var label = append('label'); label.style.cssText = 'display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:15px;font-weight:400;line-height:1.5;cursor:pointer'; consent = d.createElement('input'); consent.type = 'checkbox'; consent.style.cssText = 'flex:0 0 22px;width:22px;height:22px;min-width:22px;min-height:22px;margin:2px 0 0;accent-color:#166534'; label.appendChild(consent); label.appendChild(d.createTextNode(' I understand: confirm my personal setup code first, then use my usual Staff login PIN. My private-document approval is kept.'));
+            resetButton = append('button', 'Confirm code and reset Staff sign-in'); resetButton.style.background = '#166534'; resetButton.style.borderColor = '#166534'; resetButton.style.color = '#fff'; resetButton.type = 'button'; resetButton.addEventListener('click', function () { void perform(codeInput.value, consent.checked, false); });
             var resume = append('button', 'Check saved reset'); resume.type = 'button'; resume.addEventListener('click', function () { void perform('', false, true); });
             text = append('p', 'Choose Refresh app files if the Staff app has not finished opening.'); text.setAttribute('role', 'status'); text.setAttribute('aria-live', 'polite');
             var close = append('button', 'Back to Staff app'); close.type = 'button'; close.addEventListener('click', function () { if (flight) return message('Wait for this check to finish. Its saved reference is kept.'); codeInput.value = ''; panel.hidden = true; });
@@ -419,7 +420,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-self-repair-swaps-20261112-r1">
+    <meta name="takodeal-release" content="staff-self-repair-swaps-20261112-r2">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -1085,6 +1086,6 @@
   </div>
 
     <dialog id="staffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="staffDocumentPreviewTitle">Document photo</h3><button type="button" id="staffDocumentPreviewClose">Close</button></div><img id="staffDocumentPreviewImage" alt="Private document photo"></dialog>
-      <script type="module" src="app.js?v=staff-self-repair-swaps-20261112-r1"></script>
+      <script type="module" src="app.js?v=staff-self-repair-swaps-20261112-r2"></script>
 </body>
 </html>

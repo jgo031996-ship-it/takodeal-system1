@@ -1,10 +1,12 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
 import {staffSelfRepairSwapsProof as proof,restoreStaffSelfRepairSwaps as restore,staffSelfRepairSha as sha} from './helpers/staff-self-repair-swaps-inverse.mjs';
+import {staffRepairTouchProof as touchProof,restoreStaffRepairTouch} from './helpers/staff-repair-touch-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:6e6});
 test('seven exact reviewed inverses and two pinned new modules preserve every other live b576 product byte',()=>{
+ assert.equal(touchProof.base,'885a1fde77ae64df73d8eea9e21efab2de360594');assert.equal(Object.keys(touchProof.files).length,4);for(const file of Object.keys(touchProof.files))assert.equal(restoreStaffRepairTouch(read(file),file),git('show',touchProof.base+':'+file));
  assert.equal(proof.base,'b576555caa29b571706ba8d0fc0ebaae414869bf');assert.equal(Object.keys(proof.files).length,7);assert.equal(Object.keys(proof.addedFiles).length,2);
- for(const[file,row]of Object.entries(proof.files)){const before=git('show',proof.base+':'+file);assert.equal(sha(before),row.baselineSha256);assert.equal(restore(read(file),file),before);assert.throws(()=>restore(read(file)+'\n// unreviewed change\n',file),/Only the reviewed Staff self-repair/);}
- for(const[file,pin]of Object.entries(proof.addedFiles)){assert.equal(git('ls-tree',proof.base,'--',file),'');assert.equal(sha(read(file)),pin);}
+ for(const[file,row]of Object.entries(proof.files)){const before=git('show',proof.base+':'+file);assert.equal(sha(before),row.baselineSha256);assert.equal(restore(read(file),file),before);assert.throws(()=>restore(read(file)+'\n// unreviewed change\n',file),/Only the reviewed Staff (?:self-repair|repair touch)/);}
+ for(const[file,pin]of Object.entries(proof.addedFiles)){assert.equal(git('ls-tree',proof.base,'--',file),'');assert.equal(sha(restoreStaffRepairTouch(read(file),file)),pin);}
 });
 test('reset-pending entry checks hold before any normal PIN query, local selection mutation or private grant action',async()=>{
  const app=read('takodeal-staff/app.js');let checks=0,opened=0;
@@ -25,7 +27,7 @@ test('classic repair and startup are exact parser-inline copies before dependenc
  const page=read('takodeal-staff/index.html'),startup=read('takodeal-staff/staff-startup.js'),repair=read('takodeal-staff/staff-self-repair.js'),firstLink=page.indexOf('<link');
  for(const runtime of [startup,repair]){const inline='<script>'+runtime+'</script>';assert.equal(page.split(inline).length,2);assert.ok(page.indexOf(inline)<firstLink);}
  assert.equal((page.match(/data-staff-self-repair>/g)||[]).length,4);assert.doesNotMatch(page,/<script[^>]+src=["']staff-self-repair\.js/);assert.doesNotMatch(repair,/^\s*(?:import|export)\s/m);
- assert.match(page,/app\.js\?v=staff-self-repair-swaps-20261112-r1/);assert.ok(read('takodeal-staff/sw.js').includes('./staff-self-repair-sdk.js'));
+ assert.match(page,/app\.js\?v=staff-self-repair-swaps-20261112-r2/);assert.ok(read('takodeal-staff/sw.js').includes('./staff-self-repair-sdk.js'));
 });
 test('other apps, backend/rules, normal punching/upload code and separate private identity remain byte-exact to live b576',()=>{
  const changed=git('diff','--name-only',proof.base,'--','Takodeal-POS','takodeal-manager','takodeal-customer','takodeal-rider','takodeal-franchise','functions','firestore.rules','storage.rules');assert.equal(changed,'');
