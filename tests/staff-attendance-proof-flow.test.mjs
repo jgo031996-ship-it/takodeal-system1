@@ -14,6 +14,7 @@ import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emerge
 import {createLocationSession} from '../takodeal-staff/staff-location.js';
 import {createClockUploadAccess} from '../takodeal-staff/clock-upload-access.js';
 import {createStaffSetupAuthority} from '../takodeal-staff/staff-setup-access.js';
+import {installAttendanceCamera,ATTENDANCE_CAMERA_POLICY,ATTENDANCE_PHOTO_MAX_AGE} from '../takodeal-staff/attendance-camera.js';
 
 const source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const start=source.indexOf('window.punchTime = async function');
@@ -42,7 +43,7 @@ function harness({late=true}={}) {
     const snapshot=value=>{const path=pathOf(value);return {id:path.split('/').at(-1),ref:reference(path),exists:()=>records.has(path),data:()=>clone(records.get(path))};};
     const api={db:{},collection:(_db,path)=>path,doc:(parent,table,id)=>reference(id===undefined?`${parent}/auto-${++sequence}`:`${table}/${id}`),
         query:(path,...filters)=>({path,filters}),where:(...filter)=>filter,
-        getDoc:async path=>snapshot(path),getDocFromServer:async path=>snapshot(path),
+        getDoc:async path=>snapshot(path),getDocFromServer:async path=>{events.push('server:'+pathOf(path));if(h.beforeServerRead)await h.beforeServerRead(pathOf(path));return snapshot(path);},
         getDocs:async q=>{const docs=[...records].filter(([path,row])=>path.startsWith(q.path+'/') && (q.filters||[]).every(([key,op,value])=>op!=='=='||row[key]===value)).map(([path])=>snapshot(path));return {docs,empty:!docs.length,forEach:fn=>docs.forEach(fn)};},
         serverTimestamp:()=>new Date(clockMs),
         writeBatch:()=>{const changes=[];return {set:(ref,data)=>changes.push([pathOf(ref),clone(data)]),async commit(){events.push('commit:start');if(h.beforeCommit)await h.beforeCommit();batches.push(changes.map(([path,data])=>({path,data})));for(const [path,data]of changes){records.set(path,data);writes.push(path);}events.push('commit:done');}};},
@@ -70,8 +71,39 @@ function harness({late=true}={}) {
     const document={hidden:false,getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]};
     node('view-timeclock').classList={contains:value=>value==='active'};
     vm.runInNewContext(handler,{...api,...payroll,...reconciliation,...savedShiftProposals,...scheduleDeclarations,chooseClockInSchedule,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
-    return Object.assign(h,{window,punch:type=>window.punchTime(type),advance:milliseconds=>{clockMs+=milliseconds;}});
+    return Object.assign(h,{window,punch:type=>window.punchTime(type),now:()=>clockMs,advance:milliseconds=>{clockMs+=milliseconds;}});
 }
+
+function realPhotoFreshness(h,{age=0}={}){
+    const stream={getVideoTracks:()=>[{readyState:'live',enabled:true}]},video={srcObject:stream,ended:false,style:{}},api={};
+    installAttendanceCamera(api,{hidden:false,getElementById:id=>id==='clockVideo'?video:null},{now:h.now,isActive:()=>true});
+    h.camera=async()=>({photoBase64:'data:image/jpeg;base64,c3ludGhldGlj',cameraEpoch:0,cameraStream:stream,faceCheck:{policyVersion:ATTENDANCE_CAMERA_POLICY,capturedAt:new Date(h.now()-age).toISOString()}});
+    h.fresh=result=>api.assertAttendanceFaceFresh(result);
+}
+
+test('a 20-second final HQ history read cannot expire the photo: all remote history finishes before final capture',async()=>{
+    const h=harness();realPhotoFreshness(h);let heads=0;
+    h.beforeServerRead=async path=>{if(path==='settings/global_schedule'&&++heads===2)h.advance(20000);};
+    await h.punch('TIME IN');assert.equal(heads,2);assert.equal(h.batches.length,1,JSON.stringify(h.alerts.at(-1)));assert.equal(h.writes.length,2);
+    assert.ok(h.events.findLastIndex(event=>event.startsWith('server:'))<h.events.indexOf('camera'));
+    const attendance=h.records.get('attendance_logs/auto-1');assert.equal(attendance.faceCheck.capturedAt,new Date(h.now()).toISOString());assert.equal(attendance.locationCapturedAt,new Date(h.now()).toISOString());
+});
+
+test('a changed final saved assignment is still held after a slow HQ read; no photo or evidence bypasses it',async()=>{
+    const h=harness();realPhotoFreshness(h);let heads=0;
+    h.beforeServerRead=async path=>{if(path==='settings/global_schedule'&&++heads===2){h.advance(20000);h.records.get(path).currentSchedule[6].Maa.scheduled.slot='Other Staff';}};
+    await h.punch('TIME IN');assertNoAttendance(h);assert.match(h.alerts.at(-1)[1],/assigned schedule/);assert.equal(h.uploadCalls.length,1);assert.equal(h.window.staffLateProofDraft.file,screenshot);
+});
+
+test('a genuinely expired photo or final GPS sample still blocks the actual handler under unchanged 15/60-second bounds',async()=>{
+    for(const mode of ['photo','gps']){const h=harness();realPhotoFreshness(h,{age:mode==='photo'?ATTENDANCE_PHOTO_MAX_AGE+1:0});if(mode==='gps')h.location=async()=>({branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:h.now()-60001});await h.punch('TIME IN');assertNoAttendance(h);assert.match(h.alerts.at(-1)[1],mode==='photo'?/camera photo expired/:/Location verification expired/);}
+});
+
+test('crossing the lateness threshold during final HQ reads still requires the current reason instead of saving stale late minutes',async()=>{
+    const h=harness();h.records.get('settings/global_schedule').branchConfig.Maa[0].startTime='09:12';realPhotoFreshness(h);let heads=0;
+    h.beforeServerRead=async path=>{if(path==='settings/global_schedule'&&++heads===2)h.advance(61000);};
+    await h.punch('TIME IN');assertNoAttendance(h);assert.equal(h.uploadCalls.length,0);assert.match(h.alerts.at(-1)[1],/now needs a lateness explanation/);
+});
 
 function assertNoAttendance(h) {
     assert.equal(h.writes.length,0);
@@ -159,7 +191,7 @@ test('late upload success saves one linked reason and Time In in the same batch,
     assert.equal(h.events.filter(event=>event==='gps').length,3);
     assert.ok(h.events.indexOf('sanctions')>h.events.indexOf('proof:done'));
     assert.ok(h.events.indexOf('camera')>h.events.indexOf('proof:done'));
-    assert.ok(h.events.lastIndexOf('gps')>h.events.indexOf('camera'));
+    assert.ok(h.events.lastIndexOf('gps')<h.events.indexOf('camera'));
     assert.ok(h.events.indexOf('fresh')>h.events.lastIndexOf('gps'));
     assert.ok(h.events.indexOf('commit:start')>h.events.indexOf('fresh'));
     assert.equal(h.window.staffPunchBusy,false);assert.equal(h.node('btnTimeIn').disabled,false);assert.equal(h.node('btnTimeOut').disabled,false);
@@ -268,5 +300,5 @@ test('a proof delay without a new GPS sample cannot reuse expired coordinates or
  try{await h.punch('TIME IN');assertNoAttendance(h);assert.equal(watchCalls,2);assert.equal(h.uploadCalls.length,1);assert.equal(h.alerts.at(-1)[0],'Location needs attention');assert.match(h.alerts.at(-1)[1],/Allow Location.*Refresh location/);assert.equal(h.window.staffLateProofDraft.file,screenshot);}finally{session.stop();}
 });
 test('the actual Time In names GPS, camera, final schedule and save phases without changing the guarded save order',async()=>{
- const h=harness();await h.punch('TIME IN');const titles=h.alerts.map(args=>args[0]?.title).filter(Boolean),expected=['Checking your branch location…','Review your assigned hours','Rechecking your branch location…','Checking your current camera photo…','Confirming your branch location…','Preparing attendance…','Confirming your saved shift…','Saving attendance…'];let previous=-1;for(const title of expected){const index=titles.indexOf(title);assert.ok(index>previous,title+' follows its real guarded phase');previous=index;}assert.equal(h.batches.length,1);assert.equal(h.events.indexOf('camera')>h.events.indexOf('proof:done'),true);assert.equal(h.events.indexOf('commit:start')>h.events.lastIndexOf('fresh'),true);assert.equal(h.writes.length,2);
+ const h=harness();await h.punch('TIME IN');const titles=h.alerts.map(args=>args[0]?.title).filter(Boolean),expected=['Checking your branch location…','Review your assigned hours','Rechecking your branch location…','Confirming your saved shift…','Confirming your branch location…','Checking your current camera photo…','Preparing attendance…','Saving attendance…'];let previous=-1;for(const title of expected){const index=titles.indexOf(title);assert.ok(index>previous,title+' follows its real guarded phase');previous=index;}assert.equal(h.batches.length,1);assert.equal(h.events.indexOf('camera')>h.events.indexOf('proof:done'),true);assert.equal(h.events.indexOf('commit:start')>h.events.lastIndexOf('fresh'),true);assert.equal(h.writes.length,2);
 });

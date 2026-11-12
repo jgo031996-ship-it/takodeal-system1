@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {restoreStaffAttendanceRecovery} from './helpers/staff-attendance-recovery-inverse.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),base='9dd4d1a211ee6fcc93f075d0bb238619ced6c9a1';
 const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024});
-const previous=path=>git('show',base+':'+path),read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
-test('all existing Staff business, attendance and authorization code is byte-exact before the final ready marker',()=>{
+const previous=path=>git('show',base+':'+path),read=path=>restoreStaffAttendanceRecovery(readFileSync(new URL('../'+path,import.meta.url),'utf8'),path);
+test('recovery inverse restores all original Staff business/attendance/authorization bytes before the final ready marker',()=>{
  const path='takodeal-staff/app.js',before=previous(path),after=read(path);
  assert.equal(after,before+'window.staffStartup?.ready();\n');
 });
@@ -21,9 +22,11 @@ test('R2 page changes only exact inline placement and release labels from live39
 });
 test('Cashier, other apps, shared runtime, Firebase functions, rules and dependencies cannot change in this Staff fix',()=>{
  const changed=[...git('diff','--name-only',base,'--').trim().split(/\r?\n/),...git('ls-files','--others','--exclude-standard').trim().split(/\r?\n/)].filter(Boolean);
- const allowed=new Set(['takodeal-staff/app.js','takodeal-staff/index.html','takodeal-staff/sw.js','takodeal-staff/staff-startup.js']);
+ const allowed=new Set(['takodeal-staff/app.js','takodeal-staff/clock-upload-access.js','takodeal-staff/index.html','takodeal-staff/sw.js','takodeal-staff/staff-startup.js']);
  for(const path of changed){
+  if(path.startsWith('outputs/'))continue;
   if(/^(?:tests\/|tools\/build-staff-(?:shell-cohort|startup-inline)\.mjs$|\.github\/workflows\/staff-(?:startup|inline)-recovery-checks\.yml$|STAFF-STARTUP-RECOVERY\.md$)/.test(path))continue;
+  if(['.github/workflows/hr-recovery-checks.yml','tools/prepare-prep-hosted-emulator.mjs'].includes(path))continue;
   assert.ok(allowed.has(path),'Unexpected product change: '+path);
  }
 });

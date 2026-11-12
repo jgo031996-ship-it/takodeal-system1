@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact deployed HR Rules and original live Owner request reviewer; no future tracked security policy",
+  "rules": {
+    "path": "firestore.rules",
+    "sha256": "32cdfdbaa3ae3599d5c4956e122fd26f0eadf402ff99db4369bd38e6f1ffe356",
+    "readablePolicyCommit": "4c0e9c5afd0ea544f9ae95a683b464de18456411",
+    "readablePolicySha256": "20032a518922db82231a0ed12814ebed1df2d8013f23c94e1f2b2240c4899187"
+  },
+  "owner": {
+    "commit": "2834ba0452201e3fa5f052b9daef49d2e77dd7df",
+    "path": "takodeal-manager/request-review-service.js",
+    "fixture": "request-review-service.js",
+    "sha256": "366d6d33b3cb556d32bb9c646c86576c6b4f7845e7d2d602763f587b94dffed5"
+  },
+  "staff": {
+    "commit": "f30b3ab4d9cf2c01b8a34f90587f2e4f7cad8a72",
+    "appSha256": "34bb6691d79023ba0e78a0adf83fb580bfa86c77982bfa9a85bc7891f04ec1bb"
+  }
+}

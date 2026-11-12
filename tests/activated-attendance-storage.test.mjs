@@ -12,6 +12,6 @@ test('activated evidence extends exact activea17 Storage only; all other app/pri
  const staffFiles=source.slice(source.indexOf('    match /staff_requests/'),source.indexOf('    match /staff_profiles/'));assert.match(staffFiles,/\? ownActivatedAttendance/);assert.doesNotMatch(staffFiles,/ownStaff\(uid,staffId\) \|\| ownActivatedAttendance/);
 });
 test('Staff release caches the full changed dependency graph and uses coherent verified updates without credential resets',()=>{
- const worker=readFileSync(new URL('../takodeal-staff/sw.js',import.meta.url),'utf8'),html=readFileSync(new URL('../takodeal-staff/index.html',import.meta.url),'utf8');assert.match(worker,/v55-inline-20261111-r2/);assert.match(html,/app\.js\?v=staff-startup-20261111-r2/);
+ const worker=readFileSync(new URL('../takodeal-staff/sw.js',import.meta.url),'utf8'),html=readFileSync(new URL('../takodeal-staff/index.html',import.meta.url),'utf8');assert.match(worker,/v56-attendance-recovery-20261112-r1/);assert.match(html,/app\.js\?v=attendance-recovery-20261112-r1/);
  for(const file of ['app.js','attendance-proof.js','clock-upload-access.js','staff-access.js','staff-setup-access.js','staff-phone.js','app-update.js','private-phone-identity.js','document-metadata-client.js'])assert.ok(worker.includes("'./"+file+"'"));assert.match(worker,/if\(cached\)return cached/);assert.match(worker,/crypto\.subtle\.digest\('SHA-256',bytes\)/);assert.doesNotMatch(worker,/localStorage\.clear|indexedDB\.deleteDatabase/);
 });

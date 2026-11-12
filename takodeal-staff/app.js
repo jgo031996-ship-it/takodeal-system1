@@ -1307,14 +1307,20 @@ window.punchTime = async function(type) {
         let faceResult = null;
         if (type === 'TIME IN') {
             if (typeof window.verifyAttendanceFace !== 'function') throw Error('The camera check is unavailable. Refresh while online before Time In.');
-            Swal.fire({title:'Checking your current camera photo…',text:'Keep your face in the camera frame.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-            faceResult = await window.verifyAttendanceFace();
+            // Finish remote roster checks before starting the photo's 15-second
+            // validity window. Its current-time checks still run below.
+            Swal.fire({title:'Confirming your saved shift…',text:'Checking the latest assigned hours before capturing your attendance photo.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+            punchScheduleData = await readFreshPunchSchedule(new Date());
+            assertPunchIdentity();
             Swal.fire({title:'Confirming your branch location…',text:'Checking the location saved with this attendance.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
             const finalLocation = await window.getAttendanceLocation();
             if (finalLocation.branch !== closestBranch) throw Error('Your branch changed. Please record attendance again.');
             if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
-            window.assertAttendanceFaceFresh(faceResult);
             punchLocation = finalLocation; minDistance = finalLocation.distance;
+            Swal.fire({title:'Checking your current camera photo…',text:'Keep your face in the camera frame.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+            faceResult = await window.verifyAttendanceFace();
+            assertPunchIdentity();
+            window.assertAttendanceFaceFresh(faceResult);
         }
         const assertClockCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId || localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');};
         let earlyClockOut=null,timeOutResult=null;
@@ -1338,9 +1344,8 @@ window.punchTime = async function(type) {
         };
         if (type === 'TIME IN') {
             attendance.faceCheck = faceResult.faceCheck;
-            // Slow proof, HR and camera checks must not save an earlier roster.
-            Swal.fire({title:'Confirming your saved shift…',text:'Checking the latest assigned hours before HQ saves attendance.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-            punchScheduleData = await readFreshPunchSchedule(new Date());
+            // Recalculate with the current time and the freshly confirmed
+            // roster. No remote history read may age this final camera photo.
             assertPunchIdentity();
             window.assertAttendanceFaceFresh(faceResult);
             const clockDate = new Date();
@@ -1434,7 +1439,8 @@ window.openReqForm = function(type) {
 
 window.submitStaffRequest = async function() {
     if(window.currentReqType==='Leave')return window.getStaffLeaveUI().submitFromForm();
-    let payload = { type: window.currentReqType, staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
+    const requestStaffId=localStorage.getItem('takodeal_staff_id'),requestStaffName=localStorage.getItem('takodeal_staff_name'),requestType=window.currentReqType,requestUser=staffPrimaryAuth.currentUser;
+    let payload = { type: requestType, staffId:requestStaffId, staffName: requestStaffName, status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
     let fileToUpload = null;
 
     if (payload.type === 'Cash Advance') {
@@ -1465,22 +1471,37 @@ window.submitStaffRequest = async function() {
 
     let btn = document.getElementById('btnSubmitReq');
     btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; btn.disabled = true;
+    const requestModal=document.getElementById('requestModal'),formValues=()=>JSON.stringify(['reqAmount','reqReason','reqMealReceiptCode'].map(id=>document.getElementById(id)?.value??null)),requestForm=formValues();
+    let requestDispatched=false;
+    const requestProblem=message=>Object.assign(Error(message),{staffRequestSafe:true});
+    const assertRequestCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==requestStaffId||localStorage.getItem('takodeal_staff_name')!==requestStaffName||window.currentReqType!==requestType||staffPrimaryAuth.currentUser!==requestUser||document.getElementById('requestModal')!==requestModal||requestModal?.style.display==='none'||formValues()!==requestForm)throw requestProblem(requestDispatched?'Your Staff account or request changed after sending. Check the original account’s inbox before sending it again.':'Your Staff account or request changed. Reopen the request; nothing was sent.');};
 
     try {
+        assertRequestCurrent();
+        if(typeof requestStaffId!=='string'||!requestStaffId||requestStaffId.length>128||requestStaffId.includes('/'))throw requestProblem('Sign in to your Staff account again before sending this request.');
+        if(payload.type==='Cash Advance'){
+            let profileTimer;const profile=await Promise.race([getDocFromServer(doc(db,'cashiers',requestStaffId)),new Promise((_,reject)=>{profileTimer=setTimeout(()=>reject(requestProblem('HQ did not confirm your current Staff profile in time. Nothing was sent; reconnect and try again.')),20000);})]).finally(()=>clearTimeout(profileTimer));assertRequestCurrent();
+            const person=profile.exists()?profile.data():null;
+            if(profile.metadata?.fromCache===true||profile.metadata?.hasPendingWrites===true||!person||!activeStaffProfile(person)||typeof person.cashierName!=='string'||!person.cashierName.trim()||typeof person.branch!=='string'||!person.branch.trim())throw requestProblem('Your current Staff name and home branch could not be confirmed. Reconnect or ask HQ to review the profile; no request was sent.');
+            cleanPayload.staffName=person.cashierName;cleanPayload.branch=person.branch;
+        }
         if (fileToUpload) {
             const fileName = `staff_requests/meal_${cleanPayload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileToUpload.name.split('.').pop()}`;
             const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload);
             cleanPayload.proofImageUrl = await getDownloadURL(snapshot.ref);
         }
         
+        assertRequestCurrent();
+        requestDispatched=true;
         await window.addDoc(window.collection(window.db, "staff_requests"), cleanPayload);
+        assertRequestCurrent();
         
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Submitted to HQ!', showConfirmButton: false, timer: 2000});
         document.getElementById('requestModal').style.display = 'none';
         
     } catch(e) { 
         console.error(e); 
-        Swal.fire('Error', 'Failed to send request.', 'error'); 
+        if(localStorage.getItem('takodeal_staff_id')===requestStaffId&&localStorage.getItem('takodeal_staff_name')===requestStaffName)Swal.fire('Request not confirmed', e.staffRequestSafe?e.message:requestDispatched?'The request could not be confirmed with HQ. Check your inbox before sending it again.':'HQ could not confirm your current request details. Nothing was sent; reconnect and try again.', 'warning');
     } finally { 
         btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; 
     }
