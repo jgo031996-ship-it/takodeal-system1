@@ -136,11 +136,16 @@ test('Cashier declared swaps preserve its existing late minutes and do not adopt
     assert.equal(attendance.scheduleSnapshot.lateMinutes,15);assert.equal(request.lateMinutes,15);assert.equal(request.type,'Schedule Declaration');assert.equal(request.proofImageUrl,undefined);assert.equal(request.status,'Pending');
 });
 
-test('fresh coworker identity changes during either actual camera check cannot save a stale swap declaration',async()=>{
+test('fresh coworker identity changes before the final roster check cannot save a stale swap declaration',async()=>{
     for(const appName of ['staff','cashier']){
-        const {h,app,before,punch}=await declarationClockFixture(appName);const camera=app.window.verifyAttendanceFace;
-        app.window.verifyAttendanceFace=async()=>{h.records.get('settings/global_schedule').employees[1].active=false;return camera();};
-        await punch();assert.equal(h.writes.length,before);assert.match(String(app.alerts.at(-1)?.[1]||app.alerts.at(-1)?.[0]),/coworker|dated shift/);
+        const {h,app,before,punch}=await declarationClockFixture(appName);let changed=false;
+        const change=()=>{changed=true;h.records.get('settings/global_schedule').employees[1].active=false;};
+        if(appName==='staff'){
+            // Staff deliberately completes every remote roster read before the
+            // final photo starts its 15-second validity window.
+            const show=app.Swal.fire;app.Swal.fire=(...args)=>{if(args[0]?.title==='Confirming your saved shift…')change();return show(...args);};
+        }else{const camera=app.window.verifyAttendanceFace;app.window.verifyAttendanceFace=async()=>{change();return camera();};}
+        await punch();assert.equal(changed,true);assert.equal(h.writes.length,before);assert.match(String(app.alerts.at(-1)?.[1]||app.alerts.at(-1)?.[0]),/coworker|dated shift/);
     }
 });
 

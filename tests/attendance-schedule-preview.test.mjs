@@ -59,9 +59,15 @@ test('the actual Staff schedule reader rejects pending/cache evidence and guards
  for(const metadata of [{fromCache:true},{hasPendingWrites:true}])await assert.rejects(make(factory,async()=>({exists:()=>true,metadata}),()=>{}, {},()=>{}),/could not be confirmed with HQ/);
  await assert.rejects(make(factory,async()=>({exists:()=>true}),()=>{throw Error('Changed employee');}, {},()=>{}),/Changed employee/);
 });
-const start=source.indexOf('            // Slow proof, HR and camera checks must not save an earlier roster.');
+const rosterStart=source.indexOf("            Swal.fire({title:'Confirming your saved shift…'");
+const cameraStart=source.indexOf("            Swal.fire({title:'Checking your current camera photo…'",rosterStart);
+assert.ok(rosterStart>0&&cameraStart>rosterStart);
+const rosterCode=source.slice(rosterStart,cameraStart);
+const start=source.indexOf('            // Recalculate with the current time and the freshly confirmed');
 const endMarker='            if(!(Number(attendance.lateMinutes)>3))pendingLateRequest=null;';
-assert.ok(start>0);const finalCode=source.slice(start,source.indexOf(endMarker,start)+endMarker.length);
+const end=source.indexOf(endMarker,start);
+assert.ok(start>cameraStart&&end>start);const finalCode=source.slice(start,end+endMarker.length);
+assert.doesNotMatch(finalCode,/readFreshPunchSchedule|\bawait\b/,'No remote request may age the final camera photo.');
 function progressDialog(){
  const calls=[];let current={},loading=0;
  const Swal={fire(options){current={...options};calls.push({method:'fire',...current});options.didOpen?.();return Promise.resolve({});},update(options){current={...current,...options};calls.push({method:'update',...current});},showLoading(){loading++;}};
@@ -70,13 +76,13 @@ function progressDialog(){
 async function runFinal({after=saved(),late=0,request=null,locationAge=0}={}){
  const now=Date.parse('2026-10-29T01:57:00Z');class Clock extends Date{constructor(value=now){super(value);}static now(){return now;}}
  let reads=0,guards=0;const progress=progressDialog();
- const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','Date','punchSchedulePreview','initialRequest','punchLocation','Swal',`let punchScheduleData=null,pendingLateRequest=initialRequest;const attendance={},closestBranch='Cabantian',staffName='Toni Sample',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){}},faceResult={};${finalCode};return {attendance,pendingLateRequest};`);
- const result=await run(async()=>{reads++;return {};},()=>{guards++;},()=>after,assertAttendanceScheduleUnchanged,()=>({lateMinutes:late}),Clock,saved(),request,{timestamp:now-locationAge},progress.Swal);
+ const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','Date','punchSchedulePreview','initialRequest','punchLocation','Swal',`let punchScheduleData=null,pendingLateRequest=initialRequest,minDistance=0;const attendance={},closestBranch='Cabantian',staffName='Toni Sample',punchStaffId='staff-id',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){},getAttendanceLocation:async()=>punchLocation},localStorage={getItem:key=>key==='takodeal_staff_id'?punchStaffId:staffName},faceResult={};${rosterCode}${finalCode};return {attendance,pendingLateRequest};`);
+ const result=await run(async()=>{reads++;return {};},()=>{guards++;},()=>after,assertAttendanceScheduleUnchanged,()=>({lateMinutes:late}),Clock,saved(),request,{branch:'Cabantian',distance:1,timestamp:now-locationAge},progress.Swal);
  return {...result,reads,guards,progress};
 }
-test('actual Staff final-save fragment rereads HQ and accepts unchanged exact hours',async()=>{
- const result=await runFinal();assert.equal(result.reads,1);assert.equal(result.guards,1);assert.equal(result.attendance.lateMinutes,0);
- assert.equal(result.progress.calls.at(-1).title,'Confirming your saved shift…');assert.match(result.progress.calls.at(-1).text,/latest assigned hours/);
+test('actual Staff confirms HQ before the final camera phase and accepts unchanged exact hours at save',async()=>{
+ const result=await runFinal();assert.equal(result.reads,1);assert.equal(result.guards,2);assert.equal(result.attendance.lateMinutes,0);
+ assert.equal(result.progress.calls[0].title,'Confirming your saved shift…');assert.match(result.progress.calls[0].text,/latest assigned hours/);assert.equal(result.progress.calls.at(-1).title,'Confirming your branch location…');
 });
 test('actual Staff final-save fragment refuses changed hours and stale location before a write',async()=>{
  await assert.rejects(runFinal({after:{...saved(),expectedStartAt:'2026-10-29T01:00:00Z'}}),/HQ updated/);
@@ -89,8 +95,7 @@ test('actual Staff final-save fragment never silently creates an unexplained lat
 });
 test('Staff does not infer lateness for an unverified assignment',async()=>{
  const before={...saved(),wasScheduled:false,needsScheduleReview:true};
- const changed=source.slice(start,source.indexOf(endMarker,start)+endMarker.length);
  const progress=progressDialog();
- const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','punchSchedulePreview','Swal',`let punchScheduleData=null,pendingLateRequest=null;const attendance={},closestBranch='Cabantian',staffName='Toni Sample',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){}},faceResult={},punchLocation={timestamp:Date.now()};${changed};return attendance;`);
- const result=await run(async()=>({}),()=>{},()=>before,assertAttendanceScheduleUnchanged,()=>({lateMinutes:57}),before,progress.Swal);assert.equal(result.lateMinutes,undefined);assert.equal(progress.calls.at(-1).title,'Confirming your saved shift…');
+ const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','punchSchedulePreview','Swal',`let punchScheduleData=null,pendingLateRequest=null,minDistance=0,punchLocation={branch:'Cabantian',distance:1,timestamp:Date.now()};const attendance={},closestBranch='Cabantian',staffName='Toni Sample',punchStaffId='staff-id',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){},getAttendanceLocation:async()=>punchLocation},localStorage={getItem:key=>key==='takodeal_staff_id'?punchStaffId:staffName},faceResult={};${rosterCode}${finalCode};return attendance;`);
+ const result=await run(async()=>({}),()=>{},()=>before,assertAttendanceScheduleUnchanged,()=>({lateMinutes:57}),before,progress.Swal);assert.equal(result.lateMinutes,undefined);assert.equal(progress.calls[0].title,'Confirming your saved shift…');
 });
