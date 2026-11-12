@@ -1,0 +1,4 @@
+import assert from'node:assert/strict';import{readFileSync}from'node:fs';import{createHash}from'node:crypto';
+export const ownerHRRequestProof=JSON.parse(readFileSync(new URL('../fixtures/owner-hr-request-inverse.json',import.meta.url),'utf8'));
+const sha=v=>createHash('sha256').update(v).digest('hex');
+export function restoreOwnerHRRequest(file,source){const row=ownerHRRequestProof.files[file];if(!row)return source;assert.equal(sha(source),row.candidateSha256,'Only scoped HR recovery hooks may change: '+file);for(const edit of[...row.edits].reverse()){assert.equal(source.split(edit.after).length,2,'Unique HR recovery hunk: '+file);source=source.replace(edit.after,()=>edit.before);}assert.equal(sha(source),row.baselineSha256,'Every unrelated live Owner byte remains exact: '+file);return source;}
