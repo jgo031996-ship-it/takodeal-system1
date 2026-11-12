@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v145-hr-request-recovery-20261112-r1';
+const CACHE_NAME = 'takodeal-manager-core-v146-remote-staff-requests-20261112-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
