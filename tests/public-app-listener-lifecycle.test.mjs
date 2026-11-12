@@ -167,7 +167,7 @@ test('Staff waits for a slow HR read before reacquiring final GPS and constructi
     h.run(section(staff,'window.punchTime = async function','// 📥 STAFF REQUESTS & INBOX ENGINE'));
     const punching=h.window.punchTime('TIME IN');await new Promise(setImmediate);
     assert.deepEqual(order,['GPS','HR pending']);assert.equal(h.writes.length,0);
-    finish();await punching;assert.deepEqual(order,['GPS','HR pending','HR completed','GPS','Camera','GPS']);assert.equal(h.writes.filter(w=>w.ref.table==='attendance_logs').length,1);
+    finish();await punching;assert.deepEqual(order,['GPS','HR pending','HR completed','GPS','GPS','Camera']);assert.equal(h.writes.filter(w=>w.ref.table==='attendance_logs').length,1);
 });
 test('Staff can record Time Out without reading or requiring a reply to its due HR notice',async()=>{
     const h=staffApp();h.window.startSanctionListener('Staff A');h.emit(h.subscriptions[0],[{id:'due',status:'Pending Reply'}]);

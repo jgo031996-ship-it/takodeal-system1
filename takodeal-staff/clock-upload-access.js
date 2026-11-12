@@ -1,6 +1,7 @@
 import {createStaffAccessClient} from './staff-access.js';
 
 const validId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
+const validLegacyPin=value=>typeof value==='string'&&value.trim().length>0&&value.trim().length<=100;
 const changed=()=>Error('Your Staff account changed. Reopen Time Clock before uploading.');
 
 // Backport only verified screenshot uploads. The stable login and clock readers
@@ -29,9 +30,9 @@ export function createClockUploadAccess({auth,deviceId,Swal,authority=()=>global
     return {path:`staff_requests/${user.uid}/${staffId}/activated_late_${attendanceId}.jpg`,metadata:{contentType:'image/jpeg',customMetadata:{staffUploadUid:user.uid,staffId,staffUploadDeviceId:selectedDevice,staffUploadAuthority:'phone-activation'}},assertCurrent:activatedCurrent};
    }
    if(status?.mode!=='legacy'||status.enabled!==false)throw Error('This phone’s activation could not be confirmed. Reconnect and check the Staff app again.');
-   const answer=await Swal.fire({title:'Confirm your Staff PIN',text:'Verify your account to attach this screenshot securely. Your attendance has not been saved yet.',input:'password',inputAttributes:{inputmode:'numeric',autocomplete:'off'},showCancelButton:true,confirmButtonText:'Verify PIN',cancelButtonText:'Back',allowOutsideClick:false,inputValidator:value=>/^\d{4,10}$/.test(String(value||'').trim())?undefined:'Enter your Staff account PIN.'});current();
+   const answer=await Swal.fire({title:'Confirm your Staff PIN',text:'Verify your account to attach this screenshot securely. Your attendance has not been saved yet.',input:'password',inputAttributes:{autocomplete:'off',autocapitalize:'none',spellcheck:'false'},showCancelButton:true,confirmButtonText:'Verify PIN',cancelButtonText:'Back',allowOutsideClick:false,inputValidator:value=>validLegacyPin(value)?undefined:'Enter your existing Staff account PIN (1–100 characters).'});current();
    if(!answer?.isConfirmed)return null;
-   const pin=String(answer.value||'').trim();if(!/^\d{4,10}$/.test(pin))throw Error('Enter your Staff account PIN.');
+   if(!validLegacyPin(answer.value))throw Error('Enter your existing Staff account PIN (1–100 characters).');const pin=answer.value.trim();
    Swal.fire({title:'Securing your screenshot…',text:'Confirming your account with HQ.',allowOutsideClick:false,allowEscapeKey:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()});
    const verified=await client.login({pin,selectedStaffId:staffId,assertCurrent:current});current();
    if(verified.staffId!==staffId||!validId(verified.sessionId)||verified.sessionId.length<16)throw changed();
