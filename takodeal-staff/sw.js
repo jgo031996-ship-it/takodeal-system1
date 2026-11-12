@@ -1,7 +1,8 @@
-const STAFF_RELEASE = 'attendance-recovery-20261112-r1';
-const CACHE_NAME = 'takodeal-staff-v56-attendance-recovery-20261112-r1';
+const STAFF_RELEASE = 'staff-self-repair-swaps-20261112-r1';
+const CACHE_NAME = 'takodeal-staff-v57-self-repair-swaps-20261112-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
+SHELL.push('./staff-self-repair.js','./staff-self-repair-sdk.js');
 SHELL.push('./worked-shift-reference.js');
 SHELL.push('./payroll-confirmed-shifts.js');
 SHELL.push('./payroll-bonus-templates.js');
@@ -42,12 +43,12 @@ SHELL.push('./staff-startup.js');
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "0929c9cec976e122614fab51c52bbfcad0f692b054d85050513a0f88684c6500",
-    "bytes": 78992
+    "sha256": "fda69ce9ab0147429fc0a053ab6dfb41e6552c4f6b4ab569b58875dc4ca27187",
+    "bytes": 103052
   },
   "./index.html": {
-    "sha256": "0929c9cec976e122614fab51c52bbfcad0f692b054d85050513a0f88684c6500",
-    "bytes": 78992
+    "sha256": "fda69ce9ab0147429fc0a053ab6dfb41e6552c4f6b4ab569b58875dc4ca27187",
+    "bytes": 103052
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -58,8 +59,8 @@ const SHELL_INTEGRITY = {
     "bytes": 18549
   },
   "./app.js": {
-    "sha256": "85a65569ecaac998e97c59f1a78a814b0b6329ff55c58300332e5730589dcc68",
-    "bytes": 262988
+    "sha256": "878b3bfca8fa8782bc2cfe24e3ae3afbdb355b09839c0860f9ac4c0bab98b645",
+    "bytes": 269724
   },
   "./staff-portal.js": {
     "sha256": "20a99d7191046281bf176acad79f8a70f6b6cb662ac52644dc146271766b0040",
@@ -118,8 +119,16 @@ const SHELL_INTEGRITY = {
     "bytes": 15580
   },
   "./staff-swap-request.js": {
-    "sha256": "e13e953c69ca2189fbfa91d15f687940c49f8a0af0c6e578c156a861069eb51a",
-    "bytes": 4673
+    "sha256": "0ed5aa3731caf0228d470d0d54002901f246a44a8f5e7a14d5484c0729bac5b2",
+    "bytes": 6334
+  },
+  "./staff-self-repair.js": {
+    "sha256": "13807b7bd31600e1aa2df36434ad784d3a3399613919218ea2dc57371d6dbacd",
+    "bytes": 22487
+  },
+  "./staff-self-repair-sdk.js": {
+    "sha256": "d17d11059fb9c548c8a5f33faab2055d7ce3b2ad875455a85537e1edd8c930ed",
+    "bytes": 12881
   },
   "./worked-shift-reference.js": {
     "sha256": "880459d2940897c5af3a15b515faaafbb121b9042bc382928d8c742ea80e05fc",
@@ -146,8 +155,8 @@ const SHELL_INTEGRITY = {
     "bytes": 5719
   },
   "./staff-setup-access.js": {
-    "sha256": "6f5a6f654f3bfa44295a18ec807f0c5b3a295f0323941b4c4cc08011c1fc93a0",
-    "bytes": 21401
+    "sha256": "24ad64ac11fba47fc172406309617c1a64de8848f044a201908cf9360af0d5b3",
+    "bytes": 21757
   },
   "./staff-setup.css": {
     "sha256": "13153f185be6c464f40b70ee46af1325236a2c6b5ee4e972e375667491a82f01",
@@ -242,8 +251,8 @@ const SHELL_INTEGRITY = {
     "bytes": 12474
   },
   "./staff-document-firebase.js": {
-    "sha256": "8faf093c137d3efe9a33e30d1ab060fb822eedc1dc9ff660824fdfb0a43e1941",
-    "bytes": 1084
+    "sha256": "4416d0ebadb1e77d5dbb2acd000c13bc4056f3e746b3810041c0191054a22d06",
+    "bytes": 1361
   },
   "./attendance-camera.js": {
     "sha256": "b00757339b6a38deb3b846d39eb0adc81eb84a41f88ffa65dfb49d27d8bffcc2",
@@ -414,11 +423,11 @@ const SHELL_INTEGRITY = {
     "bytes": 13747
   },
   "./staff-startup.js": {
-    "sha256": "80bdc20c7ebb4241a12de69055d954f470695a80487da6394fd499fe6d2668fa",
-    "bytes": 15708
+    "sha256": "029d3541f95e6e0ce0044058d7faa03da310ed31e650601f3fa5a64f0057e170",
+    "bytes": 16810
   }
 };
-const COHORT_HASH = "30d201c820c83108f03579ebaa89f264660ba776039a9ef2b9b05fa2e2c2760d";
+const COHORT_HASH = "4464e3f0c50b971377e9fc0f16a3f2eaee4143e22c23ecd03b919992bb72d367";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces
@@ -500,10 +509,20 @@ async function allowExplicitActivation(requester){
     await self.skipWaiting();return {ok:true};
 }
 self.addEventListener('message',event=>{
-    if(!['TAKODEAL_STAFF_STATUS','TAKODEAL_STAFF_ACTIVATE'].includes(event.data?.type)||Object.keys(event.data).length!==1)return;
+    if(!['TAKODEAL_STAFF_STATUS','TAKODEAL_STAFF_ACTIVATE','TAKODEAL_STAFF_SINGLE_WINDOW'].includes(event.data?.type))return;
+    const keys=Object.keys(event.data).sort().join(',');
+    if(event.data.type==='TAKODEAL_STAFF_ACTIVATE'){
+        if(keys!=='type'&&(keys!=='cohortHash,release,type'||event.data.release!==STAFF_RELEASE||event.data.cohortHash!==COHORT_HASH))return;
+    }else if(keys!=='type')return;
     event.waitUntil((async()=>{
         const client=await trustedMessageClient(event);if(!client)return;const port=event.ports[0];
         if(event.data.type==='TAKODEAL_STAFF_STATUS'){port.postMessage({release:STAFF_RELEASE,cohortHash:COHORT_HASH});port.close();return;}
+        if(event.data.type==='TAKODEAL_STAFF_SINGLE_WINDOW'){
+            if(event.ports.length!==1){port.close();return;}
+            const windows=(await self.clients.matchAll({type:'window',includeUncontrolled:true})).filter(inScopeClient);
+            const singleWindow=windows.length===1&&windows[0].id===client.id;
+            port.postMessage({schemaVersion:1,singleWindow,windows:windows.length});port.close();return;
+        }
         if(!activationFlight){const task=allowExplicitActivation(client);activationFlight=task;task.finally(()=>{if(activationFlight===task)activationFlight=null;}).catch(()=>{});}
         try{port.postMessage(await activationFlight);}catch{port.postMessage({ok:false,code:'other-windows'});}finally{port.close();}
     })());

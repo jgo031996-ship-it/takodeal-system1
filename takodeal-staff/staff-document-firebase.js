@@ -3,11 +3,15 @@ import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.
 import {getFirestore,doc,getDocFromServer,runTransaction,serverTimestamp,query,where,collection,getDocsFromServer,limit} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
 import {createDocumentStore} from './staff-document-store.js';
 export const documentSdk={doc,getDocFromServer,runTransaction,serverTimestamp,query,where,collection,getDocsFromServer,limit,onAuthStateChanged};
+let initializedPrivateClient=null;
+// Read existing handles only. Repair must not create or sign out private Auth.
+export const readInitializedStaffDocumentClient=()=>initializedPrivateClient?{...initializedPrivateClient}:null;
 export async function createStaffDocumentFirebase(config,identity,{isHQ=false}={}) {
     let app;
     if(isHQ)app=getApp();
     else { try {app=getApp('staff-private-documents');} catch {app=initializeApp(config,'staff-private-documents');} }
     const auth=getAuth(app),db=getFirestore(app);
     if(!isHQ && !auth.currentUser)await signInAnonymously(auth);
+    if(!isHQ)initializedPrivateClient={auth,db};
     return {auth,db,sdk:documentSdk,store:createDocumentStore({sdk:documentSdk,auth,db,identity,isHQ})};
 }

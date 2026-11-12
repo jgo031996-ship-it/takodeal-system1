@@ -1,7 +1,7 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'attendance-recovery-20261112-r1';
+    var release = 'staff-self-repair-swaps-20261112-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;
@@ -72,7 +72,9 @@
         }
     }, true);
     function protectedWork() {
+        if (w.staffSelfRepair && typeof w.staffSelfRepair.blockReason === 'function') { var repairBlock = w.staffSelfRepair.blockReason({filesOnly: true}); if (repairBlock) return repairBlock; }
         if (w.staffPunchBusy) return 'Attendance is saving. Wait for it to finish before repairing the app.';
+        if (w.staffSwapWritePending || w.pendingSwapData && w.pendingSwapData.sendUnconfirmed) return 'Your swap request is sending or its result is not confirmed. Check its result with your co-worker or Owner before repairing the app.';
         if (w.staffDeviceRegistrationBusy) return 'Your device request is sending. Wait for its result before repairing the app.';
         var draft = w.staffLateProofDraft;
         if (draft && (draft.file || typeof draft.reason === 'string' && draft.reason.trim())) return 'Your unsent Time In reason and screenshot are kept. Finish or cancel that Time In before repairing the app.';
@@ -106,20 +108,23 @@
             worker.addEventListener('statechange', changed); operation.cleanup.push(remove); changed();
         });
     }
-    function message(worker, type, operation) {
+    function message(worker, type, operation, expected) {
         if (typeof w.MessageChannel !== 'function') return Promise.reject(Error('This browser cannot safely confirm an app repair. Keep your saved data and try an updated browser.'));
         return deadline(new Promise(function (resolve, reject) {
             var channel = new w.MessageChannel(), finished = false;
             function close() { if (finished) return; finished = true; channel.port1.onmessage = null; channel.port1.close(); channel.port2.close(); }
             operation.cleanup.push(close);
             channel.port1.onmessage = function (event) { if (finished) return; var value = event.data; close(); resolve(value); };
-            try { worker.postMessage({type: type}, [channel.port2]); } catch (error) { close(); reject(error); }
+            try { worker.postMessage(expected ? {type: type, release: expected.release, cohortHash: expected.cohortHash} : {type: type}, [channel.port2]); } catch (error) { close(); reject(error); }
         }), 4000, 'The app update could not be confirmed. Close other Staff windows, check your connection and retry.', operation);
     }
     function validWorker(worker, base) {
         if (!worker || typeof worker.scriptURL !== 'string') return false;
         var url = new URL(worker.scriptURL, base);
         return url.origin === base.origin && url.pathname === new URL('sw.js', base).pathname && !url.search && !url.hash;
+    }
+    function validCohort(state) {
+        return state && Object.keys(state).sort().join(',') === 'cohortHash,release' && typeof state.release === 'string' && /^[a-z][a-z0-9-]{1,119}$/.test(state.release) && typeof state.cohortHash === 'string' && /^[a-f0-9]{64}$/.test(state.cohortHash);
     }
     async function update(operation) {
         var base = new URL('./', w.location.href), registration = await deadline(nav.serviceWorker.getRegistration(base.href), 15000, 'Finding the app update took too long. Check your connection and retry.', operation);
@@ -130,14 +135,16 @@
         if (!registration || new URL(registration.scope).href !== base.href) throw Error('The Staff app update scope could not be confirmed. Keep this page open and retry.');
         if (!fresh) await deadline(registration.update(), 30000, 'Downloading the Staff app took too long. Check your connection and retry.', operation);
         current(operation);
-        var worker = registration.installing || registration.waiting;
+        var worker = registration.installing || registration.waiting, incoming = null;
         if (worker) {
             if (!validWorker(worker, base)) throw Error('The Staff update identity could not be confirmed.');
             await deadline(waitState(worker, ['installed', 'activated'], operation), 30000, 'Installing the Staff app took too long. Keep this page open and retry.', operation);
             current(operation);
             if (worker.state !== 'activated') {
+                incoming = await message(worker, 'TAKODEAL_STAFF_STATUS', operation); current(operation);
+                if (!validCohort(incoming)) throw Error('The incoming Staff app files could not be confirmed. Keep your saved data and retry.');
                 var blocked = protectedWork(); if (blocked) throw Error(blocked);
-                var approval = await message(worker, 'TAKODEAL_STAFF_ACTIVATE', operation); current(operation);
+                var approval = await message(worker, 'TAKODEAL_STAFF_ACTIVATE', operation, incoming); current(operation);
                 if (!approval || approval.ok !== true) throw Error('Finish attendance and uploads, then close other Staff windows before repairing this one. No saved data was removed.');
                 await deadline(waitState(worker, ['activated'], operation), 15000, 'The new Staff app has not activated yet. Close other Staff windows and retry.', operation);
                 current(operation);
@@ -145,7 +152,7 @@
         } else worker = registration.active;
         if (!validWorker(worker, base) || worker.state !== 'activated') throw Error('No active Staff update could be confirmed. Keep this page open and retry.');
         var state = await message(worker, 'TAKODEAL_STAFF_STATUS', operation); current(operation);
-        if (!state || state.release !== release || typeof state.cohortHash !== 'string' || !/^[a-f0-9]{64}$/.test(state.cohortHash)) throw Error('The latest Staff app files could not be confirmed. Check your connection and retry; your device data is kept.');
+        if (!validCohort(state) || incoming && (state.release !== incoming.release || state.cohortHash !== incoming.cohortHash)) throw Error('The latest Staff app files could not be confirmed. Check your connection and retry; your device data is kept.');
         var work = protectedWork(); if (work) throw Error(work);
         if (nav.onLine === false) throw Error('The connection was lost. Reconnect and try the repair again.');
         status('Reopening the Staff app. Your device registration and saved data stay here.');
