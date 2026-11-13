@@ -45,7 +45,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=remote-staff-requests-20261112-r1');
+            await import('./main.js?v=branch-settings-save-20261113');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();

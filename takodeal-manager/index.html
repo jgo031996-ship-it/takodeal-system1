@@ -2,7 +2,7 @@
 <html lang="en">
  
 <head>
-<meta name="takodeal-release" content="remote-staff-requests-20261112-r1">
+<meta name="takodeal-release" content="branch-settings-save-20261113">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome · TAKODEÁL Owner</title>
@@ -15,7 +15,7 @@
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="security-alert-links.css?v=20261102">
-  <link rel="stylesheet" href="private-prep-reviews.css?v=remote-staff-requests-20261112-r1">
+  <link rel="stylesheet" href="private-prep-reviews.css?v=branch-settings-save-20261113">
   <link rel="stylesheet" href="rider-management.css?v=20261023-buttons">
   <link rel="stylesheet" href="menu-options.css?v=20261024">
   <link rel="stylesheet" href="bundle-category.css?v=20261025">
@@ -6355,7 +6355,7 @@
                       <p style="margin: 5px 0 0 26px; font-size: 11px; color: #15803d;">The first shift of the day starts with ₱2,000. Earlier shifts carry their counted cash forward. Only the final daily close submits cash above ₱2,000 as a pending remittance. Manager verifies receipt before HQ accounts are credited. Manager Fund expenses remain separate.</p>
                   </div>
 
-                  <button onclick="window.saveBranchSettings()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Push Settings to Cashier App</button>
+                  <button id="btnSaveBranchSettings" type="button" onclick="window.saveBranchSettings()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Push Settings to Cashier App</button>
               </div>
 
               <!-- RIGHT COLUMN: Logo Engine -->
@@ -6600,7 +6600,7 @@
     import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';
     installAuditModalLayout();
   </script>
-  <script type="module" src="auth.js?v=remote-staff-requests-20261112-r1"></script>
+  <script type="module" src="auth.js?v=branch-settings-save-20261113"></script>
   <script type="module" src="owner-pos-settings-access.js?v=20261018"></script>
   <script type="module">
     import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';

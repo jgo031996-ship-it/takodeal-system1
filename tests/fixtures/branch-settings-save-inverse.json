@@ -1,0 +1,90 @@
+{
+  "base": "62257bfe31a1595db932b3d174638f20f9f34b5f",
+  "release": "branch-settings-save-20261113",
+  "files": {
+    "takodeal-manager/auth.js": {
+      "baselineSha256": "19553e6e402367356b6b0d073e28751fdf3cb89568a9f817595e94986ba36be9",
+      "candidateSha256": "99ba5734a755525be5672be47db9600ef8ee8f2f42299c0e8fcf44e19c2da58b",
+      "edits": [
+        {
+          "before": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=remote-staff-requests-20261112-r1');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n",
+          "after": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=branch-settings-save-20261113');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n"
+        }
+      ]
+    },
+    "takodeal-manager/firebase-core.js": {
+      "baselineSha256": "5b6e64a8681d0f779700703b65cc0e1f0c309aa4aa2c20a30dcaa821eaa43205",
+      "candidateSha256": "b117c4b61dc8e9dee4ee0c1befcc9bf894f91b2878c819d2b98f465ad8f1db05",
+      "edits": [
+        {
+          "before": "import { createHQAccountReader } from './hq-account-reader.js';\nimport { installFirestoreHealth, guardFirestoreOperations } from './firestore-health.js';\nimport { initializeApp, onLog } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js\";\nimport { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js\";\nimport { getAuth, GoogleAuthProvider } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js\";\nimport { getStorage, ref, uploadBytes, getDownloadURL, getMetadata } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-storage.js\";\n\n",
+          "after": "import { createHQAccountReader } from './hq-account-reader.js';\nimport { installFirestoreHealth, guardFirestoreOperations } from './firestore-health.js';\nimport { initializeApp, onLog } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js\";\nimport { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, deleteField, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js\";\nimport { getAuth, GoogleAuthProvider } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js\";\nimport { getStorage, ref, uploadBytes, getDownloadURL, getMetadata } from \"https://www.gstatic.com/firebasejs/13.1.0/firebase-storage.js\";\n\n"
+        },
+        {
+          "before": "window.getDocsFromServer = firestore.getDocsFromServer; window.getDocFromServer = firestore.getDocFromServer;\nwindow.updateDoc = firestore.updateDoc; window.deleteDoc = firestore.deleteDoc; window.doc = doc;\nwindow.setDoc = firestore.setDoc; window.serverTimestamp = serverTimestamp;\nwindow.increment = increment; window.orderBy = orderBy; window.limit = limit;\nwindow.ref = ref; window.uploadBytes = uploadBytes; window.getDownloadURL = getDownloadURL; window.getMetadata = getMetadata;\nwindow.writeBatch = firestore.writeBatch; window.onSnapshot = firestore.onSnapshot; window.startAfter = startAfter;\n",
+          "after": "window.getDocsFromServer = firestore.getDocsFromServer; window.getDocFromServer = firestore.getDocFromServer;\nwindow.updateDoc = firestore.updateDoc; window.deleteDoc = firestore.deleteDoc; window.doc = doc;\nwindow.setDoc = firestore.setDoc; window.serverTimestamp = serverTimestamp;\nwindow.deleteField = deleteField;\nwindow.increment = increment; window.orderBy = orderBy; window.limit = limit;\nwindow.ref = ref; window.uploadBytes = uploadBytes; window.getDownloadURL = getDownloadURL; window.getMetadata = getMetadata;\nwindow.writeBatch = firestore.writeBatch; window.onSnapshot = firestore.onSnapshot; window.startAfter = startAfter;\n"
+        }
+      ]
+    },
+    "takodeal-manager/index.html": {
+      "baselineSha256": "b6d9e4d517306df1201f9252ac624f10711a383b2497e2262f75e6c8572194bb",
+      "candidateSha256": "c2040634d88c6cb9b93cd4070fe8817484fc2dba58f4763e9f1d345ac46f6fb0",
+      "edits": [
+        {
+          "before": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"remote-staff-requests-20261112-r1\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome · TAKODEÁL Owner</title>\n",
+          "after": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"branch-settings-save-20261113\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome · TAKODEÁL Owner</title>\n"
+        },
+        {
+          "before": "  <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=remote-staff-requests-20261112-r1\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n",
+          "after": "  <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=branch-settings-save-20261113\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n"
+        },
+        {
+          "before": "                      <p style=\"margin: 5px 0 0 26px; font-size: 11px; color: #15803d;\">The first shift of the day starts with ₱2,000. Earlier shifts carry their counted cash forward. Only the final daily close submits cash above ₱2,000 as a pending remittance. Manager verifies receipt before HQ accounts are credited. Manager Fund expenses remain separate.</p>\n                  </div>\n\n                  <button onclick=\"window.saveBranchSettings()\" style=\"width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;\">💾 Push Settings to Cashier App</button>\n              </div>\n\n              <!-- RIGHT COLUMN: Logo Engine -->\n",
+          "after": "                      <p style=\"margin: 5px 0 0 26px; font-size: 11px; color: #15803d;\">The first shift of the day starts with ₱2,000. Earlier shifts carry their counted cash forward. Only the final daily close submits cash above ₱2,000 as a pending remittance. Manager verifies receipt before HQ accounts are credited. Manager Fund expenses remain separate.</p>\n                  </div>\n\n                  <button id=\"btnSaveBranchSettings\" type=\"button\" onclick=\"window.saveBranchSettings()\" style=\"width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;\">💾 Push Settings to Cashier App</button>\n              </div>\n\n              <!-- RIGHT COLUMN: Logo Engine -->\n"
+        },
+        {
+          "before": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=remote-staff-requests-20261112-r1\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n",
+          "after": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=branch-settings-save-20261113\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n"
+        }
+      ]
+    },
+    "takodeal-manager/main.js": {
+      "baselineSha256": "20b4315fe55a34a09a28a269c9da72ba42bf526068222cab567bd5430dabe107",
+      "candidateSha256": "b18690e117fe1bfae68dd663b7f9f94f67ff93e17c8cec2cadb9091fbf462a4f",
+      "edits": [
+        {
+          "before": "    const user=window.auth?.currentUser,session=window.sessionUser,loadToken={id:docId,user,session};\n    window.branchNetworkSettingsLoad=loadToken;\n    window.branchNetworkSettingsExpected=null;\n\n    document.getElementById('settingBranchId').value = docId;\n    document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;\n",
+          "after": "    const user=window.auth?.currentUser,session=window.sessionUser,loadToken={id:docId,user,session};\n    window.branchNetworkSettingsLoad=loadToken;\n    window.branchNetworkSettingsExpected=null;\n    document.getElementById('btnSaveBranchSettings').disabled=true;\n\n    document.getElementById('settingBranchId').value = docId;\n    document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;\n"
+        },
+        {
+          "before": "        window.branchNetworkSettingsExpected=saved;\n        document.getElementById('settingWifi').value=saved.wifi??d.wifi??'';\n        document.getElementById('settingWifi').disabled=false;\n    }catch(error){if(window.branchNetworkSettingsLoad===loadToken)window.ManagerUI.notify('Private branch settings could not be loaded. Reopen this branch before saving.');}\n};\n\nwindow.saveBranchSettings = async function() {\n    let docId = document.getElementById('settingBranchId').value;\n    let latVal = document.getElementById('settingLat').value;\n    let lngVal = document.getElementById('settingLng').value;\n",
+          "after": "        window.branchNetworkSettingsExpected=saved;\n        document.getElementById('settingWifi').value=saved.wifi??d.wifi??'';\n        document.getElementById('settingWifi').disabled=false;\n        document.getElementById('btnSaveBranchSettings').disabled=branchSettingsSavePending;\n    }catch(error){if(window.branchNetworkSettingsLoad===loadToken)window.ManagerUI.notify('Private branch settings could not be loaded. Reopen this branch before saving.');}\n};\n\nlet branchSettingsSavePending=false;\nwindow.saveBranchSettings = async function() {\n    if(branchSettingsSavePending)return;\n    const saveButton=document.getElementById('btnSaveBranchSettings'),saveLabel=saveButton.textContent;\n    let docId = document.getElementById('settingBranchId').value;\n    let latVal = document.getElementById('settingLat').value;\n    let lngVal = document.getElementById('settingLng').value;\n"
+        },
+        {
+          "before": "    try {\n        const load=window.branchNetworkSettingsLoad,expected=window.branchNetworkSettingsExpected;\n        if(!load||load.id!==docId||!expected)throw Error('Private branch settings are still loading. Reopen this branch before saving.');\n        await saveBranchNetworkSettings(window,{id:docId,branch:window.globalBranchData[docId]?.name,expected,wifi:document.getElementById('settingWifi').value.trim(),payload,\n            assertCurrent:()=>{if(window.branchNetworkSettingsLoad!==load||window.auth?.currentUser!==load.user||window.sessionUser!==load.session||document.getElementById('settingBranchId').value!==docId)throw Error('Your branch or account changed. Reopen these settings.');}});\n        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings Pushed to Cashier!', showConfirmButton: false, timer: 2000});\n        document.getElementById('branchSettingsModal').style.display = 'none';\n        window.loadBranchManager();\n    } catch (e) { console.error(e); window.ManagerUI.notify(\"Failed to push settings.\"); }\n};\n\n// 💉 THE DOM INJECTOR\n",
+          "after": "    try {\n        const load=window.branchNetworkSettingsLoad,expected=window.branchNetworkSettingsExpected;\n        if(!load||load.id!==docId||!expected)throw Error('Private branch settings are still loading. Reopen this branch before saving.');\n        const wifi=document.getElementById('settingWifi').value.trim();\n        branchSettingsSavePending=true;\n        saveButton.disabled=true;\n        saveButton.textContent='Saving settings…';\n        await saveBranchNetworkSettings(window,{id:docId,branch:window.globalBranchData[docId]?.name,expected,wifi,payload,\n            assertCurrent:()=>{if(window.branchNetworkSettingsLoad!==load||window.auth?.currentUser!==load.user||window.sessionUser!==load.session||document.getElementById('settingBranchId').value!==docId)throw Error('Your branch or account changed. Reopen these settings.');}});\n        // A completed save must not close a different branch opened while it ran.\n        if(window.branchNetworkSettingsLoad!==load||window.auth?.currentUser!==load.user||window.sessionUser!==load.session)return;\n        window.branchNetworkSettingsExpected={exists:true,wifi};\n        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings Pushed to Cashier!', showConfirmButton: false, timer: 2000});\n        document.getElementById('branchSettingsModal').style.display = 'none';\n        window.loadBranchManager();\n    } catch (e) {\n        console.error(e);\n        const code=String(e?.code||'').replace(/^firestore\\//,'');\n        const message=code==='permission-denied'?'Your account could not save this branch. Sign in again with the Owner account and retry.'\n            :code==='unavailable'?'Connect to the internet and retry. These settings have not been saved.'\n            :code==='resource-exhausted'?'The settings could not be saved. Try a smaller receipt logo or retry later.'\n            :e?.message||'The settings could not be saved. Keep this form open and retry.';\n        window.ManagerUI.notify(message);\n    } finally {\n        branchSettingsSavePending=false;\n        saveButton.textContent=saveLabel;\n        saveButton.disabled=!window.branchNetworkSettingsExpected;\n    }\n};\n\n// 💉 THE DOM INJECTOR\n"
+        }
+      ]
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "baselineSha256": "14109c038963d74748677666ea4881ec01d86b8628d014bafbe2bb196cf5eb57",
+      "candidateSha256": "e2286a87d21c38a853d065403a8a59af3ea7f7eecdb5e930e2326e5aa1c1f226",
+      "edits": [
+        {
+          "before": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v146-remote-staff-requests-20261112-r1';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n",
+          "after": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v147-branch-settings-save-20261113';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n"
+        }
+      ]
+    },
+    "takodeal-manager/sw.js": {
+      "baselineSha256": "d284276bf82a54859296d99c52d06d28b27ac978f5e452f49e4543801928a014",
+      "candidateSha256": "61834ab51f12a394a22b712f772219e9cfddfbcb6e1c2b055a725e6726804abc",
+      "edits": [
+        {
+          "before": "const CACHE_NAME = 'takodeal-manager-core-v146-remote-staff-requests-20261112-r1';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n",
+          "after": "const CACHE_NAME = 'takodeal-manager-core-v147-branch-settings-save-20261113';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n"
+        }
+      ]
+    }
+  }
+}
