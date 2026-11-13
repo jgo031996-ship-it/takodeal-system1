@@ -1,3 +1,4 @@
+import {installLiveBranchDirectory} from '../Customer/live-branch-directory.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -94,7 +95,7 @@ function gateFixture() {
  const html=readFileSync(new URL('../Customer/index.html',import.meta.url),'utf8'),start=html.indexOf('function takodealBranchAvailable'),end=html.indexOf('</script>',start);
  const snapshot=ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>h.get(ref.path)});
  const state={currentUser:{email:'customer@example.test'},customerCartBranch:'Cabantian',customerBranchData:new Map(),fetchCachedMenu:async()=>state.menu};state.menu=raw;
- const context=vm.createContext({window:state,navigator:{onLine:true},sessionStorage:storage(),crypto:{randomUUID},setInterval:()=>{},withinBranchHours,branchOpeningNotice,validateCart,Date,db:h.api.db,doc:h.api.doc,collection:h.api.collection,query:h.api.query,where:h.api.where,tkCustomerTransaction:h.api.runTransaction,tkCustomerGetServerDoc:async ref=>snapshot(ref),getDocsFromServer:async q=>{const result=await h.api.getDocsFromServer(q);return {...result,size:result.docs.length};}});
+ const context=vm.createContext({window:state,installLiveBranchDirectory,document:{hidden:true},navigator:{onLine:true},sessionStorage:storage(),crypto:{randomUUID},setInterval:()=>{},withinBranchHours,branchOpeningNotice,validateCart,Date,db:h.api.db,doc:h.api.doc,collection:h.api.collection,query:h.api.query,where:h.api.where,tkCustomerTransaction:h.api.runTransaction,tkCustomerGetServerDoc:async ref=>snapshot(ref),getDocsFromServer:async q=>{const result=await h.api.getDocsFromServer(q);return {...result,size:result.docs.length};}});
  vm.runInContext(html.slice(start,end),context);const payload={orderCode:'TEST-001',branch:'Cabantian',customerEmail:state.currentUser.email,orderType:'Takeout',items:[cartLine()],totalAmount:190};return {h,state,gate:state.TKCustomerGate,payload};
 }
 test('actual submission preserves one order through repeated retries and lost acknowledgements',async()=>{

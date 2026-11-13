@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="takodeal-release" content="customer-security-reviews-20261109">
+<meta name="takodeal-release" content="customer-auto-branches-20261113-r1">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TAKODEÁL | Order fresh takoyaki</title>
@@ -498,6 +498,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import {installLiveBranchDirectory} from './live-branch-directory.js';
         import { getFirestore, runTransaction, collection, getDocs, getDocsFromServer, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
@@ -2248,6 +2249,7 @@ function takodealBranchAvailable(data, now = Date.now(), policy, lease) {
   setInterval(render, 10000); // expiry without extra Firebase reads
 })();
 
+window.customerBranchDirectory=installLiveBranchDirectory(window,document,{kind:'customer',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});
 </script>
 </body>
 </html>
