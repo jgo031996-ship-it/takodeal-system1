@@ -1,10 +1,11 @@
+import {restoreLiveBranchDirectory} from './live-branch-directory-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 export const branchSettingsSaveProof=JSON.parse(readFileSync(new URL('../fixtures/branch-settings-save-inverse.json',import.meta.url),'utf8'));
 const sha=value=>createHash('sha256').update(value).digest('hex');
 export function restoreBranchSettingsSave(file,source) {
-    const row=branchSettingsSaveProof.files[file];
+    const row=branchSettingsSaveProof.files[file];if(row&&sha(source)===row.baselineSha256)return source;source=restoreLiveBranchDirectory(source,file);
     if(!row||sha(source)===row.baselineSha256)return source;
     assert.equal(sha(source),row.candidateSha256,'Only the reviewed branch-settings fix may change: '+file);
     for(const edit of [...row.edits].reverse()) {

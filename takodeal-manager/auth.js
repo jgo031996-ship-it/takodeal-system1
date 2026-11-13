@@ -45,7 +45,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=branch-settings-save-20261113');
+            await import('./main.js?v=auto-branches-20261113-r1');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();
@@ -55,6 +55,7 @@ const gate = createUnlockGate({
             if (name) name.textContent = window.sessionUser.cashierName;
             if (role) role.textContent = window.sessionUser.role;
             window.applyPermissions(); window.applyFranchiseUIProtections?.();
+            window.ownerBranchDirectory?.apply();
             // switchView owns the dashboard load; no second subscription pass.
             window.switchView(workspaceLandingPage(window.sessionUser));
         } catch (error) { window.stopPOListener?.(); window.sessionUser = null; throw error; }
