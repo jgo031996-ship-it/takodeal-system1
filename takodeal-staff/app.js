@@ -1,3 +1,4 @@
+import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
 import {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';
@@ -3842,6 +3843,7 @@ window.savePrivateVaultPin=(input,options)=>window.staffPrivateProfileClient.vau
 window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createPrivateStaffClient});
 installStaffPortal();
 installStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});
+window.staffBranchDirectory=installLiveBranchDirectory(window,document,{kind:'staff',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});
 installStaffLocation({loadBranches:()=>getDocsFromServer(collection(db,'branches'))});
 installPayrollVaultFreshness(window,document);
 let setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;

@@ -1,0 +1,76 @@
+{
+  "base": "869dd2f4f46b684c3aad79343a294592fa7298df",
+  "files": {
+    "takodeal-staff/app.js": {
+      "baselineSha256": "a948b4233e541c8e0adf151615dec3731e0dd79d36edf7dfc1140df4d41229aa",
+      "candidateSha256": "58d396f49d40d1169ad4bc0a41debdf0aff7a760222c638d1ef8fc2e5ef9f13f",
+      "edits": [
+        {
+          "before": "import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';\nimport {payrollRecoveryFromReview} from './payroll-recovery-model.js';\nimport {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';\n",
+          "after": "import {installLiveBranchDirectory} from './live-branch-directory.js';\nimport {installPayrollVaultFreshness} from './payroll-vault-freshness.js';\nimport {payrollRecoveryFromReview} from './payroll-recovery-model.js';\nimport {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';\n"
+        },
+        {
+          "before": "window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createPrivateStaffClient});\ninstallStaffPortal();\ninstallStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});\ninstallStaffLocation({loadBranches:()=>getDocsFromServer(collection(db,'branches'))});\ninstallPayrollVaultFreshness(window,document);\nlet setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;\n",
+          "after": "window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createPrivateStaffClient});\ninstallStaffPortal();\ninstallStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});\nwindow.staffBranchDirectory=installLiveBranchDirectory(window,document,{kind:'staff',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});\ninstallStaffLocation({loadBranches:()=>getDocsFromServer(collection(db,'branches'))});\ninstallPayrollVaultFreshness(window,document);\nlet setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;\n"
+        }
+      ]
+    },
+    "takodeal-staff/index.html": {
+      "baselineSha256": "4d1e6b9a1f01f07435d0379120b0ad1101bf93c53e96d0817737292b04564f39",
+      "candidateSha256": "7b63c1ec6a65c4d6fab8dba4019f060076196f85b11d3e817a426c13df58f623",
+      "edits": [
+        {
+          "before": "    <script>/* Independent Staff startup recovery. No module, account or database dependency. */\n(function (w, d, nav) {\n    'use strict';\n    var release = 'staff-branch-locations-20261113-r1';\n    var key = Symbol.for('takodeal.staff.appUpdate');\n    if (w.staffStartup) return;\n    var ready = false, updating = false, run = null, banner, bannerText;\n",
+          "after": "    <script>/* Independent Staff startup recovery. No module, account or database dependency. */\n(function (w, d, nav) {\n    'use strict';\n    var release = 'staff-auto-branches-20261113-r1';\n    var key = Symbol.for('takodeal.staff.appUpdate');\n    if (w.staffStartup) return;\n    var ready = false, updating = false, run = null, banner, bannerText;\n"
+        },
+        {
+          "before": "    <link rel=\"icon\" type=\"image/png\" sizes=\"192x192\" href=\"icon-192.png\">\n    <link rel=\"apple-touch-icon\" href=\"icon-192.png\">\n    <link rel=\"manifest\" href=\"manifest.json?v=staff-device-fleet-20261004-r3\">\n    <meta name=\"takodeal-release\" content=\"staff-branch-locations-20261113-r1\">\n    <meta name=\"theme-color\" content=\"#173f35\">\n    <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n    <meta name=\"apple-mobile-web-app-title\" content=\"TAKODEÁL Staff\">\n",
+          "after": "    <link rel=\"icon\" type=\"image/png\" sizes=\"192x192\" href=\"icon-192.png\">\n    <link rel=\"apple-touch-icon\" href=\"icon-192.png\">\n    <link rel=\"manifest\" href=\"manifest.json?v=staff-device-fleet-20261004-r3\">\n    <meta name=\"takodeal-release\" content=\"staff-auto-branches-20261113-r1\">\n    <meta name=\"theme-color\" content=\"#173f35\">\n    <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n    <meta name=\"apple-mobile-web-app-title\" content=\"TAKODEÁL Staff\">\n"
+        },
+        {
+          "before": "  </div>\n\n    <dialog id=\"staffDocumentPreview\" class=\"staff-document-preview\"><div class=\"document-section-heading\"><h3 id=\"staffDocumentPreviewTitle\">Document photo</h3><button type=\"button\" id=\"staffDocumentPreviewClose\">Close</button></div><img id=\"staffDocumentPreviewImage\" alt=\"Private document photo\"></dialog>\n      <script type=\"module\" src=\"app.js?v=staff-branch-locations-20261113-r1\"></script>\n</body>\n</html>\n",
+          "after": "  </div>\n\n    <dialog id=\"staffDocumentPreview\" class=\"staff-document-preview\"><div class=\"document-section-heading\"><h3 id=\"staffDocumentPreviewTitle\">Document photo</h3><button type=\"button\" id=\"staffDocumentPreviewClose\">Close</button></div><img id=\"staffDocumentPreviewImage\" alt=\"Private document photo\"></dialog>\n      <script type=\"module\" src=\"app.js?v=staff-auto-branches-20261113-r1\"></script>\n</body>\n</html>\n"
+        }
+      ]
+    },
+    "takodeal-staff/staff-startup.js": {
+      "baselineSha256": "93d00de9183250b7c65e5ab1013a536e54d5f0ccdee829e19d83d112349b2f5b",
+      "candidateSha256": "52ca35542f07a52d86e1eb7ce7e3f0ab8bbad990d981f17a6a5c539f159f0a34",
+      "edits": [
+        {
+          "before": "/* Independent Staff startup recovery. No module, account or database dependency. */\n(function (w, d, nav) {\n    'use strict';\n    var release = 'staff-branch-locations-20261113-r1';\n    var key = Symbol.for('takodeal.staff.appUpdate');\n    if (w.staffStartup) return;\n    var ready = false, updating = false, run = null, banner, bannerText;\n",
+          "after": "/* Independent Staff startup recovery. No module, account or database dependency. */\n(function (w, d, nav) {\n    'use strict';\n    var release = 'staff-auto-branches-20261113-r1';\n    var key = Symbol.for('takodeal.staff.appUpdate');\n    if (w.staffStartup) return;\n    var ready = false, updating = false, run = null, banner, bannerText;\n"
+        }
+      ]
+    },
+    "takodeal-staff/sw.js": {
+      "baselineSha256": "739fa3b157a6ca7819fb00543de844a82e0fbd86bba2bb7ee16ba9bb91229b03",
+      "candidateSha256": "223d841f8ddbdf60503c28b32f11bccd53cf5e5a651d4714c9ffe2ac8ffdbdb7",
+      "edits": [
+        {
+          "before": "const STAFF_RELEASE = 'staff-branch-locations-20261113-r1';\nconst CACHE_NAME = 'takodeal-staff-v59-branch-locations-20261113-r1';\nconst SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];\nSHELL.push('./schedule-swap-model.js','./staff-swap-request.js');\nSHELL.push('./staff-self-repair.js','./staff-self-repair-sdk.js');\nSHELL.push('./worked-shift-reference.js');\n",
+          "after": "const STAFF_RELEASE = 'staff-auto-branches-20261113-r1';\nconst CACHE_NAME = 'takodeal-staff-v60-auto-branches-20261113-r1';\nconst SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];\nSHELL.push('./live-branch-directory.js');\nSHELL.push('./schedule-swap-model.js','./staff-swap-request.js');\nSHELL.push('./staff-self-repair.js','./staff-self-repair-sdk.js');\nSHELL.push('./worked-shift-reference.js');\n"
+        },
+        {
+          "before": "// BEGIN GENERATED STAFF COHORT\nconst SHELL_INTEGRITY = {\n  \"./\": {\n    \"sha256\": \"4d1e6b9a1f01f07435d0379120b0ad1101bf93c53e96d0817737292b04564f39\",\n    \"bytes\": 104208\n  },\n  \"./index.html\": {\n    \"sha256\": \"4d1e6b9a1f01f07435d0379120b0ad1101bf93c53e96d0817737292b04564f39\",\n    \"bytes\": 104208\n  },\n  \"./style.css\": {\n    \"sha256\": \"11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763\",\n",
+          "after": "// BEGIN GENERATED STAFF COHORT\nconst SHELL_INTEGRITY = {\n  \"./\": {\n    \"sha256\": \"7b63c1ec6a65c4d6fab8dba4019f060076196f85b11d3e817a426c13df58f623\",\n    \"bytes\": 104199\n  },\n  \"./index.html\": {\n    \"sha256\": \"7b63c1ec6a65c4d6fab8dba4019f060076196f85b11d3e817a426c13df58f623\",\n    \"bytes\": 104199\n  },\n  \"./style.css\": {\n    \"sha256\": \"11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763\",\n"
+        },
+        {
+          "before": "    \"bytes\": 18549\n  },\n  \"./app.js\": {\n    \"sha256\": \"a948b4233e541c8e0adf151615dec3731e0dd79d36edf7dfc1140df4d41229aa\",\n    \"bytes\": 269787\n  },\n  \"./staff-portal.js\": {\n    \"sha256\": \"20a99d7191046281bf176acad79f8a70f6b6cb662ac52644dc146271766b0040\",\n",
+          "after": "    \"bytes\": 18549\n  },\n  \"./app.js\": {\n    \"sha256\": \"58d396f49d40d1169ad4bc0a41debdf0aff7a760222c638d1ef8fc2e5ef9f13f\",\n    \"bytes\": 270049\n  },\n  \"./staff-portal.js\": {\n    \"sha256\": \"20a99d7191046281bf176acad79f8a70f6b6cb662ac52644dc146271766b0040\",\n"
+        },
+        {
+          "before": "  \"./manifest.json\": {\n    \"sha256\": \"c395d1d4987d1031e603b55c27e543f0390e3417585abece4a74f54da691b696\",\n    \"bytes\": 672\n  },\n  \"./schedule-swap-model.js\": {\n    \"sha256\": \"4f737b1bf15ebfe7451b884132180a27a8fe169f07cde6185c14a483168f2b72\",\n",
+          "after": "  \"./manifest.json\": {\n    \"sha256\": \"c395d1d4987d1031e603b55c27e543f0390e3417585abece4a74f54da691b696\",\n    \"bytes\": 672\n  },\n  \"./live-branch-directory.js\": {\n    \"sha256\": \"79f46d3cd5892d89d40a42a6d7b56ab5cb9046fb5096c54b57a97194cd602aaa\",\n    \"bytes\": 7967\n  },\n  \"./schedule-swap-model.js\": {\n    \"sha256\": \"4f737b1bf15ebfe7451b884132180a27a8fe169f07cde6185c14a483168f2b72\",\n"
+        },
+        {
+          "before": "    \"bytes\": 13747\n  },\n  \"./staff-startup.js\": {\n    \"sha256\": \"93d00de9183250b7c65e5ab1013a536e54d5f0ccdee829e19d83d112349b2f5b\",\n    \"bytes\": 16809\n  }\n};\nconst COHORT_HASH = \"90b1831593e9ce2303e25c95cf4970ec4d1d23453a3ace14b0b3d689e5927041\";\n// END GENERATED STAFF COHORT\n\n// Each completed cache contains one verified release. A worker never replaces\n",
+          "after": "    \"bytes\": 13747\n  },\n  \"./staff-startup.js\": {\n    \"sha256\": \"52ca35542f07a52d86e1eb7ce7e3f0ab8bbad990d981f17a6a5c539f159f0a34\",\n    \"bytes\": 16806\n  }\n};\nconst COHORT_HASH = \"f38d53fc3059aa9c9c0d19f06fa5408cf9feec669aa20e7d407a9f305d5eaa31\";\n// END GENERATED STAFF COHORT\n\n// Each completed cache contains one verified release. A worker never replaces\n"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "takodeal-staff/live-branch-directory.js": "79f46d3cd5892d89d40a42a6d7b56ab5cb9046fb5096c54b57a97194cd602aaa"
+  }
+}

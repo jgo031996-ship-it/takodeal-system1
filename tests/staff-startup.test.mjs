@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
 import {installStaffAppUpdate} from '../takodeal-staff/staff-phone.js';
 import {execFileSync} from 'node:child_process';
-const source=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),release='staff-branch-locations-20261113-r1',hash='a'.repeat(64),flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
+const source=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),release='staff-auto-branches-20261113-r1',hash='a'.repeat(64),flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};};
 function fixture(options={}){
  const timers=new Map(),events=new Map(),domEvents=new Map(),elements=new Map(),buttons=[],statuses=[],styles=[],calls={reload:0,lookup:0,register:0,update:0,messages:[],payloads:[],forbidden:0};let sequence=0;
