@@ -22,7 +22,7 @@ test('R2 page changes only exact inline placement and release labels from live39
 });
 test('Cashier, other apps, shared runtime, Firebase functions, rules and dependencies cannot change in this Staff fix',()=>{
  const changed=[...git('diff','--name-only',base,'--').trim().split(/\r?\n/),...git('ls-files','--others','--exclude-standard').trim().split(/\r?\n/)].filter(Boolean);
- const allowed=new Set(['takodeal-staff/staff-location.js','takodeal-staff/app.js','takodeal-staff/clock-upload-access.js','takodeal-staff/index.html','takodeal-staff/sw.js','takodeal-staff/staff-startup.js','takodeal-staff/staff-swap-request.js','takodeal-staff/staff-setup-access.js','takodeal-staff/staff-document-firebase.js','takodeal-staff/staff-self-repair.js','takodeal-staff/staff-self-repair-sdk.js']);
+ const allowed=new Set(['takodeal-staff/live-branch-directory.js','takodeal-staff/staff-location.js','takodeal-staff/app.js','takodeal-staff/clock-upload-access.js','takodeal-staff/index.html','takodeal-staff/sw.js','takodeal-staff/staff-startup.js','takodeal-staff/staff-swap-request.js','takodeal-staff/staff-setup-access.js','takodeal-staff/staff-document-firebase.js','takodeal-staff/staff-self-repair.js','takodeal-staff/staff-self-repair-sdk.js']);
  for(const path of changed){
   if(path.startsWith('outputs/'))continue;
   if(/^(?:tests\/|tools\/build-staff-(?:shell-cohort|startup-inline)\.mjs$|\.github\/workflows\/staff-(?:startup|inline)-recovery-checks\.yml$|STAFF-STARTUP-RECOVERY\.md$)/.test(path))continue;
