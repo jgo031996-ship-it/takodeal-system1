@@ -43,13 +43,16 @@ export async function prepareDispatchRestock(api,{source,destination,items}) {
 
 export async function commitDispatch(api, { id, source, destination, driver, actor, items, skipped = [], purchaseOrderIds = [], now = new Date(), autoRestock=null, supplyPricing=null, assertCurrent=()=>{} }) {
     if (!id || !source || !destination || source === destination || !driver || !items.length) throw new Error('Choose different source and destination branches, a driver, and items to send.');
-    if (items.length * (autoRestock?7:4) + purchaseOrderIds.length > 430) throw new Error('Split this delivery into smaller batches.');
+    // Firestore removed its old write-count limit in March 2023. Bound actual
+    // payload bytes instead; every delivery still commits in one transaction.
+    const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
     const identity=autoRestock||supplyPricing?captureDispatchAuthority(api,{source,destination,restock:autoRestock?.needsRestock===true}):null;
     if(supplyPricing&&(identity.session.isFranchisee||source!=='Main Office'))throw Error('HQ must approve and issue the priced delivery invoice.');
     if(autoRestock&&autoRestock.source!==source)throw Error('The restock preview belongs to another source.');
     const guard=()=>{assertCurrent();if(identity){const current=captureDispatchAuthority(api,{source,destination,restock:autoRestock?.needsRestock===true});if(current.session!==identity.session||current.uid!==identity.uid||current.email!==identity.email||current.name!==identity.name)throw Error('Your account changed. Reopen the delivery.');}};
     guard();
     const intent=canonicalDispatchIntent({source,destination,driver,actor,actorUid:identity?.uid,items,skipped,purchaseOrderIds:[...new Set(purchaseOrderIds.filter(Boolean))].sort(),autoRestock,...(supplyPricing?{supplyPricing}: {})});
+    if(bytes(intent)>700*1024)throw Error('This delivery contains unusually large item details. Your cart is kept; shorten the item notes before retrying.');
     const read=autoRestock?api.getDocsFromServer:api.getDocs;
     const inventory = await read(api.query(api.collection(api.db,'inventory'),api.where('branch','==',source)));
     let recipes=[],recipeRevision,accountRows=[];
@@ -64,7 +67,13 @@ export async function commitDispatch(api, { id, source, destination, driver, act
         return {...item,name,quantity,reference:matches[0].ref};
     });
     const reference = (table,key) => api.doc(api.db,table,key);
-    return api.runTransaction(api.db, async tx => {
+    return api.runTransaction(api.db, async transaction => {
+        let payloadBytes=0;
+        const budget=(reference,data)=>{
+            const size=bytes({path:reference.path||reference.id,data});
+            if(size>800*1024||(payloadBytes+=size)>4*1024*1024)throw Error('This delivery contains too much saved detail for one safe save. Your cart is kept for review.');
+        };
+        const tx={get:ref=>transaction.get(ref),set:(ref,data,...options)=>{budget(ref,data);return transaction.set(ref,data,...options);},update:(ref,data)=>{budget(ref,data);return transaction.update(ref,data);}};
         const commitRef=reference('settings','dispatch_commit_'+id);
         const commit=await tx.get(commitRef);
         const marker=await tx.get(reference('dispatch_logs',id+'-0'));

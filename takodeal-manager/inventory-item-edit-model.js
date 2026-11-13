@@ -214,10 +214,6 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
     if (settingFields.length && (own(changes, 'conversionRate') || own(changes, 'baseUom')))
         fail('Save unit or conversion changes first, then reopen the item to change its restock settings.', own(changes, 'conversionRate') ? 'conversionRate' : 'baseUom');
     const shareCost = before.branch !== HQ && own(changes, 'purchaseCost');
-    if (shareCost && ['purchaseUom', 'baseUom', 'conversionRate'].some(field => own(changes, field)))
-        fail('Save and review unit or conversion changes separately, then reopen the item before sharing its cost.', 'purchaseCost');
-    if (shareCost && identity === null)
-        fail('Review the saved purchase unit, base unit and conversion aliases before sharing this store cost.', 'conversionRate');
     const settingsToCopy = before.branch === HQ ? [] : settingFields;
     // Linked names and unit/conversion edits need their own review. Main Office
     // never broadcasts its editor changes to stores, even with copyMetadata.
@@ -231,6 +227,12 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
         const baseCost = number(cost / conversion, 'Base-unit cost', 'purchaseCost');
         Object.assign(selectedPatch, {purchaseCost: cost, purchCost: cost, cost, baseCost});
     }
+    // A cost belongs to the reviewed NEW purchase/base units. Save the selected
+    // item's unit and price edits together, and copy cost only to stores which
+    // already use that same unit identity. Never reinterpret their stock.
+    const sharingIdentity = shareCost ? inventoryItemIdentity({...original, ...selectedPatch, name: original.name}) : identity;
+    if (shareCost && sharingIdentity === null)
+        fail('Review the saved purchase unit, base unit and conversion aliases before sharing this store cost.', 'conversionRate');
     const selectedExtraGuards = [];
     if (own(changes, 'baseUom')) {
         if (Number(original.currentStock) !== 0) fail('A base-unit change needs a reviewed stock conversion while this branch has stock.', 'baseUom');
@@ -249,7 +251,7 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
         }
         for (const [branch, row] of byBranch) {
             let matches = false;
-            try { matches = identity !== null && inventoryItemIdentity(row) === identity; } catch { /* Invalid legacy units must not be guessed. */ }
+            try { matches = sharingIdentity !== null && inventoryItemIdentity(row) === sharingIdentity; } catch { /* Invalid legacy units must not be guessed. */ }
             if (!matches) { skippedPeers.push({id: row.id, branch, reason: 'Different units or conversion'}); continue; }
             peerCandidates.push(row);
         }

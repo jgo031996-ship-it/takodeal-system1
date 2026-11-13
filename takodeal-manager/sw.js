@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v148-auto-branches-20261113-r1';
+const CACHE_NAME = 'takodeal-manager-core-v149-owner-delivery-radar-20261114-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -195,3 +195,5 @@ CORE_ASSETS.push('./worked-shift-correction-model.js','./worked-shift-correction
 CORE_ASSETS.push("./branch-private-settings.js","./hq-image-upload.js","./owner-customer-reviews.js","./owner-public-inquiries.js","./owner-prep-client.js","./owner-prep-ui.js","./owner-rider-access.js","./payment-branch-review.js","./recipe-review.css","./recipe-review.js","./request-review-service.js","./staff-pin-proof.js");
 
 CORE_ASSETS.push('./live-branch-directory.js');
+
+CORE_ASSETS.push('./dispatch-delivery-radar.js');

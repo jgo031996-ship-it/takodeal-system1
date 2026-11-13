@@ -115,11 +115,23 @@ test('negative HQ preview shows the separate old-balance correction and last-pri
     const sending=f.api.submitMultiDispatch(),dialog=await driver.opened.promise;
     assert.deepEqual(snapshot(f),before);assert.equal(f.elements.btnSubmitDispatch.disabled,true);assert.match(dialog.title,/Cabantian/);
     assert.match(dialog.html,/₱1,500\.00/);assert.match(dialog.html,/Restock: 7,500 Gram/);assert.match(dialog.html,/-82,500 Gram/);
-    assert.match(dialog.html,/correction is excluded from the purchase cost/);assert.match(dialog.html,/does not record a cash payment/);
+    assert.match(dialog.html,/correction is excluded from the purchase cost/);assert.match(dialog.html,/does not record a cash payment/);assert.equal(dialog.confirmButtonText,'Confirm restock and send');assert.match(dialog.html,/physically available/);
     driver.answer.resolve({isConfirmed:true,value:'  Synthetic Driver  '});await sending;
     const invoice=records(f,'hq_restocks')[0]?.[1];assert.ok(invoice,messages(f));assert.equal(invoice.totalCost,1500);assert.equal(invoice.items[0].restockQty,7500);assert.equal(invoice.items[0].correctionQty,82500);
     assert.equal(records(f,'dispatch_logs')[0][1].driver,'Synthetic Driver');assert.equal(f.h.get('inventory/Main Office').currentStock,0);assert.equal(f.h.get('cash_accounts/hq').balance,30000);
     assert.equal(records(f,'expenses').length,0);assert.equal(records(f,'account_logs').length,0);
+});
+
+test('one confirmation sends a complete 129-item HQ cart and links its automatic restocks without splitting the encoded quantities',async()=>{
+    const f=environment({currentStock:0,quantity:'1'}),template=f.api.dispatchCart[0];
+    for(let index=1;index<129;index++){
+        const name='Synthetic full-cart item '+index;
+        f.h.put('inventory/synthetic-'+index,{branch:'Main Office',name,currentStock:0,uom:'Gram',purchaseUom:'Pack',conversionRate:1000,baseCost:.2,purchaseCost:200});
+        f.api.dispatchCart.push({...template,name,itemName:name,sourceId:'synthetic-'+index,qty:1000,rawQty:1,origBaseQty:1000,origRawQty:1});
+    }
+    await f.api.submitMultiDispatch();
+    assert.equal(records(f,'dispatch_logs').length,129,messages(f));assert.equal(records(f,'hq_restocks').length,1);assert.equal(records(f,'hq_restocks')[0][1].items.length,129);assert.deepEqual(f.api.dispatchCart,[]);
+    const confirmations=f.calls.dialogs.filter(args=>args[0]?.input==='text');assert.equal(confirmations.length,1);assert.equal(confirmations[0][0].confirmButtonText,'Confirm restock and send');
 });
 
 test('cancelling the driver dialog makes no writes, no saved attempt and keeps the complete draft for retry',async()=>{
