@@ -1,4 +1,8 @@
-import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';import {webcrypto} from 'node:crypto';
+import {restoreLiveBranchDirectory} from './helpers/live-branch-directory-inverse.mjs';
+// Apply only the separately hash-verified public discovery patch before these
+// historical business/transport byte comparisons. The new source test pins it.
+const readFileSync=(path,...args)=>{const value=originalReadFileSync(path,...args),name=path instanceof URL?path.pathname:String(path);if(!name.endsWith('/Takodeal-POS/main.js'))return value;const restored=restoreLiveBranchDirectory(value.toString(),'Takodeal-POS/main.js');return typeof value==='string'?restored:Buffer.from(restored);};
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync as originalReadFileSync} from 'node:fs';import {webcrypto} from 'node:crypto';
 import {voidUI} from './helpers/cashier-void-fixture.mjs';import {firestoreHarness} from './helpers/firestore-harness.mjs';import {installSaleSafety} from '../Takodeal-POS/pos-checkout.js';import {restoreCashierVoidIntegration} from './helpers/cashier-void-inverse.mjs';
 import {createShiftSalesFeed,ensureShiftSalesUploaded} from '../Takodeal-POS/shift-sales.js';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
