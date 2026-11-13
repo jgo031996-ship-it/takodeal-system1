@@ -34,7 +34,7 @@ test('source inverses reject extra edits rather than silently normalizing unrevi
 });
 
 test('the page, stylesheet, auth import, cache and update notice identify the same recovery release after the exact newer warning inverse',()=>{
- const restored=file=>restoreOwnerStockWarnings(file,read(file)),release='takodeal-manager-core-v142-'+proof.release;assert.equal(proof.release,'prep-recovery-20261111-r1');assert.ok(restored('takodeal-manager/owner-update-notice.js').includes(release));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v147-branch-settings-save-20261113');
+ const restored=file=>restoreOwnerStockWarnings(file,read(file)),release='takodeal-manager-core-v142-'+proof.release;assert.equal(proof.release,'prep-recovery-20261111-r1');assert.ok(restored('takodeal-manager/owner-update-notice.js').includes(release));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v148-auto-branches-20261113-r1');
  const html=restored('takodeal-manager/index.html');for(const value of ['content="'+proof.release+'"','private-prep-reviews.css?v='+proof.release,'auth.js?v='+proof.release])assert.ok(html.includes(value));
  assert.ok(restored('takodeal-manager/auth.js').includes("main.js?v="+proof.release));assert.ok(restored('takodeal-manager/sw.js').includes("const CACHE_NAME = '"+release+"';"));
  const oldWorker=git(proof.base,'takodeal-manager/sw.js').toString();assert.equal(restoreOwnerPrepRecoveryRelease('takodeal-manager/sw.js',read('takodeal-manager/sw.js')),oldWorker,'all cache/storage/worker behavior remains identical');

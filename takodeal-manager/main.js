@@ -1,3 +1,4 @@
+import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {uploadHQImage} from './hq-image-upload.js';
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';
 import {projectWorkedShiftCorrections} from './worked-shift-reference.js';
@@ -26871,3 +26872,5 @@ runManagerDomReady(()=>installAIBoard(window,document));
 
 // These scoped readers replace legacy broad audit/payment loading after all wrappers.
 runManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});
+
+window.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});
