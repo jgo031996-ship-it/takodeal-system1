@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {withinBranchHours,escapeHTML,validateCart} from '../Customer/customer-menu.js';
 import {branchOpeningNotice} from '../Customer/customer-site-settings.js';
+import {installLiveBranchDirectory} from '../Customer/live-branch-directory.js';
 
 const html=readFileSync(new URL('../Customer/index.html',import.meta.url),'utf8');
 function section(start,end) {
@@ -51,7 +52,7 @@ function harness() {
         if(server && h.statusWait && ref.path==='settings/status_Maa')await h.statusWait.promise;
         return snap(documents.get(ref.path));
     };
-    const context=vm.createContext({window,Date:ClockDate,withinBranchHours:hours=>withinBranchHours(hours,new Date(now.value)),escapeHTML,validateCart,branchOpeningNotice,
+    const context=vm.createContext({window,Date:ClockDate,installLiveBranchDirectory,withinBranchHours:hours=>withinBranchHours(hours,new Date(now.value)),escapeHTML,validateCart,branchOpeningNotice,
         document:{getElementById:node,createElement:()=>({value:'',textContent:''}),querySelectorAll:()=>[]},
         Swal:{async fire(options){dialogs.push(options);return options?.showCancelButton?h.answer(options):{isConfirmed:true};}},
         db:{},doc:(_db,table,id)=>({path:table+'/'+id}),collection:(_db,table)=>({table}),query:ref=>ref,

@@ -1,4 +1,4 @@
-const CUSTOMER_RELEASE = 'customer-security-reviews-20261109';
+const CUSTOMER_RELEASE = 'customer-auto-branches-20261113-r1';
 // Customer app installation support. Live ordering always uses the network.
 self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));

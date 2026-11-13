@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-security-v16-20261109';
+const CACHE = 'takodeal-franchise-v17-auto-branches-20261113-r1';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('./worked-shift-reference.js');
 CORE.push('franchise-ai-board.js','franchise-ai-board.css');
@@ -48,3 +48,5 @@ CORE.push('discipline-case-model.js','franchise-discipline-model.js','franchise-
 CORE.push('franchise-dispatch-pricing.js');
 CORE.push('dispatch-restock-model.js');
 CORE.push('stock-audit-model.js','stock-audit-reader.js','stock-audit-ui.js','stock-audit-ui.css');
+
+CORE.push('./live-branch-directory.js');
