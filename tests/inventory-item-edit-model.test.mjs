@@ -158,14 +158,28 @@ test('Main Office edits always stay independent even when metadata sharing is ex
     assert.throws(() => buildInventoryItemEditPlan({...f, syncStoreCost: true}), /Main Office costs stay separate/);
 });
 
-test('cost sharing is held until changed store unit labels and conversions are reviewed separately', () => {
-    const f = fixture();
-    for (const patch of [{purchaseUom: 'Bag'}, {baseUom: 'gram'}, {conversionRate: 100}]) {
-        assert.throws(() => buildInventoryItemEditPlan({...f, draft: {...patch, purchaseCost: 150}}), /unit or conversion changes separately/);
-        assert.throws(() => buildInventoryItemEditPlan({...f, draft: patch, syncStoreCost: true}), /unit or conversion changes separately/);
+test('store purchase units and cost save together using the reviewed new identity; incompatible stores retain their costs', () => {
+    for (const patch of [{purchaseUom: 'Bag'}, {conversionRate: 100}]) {
+        const f = fixture();
+        for(const options of [{draft:{...patch,purchaseCost:150}},{draft:patch,syncStoreCost:true}]) {
+            const plan=buildInventoryItemEditPlan({...f,...options});
+            assert.ok(plan.updates.some(row=>row.id===f.original.id));
+            assert.deepEqual(plan.copiedCostBranches,[]);
+            assert.ok(plan.skippedPeers.length>0);
+            assert.equal(plan.updates.some(row=>'currentStock' in row.patch),false);
+        }
     }
+    const f=fixture();assert.throws(()=>buildInventoryItemEditPlan({...f,draft:{baseUom:'gram',purchaseCost:150}}),/reviewed stock conversion/);
     assert.doesNotThrow(() => buildInventoryItemEditPlan({...f, draft: {purchaseUom: 'PACK', purchaseCost: 150}}));
     for (const syncStoreCost of [null, 1, 'yes']) assert.throws(() => buildInventoryItemEditPlan({...f, syncStoreCost}), error => error.field === 'syncStoreCost');
+});
+
+test('the Food Coloring purchase-label repair and checked cost reapply save together without reinterpreting any store count',()=>{
+    const original={id:'synthetic-maa',branch:'Maa',name:'Food Coloring',uom:'gram',baseUom:'gram',purchaseUom:'gram',purchUom:'gram',conversionRate:1000,conversion:1000,purchaseCost:1000,baseCost:1,currentStock:2370};
+    const correctedPeer={...original,id:'synthetic-agdao',branch:'Agdao',purchaseUom:'Kilogram',purchUom:'Kilogram',currentStock:410},oldPeer={...original,id:'synthetic-cab',branch:'Cabantian',currentStock:160},hq={...original,id:'synthetic-hq',branch:'Main Office',currentStock:2000};
+    const plan=buildInventoryItemEditPlan({original,draft:{purchaseUom:'Kilogram',purchaseCost:500},syncStoreCost:true,items:[original,correctedPeer,oldPeer,hq],permittedBranches:['All']});
+    const patch=plan.updates.find(row=>row.id===original.id).patch;assert.equal(patch.purchaseUom,'Kilogram');assert.equal(patch.purchUom,'Kilogram');assert.equal(patch.baseCost,.5);assert.equal(patch.purchaseCost,500);
+    assert.deepEqual(plan.copiedCostBranches,['Agdao']);assert.ok(plan.skippedPeers.some(row=>row.branch==='Cabantian'));assert.equal(plan.updates.some(row=>row.id===hq.id),false);assert.equal(plan.updates.some(row=>'currentStock' in row.patch),false);
 });
 
 test('a cost-sharing plan holds every overwritten peer alias and unit identity but permits stock-only movements', () => {

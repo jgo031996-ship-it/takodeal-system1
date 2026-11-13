@@ -1,3 +1,4 @@
+import {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {uploadHQImage} from './hq-image-upload.js';
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';
@@ -2528,8 +2529,8 @@ window.addToDispatchCart = function () {
 
     let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
     if (existing) { 
-        existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawQty;
-        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty; 
+        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty;
+        existing.rawQty = existing.qty / convRate;
         existing.origRawQty = existing.rawQty;
         existing.origBaseQty = existing.qty;
         existing.friendlyUom = friendlyUom; 
@@ -2619,7 +2620,7 @@ window.renderDispatchCart = function() {
         const rowHtml=`<article class="dispatch-cart-item">
             <div class="dispatch-cart-heading"><strong>${itemName}</strong><button type="button" class="dispatch-cart-remove" onclick="window.removeFromDispatchCart(${index})" aria-label="Remove ${itemName} from dispatch">Remove</button></div>
             <div class="dispatch-cart-line"><div class="dispatch-cart-details">
-                <span class="dispatch-cart-stock ${hqStock<baseQty?'is-low':''}">Main Office: ${escapeStock(purchaseQuantity(hqStock,item))} <span>· ${hqWarningText}</span></span>
+                <span class="dispatch-cart-stock ${hqStock<baseQty?'is-low':''}">Main Office: ${escapeStock(hqStock.toLocaleString('en-PH',{maximumFractionDigits:3})+' '+bUom)}${pUom.toLowerCase()!==bUom.toLowerCase()?' ('+escapeStock(purchaseQuantity(hqStock,item))+')':''} <span>· ${hqWarningText}</span></span>
                 <span id="dispatch_send_text_${index}" class="dispatch-cart-sending">Sending in ${escapeStock(bUom)} (${baseQty.toFixed(2)} ${escapeStock(bUom)})</span>
                 ${branchReportBadge}
             </div>${controlsHtml}</div>
@@ -26874,3 +26875,5 @@ runManagerDomReady(()=>installAIBoard(window,document));
 runManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});
 
 window.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});
+
+installDispatchDeliveryRadar(window,document);
