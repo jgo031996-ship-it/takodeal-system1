@@ -1,7 +1,7 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-self-repair-swaps-20261112-r2';
+    var release = 'staff-branch-locations-20261113-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;

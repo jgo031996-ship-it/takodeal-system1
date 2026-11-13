@@ -3842,7 +3842,7 @@ window.savePrivateVaultPin=(input,options)=>window.staffPrivateProfileClient.vau
 window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createPrivateStaffClient});
 installStaffPortal();
 installStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});
-installStaffLocation();
+installStaffLocation({loadBranches:()=>getDocsFromServer(collection(db,'branches'))});
 installPayrollVaultFreshness(window,document);
 let setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;
 if(window.staffSelfRepair){
