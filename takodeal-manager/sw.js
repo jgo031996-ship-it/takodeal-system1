@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v149-owner-delivery-radar-20261114-r1';
+const CACHE_NAME = 'takodeal-manager-core-v150-large-delivery-status-20261114-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
