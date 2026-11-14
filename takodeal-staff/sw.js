@@ -1,5 +1,5 @@
-const STAFF_RELEASE = 'staff-auto-branches-20261113-r1';
-const CACHE_NAME = 'takodeal-staff-v60-auto-branches-20261113-r1';
+const STAFF_RELEASE = 'staff-phone-location-help-20261114-r1';
+const CACHE_NAME = 'takodeal-staff-v61-phone-location-help-20261114-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./live-branch-directory.js');
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
@@ -44,12 +44,12 @@ SHELL.push('./staff-startup.js');
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "7b63c1ec6a65c4d6fab8dba4019f060076196f85b11d3e817a426c13df58f623",
-    "bytes": 104199
+    "sha256": "e6070ef85c2399e18eea3d00de38948084f2b24d0594e638b241349a5960f84d",
+    "bytes": 105926
   },
   "./index.html": {
-    "sha256": "7b63c1ec6a65c4d6fab8dba4019f060076196f85b11d3e817a426c13df58f623",
-    "bytes": 104199
+    "sha256": "e6070ef85c2399e18eea3d00de38948084f2b24d0594e638b241349a5960f84d",
+    "bytes": 105926
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -60,8 +60,8 @@ const SHELL_INTEGRITY = {
     "bytes": 18549
   },
   "./app.js": {
-    "sha256": "58d396f49d40d1169ad4bc0a41debdf0aff7a760222c638d1ef8fc2e5ef9f13f",
-    "bytes": 270049
+    "sha256": "6319073085360ed6310cefc1743b912aaec2850592becb2ca3bfd8d3e11ae776",
+    "bytes": 270536
   },
   "./staff-portal.js": {
     "sha256": "20a99d7191046281bf176acad79f8a70f6b6cb662ac52644dc146271766b0040",
@@ -196,8 +196,8 @@ const SHELL_INTEGRITY = {
     "bytes": 4741
   },
   "./staff-access.js": {
-    "sha256": "a726653b9c4cc051e116437003616bcc0e4b0414996cfebcea78fc32bd85720c",
-    "bytes": 16667
+    "sha256": "2366d7b98870a91c8724a92d62fca60ef2867fa00bba7068d42cc264378381bf",
+    "bytes": 18652
   },
   "./staff-document-broker.js": {
     "sha256": "97912c77fe5b99d516dea75acd6f89f56ee776bd64ffc98e334be63b35369ca9",
@@ -428,11 +428,11 @@ const SHELL_INTEGRITY = {
     "bytes": 13747
   },
   "./staff-startup.js": {
-    "sha256": "52ca35542f07a52d86e1eb7ce7e3f0ab8bbad990d981f17a6a5c539f159f0a34",
-    "bytes": 16806
+    "sha256": "49a90ca1c1baa6ef8a772e773b5165fcc097d217fe30fcaf564406a76bbd4a05",
+    "bytes": 18521
   }
 };
-const COHORT_HASH = "f38d53fc3059aa9c9c0d19f06fa5408cf9feec669aa20e7d407a9f305d5eaa31";
+const COHORT_HASH = "2b75c57cfb6bd99ecb915715ae713f4645bf32a8b38db0033985d78afaa5c89b";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces
@@ -459,7 +459,7 @@ async function verifiedShellResponse(path,signal){
 self.addEventListener('install',event=>{
     event.waitUntil((async()=>{
         const existed=await caches.has(COHORT_CACHE),cache=await caches.open(COHORT_CACHE),controller=new AbortController();
-        const deadline=setTimeout(()=>controller.abort(),40000);let failed=null;
+        const deadline=setTimeout(()=>controller.abort(),120000);let failed=null;
         try{
             if(Object.keys(SHELL_INTEGRITY).length!==new Set(SHELL).size||!/^[a-f0-9]{64}$/.test(COHORT_HASH))throw Error('The Staff release manifest is incomplete.');
             // Bounded downloads also bound memory on older phones.

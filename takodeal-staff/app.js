@@ -1397,7 +1397,11 @@ window.punchTime = async function(type) {
 
     } catch(e) { 
         console.error(e); 
-        Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
+        if(e.staffAccessRecovery){
+            const help=e.staffAccessRecovery;
+            const answer=await Swal.fire({titleText:help.title,text:help.message,icon:'warning',showCancelButton:help.action==='phone',confirmButtonText:'Back to Time Clock',cancelButtonText:'Phone setup help',footer:'Your saved attendance, reason and selected screenshot are kept.'});
+            if(help.action==='phone'&&answer.dismiss===Swal.DismissReason?.cancel)window.staffSelfRepair?.open();
+        }else Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
     } 
     finally { 
         window.staffPunchBusy = false;
