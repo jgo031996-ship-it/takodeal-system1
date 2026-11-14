@@ -1,3 +1,4 @@
+import {createStaffPayPhoneClient} from './staff-pay-phone.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
@@ -41,7 +42,7 @@ import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
 import {installStaffDocuments} from './staff-documents.js';
-import {createStaffDocumentFirebase,readInitializedStaffDocumentClient} from './staff-document-firebase.js';
+import {createStaffDocumentFirebase,readInitializedStaffDocumentClient,documentSdk} from './staff-document-firebase.js';
 import {createStaffSelfRepairSDK} from './staff-self-repair-sdk.js';
 import {profileDailyRate} from './staff-rate-privacy.js';
 import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
@@ -3834,7 +3835,7 @@ window.acknowledgeMeal = async function(docId) {
 // ==========================================
 // 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
 // ==========================================
-const createPrivateStaffClient=()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
+const createPrivateStaffClient=(options={})=>createStaffPayPhoneClient({auth:staffPrimaryAuth,db,sdk:documentSdk,authority:()=>window.staffSetupAccess,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),...options});
 window.staffPrivateProfileClient=createStaffPrivateProfileClient({identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),account:()=>staffPrimaryAuth.currentUser,onInvalidate:()=>window.staffPrivateProfileUI?.clear(),createPrivateClient:createPrivateStaffClient,fetcher:window.fetch.bind(window)});
 window.staffAccessClient=createStaffAccessClient({auth:staffPrimaryAuth,ensureUser:async()=>{if(!staffPrimaryAuth.currentUser)throw Error('Reconnect your Staff phone.');return staffPrimaryAuth.currentUser;},deviceId:()=>localStorage.getItem('takodeal_device_id'),sessionId:()=>localStorage.getItem('takodeal_staff_session_id'),fetcher:window.fetch.bind(window)});
 window.readPrivateStaffProfile=async(staffId,options={})=>{const value=await window.staffPrivateProfileClient.read(staffId,options);return{id:staffId,exists:()=>true,data:()=>value.profile,metadata:{fromCache:false,hasPendingWrites:false},expectedFingerprint:value.expectedFingerprint};};
