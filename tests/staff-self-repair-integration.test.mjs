@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
 import {staffSelfRepairSwapsProof as proof,restoreStaffSelfRepairSwaps as restore,staffSelfRepairSha as sha} from './helpers/staff-self-repair-swaps-inverse.mjs';
 import {staffRepairTouchProof as touchProof,restoreStaffRepairTouch} from './helpers/staff-repair-touch-inverse.mjs';
+import {restoreStaffPhoneHelp} from './helpers/staff-phone-help-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:6e6});
 test('seven exact reviewed inverses and two pinned new modules preserve every other live b576 product byte',()=>{
  assert.equal(touchProof.base,'885a1fde77ae64df73d8eea9e21efab2de360594');assert.equal(Object.keys(touchProof.files).length,4);for(const file of Object.keys(touchProof.files))assert.equal(restoreStaffRepairTouch(read(file),file),git('show',touchProof.base+':'+file));
@@ -27,10 +28,10 @@ test('classic repair and startup are exact parser-inline copies before dependenc
  const page=read('takodeal-staff/index.html'),startup=read('takodeal-staff/staff-startup.js'),repair=read('takodeal-staff/staff-self-repair.js'),firstLink=page.indexOf('<link');
  for(const runtime of [startup,repair]){const inline='<script>'+runtime+'</script>';assert.equal(page.split(inline).length,2);assert.ok(page.indexOf(inline)<firstLink);}
  assert.equal((page.match(/data-staff-self-repair>/g)||[]).length,4);assert.doesNotMatch(page,/<script[^>]+src=["']staff-self-repair\.js/);assert.doesNotMatch(repair,/^\s*(?:import|export)\s/m);
- assert.match(page,/app\.js\?v=staff-auto-branches-20261113-r1/);assert.ok(read('takodeal-staff/sw.js').includes('./staff-self-repair-sdk.js'));
+ assert.match(page,/app\.js\?v=staff-phone-location-help-20261114-r1/);assert.ok(read('takodeal-staff/sw.js').includes('./staff-self-repair-sdk.js'));
 });
 test('other apps, backend/rules, normal punching/upload code and separate private identity remain byte-exact to live b576',()=>{
  const changed=git('diff','--name-only',proof.base,'--','Takodeal-POS','takodeal-manager','takodeal-customer','takodeal-rider','takodeal-franchise','functions','firestore.rules','storage.rules');assert.equal(changed,'');
- for(const file of ['takodeal-staff/clock-upload-access.js','takodeal-staff/attendance-camera.js','takodeal-staff/attendance-proof.js','takodeal-staff/staff-registration.js','takodeal-staff/staff-access.js','takodeal-staff/private-phone-identity.js','takodeal-staff/schedule-swap-model.js'])assert.equal(read(file),git('show',proof.base+':'+file));
- const handler=source=>{const from=source.indexOf('window.punchTime = async function'),to=source.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',from);assert.ok(from>0&&to>from);return source.slice(from,to);};assert.equal(handler(read('takodeal-staff/app.js')),handler(git('show',proof.base+':takodeal-staff/app.js')));
+ for(const file of ['takodeal-staff/clock-upload-access.js','takodeal-staff/attendance-camera.js','takodeal-staff/attendance-proof.js','takodeal-staff/staff-registration.js','takodeal-staff/staff-access.js','takodeal-staff/private-phone-identity.js','takodeal-staff/schedule-swap-model.js'])assert.equal(restoreStaffPhoneHelp(read(file),file),git('show',proof.base+':'+file));
+ const handler=source=>{const from=source.indexOf('window.punchTime = async function'),to=source.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',from);assert.ok(from>0&&to>from);return source.slice(from,to);};assert.equal(handler(restoreStaffPhoneHelp(read('takodeal-staff/app.js'),'takodeal-staff/app.js')),handler(git('show',proof.base+':takodeal-staff/app.js')));
 });

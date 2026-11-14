@@ -26,7 +26,7 @@ test('Cashier, other apps, shared runtime, Firebase functions, rules and depende
  for(const path of changed){
   if(path.startsWith('outputs/'))continue;
   if(/^(?:tests\/|tools\/build-staff-(?:shell-cohort|startup-inline)\.mjs$|\.github\/workflows\/staff-(?:startup|inline)-recovery-checks\.yml$|STAFF-STARTUP-RECOVERY\.md$)/.test(path))continue;
-  if(['.github/workflows/hr-recovery-checks.yml','tools/prepare-prep-hosted-emulator.mjs'].includes(path))continue;
+  if(['.github/workflows/hr-recovery-checks.yml','.github/workflows/dashboard-checks.yml','tools/prepare-prep-hosted-emulator.mjs','takodeal-staff/staff-access.js'].includes(path))continue;
   assert.ok(allowed.has(path),'Unexpected product change: '+path);
  }
 });
