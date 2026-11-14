@@ -1,3 +1,4 @@
+import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {normalizeStaffPayslip} from './payroll-view-core/staff-payslip-snapshot.js';
 import {activeAccessStaff,accessId} from './access-model.mjs';
 import {createHash} from 'node:crypto';
@@ -58,9 +59,7 @@ export function createAccessPayrollReader(db,{now=Date.now}={}){
  return async({uid,staffId,deviceId}={})=>{
   if(!accessId(uid)||!accessId(staffId)||typeof deviceId!=='string'||!/^DEV-[A-Z0-9-]{6,80}$/.test(deviceId))denied();
   return db.runTransaction(async tx=>{
-   const [configDoc,grantDoc,profileDoc]=await Promise.all(['staff_document_config/current','staff_document_devices/'+uid,'cashiers/'+staffId].map(path=>tx.get(db.doc(path))));
-   const config=configDoc.exists?configDoc.data():null,grant=grantDoc.exists?grantDoc.data():null,profile=profileDoc.exists?profileDoc.data():null;
-   if(config?.enabled!==true||config.policyVersion!==2||config.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||grant?.active!==true||grant.uid!==uid||grant.staffId!==staffId||grant.deviceId!==deviceId||!activeAccessStaff(profile)||grant.branch!==profile.branch)denied();
+   const profileDoc=await readPrivateStaffPhone(tx,db,{uid,staffId,deviceId},denied),profile=profileDoc.data();
    const aliases=aliasesOf(profile);if(!aliases.length||aliases.length>10)review();
    const lookups=[...['staffId','frozenData.staffId','frozenData.profile.staffId','frozenData.profile.id'].map(field=>[field,'==',staffId]),['staffName','in',aliases],['frozenData.name','in',aliases]],found=new Map();let complete=true;
    // Resolve identities using small metadata first. Never materialize hundreds
@@ -119,9 +118,7 @@ export function createAccessPayrollAcknowledger(db,{now=Date.now,serverTimestamp
   if(!accessId(uid)||!accessId(staffId)||!accessId(operationId)||operationId.length<8||typeof recordId!=='string'||!/^[-A-Za-z0-9_]{1,250}$/.test(recordId)||!/^DEV-[A-Z0-9-]{6,80}$/.test(deviceId||'')||!/^[a-f0-9]{64}$/.test(expectedFingerprint||''))denied();
   const bytes=signatureBytes(signatureBase64),signatureHash=createHash('sha256').update(bytes).digest('hex'),opId='payroll-ack-'+createHash('sha256').update(uid+'|'+operationId).digest('hex');
   return db.runTransaction(async tx=>{
-   const [configDoc,grantDoc,profileDoc,savedDoc,operationDoc]=await Promise.all(['staff_document_config/current','staff_document_devices/'+uid,'cashiers/'+staffId,'payroll_records/'+recordId,'staff_access_operations/'+opId].map(path=>tx.get(db.doc(path))));
-   const config=configDoc.exists?configDoc.data():null,grant=grantDoc.exists?grantDoc.data():null,profile=profileDoc.exists?profileDoc.data():null;
-   if(config?.enabled!==true||config.policyVersion!==2||config.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||grant?.active!==true||grant.uid!==uid||grant.staffId!==staffId||grant.deviceId!==deviceId||!activeAccessStaff(profile)||grant.branch!==profile.branch)denied();
+   const profileDoc=await readPrivateStaffPhone(tx,db,{uid,staffId,deviceId},denied),profile=profileDoc.data(),[savedDoc,operationDoc]=await Promise.all(['payroll_records/'+recordId,'staff_access_operations/'+opId].map(path=>tx.get(db.doc(path))));
    if(!savedDoc.exists)review();const source={...savedDoc.data(),id:recordId},frozen=source.frozenData||{},ids=[source.staffId,frozen.staffId,frozen.profile?.staffId,frozen.profile?.id].filter(value=>value!==undefined&&value!==null&&value!=='');
    if(ids.some(value=>value!==staffId))denied();
    const name=typeof frozen.name==='string'?frozen.name:source.staffName,aliases=aliasesOf(profile);
