@@ -1,6 +1,6 @@
 import {waitForAppUpdate} from './owner-app-update.js';
 
-export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v145-hr-request-recovery-20261112-r1';
+export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v151-staff-profile-mobile-20261114-r1';
 const installations=new WeakMap();
 const validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);
 const noticeText='App update ready. Save open edits, then reload to use the latest fixes.';

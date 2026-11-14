@@ -1,3 +1,5 @@
+import {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';
+import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {uploadHQImage} from './hq-image-upload.js';
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';
 import {projectWorkedShiftCorrections} from './worked-shift-reference.js';
@@ -2527,8 +2529,8 @@ window.addToDispatchCart = function () {
 
     let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
     if (existing) { 
-        existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawQty;
-        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty; 
+        existing.qty = (parseFloat(existing.qty) || 0) + finalBaseQty;
+        existing.rawQty = existing.qty / convRate;
         existing.origRawQty = existing.rawQty;
         existing.origBaseQty = existing.qty;
         existing.friendlyUom = friendlyUom; 
@@ -2618,7 +2620,7 @@ window.renderDispatchCart = function() {
         const rowHtml=`<article class="dispatch-cart-item">
             <div class="dispatch-cart-heading"><strong>${itemName}</strong><button type="button" class="dispatch-cart-remove" onclick="window.removeFromDispatchCart(${index})" aria-label="Remove ${itemName} from dispatch">Remove</button></div>
             <div class="dispatch-cart-line"><div class="dispatch-cart-details">
-                <span class="dispatch-cart-stock ${hqStock<baseQty?'is-low':''}">Main Office: ${escapeStock(purchaseQuantity(hqStock,item))} <span>· ${hqWarningText}</span></span>
+                <span class="dispatch-cart-stock ${hqStock<baseQty?'is-low':''}">Main Office: ${escapeStock(hqStock.toLocaleString('en-PH',{maximumFractionDigits:3})+' '+bUom)}${pUom.toLowerCase()!==bUom.toLowerCase()?' ('+escapeStock(purchaseQuantity(hqStock,item))+')':''} <span>· ${hqWarningText}</span></span>
                 <span id="dispatch_send_text_${index}" class="dispatch-cart-sending">Sending in ${escapeStock(bUom)} (${baseQty.toFixed(2)} ${escapeStock(bUom)})</span>
                 ${branchReportBadge}
             </div>${controlsHtml}</div>
@@ -16302,6 +16304,7 @@ window.openBranchSettings = async function(docId) {
     const user=window.auth?.currentUser,session=window.sessionUser,loadToken={id:docId,user,session};
     window.branchNetworkSettingsLoad=loadToken;
     window.branchNetworkSettingsExpected=null;
+    document.getElementById('btnSaveBranchSettings').disabled=true;
 
     document.getElementById('settingBranchId').value = docId;
     document.getElementById('branchSettingsTitle').innerText = `⚙️ ${d.name} Settings`;
@@ -16338,10 +16341,14 @@ window.openBranchSettings = async function(docId) {
         window.branchNetworkSettingsExpected=saved;
         document.getElementById('settingWifi').value=saved.wifi??d.wifi??'';
         document.getElementById('settingWifi').disabled=false;
+        document.getElementById('btnSaveBranchSettings').disabled=branchSettingsSavePending;
     }catch(error){if(window.branchNetworkSettingsLoad===loadToken)window.ManagerUI.notify('Private branch settings could not be loaded. Reopen this branch before saving.');}
 };
 
+let branchSettingsSavePending=false;
 window.saveBranchSettings = async function() {
+    if(branchSettingsSavePending)return;
+    const saveButton=document.getElementById('btnSaveBranchSettings'),saveLabel=saveButton.textContent;
     let docId = document.getElementById('settingBranchId').value;
     let latVal = document.getElementById('settingLat').value;
     let lngVal = document.getElementById('settingLng').value;
@@ -16364,12 +16371,31 @@ window.saveBranchSettings = async function() {
     try {
         const load=window.branchNetworkSettingsLoad,expected=window.branchNetworkSettingsExpected;
         if(!load||load.id!==docId||!expected)throw Error('Private branch settings are still loading. Reopen this branch before saving.');
-        await saveBranchNetworkSettings(window,{id:docId,branch:window.globalBranchData[docId]?.name,expected,wifi:document.getElementById('settingWifi').value.trim(),payload,
+        const wifi=document.getElementById('settingWifi').value.trim();
+        branchSettingsSavePending=true;
+        saveButton.disabled=true;
+        saveButton.textContent='Saving settings…';
+        await saveBranchNetworkSettings(window,{id:docId,branch:window.globalBranchData[docId]?.name,expected,wifi,payload,
             assertCurrent:()=>{if(window.branchNetworkSettingsLoad!==load||window.auth?.currentUser!==load.user||window.sessionUser!==load.session||document.getElementById('settingBranchId').value!==docId)throw Error('Your branch or account changed. Reopen these settings.');}});
+        // A completed save must not close a different branch opened while it ran.
+        if(window.branchNetworkSettingsLoad!==load||window.auth?.currentUser!==load.user||window.sessionUser!==load.session)return;
+        window.branchNetworkSettingsExpected={exists:true,wifi};
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings Pushed to Cashier!', showConfirmButton: false, timer: 2000});
         document.getElementById('branchSettingsModal').style.display = 'none';
         window.loadBranchManager();
-    } catch (e) { console.error(e); window.ManagerUI.notify("Failed to push settings."); }
+    } catch (e) {
+        console.error(e);
+        const code=String(e?.code||'').replace(/^firestore\//,'');
+        const message=code==='permission-denied'?'Your account could not save this branch. Sign in again with the Owner account and retry.'
+            :code==='unavailable'?'Connect to the internet and retry. These settings have not been saved.'
+            :code==='resource-exhausted'?'The settings could not be saved. Try a smaller receipt logo or retry later.'
+            :e?.message||'The settings could not be saved. Keep this form open and retry.';
+        window.ManagerUI.notify(message);
+    } finally {
+        branchSettingsSavePending=false;
+        saveButton.textContent=saveLabel;
+        saveButton.disabled=!window.branchNetworkSettingsExpected;
+    }
 };
 
 // 💉 THE DOM INJECTOR
@@ -26847,3 +26873,7 @@ runManagerDomReady(()=>installAIBoard(window,document));
 
 // These scoped readers replace legacy broad audit/payment loading after all wrappers.
 runManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});
+
+window.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});
+
+installDispatchDeliveryRadar(window,document);

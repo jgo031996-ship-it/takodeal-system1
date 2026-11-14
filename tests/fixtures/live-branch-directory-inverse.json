@@ -1,0 +1,78 @@
+{
+  "base": "18f04eccd379556b51c48aaca8b17ad8974ccc5b",
+  "files": {
+    "takodeal-manager/auth.js": {
+      "baselineSha256": "99ba5734a755525be5672be47db9600ef8ee8f2f42299c0e8fcf44e19c2da58b",
+      "candidateSha256": "7190950d1b68fc93b9fe500e12e9c4a77e21f41b7ddf5db8e43491b64d2ce8f1",
+      "edits": [
+        {
+          "before": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=branch-settings-save-20261113');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n",
+          "after": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=auto-branches-20261113-r1');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n"
+        },
+        {
+          "before": "            if (name) name.textContent = window.sessionUser.cashierName;\n            if (role) role.textContent = window.sessionUser.role;\n            window.applyPermissions(); window.applyFranchiseUIProtections?.();\n            // switchView owns the dashboard load; no second subscription pass.\n            window.switchView(workspaceLandingPage(window.sessionUser));\n        } catch (error) { window.stopPOListener?.(); window.sessionUser = null; throw error; }\n",
+          "after": "            if (name) name.textContent = window.sessionUser.cashierName;\n            if (role) role.textContent = window.sessionUser.role;\n            window.applyPermissions(); window.applyFranchiseUIProtections?.();\n            window.ownerBranchDirectory?.apply();\n            // switchView owns the dashboard load; no second subscription pass.\n            window.switchView(workspaceLandingPage(window.sessionUser));\n        } catch (error) { window.stopPOListener?.(); window.sessionUser = null; throw error; }\n"
+        }
+      ]
+    },
+    "takodeal-manager/index.html": {
+      "baselineSha256": "c2040634d88c6cb9b93cd4070fe8817484fc2dba58f4763e9f1d345ac46f6fb0",
+      "candidateSha256": "8327031d13bf94fd45bf0df0bf4ff91a312a8fc2f248e69356e43f5150feca04",
+      "edits": [
+        {
+          "before": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"branch-settings-save-20261113\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome · TAKODEÁL Owner</title>\n",
+          "after": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"auto-branches-20261113-r1\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome · TAKODEÁL Owner</title>\n"
+        },
+        {
+          "before": "  <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=branch-settings-save-20261113\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n",
+          "after": "  <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=auto-branches-20261113-r1\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n"
+        },
+        {
+          "before": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=branch-settings-save-20261113\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n",
+          "after": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=auto-branches-20261113-r1\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n"
+        }
+      ]
+    },
+    "takodeal-manager/main.js": {
+      "baselineSha256": "b18690e117fe1bfae68dd663b7f9f94f67ff93e17c8cec2cadb9091fbf462a4f",
+      "candidateSha256": "e9d52c96ea607777341c3f345b1844617a65d35880efec6bf0095de9525504b1",
+      "edits": [
+        {
+          "before": "import {uploadHQImage} from './hq-image-upload.js';\nimport {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';\nimport {projectWorkedShiftCorrections} from './worked-shift-reference.js';\n",
+          "after": "import {installLiveBranchDirectory} from './live-branch-directory.js';\nimport {uploadHQImage} from './hq-image-upload.js';\nimport {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';\nimport {projectWorkedShiftCorrections} from './worked-shift-reference.js';\n"
+        },
+        {
+          "before": "\n// These scoped readers replace legacy broad audit/payment loading after all wrappers.\nrunManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});\n",
+          "after": "\n// These scoped readers replace legacy broad audit/payment loading after all wrappers.\nrunManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});\n\nwindow.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});\n"
+        }
+      ]
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "baselineSha256": "e2286a87d21c38a853d065403a8a59af3ea7f7eecdb5e930e2326e5aa1c1f226",
+      "candidateSha256": "8707ba92da25a6f69fa19c4172046db3ee855eb0f0a3d5d7a0192f922ad102bc",
+      "edits": [
+        {
+          "before": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v147-branch-settings-save-20261113';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n",
+          "after": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v148-auto-branches-20261113-r1';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n"
+        }
+      ]
+    },
+    "takodeal-manager/sw.js": {
+      "baselineSha256": "61834ab51f12a394a22b712f772219e9cfddfbcb6e1c2b055a725e6726804abc",
+      "candidateSha256": "38b0acdd622ab7b5ab5b10113fabc15789134235f027a516cfa4d178957ba2c9",
+      "edits": [
+        {
+          "before": "const CACHE_NAME = 'takodeal-manager-core-v147-branch-settings-save-20261113';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n",
+          "after": "const CACHE_NAME = 'takodeal-manager-core-v148-auto-branches-20261113-r1';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n"
+        },
+        {
+          "before": "\n// Install the complete local module graph for this release. API traffic stays online.\nCORE_ASSETS.push(\"./branch-private-settings.js\",\"./hq-image-upload.js\",\"./owner-customer-reviews.js\",\"./owner-public-inquiries.js\",\"./owner-prep-client.js\",\"./owner-prep-ui.js\",\"./owner-rider-access.js\",\"./payment-branch-review.js\",\"./recipe-review.css\",\"./recipe-review.js\",\"./request-review-service.js\",\"./staff-pin-proof.js\");\n",
+          "after": "\n// Install the complete local module graph for this release. API traffic stays online.\nCORE_ASSETS.push(\"./branch-private-settings.js\",\"./hq-image-upload.js\",\"./owner-customer-reviews.js\",\"./owner-public-inquiries.js\",\"./owner-prep-client.js\",\"./owner-prep-ui.js\",\"./owner-rider-access.js\",\"./payment-branch-review.js\",\"./recipe-review.css\",\"./recipe-review.js\",\"./request-review-service.js\",\"./staff-pin-proof.js\");\n\nCORE_ASSETS.push('./live-branch-directory.js');\n"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "takodeal-manager/live-branch-directory.js": "79f46d3cd5892d89d40a42a6d7b56ab5cb9046fb5096c54b57a97194cd602aaa"
+  }
+}

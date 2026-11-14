@@ -153,12 +153,14 @@ test('Main Office metadata and cost remain separate even with explicit metadata 
  assert.equal(h.get('inventory/Main Office').purchaseCost,100);assert.equal(h.get('settings/recipe_revision'),undefined);
 });
 
-test('cost sharing cannot also change unit identity or conversion and non-boolean options fail before writes',async()=>{
- for(const patch of [{purchaseUom:'Bottle'},{baseUom:'ml'},{conversionRate:500}]){
-  const h=fixture(),state=await open(h,'Maa');
-  await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15',...patch},{operationId:'cost-unit-'+Object.keys(patch)[0]}),/unit or conversion changes separately/);
-  assert.equal(h.get('inventory/Maa').purchaseCost,100);assert.equal(h.get('inventory/Agdao').purchaseCost,100);assert.equal(h.get('settings/recipe_revision'),undefined);
+test('a store purchase-unit or conversion change and cost save atomically without changing incompatible peer prices or stock',async()=>{
+ for(const patch of [{purchaseUom:'Bottle'},{conversionRate:500}]){
+  const h=fixture(),state=await open(h,'Maa'),before=h.get('inventory/Maa').currentStock;
+  const result=await saveInventoryEditorSettings(h.api,state,{purchaseCost:'15',...patch},{operationId:'cost-unit-'+Object.keys(patch)[0]});
+  assert.equal(result.status,'saved');assert.equal(h.get('inventory/Maa').purchaseCost,15);assert.equal(h.get('inventory/Maa').currentStock,before);
+  assert.equal(h.get('inventory/Agdao').purchaseCost,100);assert.deepEqual(result.copiedCostBranches,[]);assert.ok(result.skippedPeers.length);
  }
+ {const h=fixture(),state=await open(h,'Maa');await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15',baseUom:'ml'},{operationId:'invalid-base-change'}),/reviewed stock conversion/);assert.equal(h.get('inventory/Maa').purchaseCost,100);}
  for(const options of [{syncStoreCost:'true'},{copyMetadata:'true'}]){
   const h=fixture(),state=await open(h,'Maa');await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},options),/Choose whether/);assert.equal(h.get('settings/recipe_revision'),undefined);
  }

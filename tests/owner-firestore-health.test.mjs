@@ -137,12 +137,15 @@ test('snapshot synchronous assertion is reported; cleanup assertions latch once 
 test('actual Owner bootstrap installs logger before Firestore and uses guards for bridge/cache operations',async()=>{
     const source=readFileSync(new URL('../takodeal-manager/firebase-core.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
     const f=browser(),calls=[],raw={};let load;
-    for(const name of ['query','where','collection','getDocs','getDoc','addDoc','getDocsFromServer','getDocFromServer','updateDoc','deleteDoc','doc','setDoc','serverTimestamp','increment','orderBy','limit','ref','uploadBytes','getDownloadURL','getMetadata','writeBatch','onSnapshot','startAfter','runTransaction','enableNetwork','disableNetwork'])raw[name]=(...args)=>{calls.push(name);return name==='getDocs'?Promise.resolve({docs:[]}):args;};
+    for(const name of ['query','where','collection','getDocs','getDoc','addDoc','getDocsFromServer','getDocFromServer','updateDoc','deleteDoc','deleteField','doc','setDoc','serverTimestamp','increment','orderBy','limit','ref','uploadBytes','getDownloadURL','getMetadata','writeBatch','onSnapshot','startAfter','runTransaction','enableNetwork','disableNetwork'])raw[name]=(...args)=>{calls.push(name);return name==='getDocs'?Promise.resolve({docs:[]}):args;};
     vm.runInNewContext(source,{...raw,window:f.w,installFirestoreHealth,guardFirestoreOperations,initializeApp:()=>({}),
         onLog:()=>calls.push('logger'),initializeFirestore:()=>{calls.push('initializeFirestore');return{};},
         persistentLocalCache:value=>value,persistentMultipleTabManager:()=>({}),getAuth:()=>({currentUser:{uid:'sample'}}),GoogleAuthProvider:class{},getStorage:()=>({}),
         createHQAccountReader:()=>()=>{},createDeviceStore:()=>({}),createCollectionCache:loader=>{load=loader;return{get:loader,invalidate(){},clearMemory(){}};}});
     assert.ok(calls.indexOf('logger')<calls.indexOf('initializeFirestore'));assert.equal(f.w.managerCloudHealth.isFailed(),false);assert.equal(f.w.getMetadata,raw.getMetadata);
+    assert.equal(f.w.deleteField,raw.deleteField,'branch settings need the real field-delete helper on the Owner bridge');
+    assert.deepEqual(f.w.deleteField(),[]);
+    assert.match(readFileSync(new URL('../takodeal-manager/firebase-core.js',import.meta.url),'utf8'),/import \{[^\n]*\bdeleteField\b[^\n]*\} from "https:\/\/www\.gstatic\.com\/firebasejs\/[^/]+\/firebase-firestore\.js"/);
     await load('sample');assert.equal(calls.filter(name=>name==='getDocs').length,1);
     f.w.managerCloudHealth.report(fatal());assert.throws(()=>f.w.setDoc('sample',{}),failed);await assert.rejects(load('sample'),failed);
     assert.equal(calls.filter(name=>name==='getDocs').length,1);assert.equal(calls.includes('setDoc'),false);assert.deepEqual(f.effects,[]);

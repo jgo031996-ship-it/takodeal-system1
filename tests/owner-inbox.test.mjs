@@ -24,6 +24,40 @@ function fixture({requests=[row('one')],deductions=[],profiles=[{id:'crew',cashi
 test('concurrent inbox refreshes share two history queries and one profile query without writes',async()=>{
  const gate=hold(),f=fixture({readMany:async reference=>{await gate.promise;return snapshot(reference.table==='staff_requests'?[row('saved',{id:'saved',staffName:'<script>bad</script>'})]:[]);}}),first=f.inbox.load(),second=f.inbox.load();await tick();assert.equal(f.calls.many.length,3);gate.resolve();assert.equal(await first,true);assert.equal(await second,true);assert.equal(f.calls.many.length,3);assert.match(f.nodes.inboxTableBody.innerHTML,/&lt;script&gt;/);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/<script>/);assert.equal(f.nodes.inboxBadge.innerText,1);
 });
+
+test('Owner can open a legacy missing-branch approval while its unique current home is labelled only as a profile reference',async()=>{
+ const saved=row('remote',{type:'Cash Advance',staffId:undefined,branch:undefined,amount:100}),f=fixture({requests:[saved]}),before=structuredClone(saved),bars=[];
+ f.nodes.inboxTableBody.closest=()=>({parentElement:{before:bar=>bars.push(bar)}});
+ f.d.createElement=tag=>({tagName:tag,children:[],style:{},append(...children){this.children.push(...children);},set id(value){this._id=value;f.nodes[value]=this;},get id(){return this._id;}});
+ await f.inbox.load();const html=f.nodes.inboxTableBody.innerHTML,version=Number(/ownerInbox.review\(0,'Approved',(\d+)\)/.exec(html)[1]);
+ assert.match(html,/>Sample Branch<\/span><br><small[^>]*>Current home branch · not saved on request/);f.inbox.review(0,'Approved',version);assert.deepEqual(f.calls.reviews,[['remote','Approved','Cash Advance',100,'Sample Crew']]);
+ assert.equal(f.inbox.request('remote').branch,undefined);assert.deepEqual(saved,before);assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,0);assert.match(bars[0].children.at(-1).textContent,/Staff can send requests from anywhere\. Branch shows a staff\/work reference\./);
+});
+
+test('pending and resolved history share the current-home hint without filling the saved missing branch',async()=>{
+ const saved=row('remote-history',{type:'Cash Advance',branch:null,amount:75}),f=fixture({requests:[saved]});await f.inbox.load();assert.match(f.nodes.inboxTableBody.innerHTML,/Current home branch · not saved on request/);
+ saved.status='Approved';await f.inbox.applyConfirmedRequest('remote-history');f.inbox.toggle('history0');assert.match(f.nodes.resolvedRequestsBody.innerHTML,/>Sample Branch<\/span><br><small[^>]*>Current home branch · not saved on request/);assert.equal(saved.branch,null);assert.equal(f.inbox.request('remote-history').branch,null);assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,1);
+});
+
+test('a saved work branch always wins over a different current home and all branch labels remain escaped',async()=>{
+ const savedBranch='Citygate <img src=x> & "work"',home='Maa <north> & "home"',profiles=[{id:'crew',cashierName:'Sample Crew',branch:home,status:'Active'}],saved=row('saved-work',{type:'Cash Advance',branch:savedBranch}),current=row('current-home',{type:'Cash Advance',branch:undefined}),f=fixture({requests:[saved,current],profiles}),before=structuredClone([saved,current,profiles]);await f.inbox.load();const html=f.nodes.inboxTableBody.innerHTML;
+ const cell=id=>new RegExp('<tr data-inbox-request="'+id+'">([\\s\\S]*?)<\\/tr>').exec(html)[1];assert.match(cell('saved-work'),/Citygate &lt;img src=x&gt; &amp; &quot;work&quot;/);assert.doesNotMatch(cell('saved-work'),/Current home branch|Maa/);assert.match(cell('current-home'),/Maa &lt;north&gt; &amp; &quot;home&quot;/);assert.doesNotMatch(html,/<img|<north>/);assert.deepEqual([saved,current,profiles],before);assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,0);
+});
+
+test('missing profiles, archived duplicate names, alias-only matches and missing stable IDs never guess a current home',async()=>{
+ const active={id:'crew',cashierName:'Sample Crew',branch:'Sample Branch',status:'Active'};
+ for(const [profiles,staffId]of [[[],undefined],[[active,{...active,id:'former',branch:'Other Branch',status:'Archived'}],undefined],[[{...active,cashierName:'Different Saved Name',scheduleNickname:'Sample Crew'}],undefined],[[active],'missing-id']]){
+  const saved=row('unknown-home',{type:'Cash Advance',staffId,branch:undefined}),f=fixture({requests:[saved],profiles}),before=structuredClone(saved);await f.inbox.load();f.inbox.setView('all');const html=f.nodes.inboxTableBody.innerHTML;assert.match(html,/Not saved on request/);assert.doesNotMatch(html,/Current home branch/);assert.deepEqual(saved,before);assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,0);
+ }
+});
+
+test('a linked stable account can show its current home despite another archived employee sharing the saved name',async()=>{
+ const profiles=[{id:'crew',cashierName:'Sample Crew',branch:'Sample Branch',status:'Active'},{id:'former',cashierName:'Sample Crew',branch:'Other Branch',status:'Archived'}],saved=row('linked-home',{type:'Cash Advance',branch:undefined}),f=fixture({requests:[saved],profiles});await f.inbox.load();assert.match(f.nodes.inboxTableBody.innerHTML,/>Sample Branch<\/span><br><small[^>]*>Current home branch/);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/Other Branch/);assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,0);assert.equal(saved.branch,undefined);
+});
+
+test('a current home hint cannot admit missing-branch requests into a restricted manager workspace',async()=>{
+ const missing=row('not-saved',{type:'Cash Advance',branch:undefined}),f=fixture({requests:[row('permitted'),missing]});Object.assign(f.w.auth.currentUser,{email:'manager@example.test'});Object.assign(f.w.sessionUser,{email:'manager@example.test',role:'Manager',isOwner:false,permissions:['inbox'],allowedBranches:['Sample Branch']});await f.inbox.load();assert.equal(f.inbox.request('not-saved'),null);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/data-inbox-request="not-saved"|Current home branch/);assert.match(f.nodes.inboxTableBody.innerHTML,/permitted/);assert.equal(f.calls.many.length,3);assert.ok(f.calls.many.every(ref=>ref.filters.some(filter=>filter.key==='branch'&&filter.value==='Sample Branch')));assert.equal(f.calls.one.length,0);assert.equal(f.calls.reviews.length,0);assert.equal(missing.branch,undefined);
+});
 test('a confirmed early decision reads one request and updates pending/history without either collection reload',async()=>{
  const f=fixture();await f.inbox.load();f.requests[0].status='Not Required';f.requests[0].managerReply='Complete after normal finish.';await f.inbox.applyConfirmedRequest('one');assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,1);assert.match(f.nodes.inboxTableBody.innerHTML,/No pending requests/);assert.equal(f.nodes.inboxBadge.innerText,0);assert.match(f.nodes.resolvedRequestsBody.innerHTML,/View 1 Records/);assert.doesNotMatch(f.nodes.resolvedRequestsBody.innerHTML,/Complete after normal finish/);f.inbox.toggle('history0');assert.match(f.nodes.resolvedRequestsBody.innerHTML,/Complete after normal finish/);assert.match(f.nodes.resolvedRequestsBody.innerHTML,/Not Required/);
 });

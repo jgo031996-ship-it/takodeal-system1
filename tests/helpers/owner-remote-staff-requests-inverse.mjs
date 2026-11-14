@@ -1,0 +1,5 @@
+import {restoreBranchSettingsSave} from './branch-settings-save-inverse.mjs';
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+export const ownerRemoteRequestProof=JSON.parse(readFileSync(new URL('../fixtures/owner-remote-staff-requests-inverse.json',import.meta.url),'utf8'));
+const sha=value=>createHash('sha256').update(value).digest('hex');
+export function restoreOwnerRemoteRequest(file,source){const row=ownerRemoteRequestProof.files[file];if(row&&sha(source)===row.baselineSha256)return source;source=restoreBranchSettingsSave(file,source);if(!row||sha(source)===row.baselineSha256)return source;assert.equal(sha(source),row.candidateSha256,'Only reviewed remote-request display/release hunks: '+file);for(const edit of [...row.edits].reverse()){assert.equal(source.split(edit.after).length,2,'Unique remote-request display hunk: '+file);source=source.replace(edit.after,()=>edit.before);}assert.equal(sha(source),row.baselineSha256,'All other live147 bytes stay exact: '+file);return source;}
