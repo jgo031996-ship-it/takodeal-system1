@@ -127,6 +127,7 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     function schedule(){clearTimeout(pollTimer);if(!d.hidden&&authority.isVerified())pollTimer=setTimeout(()=>start(false),30000);}
     async function run(showChecking){
         const token=++visibleEpoch;if(showChecking){enteredKey='';stopLegacy?.();checking('Connecting to HQ to confirm this phone.');}
+        if(w.staffSelfRepair?.requiresCode()){authority.invalidate();enteredKey='';checking('A confirmed personal-code reset is unfinished. Open Repair Staff app and choose Check saved reset. Your original reference and private approval are kept.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Finish the saved sign-in reset';return;}
         try{const id=deviceId(),result=await authority.confirm(id);if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
         catch(error){if(token===visibleEpoch&&!d.hidden){checking(error.message||'HQ could not confirm this phone. Reconnect and choose Check again.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Connection to HQ needed';}}
         finally{if(token===visibleEpoch)schedule();}

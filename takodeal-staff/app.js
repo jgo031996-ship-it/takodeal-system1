@@ -1,9 +1,10 @@
+import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
 import {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';
 import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
 import {createStaffPayrollAttendanceReader} from './staff-payroll-reader.js';
-import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged,updateCurrentUser} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {installStaffOnboarding} from './onboarding-ui.js';
 import {onboardingDay} from './onboarding-model.js';
 import {contractOfferFingerprint,reviewedContractRate,signOfferedContract} from './onboarding-service.js';
@@ -40,7 +41,8 @@ import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
 import {installStaffDocuments} from './staff-documents.js';
-import {createStaffDocumentFirebase} from './staff-document-firebase.js';
+import {createStaffDocumentFirebase,readInitializedStaffDocumentClient} from './staff-document-firebase.js';
+import {createStaffSelfRepairSDK} from './staff-self-repair-sdk.js';
 import {profileDailyRate} from './staff-rate-privacy.js';
 import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, calculateShiftEarnings, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
@@ -57,9 +59,9 @@ import {savedShiftChoices,savedShiftChoicesHTML,selectedSavedShiftChoice,makeSav
 import {chooseClockInSchedule} from './attendance-shift-declaration-ui.js';
 import {revalidateClockInScheduleDeclaration,clockInDeclarationSavedProposal,clockInDeclarationRequest} from './attendance-shift-declaration.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeApp,getApps } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction,waitForPendingWrites } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -218,6 +220,7 @@ window.getClosestBranch = function() {
 };
 
 window.checkNormalLogin = function() {
+    if(window.staffSelfRepair?.requiresCode()){window.startStaffDeviceSetup?.();return false;}
     if(!window.staffSetupAccess?.isVerified()){window.startStaffDeviceSetup?.();return false;}
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedId = localStorage.getItem('takodeal_staff_id');
@@ -262,6 +265,7 @@ window.checkNormalLogin = function() {
 };
 
 window.loginStaff = async function() {
+    if(window.staffSelfRepair?.requiresCode()){window.staffSelfRepair.open();return false;}
     let pinInput = document.getElementById('loginPin').value.trim();
     let errorMsg = document.getElementById('loginError');
     let btn = document.querySelector('#loginOverlay .btn-primary');
@@ -1393,7 +1397,11 @@ window.punchTime = async function(type) {
 
     } catch(e) { 
         console.error(e); 
-        Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
+        if(e.staffAccessRecovery){
+            const help=e.staffAccessRecovery;
+            const answer=await Swal.fire({titleText:help.title,text:help.message,icon:'warning',showCancelButton:help.action==='phone',confirmButtonText:'Back to Time Clock',cancelButtonText:'Phone setup help',footer:'Your saved attendance, reason and selected screenshot are kept.'});
+            if(help.action==='phone'&&answer.dismiss===Swal.DismissReason?.cancel)window.staffSelfRepair?.open();
+        }else Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
     } 
     finally { 
         window.staffPunchBusy = false;
@@ -2824,31 +2832,61 @@ window.loadStaffSchedule = async function() {
 };
 
 window.cancelSwapRequest = function() {
-    if(window.staffSwapSubmitting)return;
+    if(window.staffSwapWritePending)return staffSwapMessage('Request is sending','Wait for HQ to confirm the request. Closing or retrying now could hide its result.','info');
+    if(window.pendingSwapData?.sendUnconfirmed)return staffSwapMessage('Keep the previous send reference','Its result is not confirmed. Check with your co-worker or Owner before closing or starting another request.','warning');
+    const workflow=window.staffSwapWorkflow;if(workflow){workflow.cancelled=true;finishStaffSwapProgress(workflow);}
     window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
     window.pendingSwapData=null;
+    window.staffSwapSubmitting=null;
+    const button=document.getElementById('btnSendSwap'),cancel=document.getElementById('btnCancelSwap');if(button){button.disabled=false;button.textContent='Send Request';}if(cancel)cancel.disabled=false;
     const modal=document.getElementById('swapRequestModal');if(modal)modal.style.display='none';
 };
 
+function staffSwapMessage(title,text,icon){
+    const modal=document.getElementById('swapRequestModal');
+    return Swal.fire({...modal&&modal.style.display!=='none'?{target:modal}:{},titleText:title,text,icon});
+}
+function beginStaffSwapProgress(title){
+    const modal=document.getElementById('swapRequestModal'),workflow={phase:'checking',cancelled:false,popup:null};window.staffSwapWorkflow=workflow;
+    Promise.resolve(Swal.fire({...modal&&modal.style.display!=='none'?{target:modal}:{},titleText:title,text:'Confirming the current saved evidence. Slow connections can take up to 45 seconds. Nothing has been sent yet.',allowOutsideClick:false,allowEscapeKey:true,showCancelButton:true,cancelButtonText:'Cancel check',didOpen:popup=>{if(window.staffSwapWorkflow!==workflow||workflow.phase!=='checking'||workflow.cancelled)return;const currentPopup=Swal.getPopup?.();if(popup&&currentPopup!==popup)return;workflow.popup=currentPopup;Swal.showLoading();}})).then(result=>{
+        if(window.staffSwapWorkflow===workflow&&workflow.phase==='checking'&&['cancel','esc'].includes(result?.dismiss))window.cancelSwapRequest();
+    }).catch(()=>{if(window.staffSwapWorkflow===workflow&&workflow.phase==='checking')window.cancelSwapRequest();});
+    return workflow;
+}
+function updateStaffSwapProgress(workflow,text,writing=false){
+    if(window.staffSwapWorkflow!==workflow||workflow.cancelled)return;
+    if(workflow.popup&&Swal.getPopup?.()!==workflow.popup)return;
+    Swal.update?.({titleText:writing?'Sending your swap request…':text,text:writing?'Keep this screen open until HQ confirms the send. Do not send the request again while its result is unknown.':'Checking fresh saved evidence across all branches. Nothing has been sent yet.',showCancelButton:!writing,allowEscapeKey:!writing});
+}
+function finishStaffSwapProgress(workflow){
+    if(window.staffSwapWorkflow!==workflow)return;
+    workflow.phase='finished';window.staffSwapWorkflow=null;
+    if(!workflow.popup||Swal.getPopup?.()===workflow.popup)Swal.close?.();
+}
+
 window.initiateSwapRequest = async function(day,dateStr,branch,myShiftId,myShiftName) {
-    if(window.staffSwapSubmitting)return Swal.fire('Sending request','Wait for your current request to finish.','info');
+    if(window.pendingSwapData?.sendUnconfirmed)return staffSwapMessage('Check the previous send','Its result is not confirmed. Check with your co-worker or Owner before starting another request.','warning');
+    if(window.staffSwapSubmitting||window.staffSwapWritePending)return staffSwapMessage('Sending request','Wait for your current request to finish.','info');
+    if(window.staffSwapWorkflow?.phase==='checking')return;
     const staffId=localStorage.getItem('takodeal_staff_id'),staffName=localStorage.getItem('takodeal_staff_name');
+    const user=staffPrimaryAuth.currentUser,deviceId=localStorage.getItem('takodeal_device_id');
     const scheduleToken=window.staffScheduleSync?.token();
     const generation=window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
     window.pendingSwapData=null;
+    let workflow;
     const assertCurrent=()=>{
-        if(window.staffSwapRequestGeneration!==generation||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff account or swap selection changed. Open the request again.');
+        if(window.staffSwapRequestGeneration!==generation||workflow?.cancelled||staffPrimaryAuth.currentUser!==user||localStorage.getItem('takodeal_device_id')!==deviceId||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff account or swap selection changed. Open the request again.');
         if(window.staffScheduleSync&&!window.staffScheduleSync.current(scheduleToken))throw Error('The schedule view changed. Open the request again.');
         if(document.getElementById('staffMonthPicker')?.value!==monthKey(dateStr))throw Error('The selected schedule month changed. Open the request again.');
     };
     try {
         const date=scheduleDateKey(dateStr);
         if(Number(day)!==Number(date.slice(-2))||date<scheduleDateKey(new Date()))throw Error('Choose a current or future work date.');
-        Swal.fire({title:'Checking all branch schedules…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-        const context=await loadStaffSwapContext(window,{staffId,staffName,workDate:date,assertCurrent});
+        workflow=beginStaffSwapProgress('Checking all branch schedules…');
+        const context=await loadStaffSwapContext(window,{staffId,staffName,workDate:date,assertCurrent,onProgress:text=>updateStaffSwapProgress(workflow,text)});
         const candidates=swapCandidates({snapshot:context.snapshot,daySnapshots:context.daySnapshots,workDate:date,requesterBranch:branch,requesterShiftId:myShiftId,requesterAliases:context.requesterAliases,requesterStaffId:staffId});
-        assertCurrent();Swal.close?.();
-        if(!candidates.length)return Swal.fire('No eligible co-workers','No eligible scheduled or standby staff were found across the saved branch schedules for this date. HQ can review missing or conflicting assignments.','info');
+        assertCurrent();finishStaffSwapProgress(workflow);
+        if(!candidates.length)return staffSwapMessage('No eligible co-workers','No eligible scheduled or standby staff were found across the saved branch schedules for '+date+'. No request was sent. Ask HQ to check your exact assignment, staff links, saved hours and overnight conflicts.','info');
         const select=document.getElementById('swapCandidateSelect'),placeholder=document.createElement('option');
         placeholder.value='';placeholder.textContent='-- Choose Co-Worker --';select.replaceChildren(placeholder);
         for(const kind of ['scheduled','standby']){
@@ -2863,32 +2901,38 @@ window.initiateSwapRequest = async function(day,dateStr,branch,myShiftId,myShift
         }
         const assigned=context.snapshot.currentSchedule[context.day][branch].scheduled[myShiftId];
         const rule=context.snapshot.branchConfig[branch].find(shift=>shift.id===myShiftId);
-        window.pendingSwapData={day:context.day,dateStr:date,workDate:date,branch,myShiftId,myShiftName:rule.name||myShiftName,sourceScheduleMonth:context.sourceScheduleMonth,sourceRevisionId:context.sourceRevisionId,requesterAssignedName:assigned,staffId,staffName,generation,contextKey:staffSwapContextKey(context),candidates};
+        window.pendingSwapData={day:context.day,dateStr:date,workDate:date,branch,myShiftId,myShiftName:rule.name||myShiftName,sourceScheduleMonth:context.sourceScheduleMonth,sourceRevisionId:context.sourceRevisionId,requesterAssignedName:assigned,staffId,staffName,user,deviceId,generation,contextKey:staffSwapContextKey(context),candidates};
         document.getElementById('swapModalDetails').textContent='You are requesting to trade '+(rule.name||myShiftName)+' at '+branch+' on '+date+'. Branches are shown beside each co-worker.';
         document.getElementById('swapRequestModal').style.display='flex';
     }catch(error){
+        if(workflow)finishStaffSwapProgress(workflow);
         if(window.staffSwapRequestGeneration!==generation)return;
-        Swal.fire('Could not prepare swap',error.message,'warning');
+        staffSwapMessage('Could not prepare swap',error.message+' No request was sent.','warning');
     }
 };
 
 window.submitSwapRequest = async function() {
     const select=document.getElementById('swapCandidateSelect'),selectedValue=select.value,d=window.pendingSwapData,index=Number(selectedValue);
-    if(!d||!selectedValue||!Number.isSafeInteger(index)||String(index)!==selectedValue||!d.candidates[index])return Swal.fire('Required','Please select a co-worker from this request.','warning');
+    if(!d||!selectedValue||!Number.isSafeInteger(index)||String(index)!==selectedValue||!d.candidates[index])return staffSwapMessage('Required','Please select a co-worker from this request.','warning');
     if(window.staffSwapSubmitting)return;
+    if(window.staffSwapWritePending)return staffSwapMessage('Check the previous send','A previous send is still pending or unconfirmed. Check with your co-worker or Owner before sending again.','warning');
+    if(d.sendUnconfirmed)return staffSwapMessage('Check the previous send','Its result was not confirmed. Check with your co-worker or Owner before starting another request.','warning');
     const candidate=d.candidates[index],button=document.getElementById('btnSendSwap'),cancel=document.getElementById('btnCancelSwap');
+    let workflow,writeStarted=false,writeAcknowledged=false;
     const assertCurrent=()=>{
-        if(window.pendingSwapData!==d||window.staffSwapRequestGeneration!==d.generation||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||document.getElementById('staffMonthPicker')?.value!==d.sourceScheduleMonth||select.value!==selectedValue||document.getElementById('swapRequestModal').style.display==='none')throw Error('Your staff account, date or selected co-worker changed. Open the request again.');
+        if(window.pendingSwapData!==d||window.staffSwapRequestGeneration!==d.generation||workflow?.cancelled||staffPrimaryAuth.currentUser!==d.user||localStorage.getItem('takodeal_device_id')!==d.deviceId||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||document.getElementById('staffMonthPicker')?.value!==d.sourceScheduleMonth||select.value!==selectedValue||document.getElementById('swapRequestModal').style.display==='none')throw Error('Your staff account, date or selected co-worker changed. Open the request again.');
     };
-    window.staffSwapSubmitting=d;if(button){button.disabled=true;button.textContent='Checking and sending…';}if(cancel)cancel.disabled=true;
+    window.staffSwapSubmitting=d;if(button){button.disabled=true;button.textContent='Checking current schedule…';}if(cancel)cancel.disabled=false;
     try {
         assertCurrent();
         if(d.workDate<scheduleDateKey(new Date()))throw Error('Past schedules stay unchanged. Choose a current or future work date.');
-        const context=await loadStaffSwapContext(window,{staffId:d.staffId,staffName:d.staffName,workDate:d.workDate,assertCurrent});
+        workflow=beginStaffSwapProgress('Checking before sending…');
+        const context=await loadStaffSwapContext(window,{staffId:d.staffId,staffName:d.staffName,workDate:d.workDate,assertCurrent,onProgress:text=>updateStaffSwapProgress(workflow,text)});
         if(staffSwapContextKey(context)!==d.contextKey)throw Error('HQ changed the schedule while this request was open. Refresh and choose again.');
         const fresh=swapCandidates({snapshot:context.snapshot,daySnapshots:context.daySnapshots,workDate:d.workDate,requesterBranch:d.branch,requesterShiftId:d.myShiftId,requesterAliases:context.requesterAliases,requesterStaffId:d.staffId}).find(row=>swapCandidateKey(row)===swapCandidateKey(candidate));
         if(!fresh)throw Error('This co-worker is no longer eligible for this swap. Refresh and choose again.');
         assertCurrent();
+        workflow.phase='writing';writeStarted=true;window.staffSwapWritePending=true;if(cancel)cancel.disabled=true;if(button)button.textContent='Waiting for HQ confirmation…';updateStaffSwapProgress(workflow,'',true);
         await addDoc(collection(db,'shift_swaps'),{
             requesterName:context.requesterName,requesterStaffId:d.staffId,requesterAssignedName:d.requesterAssignedName,
             targetName:fresh.targetName||fresh.targetAssignedName,targetAssignedName:fresh.targetAssignedName,
@@ -2898,13 +2942,17 @@ window.submitSwapRequest = async function() {
             requesterShiftId:d.myShiftId,requesterShiftName:d.myShiftName,targetShiftId:fresh.targetShiftId,targetShiftName:fresh.targetShiftName,
             requestVersion:SWAP_REQUEST_VERSION,status:SWAP_PENDING_STATUS,timestamp:serverTimestamp()
         });
-        if(window.pendingSwapData!==d||localStorage.getItem('takodeal_staff_id')!==d.staffId)return;
-        document.getElementById('swapRequestModal').style.display='none';window.pendingSwapData=null;
-        Swal.fire('Request sent','Your request was sent to '+(fresh.targetName||fresh.targetAssignedName)+'. The schedule changes only after their acceptance and HQ approval.','success');
+        writeAcknowledged=true;window.staffSwapWritePending=false;finishStaffSwapProgress(workflow);
+        const ownsWindow=window.pendingSwapData===d;if(ownsWindow)window.pendingSwapData=null;
+        if(!ownsWindow||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||staffPrimaryAuth.currentUser!==d.user)return;
+        document.getElementById('swapRequestModal').style.display='none';
+        staffSwapMessage('Request sent','Your request was sent to '+(fresh.targetName||fresh.targetAssignedName)+'. The schedule changes only after their acceptance and HQ approval.','success');
     }catch(error){
-        if(window.pendingSwapData===d&&localStorage.getItem('takodeal_staff_id')===d.staffId)Swal.fire('Could not send request',error.message,'warning');
+        const unconfirmed=writeStarted&&!writeAcknowledged;if(unconfirmed)d.sendUnconfirmed=true;
+        window.staffSwapWritePending=unconfirmed;if(workflow)finishStaffSwapProgress(workflow);
+        if(localStorage.getItem('takodeal_staff_id')===d.staffId&&localStorage.getItem('takodeal_staff_name')===d.staffName&&staffPrimaryAuth.currentUser===d.user&&(window.pendingSwapData===d||writeAcknowledged))staffSwapMessage(writeAcknowledged?'Request saved':unconfirmed?'Send not confirmed':'Could not send request',writeAcknowledged?'HQ confirmed the send, but this screen could not finish refreshing. Check with your co-worker; do not send it again.':unconfirmed?'The send was not confirmed. Check with your co-worker or Owner before starting another request; it may already be saved.':error.message+' No request was sent.','warning');
     }finally{
-        if(window.staffSwapSubmitting===d){window.staffSwapSubmitting=null;if(button){button.disabled=false;button.textContent='Send Request';}if(cancel)cancel.disabled=false;}
+        if(window.staffSwapSubmitting===d){window.staffSwapSubmitting=null;if(button){button.disabled=d.sendUnconfirmed===true;button.textContent=d.sendUnconfirmed?'Check previous send':'Send Request';}if(cancel)cancel.disabled=false;}
     }
 };
 
@@ -3799,9 +3847,19 @@ window.savePrivateVaultPin=(input,options)=>window.staffPrivateProfileClient.vau
 window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createPrivateStaffClient});
 installStaffPortal();
 installStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});
-installStaffLocation();
+window.staffBranchDirectory=installLiveBranchDirectory(window,document,{kind:'staff',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});
+installStaffLocation({loadBranches:()=>getDocsFromServer(collection(db,'branches'))});
 installPayrollVaultFreshness(window,document);
 let setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;
+if(window.staffSelfRepair){
+    let repairStateKey='';
+    window.addEventListener('takodeal-staff-repair-state',()=>{
+        if(window.staffSelfRepair.requiresCode()){window.staffSetupAccess?.invalidate();window.startStaffDeviceSetup?.();return;}
+        let row;try{row=JSON.parse(localStorage.getItem('takodeal_staff_self_repair_v1')||'null');}catch{return;}
+        if(row?.phase==='complete'&&row.candidateUid===staffPrimaryAuth.currentUser?.uid&&row.candidateDeviceId===localStorage.getItem('takodeal_device_id')&&repairStateKey!==row.operationId){repairStateKey=row.operationId;window.staffSetupAccess?.invalidate();window.startStaffDeviceSetup?.();}
+    });
+    window.staffSelfRepair.configureSDK(createStaffSelfRepairSDK({app,auth:staffPrimaryAuth,db,config:firebaseConfig,sdk:{getApps,initializeApp,getAuth,setPersistence,browserLocalPersistence,signInAnonymously,updateCurrentUser,waitForPendingWrites},readPrivateClient:readInitializedStaffDocumentClient,window}));
+}
 installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,setup:{
     auth:staffPrimaryAuth,
     ensureUser:async({guard=()=>{}}={})=>{

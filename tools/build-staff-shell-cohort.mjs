@@ -21,6 +21,7 @@ function visit(file){
 }
 visit(localFile('./app.js'));visit(localFile('./staff-phone.js'));
 if(!shell.includes('./staff-startup.js'))throw Error('The independent startup recovery must be in the Staff shell.');
+if(!shell.includes('./staff-self-repair.js'))throw Error('The parser-inline self-repair runtime must be in the Staff shell.');
 const integrity={};for(const relative of shell){const bytes=readFileSync(localFile(relative));integrity[relative]={sha256:digest(bytes),bytes:bytes.length};}
 const hash=digest(JSON.stringify(integrity)),block='// BEGIN GENERATED STAFF COHORT\nconst SHELL_INTEGRITY = '+JSON.stringify(integrity,null,2)+';\nconst COHORT_HASH = '+JSON.stringify(hash)+';\n// END GENERATED STAFF COHORT';
 const pattern=/\/\/ BEGIN GENERATED STAFF COHORT[\s\S]*?\/\/ END GENERATED STAFF COHORT/;

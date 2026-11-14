@@ -38,8 +38,8 @@ process.stdout.write(JSON.stringify({fresh,mixedModel,mixedOldUpdater}));`;
  return captured;
 }
 
-test('the current complete 77-module Staff graph links without app evaluation or external SDK execution',()=>{
- const {fresh}=moduleResults();assert.equal(fresh.linked,true,fresh.failure?.message);assert.equal(fresh.localModules,77);assert.equal(fresh.evaluated,false);assert.equal(fresh.registrationInstalled,false);
+test('the current complete 79-module Staff graph links without app evaluation or external SDK execution',()=>{
+ const {fresh}=moduleResults();assert.equal(fresh.linked,true,fresh.failure?.message);assert.equal(fresh.localModules,79);assert.equal(fresh.evaluated,false);assert.equal(fresh.registrationInstalled,false);
 });
 
 test('exact previous a3 cached document model breaks actual current app linking before any registration handler runs',()=>{
