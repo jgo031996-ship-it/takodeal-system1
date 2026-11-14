@@ -1,0 +1,101 @@
+{
+  "base": "f4d7ce1f4cb23df4791ab8298db5b2e4386e567f",
+  "files": {
+    "takodeal-manager/dispatch-safety.js": {
+      "baselineSha256": "0c4d4142ef76c5f3ac84e37ad46fb46bf4c76389aee527376dbf310bd6775049",
+      "candidateSha256": "893b7a2212b74fb18c48ab18b33a6fff93972010c80f8e78bd863cd8308c81fb",
+      "edits": [
+        {
+          "before": "}\n\n// Keep the delivery record as the return marker. Retries never refund it twice.\nexport async function transitionDispatch(api, {ids, mode, actor}) {\n    const unique=[...new Set(ids.filter(Boolean))];\n    if (!unique.length || unique.length>80 || !['arrive','return'].includes(mode)) throw new Error('Select up to 80 delivery items.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const id of unique) {\n        const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));\n",
+          "after": "}\n\n// Keep the delivery record as the return marker. Retries never refund it twice.\n// Status and receipt saves use the same byte-based limits as dispatch creation,\n// so a complete saved shipment is never rejected just for having over 80 lines.\nfunction deliveryTransaction(transaction) {\n    let payloadBytes=0;\n    const budget=(reference,data)=>{\n        const size=new TextEncoder().encode(JSON.stringify({path:reference.path||reference.id,data})).length;\n        if(size>800*1024||(payloadBytes+=size)>4*1024*1024)throw Error('This delivery contains too much saved detail for one safe save. No items were changed. Review the item notes before retrying.');\n    };\n    return {get:ref=>transaction.get(ref),set:(ref,data,...options)=>{budget(ref,data);return transaction.set(ref,data,...options);},update:(ref,data)=>{budget(ref,data);return transaction.update(ref,data);}};\n}\n\nexport async function transitionDispatch(api, {ids, mode, actor}) {\n    const unique=[...new Set(ids.filter(Boolean))];\n    if (!unique.length || !['arrive','return'].includes(mode)) throw new Error('Select delivery items and a valid delivery action.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const id of unique) {\n        const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));\n"
+        },
+        {
+          "before": "        }\n        resolved.push({id,source,stockRef});\n    }\n    return api.runTransaction(api.db,async tx=>{\n        const deliveries=[], stocks=new Map();\n        for (const entry of resolved) {\n            const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);\n",
+          "after": "        }\n        resolved.push({id,source,stockRef});\n    }\n    return api.runTransaction(api.db,async transaction=>{\n        const tx=deliveryTransaction(transaction);\n        const deliveries=[], stocks=new Map();\n        for (const entry of resolved) {\n            const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);\n"
+        },
+        {
+          "before": "}\n\nexport async function receiveDispatch(api,{branch,actor,items}) {\n    if (!branch || !items.length || items.length>80 || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select up to 80 unique delivery items.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const input of items) {\n        if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');\n",
+          "after": "}\n\nexport async function receiveDispatch(api,{branch,actor,items}) {\n    if (!branch || !items.length || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select unique delivery items for this branch.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const input of items) {\n        if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');\n"
+        },
+        {
+          "before": "        }\n        resolved.push({input,stockRef,master});\n    }\n    return api.runTransaction(api.db,async tx=>{\n        const rows=[],stocks=new Map();\n        for (const {input,stockRef,master} of resolved) {\n            const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);\n",
+          "after": "        }\n        resolved.push({input,stockRef,master});\n    }\n    return api.runTransaction(api.db,async transaction=>{\n        const tx=deliveryTransaction(transaction);\n        const rows=[],stocks=new Map();\n        for (const {input,stockRef,master} of resolved) {\n            const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);\n"
+        }
+      ]
+    },
+    "Takodeal-POS/dispatch-safety.js": {
+      "baselineSha256": "0c4d4142ef76c5f3ac84e37ad46fb46bf4c76389aee527376dbf310bd6775049",
+      "candidateSha256": "893b7a2212b74fb18c48ab18b33a6fff93972010c80f8e78bd863cd8308c81fb",
+      "edits": [
+        {
+          "before": "}\n\n// Keep the delivery record as the return marker. Retries never refund it twice.\nexport async function transitionDispatch(api, {ids, mode, actor}) {\n    const unique=[...new Set(ids.filter(Boolean))];\n    if (!unique.length || unique.length>80 || !['arrive','return'].includes(mode)) throw new Error('Select up to 80 delivery items.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const id of unique) {\n        const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));\n",
+          "after": "}\n\n// Keep the delivery record as the return marker. Retries never refund it twice.\n// Status and receipt saves use the same byte-based limits as dispatch creation,\n// so a complete saved shipment is never rejected just for having over 80 lines.\nfunction deliveryTransaction(transaction) {\n    let payloadBytes=0;\n    const budget=(reference,data)=>{\n        const size=new TextEncoder().encode(JSON.stringify({path:reference.path||reference.id,data})).length;\n        if(size>800*1024||(payloadBytes+=size)>4*1024*1024)throw Error('This delivery contains too much saved detail for one safe save. No items were changed. Review the item notes before retrying.');\n    };\n    return {get:ref=>transaction.get(ref),set:(ref,data,...options)=>{budget(ref,data);return transaction.set(ref,data,...options);},update:(ref,data)=>{budget(ref,data);return transaction.update(ref,data);}};\n}\n\nexport async function transitionDispatch(api, {ids, mode, actor}) {\n    const unique=[...new Set(ids.filter(Boolean))];\n    if (!unique.length || !['arrive','return'].includes(mode)) throw new Error('Select delivery items and a valid delivery action.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const id of unique) {\n        const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));\n"
+        },
+        {
+          "before": "        }\n        resolved.push({id,source,stockRef});\n    }\n    return api.runTransaction(api.db,async tx=>{\n        const deliveries=[], stocks=new Map();\n        for (const entry of resolved) {\n            const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);\n",
+          "after": "        }\n        resolved.push({id,source,stockRef});\n    }\n    return api.runTransaction(api.db,async transaction=>{\n        const tx=deliveryTransaction(transaction);\n        const deliveries=[], stocks=new Map();\n        for (const entry of resolved) {\n            const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);\n"
+        },
+        {
+          "before": "}\n\nexport async function receiveDispatch(api,{branch,actor,items}) {\n    if (!branch || !items.length || items.length>80 || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select up to 80 unique delivery items.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const input of items) {\n        if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');\n",
+          "after": "}\n\nexport async function receiveDispatch(api,{branch,actor,items}) {\n    if (!branch || !items.length || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select unique delivery items for this branch.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const input of items) {\n        if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');\n"
+        },
+        {
+          "before": "        }\n        resolved.push({input,stockRef,master});\n    }\n    return api.runTransaction(api.db,async tx=>{\n        const rows=[],stocks=new Map();\n        for (const {input,stockRef,master} of resolved) {\n            const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);\n",
+          "after": "        }\n        resolved.push({input,stockRef,master});\n    }\n    return api.runTransaction(api.db,async transaction=>{\n        const tx=deliveryTransaction(transaction);\n        const rows=[],stocks=new Map();\n        for (const {input,stockRef,master} of resolved) {\n            const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);\n"
+        }
+      ]
+    },
+    "takodeal-franchise/dispatch-safety.js": {
+      "baselineSha256": "0c4d4142ef76c5f3ac84e37ad46fb46bf4c76389aee527376dbf310bd6775049",
+      "candidateSha256": "893b7a2212b74fb18c48ab18b33a6fff93972010c80f8e78bd863cd8308c81fb",
+      "edits": [
+        {
+          "before": "}\n\n// Keep the delivery record as the return marker. Retries never refund it twice.\nexport async function transitionDispatch(api, {ids, mode, actor}) {\n    const unique=[...new Set(ids.filter(Boolean))];\n    if (!unique.length || unique.length>80 || !['arrive','return'].includes(mode)) throw new Error('Select up to 80 delivery items.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const id of unique) {\n        const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));\n",
+          "after": "}\n\n// Keep the delivery record as the return marker. Retries never refund it twice.\n// Status and receipt saves use the same byte-based limits as dispatch creation,\n// so a complete saved shipment is never rejected just for having over 80 lines.\nfunction deliveryTransaction(transaction) {\n    let payloadBytes=0;\n    const budget=(reference,data)=>{\n        const size=new TextEncoder().encode(JSON.stringify({path:reference.path||reference.id,data})).length;\n        if(size>800*1024||(payloadBytes+=size)>4*1024*1024)throw Error('This delivery contains too much saved detail for one safe save. No items were changed. Review the item notes before retrying.');\n    };\n    return {get:ref=>transaction.get(ref),set:(ref,data,...options)=>{budget(ref,data);return transaction.set(ref,data,...options);},update:(ref,data)=>{budget(ref,data);return transaction.update(ref,data);}};\n}\n\nexport async function transitionDispatch(api, {ids, mode, actor}) {\n    const unique=[...new Set(ids.filter(Boolean))];\n    if (!unique.length || !['arrive','return'].includes(mode)) throw new Error('Select delivery items and a valid delivery action.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const id of unique) {\n        const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));\n"
+        },
+        {
+          "before": "        }\n        resolved.push({id,source,stockRef});\n    }\n    return api.runTransaction(api.db,async tx=>{\n        const deliveries=[], stocks=new Map();\n        for (const entry of resolved) {\n            const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);\n",
+          "after": "        }\n        resolved.push({id,source,stockRef});\n    }\n    return api.runTransaction(api.db,async transaction=>{\n        const tx=deliveryTransaction(transaction);\n        const deliveries=[], stocks=new Map();\n        for (const entry of resolved) {\n            const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);\n"
+        },
+        {
+          "before": "}\n\nexport async function receiveDispatch(api,{branch,actor,items}) {\n    if (!branch || !items.length || items.length>80 || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select up to 80 unique delivery items.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const input of items) {\n        if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');\n",
+          "after": "}\n\nexport async function receiveDispatch(api,{branch,actor,items}) {\n    if (!branch || !items.length || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select unique delivery items for this branch.');\n    const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];\n    for (const input of items) {\n        if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');\n"
+        },
+        {
+          "before": "        }\n        resolved.push({input,stockRef,master});\n    }\n    return api.runTransaction(api.db,async tx=>{\n        const rows=[],stocks=new Map();\n        for (const {input,stockRef,master} of resolved) {\n            const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);\n",
+          "after": "        }\n        resolved.push({input,stockRef,master});\n    }\n    return api.runTransaction(api.db,async transaction=>{\n        const tx=deliveryTransaction(transaction);\n        const rows=[],stocks=new Map();\n        for (const {input,stockRef,master} of resolved) {\n            const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);\n"
+        }
+      ]
+    },
+    "Takodeal-POS/sw.js": {
+      "baselineSha256": "c6b2e0e23e13c36f8493c5a9215f7dd5892b1c564a5e51c2ea3e5b089e278e9d",
+      "candidateSha256": "c326f60b96aded9dcddcb50228bcf4cf268ecdc019af0a2cb8d623710aca0ac6",
+      "edits": [
+        {
+          "before": "// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =\n// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.\nconst CORE = 'takodeal-pos-core-cashier-auto-branches-20261113-r1';\n\nconst PHOTOS = 'takodeal-pos-photos-offline02';\nconst ROOT = new URL('./', self.location.href);\n",
+          "after": "// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =\n// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.\nconst CORE = 'takodeal-pos-core-cashier-large-delivery-20261114-r1';\n\nconst PHOTOS = 'takodeal-pos-photos-offline02';\nconst ROOT = new URL('./', self.location.href);\n"
+        }
+      ]
+    },
+    "Takodeal-POS/index.html": {
+      "baselineSha256": "8dd786b4c6cabc94083f98abd144909fe747fa8d293fdc3bd55b1a1543ef6282",
+      "candidateSha256": "a34057305db0321538a0ee15e9d5908197ad8c5f0a2e4d6924ce871384df357c",
+      "edits": [
+        {
+          "before": "            });\n        };\n    </script>\n    <script type=\"module\" src=\"main.js?v=cashier-auto-branches-20261113-r1\"></script>\n    <script>\n    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER\n    if ('serviceWorker' in navigator) {\n",
+          "after": "            });\n        };\n    </script>\n    <script type=\"module\" src=\"main.js?v=cashier-large-delivery-20261114-r1\"></script>\n    <script>\n    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER\n    if ('serviceWorker' in navigator) {\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-data.js": {
+      "baselineSha256": "57b6c5da05815d553c33c4a8db051942d11fdbb80ce575393e156fc9fcbbffa2",
+      "candidateSha256": "c6f4842603c97bfe7e1b4c3027c924168c250932bfd152dc2bdc141df571a577",
+      "edits": [
+        {
+          "before": "// Presentation helpers only: no sale, inventory or attendance writes.\nimport {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';\nexport const CASHIER_RELEASE = 'cashier-auto-branches-20261113-r1';\nexport function millis(value) {\n  if (value == null) return NaN;\n  if (typeof value.toMillis === 'function') return value.toMillis();\n",
+          "after": "// Presentation helpers only: no sale, inventory or attendance writes.\nimport {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';\nexport const CASHIER_RELEASE = 'cashier-large-delivery-20261114-r1';\nexport function millis(value) {\n  if (value == null) return NaN;\n  if (typeof value.toMillis === 'function') return value.toMillis();\n"
+        }
+      ]
+    }
+  }
+}
