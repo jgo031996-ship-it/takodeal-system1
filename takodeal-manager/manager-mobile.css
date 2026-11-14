@@ -234,3 +234,73 @@
   body.manager-theme #branchSettingsModal button { min-height: 44px; white-space: normal; }
   body.manager-theme #branchSettingsModal #logoPreviewContainer button { width: 44px !important; height: 44px !important; }
 }
+
+/* Keep the employee form in one scroll pane. Header and actions do not
+   participate in flex shrink as asynchronous history/document rows arrive. */
+#employeeProfileModal .employee-profile-card { min-width: 0; box-sizing: border-box; }
+#employeeProfileModal .employee-profile-header,
+#employeeProfileModal .employee-profile-actions { flex: 0 0 auto; }
+#employeeProfileModal .employee-profile-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0;
+  min-width: 0;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+}
+@media (max-width: 768px) {
+  #employeeProfileModal {
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 8px;
+    box-sizing: border-box;
+    align-items: flex-start !important;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  #employeeProfileModal .employee-profile-card {
+    width: 100% !important;
+    max-width: 850px !important;
+    height: calc(100vh - 16px) !important;
+    height: calc(100svh - 16px) !important;
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px !important;
+  }
+  #employeeProfileModal .employee-profile-header { padding: 10px 12px !important; gap: 8px; }
+  #employeeProfileModal .employee-profile-header h2 { font-size: 16px !important; line-height: 1.3; }
+  #employeeProfileModal .employee-profile-header button { flex: 0 0 44px; min-width: 44px; min-height: 44px; }
+  #employeeProfileModal .employee-profile-scroll { padding: 12px !important; }
+  #employeeProfileModal .employee-profile-scroll > div { min-width: 0; max-width: 100%; box-sizing: border-box; }
+  #employeeProfileModal .employee-profile-scroll > div[style*="background: white"] { padding: 14px !important; }
+  #employeeProfileModal .employee-profile-scroll [style*="grid-template-columns"] { grid-template-columns: minmax(0, 1fr) !important; }
+  #employeeProfileModal :is(input:not([type="checkbox"]):not([type="hidden"]):not([type="file"]),select,textarea) {
+    min-width: 0 !important;
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px !important;
+    box-sizing: border-box;
+  }
+  #employeeProfileModal .employee-profile-actions {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch !important;
+    gap: 6px !important;
+    padding: 8px !important;
+  }
+  #employeeProfileModal .employee-profile-actions > button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px 5px !important;
+    font-size: clamp(11px, 2.9vw, 13px) !important;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+    box-shadow: none !important;
+    transition: none !important;
+  }
+}

@@ -2,7 +2,7 @@
 <html lang="en">
  
 <head>
-<meta name="takodeal-release" content="large-delivery-status-20261114-r1">
+<meta name="takodeal-release" content="staff-profile-mobile-20261114-r1">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome · TAKODEÁL Owner</title>
@@ -15,7 +15,7 @@
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="security-alert-links.css?v=20261102">
-  <link rel="stylesheet" href="private-prep-reviews.css?v=large-delivery-status-20261114-r1">
+  <link rel="stylesheet" href="private-prep-reviews.css?v=staff-profile-mobile-20261114-r1">
   <link rel="stylesheet" href="rider-management.css?v=20261023-buttons">
   <link rel="stylesheet" href="menu-options.css?v=20261024">
   <link rel="stylesheet" href="bundle-category.css?v=20261025">
@@ -5514,15 +5514,15 @@
 
   <!-- 🧑‍🍳 MASTER EMPLOYEE PROFILE MODAL -->
   <div id="employeeProfileModal" class="overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(5px);">
-    <div style="background: #f8fafc; width: 95%; max-width: 850px; height: 92vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid #cbd5e1;">
+    <div class="employee-profile-card" style="background: #f8fafc; width: 95%; max-width: 850px; height: 92vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid #cbd5e1;">
       
       <!-- Top Header -->
-      <div style="background: #d97706; padding: 18px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #b45309;">
+      <div class="employee-profile-header" style="background: #d97706; padding: 18px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #b45309;">
         <h2 style="margin: 0; font-size: 20px; color: white; font-weight: 900; letter-spacing: 0.5px;">📋 Master Employee Profile</h2>
         <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; font-size: 24px; cursor: pointer; color: white; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✖</button>
       </div>
 
-      <div style="padding: 30px; overflow-y: auto; flex: 1;">
+      <div class="employee-profile-scroll" style="padding: 30px; overflow-y: auto; flex: 1;">
         <input type="hidden" id="empProfileId">
 
         <!-- Profile Picture -->
@@ -5754,7 +5754,7 @@
       </div>
 
       <!-- Action Buttons Footer -->
-      <div class="modal-foot" style="display: flex; gap: 10px; padding: 20px 30px; background: #f8fafc; border-top: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap;">
+      <div class="modal-foot employee-profile-actions" style="display: flex; gap: 10px; padding: 20px 30px; background: #f8fafc; border-top: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap;">
           <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="flex: 1; padding: 14px; font-weight: bold; border-radius: 8px; font-size: 14px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">Cancel</button>
           <button style="flex: 1; background: #3b82f6; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);" onclick="window.viewStaffSignedPayslips()">🧾 Signed Payslips</button>
           <button type="button" onclick="window.openPreviousPendingPayroll()" style="flex:1;background:#eaf3e8;color:#14594b;border:1px solid #bdd4bf;font-weight:bold;border-radius:8px;padding:12px;cursor:pointer">Previous payroll adjustments</button>
@@ -6600,7 +6600,7 @@
     import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';
     installAuditModalLayout();
   </script>
-  <script type="module" src="auth.js?v=large-delivery-status-20261114-r1"></script>
+  <script type="module" src="auth.js?v=staff-profile-mobile-20261114-r1"></script>
   <script type="module" src="owner-pos-settings-access.js?v=20261018"></script>
   <script type="module">
     import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';
