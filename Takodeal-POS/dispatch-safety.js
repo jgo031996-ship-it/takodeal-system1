@@ -135,9 +135,20 @@ export async function commitDispatch(api, { id, source, destination, driver, act
 }
 
 // Keep the delivery record as the return marker. Retries never refund it twice.
+// Status and receipt saves use the same byte-based limits as dispatch creation,
+// so a complete saved shipment is never rejected just for having over 80 lines.
+function deliveryTransaction(transaction) {
+    let payloadBytes=0;
+    const budget=(reference,data)=>{
+        const size=new TextEncoder().encode(JSON.stringify({path:reference.path||reference.id,data})).length;
+        if(size>800*1024||(payloadBytes+=size)>4*1024*1024)throw Error('This delivery contains too much saved detail for one safe save. No items were changed. Review the item notes before retrying.');
+    };
+    return {get:ref=>transaction.get(ref),set:(ref,data,...options)=>{budget(ref,data);return transaction.set(ref,data,...options);},update:(ref,data)=>{budget(ref,data);return transaction.update(ref,data);}};
+}
+
 export async function transitionDispatch(api, {ids, mode, actor}) {
     const unique=[...new Set(ids.filter(Boolean))];
-    if (!unique.length || unique.length>80 || !['arrive','return'].includes(mode)) throw new Error('Select up to 80 delivery items.');
+    if (!unique.length || !['arrive','return'].includes(mode)) throw new Error('Select delivery items and a valid delivery action.');
     const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];
     for (const id of unique) {
         const snapshot=await api.getDocFromServer(ref('dispatch_logs',id));
@@ -151,7 +162,8 @@ export async function transitionDispatch(api, {ids, mode, actor}) {
         }
         resolved.push({id,source,stockRef});
     }
-    return api.runTransaction(api.db,async tx=>{
+    return api.runTransaction(api.db,async transaction=>{
+        const tx=deliveryTransaction(transaction);
         const deliveries=[], stocks=new Map();
         for (const entry of resolved) {
             const reference=ref('dispatch_logs',entry.id), snapshot=await tx.get(reference);
@@ -199,7 +211,7 @@ export async function transitionDispatch(api, {ids, mode, actor}) {
 }
 
 export async function receiveDispatch(api,{branch,actor,items}) {
-    if (!branch || !items.length || items.length>80 || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select up to 80 unique delivery items.');
+    if (!branch || !items.length || new Set(items.map(row=>row.id)).size!==items.length) throw new Error('Select unique delivery items for this branch.');
     const ref=(table,id)=>api.doc(api.db,table,id), resolved=[];
     for (const input of items) {
         if (!Number.isFinite(input.actualDisplayQty) || input.actualDisplayQty<0) throw new Error('Enter a valid received quantity.');
@@ -220,7 +232,8 @@ export async function receiveDispatch(api,{branch,actor,items}) {
         }
         resolved.push({input,stockRef,master});
     }
-    return api.runTransaction(api.db,async tx=>{
+    return api.runTransaction(api.db,async transaction=>{
+        const tx=deliveryTransaction(transaction);
         const rows=[],stocks=new Map();
         for (const {input,stockRef,master} of resolved) {
             const reference=ref('dispatch_logs',input.id), snapshot=await tx.get(reference);

@@ -25,7 +25,7 @@ test('tampered release files fail held and main, checkout, engines and identity 
 });
 
 test('actual entry, update presentation and shell agree while photo and queue/cache behavior stay unchanged',()=>{
- assert.equal(CASHIER_RELEASE,'cashier-auto-branches-20261113-r1');assert.equal(proof.release,'cashier-prep-recovery-20261111-r1');assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+CASHIER_RELEASE));
+ assert.equal(CASHIER_RELEASE,'cashier-large-delivery-20261114-r1');assert.equal(proof.release,'cashier-prep-recovery-20261111-r1');assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+CASHIER_RELEASE));
  const sw=read('Takodeal-POS/sw.js');assert.ok(sw.includes("const CORE = 'takodeal-pos-core-"+CASHIER_RELEASE+"';"));assert.ok(sw.includes("const PHOTOS = 'takodeal-pos-photos-offline02';"));
  assert.equal(restoreCashierPrepRecoveryRelease(sw,'Takodeal-POS/sw.js'),git('Takodeal-POS/sw.js').toString(),'all routing, request and persistent-cache behavior is unchanged');
 });
