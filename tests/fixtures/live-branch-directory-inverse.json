@@ -1,0 +1,60 @@
+{
+  "base": "96218fc5890624aeadf42758d03f114f0cc0aa3a",
+  "files": {
+    "Takodeal-POS/cashier-data.js": {
+      "baselineSha256": "5539091541d9f896ebc54cb8652ec76f90350e22c7919fc24db1db04e1af9271",
+      "candidateSha256": "57b6c5da05815d553c33c4a8db051942d11fdbb80ce575393e156fc9fcbbffa2",
+      "edits": [
+        {
+          "before": "// Presentation helpers only: no sale, inventory or attendance writes.\nimport {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';\nexport const CASHIER_RELEASE = 'cashier-measured-prep-20261112-r1';\nexport function millis(value) {\n  if (value == null) return NaN;\n  if (typeof value.toMillis === 'function') return value.toMillis();\n",
+          "after": "// Presentation helpers only: no sale, inventory or attendance writes.\nimport {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';\nexport const CASHIER_RELEASE = 'cashier-auto-branches-20261113-r1';\nexport function millis(value) {\n  if (value == null) return NaN;\n  if (typeof value.toMillis === 'function') return value.toMillis();\n"
+        }
+      ]
+    },
+    "Takodeal-POS/index.html": {
+      "baselineSha256": "2e02633eac9380096a4e8a14576846c2ec1e8b6fa8ab3200ba6f6dc918d22bf0",
+      "candidateSha256": "8dd786b4c6cabc94083f98abd144909fe747fa8d293fdc3bd55b1a1543ef6282",
+      "edits": [
+        {
+          "before": "<link rel=\"stylesheet\" href=\"cashier-tablet.css?v=tablet-attendance-stock-20261009-r1\">\n<link rel=\"stylesheet\" href=\"cashier-startup.css\">\n  <link rel=\"stylesheet\" href=\"attendance-camera.css?v=tablet-attendance-stock-20261009-r1\">\n<link rel=\"stylesheet\" href=\"cancelled-orders.css\">\r\n<link rel=\"stylesheet\" href=\"stock-count-ui.css\">\n<link rel=\"stylesheet\" href=\"low-ingredient-ui.css\">\n<link rel=\"stylesheet\" href=\"cash-remittance.css?v=20261026\">\n",
+          "after": "<link rel=\"stylesheet\" href=\"cashier-tablet.css?v=tablet-attendance-stock-20261009-r1\">\n<link rel=\"stylesheet\" href=\"cashier-startup.css\">\n  <link rel=\"stylesheet\" href=\"attendance-camera.css?v=tablet-attendance-stock-20261009-r1\">\n<link rel=\"stylesheet\" href=\"cancelled-orders.css\">\n<link rel=\"stylesheet\" href=\"stock-count-ui.css\">\n<link rel=\"stylesheet\" href=\"low-ingredient-ui.css\">\n<link rel=\"stylesheet\" href=\"cash-remittance.css?v=20261026\">\n"
+        },
+        {
+          "before": "            });\n        };\n    </script>\n    <script type=\"module\" src=\"main.js?v=cashier-measured-prep-20261112-r1\"></script>\n    <script>\n    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER\n    if ('serviceWorker' in navigator) {\n",
+          "after": "            });\n        };\n    </script>\n    <script type=\"module\" src=\"main.js?v=cashier-auto-branches-20261113-r1\"></script>\n    <script>\n    // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER\n    if ('serviceWorker' in navigator) {\n"
+        }
+      ]
+    },
+    "Takodeal-POS/main.js": {
+      "baselineSha256": "a85e1829bd3cd073d3d928f3f09cfac61739a43b1cefcc8e4c095bc724c20aa9",
+      "candidateSha256": "7423f5975d8842cbca6abdf401e132e0a037d9d93ace217ffcf376ee5d3648ed",
+      "edits": [
+        {
+          "before": "import {refreshSavedVoidSales} from './cashier-void-sales.js';\nimport {createCashierOwnerDesktopContext} from './cashier-protected-action.js';\nimport {createCashierPrepAccess} from './cashier-prep-access.js';\n",
+          "after": "import {installLiveBranchDirectory} from './live-branch-directory.js';\nimport {refreshSavedVoidSales} from './cashier-void-sales.js';\nimport {createCashierOwnerDesktopContext} from './cashier-protected-action.js';\nimport {createCashierPrepAccess} from './cashier-prep-access.js';\n"
+        },
+        {
+          "before": "// Audited prep uses its own confirmed context; normal Cashier entry is unchanged.\nwindow.cashierPrepAccess=createCashierPrepAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});\nwindow.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cashierPrepAccess}).confirm();\n",
+          "after": "// Audited prep uses its own confirmed context; normal Cashier entry is unchanged.\nwindow.cashierPrepAccess=createCashierPrepAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});\nwindow.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cashierPrepAccess}).confirm();\n\nwindow.cashierBranchDirectory=installLiveBranchDirectory(window,document,{kind:'cashier',subscribe:(next,error)=>firebaseOnSnapshot(firebaseCollection(primaryDb,'branches'),{includeMetadataChanges:true},next,error)});\n"
+        }
+      ]
+    },
+    "Takodeal-POS/sw.js": {
+      "baselineSha256": "01d1e1ddda4313ef8119f63cacc4d4a7af57d501bbff477d6f22eb2e614cd6c9",
+      "candidateSha256": "c6b2e0e23e13c36f8493c5a9215f7dd5892b1c564a5e51c2ea3e5b089e278e9d",
+      "edits": [
+        {
+          "before": "// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =\n// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.\nconst CORE = 'takodeal-pos-core-cashier-measured-prep-20261112-r1';\n\nconst PHOTOS = 'takodeal-pos-photos-offline02';\nconst ROOT = new URL('./', self.location.href);\n",
+          "after": "// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =\n// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.\nconst CORE = 'takodeal-pos-core-cashier-auto-branches-20261113-r1';\n\nconst PHOTOS = 'takodeal-pos-photos-offline02';\nconst ROOT = new URL('./', self.location.href);\n"
+        },
+        {
+          "before": "required.push('./cashier-protected-action.js','./cashier-correction-engine.js');\nrequired.push('./cashier-prep.css','./cashier-prep.js','./cashier-prep-access.js','./cashier-staff-access.js','./cashier-operational-sdk.js');\nrequired.push('./cashier-void-review.js','./cashier-void-sales.js','./cashier-void.css','./cashier-void.js','./cashier-void-access.js','./cashier-void-model.js','./cashier-void-queue.js');\n",
+          "after": "required.push('./cashier-protected-action.js','./cashier-correction-engine.js');\nrequired.push('./cashier-prep.css','./cashier-prep.js','./cashier-prep-access.js','./cashier-staff-access.js','./cashier-operational-sdk.js');\nrequired.push('./cashier-void-review.js','./cashier-void-sales.js','./cashier-void.css','./cashier-void.js','./cashier-void-access.js','./cashier-void-model.js','./cashier-void-queue.js');\n\nrequired.push('./live-branch-directory.js');\n"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "Takodeal-POS/live-branch-directory.js": "79f46d3cd5892d89d40a42a6d7b56ab5cb9046fb5096c54b57a97194cd602aaa"
+  }
+}

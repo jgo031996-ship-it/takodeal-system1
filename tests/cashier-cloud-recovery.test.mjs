@@ -1,7 +1,11 @@
+import {restoreLiveBranchDirectory} from './helpers/live-branch-directory-inverse.mjs';
+// Apply only the separately hash-verified public discovery patch before these
+// historical business/transport byte comparisons. The new source test pins it.
+const readFileSync=(path,...args)=>{const value=originalReadFileSync(path,...args),name=path instanceof URL?path.pathname:String(path);if(!name.endsWith('/Takodeal-POS/main.js'))return value;const restored=restoreLiveBranchDirectory(value.toString(),'Takodeal-POS/main.js');return typeof value==='string'?restored:Buffer.from(restored);};
 import {restoreCashierVoidIntegration} from './helpers/cashier-void-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,existsSync} from 'node:fs';
+import {readFileSync as originalReadFileSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import vm from 'node:vm';
 import {restoreCashierCloudTransport} from './helpers/cashier-cloud-transport-inverse.mjs';
@@ -17,7 +21,7 @@ test('after the exact void integration inverse, reversing the two transport opti
  assert.equal(sha(restoreCashierCloudTransport(read('main.js'))),'a6483411ca996319dd094a44c1b1fff08fc625bf7ba17fe5463307263f4aa8fe');
 });
 test('the dedicated patch changes only the shell release keys and never the photo cache or any saved-data identity',()=>{
- assert.equal(CASHIER_RELEASE,'cashier-actual-prep-20261111-r1');assert.equal(sha(read('cashier-data.js').replace(release,'update-progress-20261108-r1')),'fd86acf0cdbaf44e832a3a7b5d2ed218c5813446ddf6bede6289fcf9ea373517');
+ assert.equal(CASHIER_RELEASE,'cashier-large-delivery-20261114-r1');assert.equal(sha(read('cashier-data.js').replace(release,'update-progress-20261108-r1')),'fd86acf0cdbaf44e832a3a7b5d2ed218c5813446ddf6bede6289fcf9ea373517');
  for(const [file,hash]of [['index.html','a8d89aec4dd2a9a405ab0cdd83ef34146ac735dacecc88d58c1d81160516f7b6'],['sw.js','ec0426bfcb27b9a12e7aed302466e18ee0826d83577e24fce70e603e0a548bf5']]){const source=read(file);assert.equal(source.split(release).length,2);assert.equal(sha(source.replace(release,'cashier-connection-recovery-20261110-r1')),hash);}
  assert.match(read('sw.js'),/const PHOTOS = 'takodeal-pos-photos-offline02'/);assert.doesNotMatch(read('sw.js'),/indexedDB\.deleteDatabase|localStorage\.clear/);assert.equal(existsSync(new URL('../Takodeal-POS/offline-pos-login.js',import.meta.url)),false);
 });

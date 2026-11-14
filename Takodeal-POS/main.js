@@ -1,3 +1,4 @@
+import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
 import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
@@ -9595,3 +9596,5 @@ installCashierVoid(window,document,{access:window.cashierVoidAccess});
 // Audited prep uses its own confirmed context; normal Cashier entry is unchanged.
 window.cashierPrepAccess=createCashierPrepAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});
 window.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cashierPrepAccess}).confirm();
+
+window.cashierBranchDirectory=installLiveBranchDirectory(window,document,{kind:'cashier',subscribe:(next,error)=>firebaseOnSnapshot(firebaseCollection(primaryDb,'branches'),{includeMetadataChanges:true},next,error)});

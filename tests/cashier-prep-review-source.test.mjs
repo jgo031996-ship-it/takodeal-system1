@@ -1,6 +1,10 @@
+import {restoreLiveBranchDirectory} from './helpers/live-branch-directory-inverse.mjs';
+// Apply only the separately hash-verified public discovery patch before these
+// historical business/transport byte comparisons. The new source test pins it.
+const readFileSync=(path,...args)=>{const value=originalReadFileSync(path,...args),name=path instanceof URL?path.pathname:String(path);if(!name.endsWith('/Takodeal-POS/main.js'))return value;const restored=restoreLiveBranchDirectory(value.toString(),'Takodeal-POS/main.js');return typeof value==='string'?restored:Buffer.from(restored);};
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync as originalReadFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {restorePrepReviewIntegration} from './helpers/cashier-prep-review-inverse.mjs';
 import {restoreCashierOwnerDesktop} from './helpers/cashier-owner-desktop-inverse.mjs';
@@ -9,7 +13,7 @@ const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,r
 
 test('only the reviewed prep component, styling and release shell change from frozen live void dd8',()=>{
  const proof=JSON.parse(read('tests/fixtures/cashier-prep-review-inverse.json'));assert.equal(proof.base,'dd8c13d5427c17ef7bfa6c0452bfd9a6dc0cc5ff');assert.equal(Object.keys(proof.files).length,5);
- for(const [file,pin]of Object.entries(proof.files)){const source=read(file),restored=restorePrepReviewIntegration(source,file);assert.equal(sha(restored),pin.baselineSha256,file);assert.throws(()=>restorePrepReviewIntegration(source+'\n// unexpected mutation\n',file),/Exact reviewed|Only the reviewed Owner desktop|Only the reviewed receipt recovery|Only the reviewed prep recovery|Only the reviewed actual-prep/,file);}
+ for(const [file,pin]of Object.entries(proof.files)){const source=read(file),restored=restorePrepReviewIntegration(source,file);assert.equal(sha(restored),pin.baselineSha256,file);assert.throws(()=>restorePrepReviewIntegration(source+'\n// unexpected mutation\n',file),/Only the reviewed automatic branch hooks|Exact reviewed|Only the reviewed Owner desktop|Only the reviewed receipt recovery|Only the reviewed prep recovery|Only the reviewed (?:actual|measured)-prep/,file);}
  const unchanged=JSON.parse(read('tests/fixtures/cashier-prep-review-unchanged.json'));assert.equal(unchanged.base,proof.base);assert.equal(Object.keys(unchanged.files).length,5);for(const [file,hash]of Object.entries(unchanged.files))assert.equal(sha(restoreCashierOwnerDesktop(read(file),file)),hash,file);
 });
 
