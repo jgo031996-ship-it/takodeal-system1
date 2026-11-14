@@ -45,7 +45,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=owner-delivery-radar-20261114-r1');
+            await import('./main.js?v=large-delivery-status-20261114-r1');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();
