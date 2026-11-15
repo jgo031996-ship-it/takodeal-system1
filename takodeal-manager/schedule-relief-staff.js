@@ -8,7 +8,7 @@ const empty=value=>typeof value==='string'&&['','n/a','unfilled'].includes(key(v
 // Relief is an explicit move of an available account, never an implicit swap
 // out of another scheduled shift or leave. Standby sources retain their exact
 // saved strings so the caller can remove only the inspected entries.
-export function availableScheduleReliefStaff({employees,branch,dayBranches,unavailability,isBranchAllowed}={}){
+function availableStaff({employees,branch,dayBranches,unavailability,isBranchAllowed}={},transfer=false){
     const target=text(branch),allowed=name=>typeof isBranchAllowed==='function'&&isBranchAllowed(name)===true;
     if(!target||!allowed(target)||!Array.isArray(employees))return [];
     const people=new Map(),owners=new Map(),duplicates=new Set();
@@ -17,7 +17,7 @@ export function availableScheduleReliefStaff({employees,branch,dayBranches,unava
         if(person){if(people.has(person.staffId))duplicates.add(person.staffId);else people.set(person.staffId,person);}
         for(const alias of aliases(person||row)){if(!owners.has(alias))owners.set(alias,new Set());owners.get(alias).add(token);}
     }
-    const blocked=new Set(),standby=new Map();
+    const blocked=new Set(),standby=new Map(),assignments=new Map();
     const resolve=reference=>{
         if(reference==null||empty(reference))return [];
         if(typeof reference==='object'){
@@ -38,7 +38,14 @@ export function availableScheduleReliefStaff({employees,branch,dayBranches,unava
     };
     for(const [source,row]of Object.entries(dayBranches||{})){
         if(!row||typeof row!=='object')continue;
-        Object.values(row.scheduled||{}).forEach(take);flags(row.unavailable);
+        for(const [shiftId,reference]of Object.entries(row.scheduled||{})){
+            if(!transfer){take(reference);continue;}
+            const matches=resolve(reference);
+            if(matches.length!==1){matches.forEach(id=>blocked.add(id));continue;}
+            const id=matches[0],entries=assignments.get(id)||[];
+            entries.push({branch:source,shiftId,name:reference});assignments.set(id,entries);
+        }
+        flags(row.unavailable);
         for(const reference of Array.isArray(row.rest)?row.rest:[]){
             const matches=resolve(reference);
             if(matches.length!==1||typeof reference!=='string'||empty(reference)){matches.forEach(id=>blocked.add(id));continue;}
@@ -49,10 +56,18 @@ export function availableScheduleReliefStaff({employees,branch,dayBranches,unava
     }
     flags(unavailability);
     return [...people.values()].filter(person=>{
-        const sources=standby.get(person.staffId)||[];
+        const sources=standby.get(person.staffId)||[],scheduled=assignments.get(person.staffId)||[];
         return person.scheduleEligible&&!duplicates.has(person.staffId)&&!blocked.has(person.staffId)
-            &&(owners.get(key(person.name))?.size||0)===1&&allowed(person.branch)&&sources.every(source=>allowed(source.branch))
-            &&!sources.some(source=>source.branch===target)&&(person.branch!==target||sources.some(source=>source.branch!==target));
-    }).map(person=>({...person,standbySources:(standby.get(person.staffId)||[]).map(source=>({...source})).sort((a,b)=>a.branch.localeCompare(b.branch)||a.name.localeCompare(b.name))}))
+            &&(owners.get(key(person.name))?.size||0)===1&&sources.every(source=>allowed(source.branch))
+            &&(transfer?scheduled.length===1&&scheduled[0].branch!==target&&allowed(scheduled[0].branch)
+                :!sources.some(source=>source.branch===target)&&(person.branch!==target||sources.some(source=>source.branch!==target)));
+    }).map(person=>({...person,standbySources:(standby.get(person.staffId)||[]).map(source=>({...source})).sort((a,b)=>a.branch.localeCompare(b.branch)||a.name.localeCompare(b.name)),
+        ...(transfer?{scheduledSource:{...assignments.get(person.staffId)[0]}}:{})}))
         .sort((a,b)=>a.name.localeCompare(b.name)||a.staffId.localeCompare(b.staffId));
 }
+
+// A home branch is HR metadata. Only the destination and actual roster rows
+// being changed require branch permission.
+export const availableScheduleReliefStaff=input=>availableStaff(input);
+// Moving a single dated assignment requires a separate, explicit review.
+export const availableScheduleTransferStaff=input=>availableStaff(input,true);

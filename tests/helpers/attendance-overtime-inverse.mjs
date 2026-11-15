@@ -1,3 +1,4 @@
+import {restoreScheduleCrossBranch,scheduleCrossBranchProof} from './schedule-cross-branch-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -5,6 +6,7 @@ import {execFileSync} from 'node:child_process';
 export const attendanceOvertimeProof=JSON.parse(readFileSync(new URL('../fixtures/attendance-overtime-inverse.json',import.meta.url),'utf8'));
 export const overtimeSha=value=>createHash('sha256').update(value).digest('hex');
 export function restoreAttendanceOvertime(source,file){
+ source=restoreScheduleCrossBranch(source,file);
  const row=attendanceOvertimeProof.files[file];if(!row)return source;
  if(overtimeSha(source)===row.baselineSha256)return source;
  assert.equal(overtimeSha(source),row.candidateSha256,'Only the exact reviewed attendance OT changes may precede historical checks: '+file);
@@ -14,6 +16,7 @@ export function restoreAttendanceOvertime(source,file){
 // Historical scopes keep their original allowlists. Remove only exact OT-only
 // changes that restore to the actual Git byte content of that earlier base.
 export function isHistoricalOwnerChange(file,base){
+ if(Object.hasOwn(scheduleCrossBranchProof.files,file)&&!attendanceOvertimeProof.files[file]&&!attendanceOvertimeProof.newFiles[file]){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.notEqual(restoreScheduleCrossBranch(source,file),source,'The exact scoped schedule change is inverted: '+file);return false;}
  if(!attendanceOvertimeProof.files[file]&&!attendanceOvertimeProof.newFiles[file])return true;
  const root=new URL('../../',import.meta.url),source=readFileSync(new URL(file,root),'utf8');
  if(attendanceOvertimeProof.newFiles[file]){assert.equal(overtimeSha(source),attendanceOvertimeProof.newFiles[file],file+' is the exact new OT module');return false;}

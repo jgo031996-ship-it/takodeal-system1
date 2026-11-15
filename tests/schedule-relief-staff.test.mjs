@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {availableScheduleReliefStaff} from '../takodeal-manager/schedule-relief-staff.js';
+import {availableScheduleReliefStaff,availableScheduleTransferStaff} from '../takodeal-manager/schedule-relief-staff.js';
 import {toScheduleEmployee} from '../takodeal-manager/schedule-staff-directory.js';
 const person=(id,name,branch='Maa',extra={})=>toScheduleEmployee({cashierName:name+' Full',scheduleNickname:name,branch,active:true,...extra},id);
 const day=(extra={})=>({scheduled:{morning:'UNFILLED'},rest:[],unavailable:[],swaps:{},...extra});
@@ -20,9 +20,10 @@ test('global unavailable flags and any branch unavailable row block relief befor
  for(const unavailability of [{Anj:'Day Off'},{'Old Anj':{status:'Leave',leaveRequestId:'leave-one',staffId:'anj'}},{unrelated:{staffId:'anj',status:'Suspended'}},[{staffId:'anj',name:'Old',status:'Leave'}]])assert.deepEqual(choose(employees,{unavailability}),[]);
  assert.deepEqual(choose(employees,{dayBranches:{Citygate:day({unavailable:[{staffId:'anj',name:'Old',status:'Leave'}]})}}),[]);
 });
-test('home target and every standby source require an explicit allowed branch',()=>{
+test('target and actual standby sources require permission independently of HR home branch',()=>{
  const employee=person('anj','Anj'),dayBranches={Citygate:day({rest:['Anj']})};
- for(const denied of ['Maa','Cabantian','Citygate'])assert.deepEqual(choose([employee],{dayBranches,isBranchAllowed:branch=>branch!==denied}),[]);
+ assert.equal(choose([employee],{dayBranches,isBranchAllowed:branch=>branch!=='Maa'}).length,1);
+ for(const denied of ['Cabantian','Citygate'])assert.deepEqual(choose([employee],{dayBranches,isBranchAllowed:branch=>branch!==denied}),[]);
  assert.deepEqual(choose([employee],{isBranchAllowed:undefined}),[]);
 });
 test('inactive blocked revoked and archived identities cannot be relief staff',()=>{
@@ -50,4 +51,15 @@ test('several authorized standby branches are returned precisely, without changi
 });
 test('legacy records without stable IDs and ambiguous legacy names cannot become relief identities',()=>{
  assert.deepEqual(choose([{name:'Legacy',branch:'Maa'}]),[]);assert.deepEqual(choose([person('anj','Anj'),{name:'Anj',branch:'Maa'}]),[]);
+});
+
+test('a scheduled employee can move to any branch irrespective of home, with an exact single source',()=>{
+ for(const home of ['Maa','Cabantian','Agdao','Unassigned','']){
+  const employees=[person('flex','Flexible',home)],dayBranches={Maa:day({scheduled:{night:'Flexible'}}),Cabantian:day()},before=structuredClone({employees,dayBranches});
+  const rows=availableScheduleTransferStaff({employees,branch:'Cabantian',dayBranches,isBranchAllowed:()=>true});assert.equal(rows.length,1);assert.deepEqual(rows[0].scheduledSource,{branch:'Maa',shiftId:'night',name:'Flexible'});assert.deepEqual({employees,dayBranches},before);
+ }
+});
+test('transfer excludes leave, duplicate shifts, ambiguous names, inactive accounts and denied actual branches',()=>{
+ const base={employees:[person('flex','Flexible')],branch:'Cabantian',dayBranches:{Maa:day({scheduled:{night:'Flexible'}})},isBranchAllowed:()=>true};
+ for(const extra of [{unavailability:{Flexible:'Leave'}},{dayBranches:{Maa:day({scheduled:{one:'Flexible',two:'Flexible'}})}},{employees:[person('flex','Flexible'),person('second','Flexible')]},{employees:[person('flex','Flexible','Maa',{active:false})]},{isBranchAllowed:branch=>branch!=='Maa'},{isBranchAllowed:branch=>branch!=='Cabantian'},{dayBranches:{Cabantian:day({scheduled:{night:'Flexible'}})}}])assert.deepEqual(availableScheduleTransferStaff({...base,...extra}),[]);
 });

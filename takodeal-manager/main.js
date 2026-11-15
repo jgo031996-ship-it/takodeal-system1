@@ -96,7 +96,7 @@ import {createPayrollBonusHistoryStore} from './payroll-bonus-templates.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff,resolveScheduleEmployeeReference,scheduleIdentityDirectory} from './schedule-staff-directory.js';
-import {availableScheduleReliefStaff} from './schedule-relief-staff.js';
+import {availableScheduleReliefStaff,availableScheduleTransferStaff} from './schedule-relief-staff.js';
 import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {prepareManualTimeOut} from './manual-attendance-review.js';
@@ -8773,75 +8773,20 @@ window.updateStaffDisplay = function() {
     
     let targetBranch = window.currentActiveTab || 'Cabantian';
     let empList = window.employees || employees || [];
-    let branchStaff = empList.filter(e => e.branch === targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
-    
-    let empNameInput = document.getElementById('empName');
-    let empBranchSelect = document.getElementById('empBranch');
-    let addStaffBtn = document.querySelector('button[onclick="addEmployee()"]');
-    if(empNameInput) empNameInput.style.display = 'none';
-    if(empBranchSelect) empBranchSelect.style.display = 'none';
-    if(addStaffBtn) addStaffBtn.style.display = 'none';
-
-    let poolTitle = wrapper.previousElementSibling;
-    if (poolTitle) {
-        poolTitle.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px; width: 100%;">
-            <span><span style="color:#0ea5e9; font-size: 16px; font-weight: bold;">1. Active Staff Pool</span> <span style="font-size:12px; color:#64748b; font-weight:normal;">(Auto-Synced from HR for <b>${targetBranch}</b>)</span></span>
-            <button onclick="window.addStaffToBranchPool('${targetBranch}')" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#bae6fd'" onmouseout="this.style.background='#e0f2fe'">➕ Pull Staff to Pool</button>
-        </div>`;
+    for(const id of ['empName','empBranch']){const field=document.getElementById(id);if(field)field.style.display='none';}
+    const legacyAdd=document.querySelector('button[onclick="addEmployee()"]');if(legacyAdd)legacyAdd.style.display='none';
+    const staff=empList.filter(e=>e.staffId&&activeStaffProfile(e)&&e.scheduleEligible!==false);
+    const title=wrapper.previousElementSibling;
+    if(title)title.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;width:100%">
+        <span><strong>1. Active Staff Pool · All Branches</strong><small style="display:block;color:#64748b">Choose any active staff for ${escapeHtml(targetBranch)}. Home branches stay in HR.</small></span>
+        <button type="button" onclick="window.addStaffToBranchPool('${encodeURIComponent(targetBranch).replace(/'/g,'%27')}')" style="padding:8px 12px;min-height:44px;max-width:100%;white-space:normal;border:1px solid #bae6fd;border-radius:6px;background:#e0f2fe;color:#0284c7;cursor:pointer">➕ Pull Staff to a Shift</button></div>`;
+    wrapper.innerHTML='';
+    for(const person of staff.sort((a,b)=>a.name.localeCompare(b.name))){
+        const chip=document.createElement('div');chip.className='staff-chip';
+        chip.style.cssText='background:#f0fdf4;border:1px solid #bbf7d0;padding:8px 12px;border-radius:20px;display:inline-flex;flex-wrap:wrap;gap:5px;align-items:center;margin:4px;font-size:13px;max-width:100%;overflow-wrap:anywhere';
+        chip.textContent=person.name+' · Home: '+person.branch;wrapper.appendChild(chip);
     }
-
-    wrapper.innerHTML = "";
-    
-    let reliefStaffNames = new Set();
-    if (typeof currentSchedule !== 'undefined' && Object.keys(currentSchedule).length > 0) {
-        for (let day in currentSchedule) {
-            if (currentSchedule[day][targetBranch]) {
-                let dayData = currentSchedule[day][targetBranch];
-                
-                Object.values(dayData.scheduled).forEach(name => {
-                    if (name !== "N/A" && name !== "UNFILLED") {
-                        let realProfile = window.findEmployeeProfile(name);
-                        if (realProfile && realProfile.branch !== targetBranch) reliefStaffNames.add(name);
-                    }
-                });
-                
-                (dayData.rest || []).forEach(name => {
-                    let realProfile = window.findEmployeeProfile(name);
-                    if (realProfile && realProfile.branch !== targetBranch) reliefStaffNames.add(name);
-                });
-            }
-        }
-    }
-
-    if (branchStaff.length === 0 && reliefStaffNames.size === 0) {
-        wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}.</div>`;
-    } else {
-        branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-            let realProfile = window.findEmployeeProfile(e.name) || e;
-            let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
-
-            const chip = document.createElement('div'); 
-            chip.className = 'staff-chip';
-            chip.style.cssText = 'background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 15px; border-radius:20px; display:inline-flex; align-items:center; margin:4px; font-weight:bold; color:#16a34a; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
-            chip.innerHTML = `👤 ${displayName} <span onclick="window.removeStaffFromBranchPool('${e.name}')" style="margin-left: 8px; color: #ef4444; cursor: pointer; font-size: 14px; opacity: 0.6; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; transition: 0.2s;" onmouseover="this.style.background='#fecaca'; this.style.opacity='1'" onmouseout="this.style.background='transparent'; this.style.opacity='0.6'" title="Remove from Branch">✖</span>`;
-            wrapper.appendChild(chip);
-        });
-
-        if (reliefStaffNames.size > 0) {
-            Array.from(reliefStaffNames).sort().forEach(name => {
-                let realProfile = window.findEmployeeProfile(name);
-                let originBranch = realProfile ? realProfile.branch : 'Unknown';
-                let displayName = realProfile ? (realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || name) : name;
-
-                const chip = document.createElement('div'); 
-                chip.className = 'staff-chip';
-                chip.style.cssText = 'background:#fffbeb; border:1px solid #fcd34d; padding:8px 15px; border-radius:20px; display:inline-flex; align-items:center; margin:4px; font-weight:bold; color:#d97706; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
-                chip.innerHTML = `🌍 ${displayName} <span style="font-size:10px; color:#b45309; margin-left: 4px;">(Relief from ${originBranch})</span>`;
-                wrapper.appendChild(chip);
-            });
-        }
-    }
+    if(!staff.length)wrapper.textContent='No active staff found. Refresh the staff directory.';
 };
 
 window.updateAvailDropdown = function() {
@@ -9190,6 +9135,14 @@ window.openSwapModal = async function(day, branch, shiftId) {
         for(const employee of reliefStaff)optionsHtml+='<option value="relief_'+escapeHtml(encodeURIComponent(employee.staffId))+'">'+escapeHtml(employee.name)+' (from '+escapeHtml(employee.branch)+')</option>';
         optionsHtml+='</optgroup>';
     }
+    const transferStaff=availableScheduleTransferStaff({employees:empList,branch,dayBranches:schedObj[day],unavailability:targetUnavailObj?.[fullDateStr] || {},isBranchAllowed:name=>window.isBranchAllowed?.(name)===true});
+    if(transferStaff.length){
+        optionsHtml+='<optgroup label="Move from Another Branch · Review Required">';
+        for(const employee of transferStaff){const source=employee.scheduledSource,rule=branchConfig[source.branch]?.find(shift=>shift.id===source.shiftId);
+            optionsHtml+='<option value="transfer_'+escapeHtml(encodeURIComponent(employee.staffId))+'">'+escapeHtml(employee.name)+' (move from '+escapeHtml(source.branch)+' · '+escapeHtml(rule?.name||source.shiftId)+' · '+escapeHtml(scheduleShiftHours(rule))+')</option>';
+        }
+        optionsHtml+='</optgroup>';
+    }
     // New HR staff need not already exist in a saved day's Standby bucket.
     // Keep the stored day intact until the Owner explicitly assigns someone.
     const poolStaff=availableSchedulePoolStaff({employees:empList,branch,dayData,dayBranches:schedObj[day],unavailability:targetUnavailObj?.[fullDateStr] || {}});
@@ -9202,7 +9155,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     for(const entry of dayData.unavailable || [])if(entry?.name&&!Object.hasOwn(todaysLeaves,entry.name))todaysLeaves[entry.name]=entry;
     const actorKey=()=>JSON.stringify([window.auth?.currentUser?.uid,window.auth?.currentUser?.email,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.assignedBranch,window.sessionUser?.role]);
     const activeSwap=typeof swapData!=='undefined'?swapData:window.swapData;
-    activeSwap.context={actor:actorKey(),year:safeYear,month:safeMonth,dayState:JSON.stringify(schedObj[day]),poolNames:Object.fromEntries(poolStaff.map(employee=>[employee.staffId,employee.name])),reliefChoices:Object.fromEntries(reliefStaff.map(employee=>[employee.staffId,JSON.stringify([employee.name,employee.branch,employee.standbySources])]))};
+    activeSwap.context={actor:actorKey(),year:safeYear,month:safeMonth,dayState:JSON.stringify(schedObj[day]),configState:JSON.stringify(branchConfig),timeOffState:JSON.stringify(targetUnavailObj?.[fullDateStr]||{}),poolNames:Object.fromEntries(poolStaff.map(employee=>[employee.staffId,employee.name])),reliefChoices:Object.fromEntries(reliefStaff.map(employee=>[employee.staffId,JSON.stringify([employee.name,employee.branch,employee.standbySources])])),transferChoices:Object.fromEntries(transferStaff.map(employee=>[employee.staffId,JSON.stringify(employee)]))};
 
     if (todaysLeaves && Object.keys(todaysLeaves).length > 0) {
         optionsHtml += '<optgroup label="🛏️ Override: Assign from Leave/Off">';
@@ -9232,7 +9185,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
         html: `
             <div style="text-align: left; margin-top: 10px;">
                 <p class="schedule-assignment-context">${escapeHtml(assignmentContext)}</p>
-                <p class="schedule-assignment-help">The selected staff member is assigned to these exact hours. The shift category or name does not set a different start time.</p>
+                <p class="schedule-assignment-help">Choose staff from any home branch for these exact hours. Moving an existing assignment requires a review of the source shift. Home branches stay in HR.</p>
                 <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px;">
                     <span style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold;">Currently Assigned:</span><br>
                     <strong style="color: #0f172a; font-size: 16px;">${currentDisplayName}</strong>
@@ -9282,6 +9235,7 @@ window.executeSwap = async function(target, markAsSwap) {
     }
     let newStaff = null;
     const targetDate=`${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    if(targetDate<scheduleDateKey(new Date()))return false;
     let selectedPoolStaff=null;
     if(target.startsWith('pool_')){
         let staffId;try{staffId=decodeURIComponent(target.slice(5));}catch{return false;}
@@ -9294,12 +9248,27 @@ window.executeSwap = async function(target, markAsSwap) {
         selectedReliefStaff=availableScheduleReliefStaff({employees:window.employees || employees,branch,dayBranches:schedObj[day],unavailability:unavailability[targetDate] || {},isBranchAllowed:name=>window.isBranchAllowed?.(name)===true}).find(employee=>employee.staffId===staffId);
         if(!context||!selectedReliefStaff||context.reliefChoices?.[staffId]!==JSON.stringify([selectedReliefStaff.name,selectedReliefStaff.branch,selectedReliefStaff.standbySources])){window.ManagerUI.notify('This relief assignment changed or the staff member is no longer available. Reopen the assignment window.');return false;}
     }
-    const targetPerson=selectedPoolStaff?.name || selectedReliefStaff?.name || (target.startsWith('unavail_')?target.slice(8):target.startsWith('rest_')?schedObj[day][branch].rest[Number(target.slice(5))]:target.startsWith('shift_')?schedObj[day][branch].scheduled[target.slice(6)]:null);
+    let selectedTransferStaff=null;
+    const currentTransfer=()=>availableScheduleTransferStaff({employees:window.employees||employees,branch,dayBranches:schedObj[day],unavailability:unavailability[targetDate]||{},isBranchAllowed:name=>window.isBranchAllowed?.(name)===true}).find(employee=>employee.staffId===selectedTransferStaff?.staffId);
+    if(target.startsWith('transfer_')){
+        let staffId;try{staffId=decodeURIComponent(target.slice(9));}catch{return false;}
+        selectedTransferStaff={staffId};selectedTransferStaff=currentTransfer();
+        if(!context||!selectedTransferStaff||context.transferChoices?.[staffId]!==JSON.stringify(selectedTransferStaff)){window.ManagerUI.notify('This branch assignment changed. Reopen the staff chooser.');return false;}
+    }
+    const chosenStaff=selectedPoolStaff||selectedReliefStaff||selectedTransferStaff;
+    const targetPerson=chosenStaff?.name || (target.startsWith('unavail_')?target.slice(8):target.startsWith('rest_')?schedObj[day][branch].rest[Number(target.slice(5))]:target.startsWith('shift_')?schedObj[day][branch].scheduled[target.slice(6)]:null);
     if(targetPerson&&window.reviewOwnedScheduleLeave(targetDate,targetPerson))return;
     if(!targetPerson||typeof window.saveToCloud!=='function')return false;
-    const targetReference=selectedPoolStaff||selectedReliefStaff?{staffId:(selectedPoolStaff||selectedReliefStaff).staffId,staffName:targetPerson}:targetPerson;
+    const targetReference=chosenStaff?{staffId:chosenStaff.staffId,staffName:targetPerson}:targetPerson;
     if(!resolveScheduleEmployeeReference(targetReference,scheduleIdentityDirectory(window.scheduleDirectoryProfiles,window.employees))){window.ManagerUI.notify('This staff account is inactive or its identity needs review. Reopen the current staff list.');return false;}
-    try{const guard=()=>{if(!ownsAssignment()||context&&context.dayState!==JSON.stringify(schedObj[day])||window.scheduleMemoryReadOnly||!canOpenWorkspacePage(window.sessionUser,'schedule'))throw Error('This staff list or schedule changed. Reopen the assignment window.');};await window.confirmActiveScheduleStaff(targetReference,{assertCurrent:guard});guard();if(target.startsWith('shift_')&&!["N/A","UNFILLED"].includes(curStaff)){await window.confirmActiveScheduleStaff(curStaff,{assertCurrent:guard});guard();}}catch(error){window.ManagerUI.notify(error.message);return false;}
+    try{const guard=()=>{if(!ownsAssignment()||context&&(context.dayState!==JSON.stringify(schedObj[day])||context.configState!==JSON.stringify(branchConfig)||context.timeOffState!==JSON.stringify(unavailability[targetDate]||{}))||window.scheduleMemoryReadOnly||!canOpenWorkspacePage(window.sessionUser,'schedule')||window.isBranchAllowed?.(branch)!==true||selectedTransferStaff&&JSON.stringify(currentTransfer())!==JSON.stringify(selectedTransferStaff))throw Error('This staff list or schedule changed. Reopen the assignment window.');};guard();
+        if(selectedTransferStaff){
+            const source=selectedTransferStaff.scheduledSource,rule=branchConfig[source.branch]?.find(shift=>shift.id===source.shiftId),destination=branchConfig[branch]?.find(shift=>shift.id===shiftId);
+            const review=await Swal.fire({title:'Move staff between branches?',html:'<p><b>'+escapeHtml(targetPerson)+'</b> · '+escapeHtml(targetDate)+' (PH)</p><p>From: '+escapeHtml(source.branch)+' · '+escapeHtml(rule?.name||source.shiftId)+' · '+escapeHtml(scheduleShiftHours(rule))+'</p><p>To: '+escapeHtml(branch)+' · '+escapeHtml(destination?.name||shiftId)+' · '+escapeHtml(scheduleShiftHours(destination))+'</p><p>The source shift will become <b>Needs Staff</b>. '+(!['N/A','UNFILLED'].includes(curStaff)?escapeHtml(curStaff)+' will move to Standby at '+escapeHtml(branch)+'. ':'')+'This changes only this work date. Use Save Edits to share the draft.</p>',showCancelButton:true,confirmButtonText:'Move this dated assignment'});
+            if(!review.isConfirmed)return false;guard();
+        }
+        await window.confirmActiveScheduleStaff(targetReference,{assertCurrent:guard});guard();if(target.startsWith('shift_')&&!["N/A","UNFILLED"].includes(curStaff)){await window.confirmActiveScheduleStaff(curStaff,{assertCurrent:guard});guard();}
+    }catch(error){window.ManagerUI.notify(error.message);return false;}
 
     if (!schedObj[day][branch].swaps) schedObj[day][branch].swaps = {};
 
@@ -9313,9 +9282,10 @@ window.executeSwap = async function(target, markAsSwap) {
             schedObj[day][branch].swaps[shiftId] = curStaff;
             schedObj[day][branch].swaps[tSId] = newStaff;
         }
-    } else if (selectedPoolStaff || selectedReliefStaff) {
-        newStaff = selectedPoolStaff?.name || selectedReliefStaff.name;
-        if(selectedReliefStaff)for(const source of selectedReliefStaff.standbySources)schedObj[day][source.branch].rest=schedObj[day][source.branch].rest.filter(name=>name!==source.name);
+    } else if (chosenStaff) {
+        newStaff = chosenStaff.name;
+        if(selectedTransferStaff){const source=selectedTransferStaff.scheduledSource;schedObj[day][source.branch].scheduled[source.shiftId]='UNFILLED';if(schedObj[day][source.branch].swaps)delete schedObj[day][source.branch].swaps[source.shiftId];}
+        for(const source of chosenStaff.standbySources||[])schedObj[day][source.branch].rest=schedObj[day][source.branch].rest.filter(name=>name!==source.name);
         schedObj[day][branch].scheduled[shiftId] = newStaff;
 
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
@@ -25832,89 +25802,35 @@ runManagerDomReady(async () => {
 // ==========================================
 // 🔥 EDITABLE STAFF POOL ENGINE
 // ==========================================
-window.removeStaffFromBranchPool = async function(staffName) {
-    let confirmMsg = await Swal.fire({
-        title: 'Remove Staff?',
-        html: `Are you sure you want to remove <b>${staffName}</b> from this branch's schedule pool?<br><br><span style="color:#64748b; font-size:12px;">They will be moved to "Unassigned" and will only appear in the Relief Staff dropdown.</span>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        confirmButtonText: 'Yes, Remove'
-    });
-
-    if(confirmMsg.isConfirmed) {
-        Swal.fire({title: 'Removing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        try {
-            const selectedProfile=await window.confirmActiveScheduleStaff(staffName);
-            if(!window.isBranchAllowed(selectedProfile.branch))throw Error('This branch transfer is outside your approved branches.');
-            await window.updateDoc(window.doc(window.db, 'cashiers', selectedProfile.staffId), {branch:'Unassigned'});
-            const emp=window.employees.find(person=>person.staffId===selectedProfile.staffId);
-            if(emp)emp.branch='Unassigned';
-            window.scheduleDirectoryProfiles=(window.scheduleDirectoryProfiles||[]).map(person=>person.staffId===selectedProfile.staffId?{...person,branch:'Unassigned'}:person);
-            window.updateStaffDisplay();
-            if(typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
-            
-            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Moved to Unassigned!', showConfirmButton: false, timer: 2000});
-        } catch(e) {
-            console.error(e);
-            Swal.fire('Staff transfer not confirmed', e.message || 'Reconnect and refresh the current staff list.', 'warning');
-        }
-    }
+window.removeStaffFromBranchPool = async function() {
+    return Swal.fire('Staff are available across branches','Change a dated assignment in the roster. Home branch changes belong in the HR employee profile.','info');
 };
 
-window.addStaffToBranchPool = async function(targetBranch) {
-    let otherStaff = window.employees.filter(e => e.staffId && e.branch !== targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
-    if (otherStaff.length === 0) return Swal.fire('No Staff Found', 'There are no other staff members in the system to pull.', 'info');
-    
-    let optionsHtml = '<option value="">-- Select Staff to Pull --</option>';
-    otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        let profileFunc = window.findEmployeeProfile || function() { return null; };
-        let realProfile = profileFunc(e.name) || e;
-        let displayName = realProfile.scheduleNickname || realProfile.cashierName || e.name;
-        optionsHtml += `<option value="${escapeHtml(encodeURIComponent(e.staffId))}">${escapeHtml(displayName)} (Current: ${escapeHtml(e.branch)})</option>`;
-    });
-
-    const { value: selectedStaff, isConfirmed } = await Swal.fire({
-        title: '➕ Pull Staff to Branch',
-        html: `Select a staff member to permanently move them to the <b>${targetBranch}</b> Active Staff Pool.<br><br>
-               <select id="swalPullStaff" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; font-size: 14px;">
-                   ${optionsHtml}
-               </select>`,
-        showCancelButton: true,
-        confirmButtonText: `Pull to ${targetBranch}`,
-        confirmButtonColor: '#0ea5e9',
-        customClass: { popup: 'rounded-2xl shadow-xl' },
-        preConfirm: () => {
-            let val = document.getElementById('swalPullStaff').value;
-            if (!val) { Swal.showValidationMessage("Please select a staff member."); return false; }
-            return val;
-        }
-    });
-
-    if (isConfirmed && selectedStaff) {
-        Swal.fire({title: 'Transferring...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        try {
-            const selectedProfile=await window.confirmActiveScheduleStaff({staffId:decodeURIComponent(selectedStaff)});
-            const docIdToUpdate=selectedProfile.staffId;
-            if(!window.isBranchAllowed(targetBranch)||!window.isBranchAllowed(selectedProfile.branch))throw Error('This branch transfer is outside your approved branches.');
-            
-            if (docIdToUpdate) {
-                await window.updateDoc(window.doc(window.db, "cashiers", docIdToUpdate), { branch: targetBranch });
-            }
-            
-            let emp = window.employees.find(e => e.staffId === selectedProfile.staffId);
-            if (emp) emp.branch = targetBranch;
-            window.scheduleDirectoryProfiles=(window.scheduleDirectoryProfiles||[]).map(person=>person.staffId===selectedProfile.staffId?{...person,branch:targetBranch}:person);
-            
-            window.updateStaffDisplay();
-            if(typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
-            
-            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Staff Pulled Successfully!', showConfirmButton: false, timer: 2000});
-        } catch(e) {
-            console.error(e);
-            Swal.fire('Staff transfer not confirmed', e.message || 'Reconnect and refresh the current staff list.', 'warning');
+window.addStaffToBranchPool = async function(branchValue) {
+    const targetBranch=Object.hasOwn(branchConfig,branchValue)?branchValue:decodeURIComponent(branchValue);
+    const user=window.auth?.currentUser,session=window.sessionUser,year=currentYear,month=currentMonth;
+    const state=JSON.stringify(currentSchedule),today=scheduleDateKey(new Date());
+    const current=()=>window.auth?.currentUser===user&&window.sessionUser===session&&currentYear===year&&currentMonth===month
+        &&JSON.stringify(currentSchedule)===state&&!window.scheduleMemoryReadOnly&&canOpenWorkspacePage(window.sessionUser,'schedule')&&window.isBranchAllowed?.(targetBranch)===true;
+    if(!current())return Swal.fire('Schedule unavailable','Open an editable schedule for an approved branch.','info');
+    const slots=[];
+    for(const [number,branches]of Object.entries(currentSchedule).sort((a,b)=>Number(a[0])-Number(b[0]))){
+        const date=`${year}-${String(month).padStart(2,'0')}-${String(number).padStart(2,'0')}`;
+        if(date<today)continue;
+        for(const rule of branchConfig[targetBranch]||[]){
+            const name=branches?.[targetBranch]?.scheduled?.[rule.id];
+            if(rule.active===false||name===undefined||name==='N/A')continue;
+            slots.push({day:Number(number),shiftId:rule.id,value:encodeURIComponent(JSON.stringify([Number(number),rule.id])),label:date+' · '+rule.name+' · '+scheduleShiftHours(rule)+' · '+name});
         }
     }
+    if(!slots.length)return Swal.fire('Prepare the roster first','Use Create Monthly Schedule to prepare shifts, then pull staff to any branch.','info');
+    const result=await Swal.fire({title:'➕ Pull Staff to a Shift',
+        html:'<p>Choose a work date and shift at <b>'+escapeHtml(targetBranch)+'</b>, then select staff from any home branch.</p><label for="swalPullSlot">Work date and shift</label><select id="swalPullSlot" style="width:100%;min-height:44px;max-width:100%"><option value="">-- Choose shift --</option>'+slots.map(slot=>'<option value="'+escapeHtml(slot.value)+'">'+escapeHtml(slot.label)+'</option>').join('')+'</select><p>Staff already assigned elsewhere can be moved after reviewing the source shift. Use Save Edits to share the finished roster.</p>',
+        showCancelButton:true,confirmButtonText:'Choose staff',preConfirm:()=>{const value=document.getElementById('swalPullSlot').value;if(!slots.some(slot=>slot.value===value)){Swal.showValidationMessage('Choose a work date and shift.');return false;}return value;}});
+    if(!result.isConfirmed)return false;
+    const slot=slots.find(slot=>slot.value===result.value);
+    if(!current()||!slot){window.ManagerUI.notify('The schedule or account changed. Reopen Pull Staff.');return false;}
+    return window.openSwapModal(slot.day,targetBranch,slot.shiftId);
 };
 
 // =======================================================
