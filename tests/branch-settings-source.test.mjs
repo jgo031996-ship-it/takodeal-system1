@@ -1,10 +1,13 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {isHistoricalOwnerChange,restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import {proof as mobileProof} from './helpers/owner-profile-mobile-inverse.mjs';
 import {ownerDeliveryProof} from './helpers/owner-delivery-upgrade-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {readFileSync as _plottedRawFs} from 'node:fs';
+import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {branchSettingsSaveProof as proof,restoreBranchSettingsSave} from './helpers/branch-settings-save-inverse.mjs';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const git=(...args)=>execFileSync('git',args,{cwd:new URL('../',import.meta.url),encoding:'utf8',maxBuffer:5e6});

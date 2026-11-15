@@ -40,7 +40,9 @@ export function attendanceScheduleIdentity(snapshot={}) {
 }
 
 export function assertAttendanceScheduleUnchanged(before,after) {
- if(attendanceScheduleIdentity(before)!==attendanceScheduleIdentity(after))throw Error('HQ updated the assigned schedule during verification. No Time In was saved. Tap Time In again to review the latest hours. Your selected late-proof draft is kept.');
+ const samePlottedHours=plannedAttendancePreview(before).verified&&plannedAttendancePreview(after).verified
+  && attendanceScheduleIdentity({...before,scheduleRevisionId:''})===attendanceScheduleIdentity({...after,scheduleRevisionId:''});
+ if(attendanceScheduleIdentity(before)!==attendanceScheduleIdentity(after)&&!samePlottedHours)throw Error('HQ updated the assigned schedule during verification. No Time In was saved. Tap Time In again to review the latest hours. Your selected late-proof draft is kept.');
  return after;
 }
 

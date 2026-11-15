@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {captureAttendanceSchedule,resolveAttendanceShift,calculateShiftEarnings} from '../takodeal-manager/payroll-safety.js';
+import {resolveClockOutShift} from '../takodeal-manager/clock-out-schedule.js';
+const branch='New Branch',name='Fictional Crew',person={id:'fictional',staffId:'fictional',cashierName:name,branch:'Home Branch',dailyRate:450,eligibleNightDiff:false};
+const rules=[['m1','Morning 1','08:00','16:30'],['m2','Morning 2','10:00','18:30'],['mid','Mid','12:00','20:30'],['n1','Night 1','16:00','00:30'],['n2','Night 2','19:00','03:30']];
+for(const [id,label,start,end]of rules)test('payroll and linked Time Out preserve '+label+' at a new branch after later roster changes',()=>{
+ const plan={currentYear:2026,currentMonth:11,branchConfig:{[branch]:[{id,name:label,startTime:start,endTime:end,active:true,days:[0,1,2,3,4,5,6]}]},employees:[{staffId:person.id,name,branch:person.branch}],currentSchedule:{16:{[branch]:{scheduled:{[id]:name}}}}},at=new Date('2026-11-16T'+start+':00+08:00'),snapshot=captureAttendanceSchedule(at,branch,name,plan,{[name]:person});
+ assert.equal(snapshot.wasScheduled,true);assert.equal(snapshot.shiftId,id);assert.equal(snapshot.shiftName,label);const log={id:'time-in-'+id,type:'TIME IN',staffId:person.id,staffName:name,branch,timestamp:at,scheduleSnapshot:snapshot},after=structuredClone(plan);after.branchConfig[branch][0].startTime='07:00';after.currentSchedule[16][branch].scheduled[id]='Other Crew';const shift=resolveAttendanceShift(log,after,{[name]:person}),out=resolveClockOutShift(log,after,{[name]:person});assert.equal(shift.expectedStartAt.toISOString(),snapshot.expectedStartAt);assert.equal(out.expectedEndAt.toISOString(),snapshot.expectedEndAt);assert.equal(calculateShiftEarnings(person,shift,at,new Date(snapshot.expectedEndAt)).basicPay,450);
+ const ended={...log,timestamp:new Date(snapshot.expectedEndAt)};assert.equal(resolveAttendanceShift(ended,after,{[name]:person}).needsScheduleReview,true);assert.equal(log.scheduleSnapshot.shiftId,id);
+});
