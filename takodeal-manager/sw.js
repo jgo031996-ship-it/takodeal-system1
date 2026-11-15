@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v154-schedule-flexible-20261115-r2';
+const CACHE_NAME = 'takodeal-manager-core-v155-branch-inventory-20261115-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -69,6 +69,7 @@ CORE_ASSETS.push('./customer-site-settings.js','./customer-hub-settings.js','./c
 CORE_ASSETS.push('./stock-cycle.js','./refund-payroll.js');
 CORE_ASSETS.push('./financial-flow-model.js','./financial-flow-ui.js','./financial-flow.css');
 CORE_ASSETS.push('./inventory-editor.js','./inventory-editor-actions.js','./inventory-item-edit-model.js','./inventory-overview.js','./inventory-editor.css');
+CORE_ASSETS.push('./branch-inventory-model.js','./branch-inventory-setup.js');
 CORE_ASSETS.push('./inventory-stock-forms.js','./inventory-stock-forms.css','./inventory-stock-form-model.js','./inventory-stock-form-actions.js','./inventory-yield.js','./inventory-workspace.css','./inventory-intelligence.js','./inventory-intelligence-model.js','./inventory-intelligence-reader.js','./inventory-history-workspace.js','./inventory-history-workspace.css','./inventory-history-model.js','./inventory-history-services.js');
 CORE_ASSETS.push('./inventory-intelligence.css');
 CORE_ASSETS.push('./inventory-waste-form.js','./waste-report-model.js','./inventory-waste-review.js','./inventory-waste-review-ui.js');

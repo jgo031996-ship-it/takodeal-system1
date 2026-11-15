@@ -38,6 +38,12 @@ function uiFixture({client={},decide=async()=>({isConfirmed:false})}={}){
  const base={preview:async(...args)=>{calls.push(['preview',...args]);return view;},commit:async(...args)=>{calls.push(['commit',...args]);return {...view,saved:true};},reversalPreview:async(...args)=>{calls.push(['reversalPreview',...args]);return reversed;},reverse:async(...args)=>{calls.push(['reverse',...args]);return {...view,saved:true};},pendingReversal:()=>null};
  Object.assign(api,{ManagerUI:{notify:message=>messages.push(message)},Swal:{fire:async options=>{dialogs.push(options);return decide(options);}},invalidateCache:key=>calls.push(['invalidate',key]),updateDoc:()=>{throw Error('Unexpected client stock write');},deleteDoc:()=>{throw Error('Unexpected record deletion');}});const document={getElementById:id=>nodes.get(id)||null};installOwnerPrep(api,document,{client:{...base,...client}});const context=encodeURIComponent(JSON.stringify({operationId,branch,outputInventoryId:'output',logId:'prep-'+operationId+'-0'}));return {api,nodes,messages,dialogs,calls,context};
 }
+test('the Owner prepared-item picker finishes missing catalog setup before reading the branch list',async()=>{
+ const f=uiFixture();let ready=false,reads=0;
+ f.api.ensureBranchInventory=async(name,{assertCurrent})=>{assert.equal(name,branch);assertCurrent();ready=true;return {issues:[]};};
+ Object.assign(f.api,{db:{},collection:()=>({}),where:()=>({}),limit:()=>({}),query:()=>({}),getDocsFromServer:async()=>{assert.equal(ready,true);reads++;return {metadata:{fromCache:false,hasPendingWrites:false},docs:[{id:'prepared-local',data:()=>({branch,name:'Fictional Sauce',currentStock:0,baseUom:'Gram'})}]};}});
+ await f.api.loadBatchItemsDropdown();assert.equal(reads,1);assert.match(f.nodes.get('batchItem').innerHTML,/prepared-local/);assert.equal(f.calls.some(row=>row[0]==='preview'||row[0]==='commit'),false);
+});
 test('actual Owner prep adapter shows concrete escaped before/after quantities and cancel performs no commit',async()=>{
  const f=uiFixture();assert.equal(await f.api.executeBatchPrep(),false);assert.equal(f.calls.filter(row=>row[0]==='commit').length,0);assert.match(f.dialogs[0].html,/250 → 2,250 Gram/);assert.match(f.dialogs[0].html,/5,000 → 2,600 Gram/);assert.match(f.dialogs[0].html,/&lt;img/);assert.doesNotMatch(f.dialogs[0].html,/<img|<svg/);assert.equal(f.nodes.get('batchModal').style.display,'flex');assert.equal(f.nodes.get('btnExecuteBatch').disabled,false);
 });

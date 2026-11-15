@@ -1,3 +1,5 @@
+import {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';
+import {installBranchInventorySetup,branchInventoryActor} from './branch-inventory-setup.js';
 import {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {uploadHQImage} from './hq-image-upload.js';
@@ -40,6 +42,7 @@ import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+runManagerDomReady(() => installBranchInventorySetup(window));
 runManagerDomReady(() => installPrivatePrepReviews(window,document));
 runManagerDomReady(() => {installEmployeePhoto(window,document);installOwnerDispatchDetails(window,document);installOwnerPrep(window,document);});
 runManagerDomReady(() => installOwnerPayslipSharing(window,document,{actorKey:()=>payrollActorKey(window),assertFresh:data=>Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)])}));
@@ -5609,6 +5612,8 @@ window.updateInvSummary = function () {
 };
 
 window.saveAdvancedInventoryItem = async function () {
+  const createUser=window.auth?.currentUser,createSession=window.sessionUser;
+  const assertCreate=()=>{if(window.auth?.currentUser!==createUser||window.sessionUser!==createSession||!canOpenInventoryTab(window.sessionUser,'Overview'))throw Error('The inventory account changed. Reopen the item form.');};
   let selectedBranch = document.getElementById('newInvBranch').value;
   let category = document.getElementById('newInvCat').value;
   let name = document.getElementById('newInvName').value.trim();
@@ -5650,7 +5655,7 @@ window.saveAdvancedInventoryItem = async function () {
         let doBroadcast = document.getElementById('newInvBroadcastAll').checked;
 
         const duplicateQuery = window.query(window.collection(window.db, "inventory"), window.where("name", "==", name));
-        const duplicateSnap = await window.getDocs(duplicateQuery);
+        const duplicateSnap = await window.getDocsFromServer(duplicateQuery);
         let existingBranches = [];
         duplicateSnap.forEach(d => existingBranches.push(d.data().branch));
 
@@ -5674,7 +5679,7 @@ window.saveAdvancedInventoryItem = async function () {
         }
 
         let branchesToCreate = doBroadcast ? (window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"]) : [selectedBranch];
-        let creationPromises = [];
+        let creationRows = [];
         let createdCount = 0;
 
         for (let branch of branchesToCreate) {
@@ -5707,11 +5712,24 @@ window.saveAdvancedInventoryItem = async function () {
 
             if (photoUrl !== undefined) payload.image = photoUrl;
 
-            creationPromises.push(window.addDoc(window.collection(window.db, "inventory"), payload));
+            creationRows.push({ref:window.doc(window.db,"inventory",await branchInventoryId(branch,name)),payload});
             createdCount++;
         }
 
-        await Promise.all(creationPromises);
+        createdCount=await window.runTransaction(window.db,async tx=>{
+            assertCreate();const snapshots=await Promise.all(creationRows.map(row=>tx.get(row.ref)));assertCreate();
+            const pending=[];
+            for(let index=0;index<creationRows.length;index++){
+                const row=creationRows[index],saved=snapshots[index];
+                if(saved.exists()){
+                    const existing=saved.data();
+                    if(existing.branch!==row.payload.branch||existing.name!==name)throw Error('The stock item ID belongs to a different record.');
+                    if(row.payload.branch===selectedBranch)throw Error('This item was created while setup was running. Refresh Live Stocks and use Restock for quantities.');
+                }else pending.push(row);
+            }
+            for(const row of pending)tx.set(row.ref,row.payload);
+            return pending.length;
+        });
     
         Swal.fire({
             title: '✅ Item Created!',
@@ -15850,6 +15868,7 @@ window.loadBranchManager = async function() {
                     <td style="padding: 12px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
                         <button onclick="window.openBranchSettings('${d.id}')" style="background:#f8fafc; color:#334155; border:1px solid #cbd5e1; padding:8px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">⚙️ Settings</button>
                         ${updateBtnHtml}
+                        <button type="button" onclick="window.syncBranchInventory('${encodeURIComponent(d.name).replace(/'/g,'%27')}')" ${d.name==='Main Office'?'hidden':''} style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:8px 12px;border-radius:6px;font-size:11px;white-space:normal">Sync Stock Items</button>
                         ${delBtn}
                     </td>
                 </tr>
@@ -16035,52 +16054,27 @@ window.openAddBranchModal = function() {
 // 🏢 BRANCH CREATION ENGINE (WITH TRUE GPS SYNC)
 // ==========================================
 window.saveNewBranch = async function() {
-    let name = document.getElementById('newBranchName').value.trim();
-    // 🔥 Grab the hidden GPS coordinates from the Leaflet Map!
-    let lat = document.getElementById('newBranchLat') ? document.getElementById('newBranchLat').value : null;
-    let lng = document.getElementById('newBranchLng') ? document.getElementById('newBranchLng').value : null;
-    
-    if (!name) return Swal.fire('Error', 'Branch name is required!', 'error');
-    
-    if (window.globalActiveBranches.includes(name)) {
-        return Swal.fire('Duplicate', 'A branch with this name already exists!', 'warning');
-    }
-
-    let btn = document.getElementById('btnSaveNewBranch');
-    btn.innerText = "⏳ Provisioning..."; btn.disabled = true;
-
-    try {
-        let payload = { 
-            name: name, 
-            isCore: false, 
-            createdAt: serverTimestamp() 
-        };
-        
-        // 🔥 Inject the exact map coordinates into the payload!
-        if (lat && lng) {
-            payload.lat = parseFloat(lat);
-            payload.lng = parseFloat(lng);
-        }
-
-        await addDoc(collection(db, "branches"), payload);
-        
-        Swal.fire({
-            title: '🎉 Branch Online!',
-            text: `${name} is now officially integrated into the TAKODEÁL system with GPS tracking!`,
-            icon: 'success',
-            confirmButtonColor: '#8b5cf6', 
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-        
-        window.autoSetupNewBranch(name); 
-        
-        document.getElementById('addBranchModal').style.display = 'none';
-        window.loadBranchManager();
-    } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to add branch.', 'error');
-    } finally {
-        btn.innerText = "🚀 Launch Branch"; btn.disabled = false;
-    }
+    const name=document.getElementById('newBranchName').value.trim();
+    const latRaw=document.getElementById('newBranchLat')?.value,lngRaw=document.getElementById('newBranchLng')?.value;
+    if(!name||name.length>128||/[\u0000-\u001f]/.test(name)||['__proto__','constructor','prototype'].includes(name))return Swal.fire('Branch name required','Enter a valid store branch name.','warning');
+    const btn=document.getElementById('btnSaveNewBranch'),user=window.auth?.currentUser,session=window.sessionUser;
+    let registered=false;
+    const guard=()=>{branchInventoryActor(window,name);if(window.auth?.currentUser!==user||window.sessionUser!==session||document.getElementById('newBranchName').value.trim()!==name)throw Error('The account or branch form changed. Reopen branch setup.');};
+    try{
+        guard();btn.innerText='Setting up branch…';btn.disabled=true;
+        const known=await window.getDocsFromServer(window.collection(window.db,'branches'));guard();
+        if(known.metadata?.fromCache!==false||known.metadata?.hasPendingWrites!==false)throw Error('Reconnect to confirm the current branch list.');
+        if(known.docs.some(row=>row.data().name===name))throw Error('This branch is already saved. Use Sync Stock Items in Branch Manager to finish or repair its item setup.');
+        const payload={name,isCore:false,createdAt:window.serverTimestamp(),inventorySetupVersion:1,inventorySetupStatus:'Pending'};
+        if(latRaw!==''&&lngRaw!==''&&latRaw!=null&&lngRaw!=null){const lat=Number(latRaw),lng=Number(lngRaw);if(!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180)throw Error('Choose valid branch map coordinates.');payload.lat=lat;payload.lng=lng;}
+        const branchId=(await branchInventoryId('branch-registration',name)).replace('branch-stock-','branch-');guard();
+        await window.runTransaction(window.db,async tx=>{const ref=window.doc(window.db,'branches',branchId),saved=await tx.get(ref);guard();if(saved.exists())throw Error('This branch was already created. Refresh Branch Manager and use Sync Stock Items.');tx.set(ref,payload);});registered=true;
+        const result=await window.autoSetupNewBranch(name,{assertCurrent:guard});guard();
+        document.getElementById('addBranchModal').style.display='none';await window.loadBranchManager();
+        await Swal.fire({titleText:result.ready?'Branch and stock items ready':'Branch saved · some items need review',text:name+': '+result.created+' missing stock items added with starting quantities at zero. Existing quantities were kept.'+(result.issues.length?' '+result.issues.map(row=>row.name+': '+row.message).slice(0,5).join(' '):''),icon:result.ready?'success':'warning'});
+        return result;
+    }catch(error){console.error('Branch setup:',error);await Swal.fire({titleText:registered?'Branch saved · item setup incomplete':'Branch setup not confirmed',text:error.message+(registered?' Use Sync Stock Items in Branch Manager to retry safely.':''),icon:'warning'});if(registered)await window.loadBranchManager();return false;}
+    finally{btn.innerText='🚀 Launch Branch';btn.disabled=false;}
 };
 
 window.deleteBranch = async function(docId, name) {
@@ -20510,38 +20504,19 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
 // 🌍 BRANCH ECOSYSTEM AUTOMATOR
 // ==========================================
 
-window.autoSetupNewBranch = async function(branchName) {
-    try {
-        // 1. Add Default Shifts to Schedule Manager
-        const schedRef = doc(db, "settings", "global_schedule");
-        const schedSnap = await getDoc(schedRef);
-        if (schedSnap.exists()) {
-            let data = schedSnap.data();
-            if (!data.branchConfig) data.branchConfig = {};
-            if (!data.branchConfig[branchName]) {
-                data.branchConfig[branchName] = [
-                    // 🔥 THE FIX: Added the 'active' and 'days' arrays so the calendar doesn't crash!
-                    { id: 'shift_1', name: 'Morning (9am-5:30pm)', active: true, days: [0,1,2,3,4,5,6] },
-                    { id: 'shift_2', name: 'Mid (4:30pm-12:30am)', active: true, days: [0,1,2,3,4,5,6] },
-                    { id: 'shift_3', name: 'Night 1 (6:30pm-3am)', active: true, days: [0,1,2,3,4,5,6] }
-                ];
-                await updateDoc(schedRef, { branchConfig: data.branchConfig });
-            }
-        }
-
-        // 2. Clone Cabantian's Live Inventory (with 0 stock)
-        const cabantianInv = collection(db, "inventory_Cabantian");
-        const newBranchInv = collection(db, "inventory_" + branchName);
-        const snap = await getDocs(cabantianInv);
-        
-        snap.forEach(async (docSnap) => {
-            let item = docSnap.data();
-            item.stock = 0; // Reset stock to 0 for the new branch
-            await setDoc(doc(newBranchInv, docSnap.id), item);
-        });
-
-        console.log("✅ Auto-Setup Complete for", branchName);
-    } catch(e) { console.error("Auto Setup Error:", e); }
+window.autoSetupNewBranch = async function(branchName,{assertCurrent=()=>{}}={}) {
+    const result=await window.ensureBranchInventory(branchName,{assertCurrent});assertCurrent();
+    // Keep the existing default-shift setup, with concurrent branch edits retained.
+    await window.runTransaction(window.db,async tx=>{
+        const ref=window.doc(window.db,'settings','global_schedule'),saved=await tx.get(ref);assertCurrent();branchInventoryActor(window,branchName);
+        if(!saved.exists())return;
+        const config=saved.data().branchConfig||{};if(Object.hasOwn(config,branchName))return;
+        const days=[0,1,2,3,4,5,6],shifts=[
+            {id:'shift_1',name:'Morning (9am-5:30pm)',startTime:'09:00',endTime:'17:30',shiftType:'morning',active:true,days},
+            {id:'shift_2',name:'Mid (4:30pm-12:30am)',startTime:'16:30',endTime:'00:30',shiftType:'mid',active:true,days},
+            {id:'shift_3',name:'Night 1 (6:30pm-3am)',startTime:'18:30',endTime:'03:00',shiftType:'night',active:true,days}
+        ];tx.update(ref,{branchConfig:{...config,[branchName]:shifts}});
+    });assertCurrent();return result;
 };
 
 window.autoCleanupDeletedBranch = async function(branchName) {
@@ -21228,11 +21203,11 @@ window.loadBranchPrepRestrictions = async function() {
     listDiv.innerHTML = '<div style="color: #d97706; font-weight: bold;">⏳ Loading prep items...</div>';
 
     try {
-        // Fetch Master List of Prep Items from Inventory (using Main Office as reference)
-        const invQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("showInPrep", "==", true));
+        // Include prep items saved at any branch, including newly opened stores.
+        const invQ = query(collection(db, "inventory"), where("showInPrep", "==", true));
         const invSnap = await getDocs(invQ);
         let allPrepItems = [];
-        invSnap.forEach(d => allPrepItems.push(d.data().name));
+        invSnap.forEach(d => {const row=d.data();if(activeInventoryTemplate(row)&&typeof row.name==='string'&&!allPrepItems.includes(row.name))allPrepItems.push(row.name);});
         allPrepItems.sort();
 
         // Fetch Branch Settings
@@ -21245,7 +21220,7 @@ window.loadBranchPrepRestrictions = async function() {
 
         let html = '';
         if(allPrepItems.length === 0) {
-            html = '<div style="color: #ef4444; font-weight: bold;">No prep items found in Main Office inventory. Ensure "Show in Kitchen Prep" is checked for items.</div>';
+            html = '<div style="color: #ef4444; font-weight: bold;">No enabled prep items found in inventory. Ensure "Show in Kitchen Prep" is checked for items.</div>';
         } else {
             allPrepItems.forEach(item => {
                 let isChecked = (allowed.length === 0 || allowed.includes(item)) ? 'checked' : ''; 
