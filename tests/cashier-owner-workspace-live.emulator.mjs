@@ -24,7 +24,7 @@ const read=async(db,table,id)=>(await sdk.getDocFromServer(sdk.doc(db,table,id))
 const count=async(db,table)=>(await sdk.getDocsFromServer(sdk.collection(db,table))).size;
 // Server-only namespaces are inspected with the fixture's explicit bypass,
 // never by pretending Owner clients can list private session records.
-const privateCount=table=>env.withSecurityRulesDisabled(context=>count(context.firestore(),table));
+const privateCount=async table=>{let total;await env.withSecurityRulesDisabled(async context=>{total=await count(context.firestore(),table);});assert.equal(Number.isSafeInteger(total),true,'The private fixture inspection must return an actual SDK count.');return total;};
 beforeEach(async()=>{await env.clearFirestore();await seed('hq_managers','fictional-owner-source',ownerRow);await seed('branches','fictional-agdao',branchRow);await seed('branches','fictional-maa',{name:'Maa',active:true});});
 afterEach(()=>{for(const stop of stops)stop();stops.clear();});
 function fixture({claims:override={},user:overUser={}}={}){
