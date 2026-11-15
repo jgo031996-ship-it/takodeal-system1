@@ -15,3 +15,9 @@ The paired Staff client is `fix/staff-personal-vault`, based on the deployed Sta
 Validate with synthetic identities: activate an Owner-issued code, pause new enrollment, open Vault setup, create a separate PIN, reopen Pay, recover with the current personal code, and verify that Pay remains locked after recovery. Reject a different staff ID/device, disabled credential, blocked phone and changed registration. Do not use real employee PINs in logs or screenshots.
 
 Local backend validation: 157 directly relevant tests pass, including the personal-phone authority, private profile/Vault, payroll, loans, setup-code and recovery tests. Production activation still requires an authenticated Firebase deployment connection.
+
+## Cloud Shell source check
+
+`python3 tools/personal-vault-release.py` checks the two existing functions using the signed-in Cloud Shell account. It downloads their fixed source archive generations, verifies all 65 reviewed runtime files against the baseline/candidate manifest, checks each runtime identity, and stages only the reviewed edits over the deployed source. Other deployed files are retained. A moved deployment, changed source, unsafe archive or unexpected runtime identity blocks the check. The checker runs no deployment, changes no IAM/Firestore data, and prints no credentials or environment values.
+
+Wait for `CHECK PASSED` for both functions and retain the printed `STAGE` path. Inspect the printed runtime settings before deploying either staged source. Do not publish the Staff client before both services have been deployed and verified.

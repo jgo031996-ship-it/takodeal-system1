@@ -24,6 +24,8 @@ jobs:
             functions/staff-document-broker/package-lock.json
             functions/staff-device-setup/package-lock.json
             functions/cash-remittance-review/package-lock.json
+      - name: Check bounded Vault release source staging
+        run: python3 tests/personal-vault-release-test.py
       - name: Install locked private document runtime
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-document-broker
       - name: Verify real private document SDK without cloud access
