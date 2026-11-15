@@ -139,3 +139,7 @@ test('every branch displays the full active pool, home labels and no HR-transfer
  const staff=[employee('maa','Maa Crew'),employee('agdao','Agdao Crew','Agdao'),employee('none','Flexible','Unassigned'),employee('former','Former','Maa',{active:false})],wrapper={children:[],previousElementSibling:{},appendChild(node){this.children.push(node);}},document={getElementById:id=>id==='staffListWrapper'?wrapper:{style:{}},querySelector:()=>null,createElement:()=>({style:{}})},window={employees:staff,currentActiveTab:'Cabantian'};
  vm.runInNewContext(extract('updateStaffDisplay'),{window,document,employees:staff,activeStaffProfile,escapeHtml:esc});window.updateStaffDisplay();assert.equal(wrapper.children.length,3);assert.ok(wrapper.children.some(row=>row.textContent==='Agdao Crew · Home: Agdao'));assert.match(wrapper.previousElementSibling.innerHTML,/All Branches/);assert.doesNotMatch(wrapper.previousElementSibling.innerHTML,/removeStaffFromBranchPool/);
 });
+
+test('replacing an offboarded assignee does not reinsert them into Standby or a swap badge',async()=>{
+ const f=fixture();f.w.scheduleDirectoryProfiles.find(row=>row.staffId==='existing').active=false;await f.open();assert.doesNotMatch(f.html(),/>Existing<|Swapped w\/ Existing/);assert.equal(await f.w.executeSwap(f.option('Anj').value,true),true);assert.equal(f.ctx.currentSchedule[28].Maa.rest.includes('Existing'),false);assert.equal(f.ctx.currentSchedule[28].Maa.swaps.m1,undefined);assert.equal(f.ctx.currentSchedule[29].Maa.scheduled.m1,'Existing');
+});

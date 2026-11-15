@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {scheduleCrossBranchProof as proof,restoreScheduleCrossBranch,scheduleCrossBranchSha} from './helpers/schedule-cross-branch-inverse.mjs';
 import {OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8');
-test('the schedule release preserves every deployed Owner byte outside its six exact reviewed files',()=>{
+test('the schedule release preserves every deployed Owner byte outside its exact reviewed files',()=>{
  const product=['takodeal-manager','Takodeal-POS','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules'];
  const changed=execFileSync('git',['diff','--name-only',proof.base,'--',...product],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean).sort();
  assert.deepEqual(changed,Object.keys(proof.files).sort());
@@ -17,7 +17,7 @@ test('the schedule release preserves every deployed Owner byte outside its six e
  }
 });
 test('the page, entry module, service worker and update notice identify the same schedule release',()=>{
- const release='schedule-flexible-20261115-r1';assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v153-'+release);
+ const release='schedule-flexible-20261115-r2';assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v154-'+release);
  assert.ok(read('takodeal-manager/sw.js').includes(OWNER_DOCUMENT_RELEASE));
  assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));
  const html=read('takodeal-manager/index.html');assert.ok(html.includes('content="'+release+'"'));assert.ok(html.includes('auth.js?v='+release));

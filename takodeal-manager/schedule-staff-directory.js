@@ -48,6 +48,21 @@ export function resolveScheduleEmployeeReference(reference,directory){
     return identity.active&&identity.profile?.scheduleEligible!==false?identity.profile:null;
 }
 
+/** Current roster presentation only. Exact inactive identities are omitted;
+ * missing or ambiguous legacy names remain visible for identity review.
+ * Historical versions and original saved records are never rewritten. */
+export function createScheduleRosterView(directory){
+    const resolve=createStaffHistoryResolver(Array.isArray(directory)?directory:[]);
+    const inactive=reference=>{const result=resolve(reference);return result.status==='archived'||result.active&&result.profile?.scheduleEligible===false;};
+    const day=(row,{historical=false}={})=>{
+        if(historical)return row;
+        return {...row,scheduled:Object.fromEntries(Object.entries(row?.scheduled||{}).map(([slot,name])=>[slot,inactive(name)?'UNFILLED':name])),
+            rest:(row?.rest||[]).filter(name=>!inactive(name)),unavailable:(row?.unavailable||[]).filter(entry=>!inactive(entry)),
+            swaps:Object.fromEntries(Object.entries(row?.swaps||{}).filter(([,name])=>!inactive(name)))};
+    };
+    return {inactive,day};
+}
+
 /** Current status wins; an exactly ID-bound saved roster may add old aliases.
  * Inactive accounts remain in the identity index so their names cannot be
  * silently adopted by a different active employee. */
