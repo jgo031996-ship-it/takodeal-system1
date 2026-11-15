@@ -1,3 +1,4 @@
+import {createPlottedTimeInBatch} from '../takodeal-staff/plotted-time-in.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -171,9 +172,10 @@ function punchHarness(fixes){
     let writes=0;const records=[],alerts=[],nodes=new Map();
     const window={getAttendanceLocation:async()=>{const next=fixes.shift();if(next instanceof Error)throw next;return next;},checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
     const context={...payroll,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,window,document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,videoWidth:0});return nodes.get(id);}},localStorage:{getItem:key=>key.endsWith('_id')?'staff-id':'Sample Staff'},
-        Swal:{fire:async(...args)=>{alerts.push(args);return {isConfirmed:true};}},doc:()=>({id:'sample'}),collection:()=>({}),query:()=>({}),where:()=>({}),db:{},getDocs:async()=>({forEach(){}}),getDoc:async()=>({exists:()=>false}),serverTimestamp:()=>null,
+        Swal:{fire:async(...args)=>{alerts.push(args);return {isConfirmed:true};}},doc:(parent,table,id)=>({id:id||'sample',path:(id?table:parent.table)+'/'+(id||'sample')}),collection:(_db,table)=>({table}),query:()=>({}),where:()=>({}),db:{},getDocs:async()=>({forEach(){}}),getDoc:async()=>({exists:()=>false}),serverTimestamp:()=>null,
         writeBatch:()=>({set:(_,record)=>records.push(record),commit:async()=>writes++}),Date,console:{error(){}}};
     context.getDocFromServer=context.getDoc;
+    context.createPlottedTimeInBatch=createPlottedTimeInBatch;context.runTransaction=async(_db,work)=>{const staged=[];const result=await work({get:context.getDoc,set:(_ref,data)=>staged.push(data)});records.push(...staged);writes++;return result;};
     Object.assign(window,{db:context.db,query:context.query,collection:context.collection,where:context.where,getDocs:context.getDocs,getDocsFromServer:context.getDocs,doc:context.doc,getDoc:context.getDoc,getDocFromServer:context.getDocFromServer});
     const start=engine.indexOf('window.punchTime = async function'),end=engine.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);return {window,context,records,alerts,writes:()=>writes};

@@ -28,7 +28,8 @@ test('preview escapes all staff-controlled labels',()=>{
 });
 test('schedule guard ignores elapsed late minutes but stops changed saved instructions',()=>{
  const before=saved();assert.equal(attendanceScheduleIdentity(before),attendanceScheduleIdentity({...before,clockInAt:'2026-10-29T02:05:00Z',lateMinutes:5}));
- for(const [key,value]of Object.entries({shiftId:'morning1',expectedStartAt:'2026-10-29T01:00:00Z',expectedEndAt:'2026-10-29T09:30:00Z',branch:'Maa',scheduleRevisionId:'roster-2',scheduleReviewReason:'multiple-assignments',needsScheduleReview:true}))assert.throws(()=>assertAttendanceScheduleUnchanged(before,{...before,[key]:value}),/No Time In was saved/);
+ assert.doesNotThrow(()=>assertAttendanceScheduleUnchanged(before,{...before,scheduleRevisionId:'roster-2'}));assert.throws(()=>assertAttendanceScheduleUnchanged({...before,wasScheduled:false},{...before,wasScheduled:false,scheduleRevisionId:'roster-2'}));
+ for(const [key,value]of Object.entries({shiftId:'morning1',expectedStartAt:'2026-10-29T01:00:00Z',expectedEndAt:'2026-10-29T09:30:00Z',branch:'Maa',scheduleReviewReason:'multiple-assignments',needsScheduleReview:true}))assert.throws(()=>assertAttendanceScheduleUnchanged(before,{...before,[key]:value}),/No Time In was saved/);
 });
 test('relief work is visible even if the home branch occurs first with standby',()=>{
  const day=staffScheduleDay({Maa:{rest:['Toni Sample']},Cabantian:{scheduled:{morning2:' Toni Sample '}}},{Cabantian:[{id:'morning2',name:'Morning 2 Cashier'}]},['Toni Sample']);

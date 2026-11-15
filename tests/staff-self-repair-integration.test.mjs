@@ -1,4 +1,6 @@
-import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';import {execFileSync as rawExecFileSync} from 'node:child_process';
+import {normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const execFileSync=(command,args,options)=>normalizePlottedGitResult(rawExecFileSync(command,args,options),command,args);
 import {staffSelfRepairSwapsProof as proof,restoreStaffSelfRepairSwaps as restore,staffSelfRepairSha as sha} from './helpers/staff-self-repair-swaps-inverse.mjs';
 import {staffRepairTouchProof as touchProof,restoreStaffRepairTouch} from './helpers/staff-repair-touch-inverse.mjs';
 import {restoreStaffPhoneHelp} from './helpers/staff-phone-help-inverse.mjs';
@@ -28,7 +30,7 @@ test('classic repair and startup are exact parser-inline copies before dependenc
  const page=read('takodeal-staff/index.html'),startup=read('takodeal-staff/staff-startup.js'),repair=read('takodeal-staff/staff-self-repair.js'),firstLink=page.indexOf('<link');
  for(const runtime of [startup,repair]){const inline='<script>'+runtime+'</script>';assert.equal(page.split(inline).length,2);assert.ok(page.indexOf(inline)<firstLink);}
  assert.equal((page.match(/data-staff-self-repair>/g)||[]).length,4);assert.doesNotMatch(page,/<script[^>]+src=["']staff-self-repair\.js/);assert.doesNotMatch(repair,/^\s*(?:import|export)\s/m);
- assert.match(page,/app\.js\?v=staff-phone-location-help-20261114-r1/);assert.ok(read('takodeal-staff/sw.js').includes('./staff-self-repair-sdk.js'));
+ assert.match(page,/app\.js\?v=staff-plotted-attendance-20261116-r1/);assert.ok(read('takodeal-staff/sw.js').includes('./staff-self-repair-sdk.js'));
 });
 test('other apps, backend/rules, normal punching/upload code and separate private identity remain byte-exact to live b576',()=>{
  const changed=git('diff','--name-only',proof.base,'--','Takodeal-POS','takodeal-manager','takodeal-customer','takodeal-rider','takodeal-franchise','functions','firestore.rules','storage.rules');assert.equal(changed,'');

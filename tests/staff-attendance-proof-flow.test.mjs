@@ -1,3 +1,4 @@
+import {createPlottedTimeInBatch} from '../takodeal-staff/plotted-time-in.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -47,7 +48,7 @@ function harness({late=true}={}) {
         getDocs:async q=>{const docs=[...records].filter(([path,row])=>path.startsWith(q.path+'/') && (q.filters||[]).every(([key,op,value])=>op!=='=='||row[key]===value)).map(([path])=>snapshot(path));return {docs,empty:!docs.length,forEach:fn=>docs.forEach(fn)};},
         serverTimestamp:()=>new Date(clockMs),
         writeBatch:()=>{const changes=[];return {set:(ref,data)=>changes.push([pathOf(ref),clone(data)]),async commit(){events.push('commit:start');if(h.beforeCommit)await h.beforeCommit();batches.push(changes.map(([path,data])=>({path,data})));for(const [path,data]of changes){records.set(path,data);writes.push(path);}events.push('commit:done');}};},
-        runTransaction:async(_db,fn)=>{const changes=[];const result=await fn({get:async ref=>snapshot(ref),set:(ref,data)=>changes.push([pathOf(ref),clone(data)]),update:(ref,data)=>changes.push([pathOf(ref),{...clone(records.get(pathOf(ref))),...clone(data)}])});transactions.push(changes);for(const [path,data]of changes){records.set(path,data);writes.push(path);}return result;}};
+        runTransaction:async(_db,fn)=>{const changes=[];const result=await fn({get:async ref=>snapshot(ref),set:(ref,data)=>changes.push([pathOf(ref),clone(data)]),update:(ref,data)=>changes.push([pathOf(ref),{...clone(records.get(pathOf(ref))),...clone(data)}])});if(changes.some(([,data])=>data.type==='TIME IN')){events.push('commit:start');if(h.beforeCommit)await h.beforeCommit();batches.push(changes.map(([path,data])=>({path,data})));events.push('commit:done');}else transactions.push(changes);for(const [path,data]of changes){records.set(path,data);writes.push(path);}return result;}};
     api.getDocsFromServer=api.getDocs;
     const localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
     const h={records,writes,batches,transactions,events,nodes,node,alerts,uploadCalls,localStorage,lateForm:{reason:'Delayed public transport; synthetic test only.',file:screenshot},cancelDialog:false};
@@ -70,7 +71,7 @@ function harness({late=true}={}) {
         }return {isConfirmed:true};},close(){},showLoading(){},showValidationMessage(message){events.push('validation');alerts.push(['Validation',message]);}};
     const document={hidden:false,getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]};
     node('view-timeclock').classList={contains:value=>value==='active'};
-    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,...savedShiftProposals,...scheduleDeclarations,chooseClockInSchedule,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
+    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,...savedShiftProposals,...scheduleDeclarations,chooseClockInSchedule,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,createPlottedTimeInBatch:(api,options)=>createPlottedTimeInBatch(api,{...options,now:()=>clockMs}),prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
     return Object.assign(h,{window,punch:type=>window.punchTime(type),now:()=>clockMs,advance:milliseconds=>{clockMs+=milliseconds;}});
 }
 

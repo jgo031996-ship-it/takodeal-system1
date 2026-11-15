@@ -184,6 +184,7 @@ function clockInSnapshotShift(log, staffName) {
     const distance = (actual - expected) / minute;
     if (distance < -90 || distance >= 18 * 60) return result;
     const validEnd = ending && Number.isFinite(+ending) && ending > expected && ending - expected <= 18 * 60 * minute;
+    if(snapshot.wasScheduled===true&&validEnd&&actual>=ending)return result;
     return { ...result, shiftId: snapshot.shiftId ?? null, shiftName: snapshot.shiftName || '', shiftType: snapshot.shiftType || 'other',
         expectedStartHour: (expected - parts(expected).midnight) / (60 * minute), expectedStartAt: expected,
         expectedEndAt: validEnd ? ending : null, isNightShift: snapshot.isNightShift === true && Boolean(validEnd),
@@ -467,7 +468,7 @@ function exactClockInAssignment(actual, branch, staffName, schedule, profiles) {
             const startAt = times.start === null ? null : new Date(midnight + times.start * minute);
             const endAt = startAt && duration ? new Date(+startAt + duration * minute) : null;
             const diff = startAt ? (actual - startAt) / minute : null;
-            const plausible = diff !== null && diff >= -90 && diff < 18 * 60 && (!endAt || actual <= endAt);
+            const plausible = diff !== null && diff >= -90 && diff < 18 * 60 && (!endAt || actual < endAt);
             const conflict = [...savedPeople, ...Object.values(profiles)].some(person => {
                 const otherId = captureProfileId(person);
                 return otherId && (!staffId || otherId !== staffId)
