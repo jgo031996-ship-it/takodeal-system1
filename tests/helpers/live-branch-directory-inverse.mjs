@@ -1,3 +1,4 @@
+import {normalizePlottedRelease} from './plotted-release-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -5,6 +6,7 @@ import {restoreStaffPhoneHelp} from './staff-phone-help-inverse.mjs';
 export const liveBranchDirectoryProof=JSON.parse(readFileSync(new URL('../fixtures/live-branch-directory-inverse.json',import.meta.url),'utf8'));
 export const liveBranchSha=value=>createHash('sha256').update(value).digest('hex');
 export function restoreLiveBranchDirectory(source,file) {
+ source=normalizePlottedRelease(source,file);
     source=restoreStaffPhoneHelp(source,file);
     const row=liveBranchDirectoryProof.files[file];if(!row||liveBranchSha(source)===row.baselineSha256)return source;
     assert.equal(liveBranchSha(source),row.candidateSha256,'Only the reviewed automatic branch hooks: '+file);

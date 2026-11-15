@@ -1,3 +1,4 @@
+import {createPlottedTimeInBatch} from '../takodeal-staff/plotted-time-in.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -33,7 +34,7 @@ function harness() {
         return nodes.get(id);
     };
     const localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
-    const api={db:{},collection:(_db,table)=>({table}),doc:(ref,table,id)=>id===undefined?{table:ref.table,id:'auto-'+(++sequence)}:{table,id},
+    const api={db:{},collection:(_db,table)=>({table}),doc:(ref,table,id)=>{const row=id===undefined?{table:ref.table,id:'auto-'+(++sequence)}:{table,id};return {...row,path:row.table+'/'+row.id};},
         query:(ref,...filters)=>({...ref,filters}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),
         getDoc:async ref=>{if(ref.table==='cashiers'){profileReads++;return {exists:()=>true,data:()=>({cashierName:storage.get('takodeal_staff_name'),scheduleNickname:'Alias'})};}return {exists:()=>false};},
         getDocs:async()=>snapshot([]),getDocsFromServer:async q=>{if(['attendance_logs','sop_logs','cashiers'].includes(q.table))return h.window.getDocs(q);serverReads++;if(h.serverError)throw h.serverError;return h.serverSnapshot || snapshot([]);},
@@ -45,7 +46,7 @@ function harness() {
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}},initStaffAppSignaturePad(){},playNotificationPing(){},loadMyAttendance(){},
         getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()}),verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
-    const context={...api,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,...staffSwaps,...swapModel,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,createElement:()=>({value:'',textContent:''}),addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
+    const context={...api,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,...staffSwaps,...swapModel,createScheduleHistoryStore,createPlottedTimeInBatch,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,createElement:()=>({value:'',textContent:''}),addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
         console:{error(){},warn(){},log(){}},Date,
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,delay)=>{const id=++sequence;timeouts.set(id,{fn,delay});return id;},clearTimeout:id=>timeouts.delete(id),

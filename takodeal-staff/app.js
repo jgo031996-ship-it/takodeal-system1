@@ -1,3 +1,4 @@
+import {createPlottedTimeInBatch} from './plotted-time-in.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
@@ -1376,7 +1377,7 @@ window.punchTime = async function(type) {
             timeOutResult=await earlyClockOut.service.close({start:activeTimeIn,staffId:punchStaffId,staffName,attendance,reliefForReview:earlyClockOut.reliefForReview===true,assertCurrent:assertClockCurrent});
             assertClockCurrent();
         } else {
-        const batch = writeBatch(db);
+        const batch = createPlottedTimeInBatch({db,doc,runTransaction},{attendanceRef,attendance,profile:punchScheduleProfiles[staffName],assertCurrent:()=>{assertClockCurrent();window.assertAttendanceFaceFresh(faceResult);if(Date.now()-punchLocation.timestamp>60000)throw Error('Location verification expired. Reopen Clock to refresh your branch location.');}});
         if (pendingLateRequest) {
             if (Number.isFinite(attendance.lateMinutes)) {
                 pendingLateRequest.lateMinutes = attendance.lateMinutes;
