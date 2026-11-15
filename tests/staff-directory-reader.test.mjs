@@ -8,6 +8,7 @@ import {loadStaffDirectory,staffDirectoryActorKey} from '../takodeal-manager/sta
 import {loadStaffSalaryTimeline,staffRateForDate} from '../takodeal-manager/staff-rate-model.js';
 import {nightRate,scheduledShiftForDate} from '../takodeal-manager/payroll-safety.js';
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
+import {restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 const hold=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitForReads(f,count){const deadline=performance.now()+2000;while(f.reads.length<count){assert.ok(performance.now()<deadline,'The actual handler must reach its expected directory reads');await new Promise(resolve=>setImmediate(resolve));}}
@@ -71,7 +72,9 @@ test('an explicitly granted Franchise owner keeps its own-branch directory and p
  const f=fixture({manager:true});Object.assign(f.api.sessionUser,{role:'Franchise owner',isFranchisee:true,branch:'Maa'});await assert.rejects(loadStaffDirectory(f.api,{selectedBranch:'Cabantian'}),/outside/);assert.equal(f.profileReads.length,0);
 });
 
-const actualMain=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
+// Retain the exact earlier directory/calculator assertions after the reviewed
+// global OT writer is replaced. New shift-linked controls have actual UI tests.
+const actualMain=restoreAttendanceOvertime(readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),'takodeal-manager/main.js');
 function mainFunction(name){const start=actualMain.indexOf('\nwindow.'+name+' = '),end=actualMain.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,'Actual main handler '+name);return actualMain.slice(start+1,end+3);}
 function actualHandlers(f,{scheduleRead=async()=>({exists:()=>true,data:()=>({currentYear:2026,currentMonth:10,branchConfig:{},currentSchedule:{}})})}={}){
  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{style:{},value:'',innerText:'',innerHTML:'',textContent:''});return nodes.get(id);},document={getElementById:node};

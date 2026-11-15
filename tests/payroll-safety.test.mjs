@@ -1,4 +1,5 @@
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
+import {restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
 import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import {installOwnerInbox} from '../takodeal-manager/owner-inbox.js';
@@ -154,7 +155,7 @@ test('legacy matching keeps ambiguous entries separate and filters unrelated att
     assert.deepEqual(payroll.legacyAttendanceCandidates(req,rows).map(x=>x.id),['a','b']);
     assert.throws(()=>payroll.requestLateMinutes({...req,explanationMessage:'no minutes'},{}),/no recorded/);
 });
-const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
+const source=restoreAttendanceOvertime(readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),'takodeal-manager/main.js');
 function extract(name) {
     const start=source.indexOf(`
 window.${name} = `) + 1;

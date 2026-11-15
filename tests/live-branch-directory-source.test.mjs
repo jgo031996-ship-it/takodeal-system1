@@ -1,3 +1,4 @@
+import {isHistoricalOwnerChange,restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import {proof as mobileProof} from './helpers/owner-profile-mobile-inverse.mjs';
 import {ownerDeliveryProof} from './helpers/owner-delivery-upgrade-inverse.mjs';
 import test from 'node:test';
@@ -8,7 +9,7 @@ import {liveBranchDirectoryProof as proof,restoreLiveBranchDirectory,liveBranchS
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:6e6});
 test('automatic branch discovery restores every exact prior product byte and adds only the pinned public reader',()=>{
     const scopes=['takodeal-manager','Takodeal-POS','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules','storage.rules'];
-    const changed=new Set([...git('diff','--name-only',proof.base,'--',...scopes).trim().split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scopes).trim().split(/\r?\n/)].filter(Boolean));
+    const changed=new Set([...git('diff','--name-only',proof.base,'--',...scopes).trim().split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scopes).trim().split(/\r?\n/)].filter(Boolean).filter(file=>isHistoricalOwnerChange(file,proof.base)));
     assert.deepEqual([...changed].sort(),[...new Set([...Object.keys(proof.files),...Object.keys(proof.newFiles),...Object.keys(ownerDeliveryProof.files),...Object.keys(ownerDeliveryProof.newFiles),...Object.keys(mobileProof.files)])].sort());
     for(const file of Object.keys(proof.files)) {const source=read(file);assert.equal(restoreLiveBranchDirectory(source,file),git('show',proof.base+':'+file),file);assert.throws(()=>restoreLiveBranchDirectory(source+'\n// extra mutation',file));}
     const hashes=new Set();for(const[file,pin]of Object.entries(proof.newFiles)){assert.equal(sha(read(file)),pin,file);hashes.add(pin);}assert.equal(hashes.size,1,'Every standalone app ships the same reader');

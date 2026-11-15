@@ -8,7 +8,7 @@ import {prepareManualTimeOut} from '../takodeal-manager/manual-attendance-review
 import {captureAttendanceSchedule,resolveAttendanceShift,earnedNightBonus} from '../takodeal-manager/payroll-safety.js';
 import {scheduleDateKey,createScheduleRevision,assembleScheduleHistory} from '../takodeal-manager/schedule-history.js';
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
-const start=source.indexOf('window.openManualAttendanceModal ='),end=source.indexOf('window.otCache =',start);
+const start=source.indexOf('window.openManualAttendanceModal ='),end=source.indexOf('window.recalcModalNetSales =',start);
 function harness({allowed=true,branchAllowed=true,confirmed=true,fail=false,history={},profile={},attendance=[],timeOutClient}={}){
  const nodes=new Map(),messages=[],records=new Map();let confirmations=0,writes=0,refreshes=0;
  const values={manAttStaff:'Sample Staff',manAttBranch:'Maa',manAttType:'TIME IN',manAttDateTime:'2026-10-06T09:00',manAttRemarks:'Verified missing punch'};

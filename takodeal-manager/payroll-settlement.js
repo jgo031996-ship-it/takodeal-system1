@@ -6,6 +6,7 @@ import {isCashShortageDeduction,validateCashShortageLink,CASH_SHORTAGE_LIMIT} fr
 import {snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
 import {payrollOwnerDeductionRows,validatePayrollOwnerDeductionSet,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,assertPayrollRecoverySources,ownerDeductionCandidates,isOwnerDeduction,OWNER_DEDUCTION_LIMIT} from './owner-deduction-payroll.js';
 import {PAYROLL_ADJUSTMENT_TYPE,isPayrollAdjustment,payrollAdjustmentCandidates,validatePayrollAdjustmentSet,savedPayrollAdjustmentDetails} from './payroll-adjustment-model.js';
+import {readPayrollOvertimeSources,payrollOvertimePreview,payrollOvertimeReferenceIds,payrollOvertimeAttendanceRefs,validatePayrollOvertimeSet,payrollOvertimeLocks} from './payroll-overtime.js';
 
 export const PAYROLL_SETTLEMENT_LIMITS=Object.freeze({rows:140,queryRows:250,readConcurrency:8,timeoutMs:25000,maxCents:1000000000000,documentBytes:750000});
 const pending=new WeakMap(),text=value=>String(value??'').trim();
@@ -168,6 +169,8 @@ async function settle(api,input,identity,guard){
  if(history.some(row=>row.startDate===data.start&&row.endDate===data.end)){
   const confirmed=await checkSavedPayrollPayment(api,{data,assertCurrent:guard});guard();if(confirmed.status==='paid'){const {status,...paid}=confirmed;return paid;}
  }
+ const overtimeSources=await readPayrollOvertimeSources(api,data,{readRows:readQuery,assertCurrent:guard});
+ const overtimeIds=new Set(payrollOvertimePreview(overtimeSources,data).manualOvertimeRows.map(row=>row.id)),overtimeCandidates=overtimeSources.filter(row=>overtimeIds.has(row.id));
  const end=Date.parse(data.end+'T23:59:59.999+08:00'),start=Date.parse(data.start+'T00:00:00+08:00');
  const eligibleDeductions=deductions.filter(row=>row.status==='Unpaid'&&millis(row.dateAdded??row.timestamp)<=end&&(row.type==='Cash Advance'||isMealDeduction(row.type))).sort((a,b)=>millis(a.dateAdded??a.timestamp)-millis(b.dateAdded??b.timestamp)||a.id.localeCompare(b.id));
  const cashCandidates=payrollCashShortageCandidates([...new Map([...deductions.filter(isCashShortageDeduction),...cashById].map(row=>[row.id,row])).values()],data.end);
@@ -175,14 +178,17 @@ async function settle(api,input,identity,guard){
  const eligibleBonuses=bonuses.filter(row=>row.status==='Unpaid'&&row.type==='Performance Bonus'&&millis(row.dateAdded)>=start&&millis(row.dateAdded)<=end+12*3600000).sort((a,b)=>millis(a.dateAdded)-millis(b.dateAdded)||a.id.localeCompare(b.id));
  const adjustmentCandidates=payrollAdjustmentCandidates([...new Map([...bonuses.filter(isPayrollAdjustment),...adjustmentsById].map(row=>[row.id,row])).values()],{start:data.start,end:data.end});
  for(const row of [...eligibleDeductions,...eligibleBonuses])staffRow(row,data);
- if(eligibleDeductions.length+eligibleBonuses.length+adjustmentCandidates.length+history.length+(cashCandidates.length+ownerCandidates.length)*3>PAYROLL_SETTLEMENT_LIMITS.rows||cashCandidates.length+ownerCandidates.length>(ownerCandidates.length?OWNER_DEDUCTION_LIMIT:CASH_SHORTAGE_LIMIT))throw Error('This payroll has too many linked records for one safe payment. Ask HQ to reconcile it.');
+ if(eligibleDeductions.length+eligibleBonuses.length+overtimeCandidates.length+adjustmentCandidates.length+history.length+(cashCandidates.length+ownerCandidates.length)*3>PAYROLL_SETTLEMENT_LIMITS.rows||cashCandidates.length+ownerCandidates.length>(ownerCandidates.length?OWNER_DEDUCTION_LIMIT:CASH_SHORTAGE_LIMIT))throw Error('This payroll has too many linked records for one safe payment. Ask HQ to reconcile it.');
  const ledgerId=data.ledgerId||loans.length===1&&loans[0].id;
  if(amount(data.loans)&&!ledgerId)throw Error('The company loan ledger is missing or ambiguous.');
  const references=[ref('payroll_records',recordId),ref('payroll_records',refundId(data.staffId,data.start,data.end)),ref('cash_accounts',accountId),ref('cashiers',data.staffId),ref('expenses',recordId),...hq.map(row=>ref('hq_managers',row.id)),...(identity.email!==OWNER_EMAIL?[ref('hq_email_access',identity.email)]:[]),...history.map(row=>ref('payroll_records',row.id)),...expenses.filter(row=>row.category==='Payroll').map(row=>ref('expenses',row.id)),...eligibleDeductions.map(row=>ref('staff_deductions',row.id)),...eligibleBonuses.map(row=>ref('staff_bonuses',row.id)),...(amount(data.loans)?[ref('staff_ledger',id(ledgerId))]:[])];
  for(const row of adjustmentCandidates)references.push(ref('staff_bonuses',id(row.id)));
+ for(const key of new Set([...payrollOvertimeReferenceIds(data),...overtimeCandidates.map(row=>row.id)]))references.push(ref('staff_bonuses',id(key)));
+ for(const row of payrollOvertimeAttendanceRefs(data,overtimeCandidates))references.push(ref(row.table,id(row.id)));
  for(const row of cashCandidates)references.push(ref('staff_deductions',id(row.id)),ref('cash_shortage_reviews',row.id),ref('staff_deduction_notices',row.id),ref('shifts',id(row.sourceShiftId)));
  for(const row of ownerCandidates)references.push(ref('staff_deductions',id(row.id)),ref('owner_deduction_reviews',row.id),ref('staff_deduction_notices',row.id));
  const unique=[...new Map(references.map(reference=>[(reference.path||JSON.stringify(reference)),reference])).values()];
+ if(unique.length>450)throw Error('This payroll has too much linked evidence for one safe payment. Ask HQ to reconcile it.');
  const result=await api.runTransaction(api.db,async tx=>{
   const snapshots=await parallel(unique.map(reference=>()=>tx.get(reference)),guard),saved=new Map(unique.map((reference,index)=>[reference.path||JSON.stringify(reference),snapshots[index]]));
   const get=(table,key)=>{const snap=saved.get((ref(table,key).path||JSON.stringify(ref(table,key))));return snap?.exists()?snap.data():null;};
@@ -213,7 +219,9 @@ async function settle(api,input,identity,guard){
   const ownerSettlements=validatePayrollOwnerDeductionSet(data,ownerCandidates,get);
   await assertPayrollRecoverySources(ownerSettlements,async sourceId=>{const source=await tx.get(ref('payroll_records',sourceId));return source.exists()?source.data():null;},{crypto:api.crypto});
   const adjustmentSettlements=validatePayrollAdjustmentSet(data,adjustmentCandidates,key=>get('staff_bonuses',key));
+  const overtimeSettlements=await validatePayrollOvertimeSet(data,overtimeSources,get,{profile:person,crypto:api.crypto});
   const frozen=validateOrdinaryPayrollSnapshot(data,finalNetPay),freshDeductions=eligibleDeductions.map(row=>{const fresh=get('staff_deductions',row.id);if(!fresh||fresh.status!=='Unpaid'||fresh.type!==row.type||amount(fresh.amount)!==amount(row.amount))throw Error('A meal or advance changed. Regenerate payroll.');staffRow(fresh,data);return {...fresh,id:row.id};});
+  if(data.overtimeEvidenceVersion===1){frozen.manualOvertimeRows=overtimeSettlements;frozen.sourceManualOvertime=data.sourceManualOvertime;}
   frozen.payrollAdjustmentRows=adjustmentSettlements;
   frozen.ownerDeductionDetails=ownerDeductionDisplayRows(ownerSettlements);
   frozen.payrollRecoveryRows=ownerDeductionRecoveryRows(ownerSettlements);
@@ -228,6 +236,7 @@ async function settle(api,input,identity,guard){
   const loan=amount(data.loans)?get('staff_ledger',ledgerId):null;
   if(amount(data.loans)){if(!loan||text(loan.staffName)!==data.name||loan.staffId&&loan.staffId!==data.staffId||loan.branch&&loan.branch!==data.branch||amount(loan.totalLoaned)-amount(loan.totalPaid)<amount(data.loans))throw Error('The company loan balance changed. Regenerate payroll.');}
   guard();const stamp=api.serverTimestamp(),accountBalance=(balance-net)/100,settlements=allocations.map(row=>({id:row.id,amount:row.taken/100}));
+  const overtimeLocks=await payrollOvertimeLocks(data,get,{recordId,uid:identity.uid,stamp,crypto:api.crypto});guard();
   tx.set(ref('payroll_records',recordId),{staffId:data.staffId,staffName:data.name,branch:data.branch,startDate:data.start,endDate:data.end,frozenData:frozen,finalNetPay:net/100,accountId,accountName:account.name,deductionSettlements:settlements,cashShortageSettlements:Object.fromEntries(cashSettlements.map(row=>[row.id,row.amount])),ownerDeductionSettlements:Object.fromEntries(ownerSettlements.map(row=>[row.id,row.amount])),payrollAdjustmentSettlements:Object.fromEntries(adjustmentSettlements.map(row=>[row.id,row.amount])),processedAt:stamp,processedBy:identity.email,acknowledged:false,payrollVersion:2});
   tx.update(ref('cash_accounts',accountId),{balance:accountBalance});
   tx.set(ref('expenses',recordId),{branch:'Main Office',amount:net/100,category:'Payroll',account:account.name,note,staffId:data.staffId,payrollRecordId:recordId,timestamp:stamp});
@@ -236,6 +245,8 @@ async function settle(api,input,identity,guard){
   for(const row of ownerSettlements)for(const table of ['staff_deductions','owner_deduction_reviews','staff_deduction_notices'])tx.update(ref(table,row.id),{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
   for(const row of bonusAllocations)tx.update(ref('staff_bonuses',row.id),row.remaining?{amount:row.remaining/100}:{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
   for(const row of adjustmentSettlements)tx.update(ref('staff_bonuses',row.id),{status:'Paid',payrollRecordId:recordId});
+  for(const row of overtimeSettlements)tx.update(ref('staff_bonuses',row.id),{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
+  for(const row of overtimeLocks)tx[row.update?'update':'set'](ref('staff_bonuses',row.id),row.data);
   if(loan){tx.update(ref('staff_ledger',ledgerId),{totalPaid:(amount(loan.totalPaid)+amount(data.loans))/100});tx.set(ref('staff_deductions',recordId+'-loan'),{staffId:data.staffId,staffName:data.name,branch:data.branch,type:'Company Loan Payment',amount:amount(data.loans)/100,status:'Paid',dateAdded:stamp,paidAt:stamp,remarks:'Auto-deducted from payslip',payrollRecordId:recordId});}
   return {id:recordId,alreadyPaid:false,frozenData:frozen,finalNetPay:net/100,accountId,accountName:account.name,accountBalance};
  });return result;

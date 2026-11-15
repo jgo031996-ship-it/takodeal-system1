@@ -1,7 +1,8 @@
-const CACHE_NAME = 'takodeal-manager-core-v151-staff-profile-mobile-20261114-r1';
+const CACHE_NAME = 'takodeal-manager-core-v152-attendance-ot-20261115-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
+    './attendance-overtime.js','./attendance-overtime-ui.js','./payroll-overtime.js',
     './private-prep-reviews.js','./private-prep-reviews.css','./private-prep-stock-warnings.js',
   './private-prep-yield-warnings.js',
   './owner-prep-measured-model.js','./owner-prep-actual-model.js',

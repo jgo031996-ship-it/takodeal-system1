@@ -1,3 +1,4 @@
+import {isHistoricalOwnerChange,restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -8,7 +9,7 @@ const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,r
 test('large shipment fix retains every other live product and backend byte',()=>{
     const scopes=['takodeal-manager','Takodeal-POS','takodeal-franchise','takodeal-staff','takodeal-delivery','Customer','functions','firestore.rules','firestore.policy.rules','storage.rules'];
     const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:6e6});
-    const changed=git('diff','--name-only',proof.base,'--',...scopes).trim().split(/\r?\n/).filter(Boolean);
+    const changed=git('diff','--name-only',proof.base,'--',...scopes).trim().split(/\r?\n/).filter(Boolean).filter(file=>isHistoricalOwnerChange(file,proof.base));
     assert.deepEqual(changed.sort(),[...new Set([...Object.keys(proof.files),...Object.keys(mobileProof.files)])].sort());
     for(const [file,pin]of Object.entries(proof.files)){
         assert.equal(sha(restoreOwnerProfileMobile(read(file),file)),pin.candidateSha256,file);

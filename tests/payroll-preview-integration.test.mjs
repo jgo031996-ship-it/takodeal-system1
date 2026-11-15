@@ -32,6 +32,7 @@ import {approvedCashShortage} from './helpers/cash-shortage-fixture.mjs';
 import {isCashShortageDeduction} from '../takodeal-manager/cash-shortage-model.js';
 import {canReviewCashShortage} from '../takodeal-manager/cash-shortage-ui.js';
 import {renderOwnerContractVault} from '../takodeal-manager/owner-contract-print.js';
+import * as overtime from '../takodeal-manager/payroll-overtime.js';
 
 const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const reviewSource=fs.readFileSync(new URL('../takodeal-manager/hr-review-ui.js',import.meta.url),'utf8');
@@ -43,6 +44,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const held=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};
 const waitForSignal=async(promise,label)=>{let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' was not reached within 30 seconds.')),30000);})]);}finally{clearTimeout(timer);}};
 const stamp=value=>({toDate:()=>new Date(value)});
+const otStamp=value=>{const time=Date.parse(value);return Object.assign(Object.create({toDate(){return new Date(this.seconds*1000+this.nanoseconds/1e6);}}),{seconds:Math.floor(time/1000),nanoseconds:time%1000*1e6});};
 const absentShiftHead=ref=>({id:ref.id,exists:()=>false,data:()=>undefined,metadata:{fromCache:false,hasPendingWrites:false}});
 function adjustmentFor(h,extra={}){return {id:'payroll-adjustment-'+String('a').repeat(64),type:'Payroll Adjustment',payrollAdjustmentVersion:1,staffId:h.person.id,staffName:h.person.cashierName,branch:h.person.branch,status:'Unpaid',amount:125,originalStart:'2030-01-01',originalEnd:'2030-01-15',effectiveDate:'2030-01-16',reason:'The previous saved night allowance was missed.',sourcePayrollRecordId:'original-paid',createdByUid:'synthetic-owner',createdByEmail:OWNER_EMAIL,dateAdded:stamp('2030-01-01T00:00:00+08:00'),...extra};}
 function harness(options={}){
@@ -58,11 +60,16 @@ function harness(options={}){
  api.getDocFromServer=async ref=>{if(options.readDoc){const saved=await options.readDoc(ref,{records});return saved?{id:ref.id,...saved}:saved;}const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {id:ref.id,exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
- const context=vm.createContext({renderOwnerContractVault,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow,workedShiftActionHint,rememberPayslipInputs,payrollRecoveryFromReview,formatStaffDeductionHistory,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,activeStaffProfile,...adjustments,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,createPayrollBonusHistoryStore,...sanctions,...freshness,...preview,...loading,...completion,...bonusReview,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({...overtime,renderOwnerContractVault,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow,workedShiftActionHint,rememberPayslipInputs,payrollRecoveryFromReview,formatStaffDeductionHistory,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,activeStaffProfile,...adjustments,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,createPayrollBonusHistoryStore,...sanctions,...freshness,...preview,...loading,...completion,...bonusReview,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  context.html=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  vm.runInContext(heldRenderer,context);
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
+}
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+': actual preview captures exact legacy OT evidence and excludes paid/cancelled bonuses without changing them',async()=>{const h=harness(),bonus={id:'fiction-legacy-ot',staffName:h.person.cashierName,type:'Overtime',amount:132.5,hours:2,dateAdded:otStamp('2030-01-16T12:00:00+08:00'),remarks:'Fictional closing work'};h.records.staff_bonuses=[bonus,{...bonus,id:'fiction-cancelled',status:'Cancelled',amount:99},{...bonus,id:'fiction-paid',status:'Paid',amount:88}];const before=JSON.stringify(h.records.staff_bonuses);await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data.nightBonus,132.5);assert.equal(data.sourceManualOvertime,132.5);assert.equal(data.overtimeEvidenceVersion,1);assert.deepEqual(Array.from(data.manualOvertimeRows,row=>row.id),['fiction-legacy-ot']);assert.equal(data.manualOvertimeRows[0].source.amount,132.5);assert.equal(data.logs[0].timeOutLogId,'out-16');assert.equal(JSON.stringify(h.records.staff_bonuses),before);assert.equal(h.writes.length,0);});
+ test(generator+': zero-source preview still binds empty OT evidence and frozen paid figures bypass all new recalculation',async()=>{const h=harness();await h.w[generator]();let data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data.overtimeEvidenceVersion,1);assert.equal(data.sourceManualOvertime,0);assert.equal(data.manualOvertimeRows.length,0);const frozen={staffId:h.person.id,name:h.person.cashierName,branch:h.person.branch,start:'2030-01-16',end:'2030-01-16',nightBonus:77,basicPay:450,finalNetPay:527,logs:[]};h.records.payroll_records=[{id:'fiction-existing-paid',staffId:h.person.id,staffName:h.person.cashierName,startDate:'2030-01-16',endDate:'2030-01-16',frozenData:frozen,finalNetPay:527}];h.records.staff_bonuses=[{id:'fiction-unverified-later-ot',staffName:h.person.cashierName,type:'Overtime',amount:500,dateAdded:otStamp('2030-01-16T12:00:00+08:00')}];await h.w[generator]();data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data.nightBonus,77);assert.equal(data.finalNetPay,527);assert.equal(data.overtimeEvidenceVersion,undefined);assert.equal(h.writes.length,0);});
 }
 
 for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
@@ -146,8 +153,8 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(gene
  h.w.sessionUser={...h.w.sessionUser,permissions:['payroll'],allowedBranches:['Sample Branch'],isOwner:true};
  const foreign={id:'foreign',cashierName:'Foreign Staff',branch:'Foreign Branch',hourlyRate:500,salaryRateVersion:1,salaryRateRevision:'foreign-change'};h.records.cashiers.push(foreign);
  h.records.attendance_logs.push(...h.logs(16).map((row,index)=>({...row,id:'foreign-'+index,staffId:'foreign',staffName:'Foreign Staff',branch:'Foreign Branch'})));
- h.records.staff_deductions=[{staffName:'Foreign Staff',branch:'Foreign Branch',type:'Cash Advance',amount:100,status:'Unpaid',dateAdded:stamp('2030-01-16T12:00:00+08:00')}];
- h.records.staff_bonuses=[{staffName:'Foreign Staff',branch:'Foreign Branch',amount:100,dateAdded:stamp('2030-01-16T12:00:00+08:00')}];h.records.payroll_records=[{staffName:'Foreign Paid Staff',frozenData:{name:'Foreign Paid Staff',branch:'Foreign Branch',basicPay:500,hours:8,isPaid:true}}];
+ h.records.staff_deductions=[{staffName:'Foreign Staff',branch:'Foreign Branch',type:'Cash Advance',amount:100,status:'Unpaid',dateAdded:otStamp('2030-01-16T12:00:00+08:00')}];
+ h.records.staff_bonuses=[{staffName:'Foreign Staff',branch:'Foreign Branch',amount:100,dateAdded:otStamp('2030-01-16T12:00:00+08:00')}];h.records.payroll_records=[{staffName:'Foreign Paid Staff',frozenData:{name:'Foreign Paid Staff',branch:'Foreign Branch',basicPay:500,hours:8,isPaid:true}}];
  await h.w[generator]();assert.deepEqual(privateReads,[]);assert.deepEqual(Object.keys(h.w.globalPayrollCache),['Sample Staff']);assert.equal(h.w.globalPayrollCache['Sample Staff'].basicPay,450);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱450.00');assert.equal(h.node('payrollGeneratorBody').innerHTML.includes('Foreign'),false);assert.equal(h.writes.length,0);
 });
 
@@ -164,7 +171,7 @@ function addReviewedCashShortage(h,options={}){
 for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
  test(generator+': the real generator includes only due Owner-reviewed cash shortages with full linked amount and keeps legacy penalties excluded',async()=>{
   const h=harness(),row=addReviewedCashShortage(h);addReviewedCashShortage(h,{shiftId:'future',effectiveDate:'2030-01-17'});
-  h.records.staff_deductions.push({id:'legacy',staffName:h.person.cashierName,branch:h.person.branch,type:'Penalty',scheduleVersion:1,scheduleRevision:1,effectiveDate:'2030-01-16',amount:500,status:'Unpaid',dateAdded:stamp('2030-01-16T12:00:00+08:00')});
+  h.records.staff_deductions.push({id:'legacy',staffName:h.person.cashierName,branch:h.person.branch,type:'Penalty',scheduleVersion:1,scheduleRevision:1,effectiveDate:'2030-01-16',amount:500,status:'Unpaid',dateAdded:otStamp('2030-01-16T12:00:00+08:00')});
   await h.w[generator]();const d=h.w.globalPayrollCache['Sample Staff'];assert.ok(d,JSON.stringify(h.events));assert.equal(d.cashShortages,90);assert.deepEqual(JSON.parse(JSON.stringify(d.cashShortageRows)),[{id:row.id,amount:90}]);assert.equal(d.penalties,500);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱360.00');assert.match(h.node('payrollGeneratorBody').innerHTML,/90.00 \(Owner-reviewed cash shortage\)/);assert.match(h.node('payrollGeneratorBody').innerHTML,/excluded from net pay/);assert.equal(h.writes.length,0);
  });
  test(generator+': revoked cash review stops a new preview rather than publishing a smaller or unverified payroll',async()=>{
@@ -215,7 +222,7 @@ test('manual cash payment still applies ordinary rows first and the remaining am
 });
 
 for(const owner of [true,false])test('actual employee history offers protected cash review only to Owner and preserves ordinary controls ('+(owner?'Owner':'Manager')+')',async()=>{
- const h=harness(),cash=approvedCashShortage({staffId:h.person.id,name:h.person.cashierName,branch:h.person.branch});h.records.staff_deductions=[{...cash.deduction,dateAdded:stamp('2030-01-16T12:00:00+08:00')},ordinaryLedgerRow(h)];h.w.globalStaffData={[h.person.id]:h.person};
+ const h=harness(),cash=approvedCashShortage({staffId:h.person.id,name:h.person.cashierName,branch:h.person.branch});h.records.staff_deductions=[{...cash.deduction,dateAdded:otStamp('2030-01-16T12:00:00+08:00')},ordinaryLedgerRow(h)];h.w.globalStaffData={[h.person.id]:h.person};
  const controls=installLedgerHandlers(h,{owner});h.w.openEmployeeProfile(h.person.id);await tick();const html=h.node('empProfileHistoryBody').innerHTML,cashHTML=html.slice(html.indexOf('Cash Shortage'),html.indexOf('</tr>',html.indexOf('Cash Shortage')));assert.ok(cashHTML);assert.doesNotMatch(cashHTML,/forceMarkDeductionPaid|deleteStaffDeduction/);
  if(owner)assert.match(cashHTML,/data-cash-shortage="closed-sample"/);else {assert.doesNotMatch(cashHTML,/data-cash-shortage=/);assert.match(cashHTML,/Owner review/);}
  assert.match(html,/forceMarkDeductionPaid\('meal'/);assert.match(html,/deleteStaffDeduction\('meal'/);assert.deepEqual(controls.changes,[]);
@@ -260,7 +267,7 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
  });
  test(generator+': a bonus with conflicting employee identity is kept for review and cannot increase another employee pay',async()=>{
   const h=harness();h.records.cashiers.push({...h.person,id:'person-b',cashierName:'Other Sample Staff',scheduleNickname:'OTHER'});
-  h.records.staff_bonuses=[{id:'conflicting-bonus',staffId:'person-b',staffName:h.person.cashierName,branch:h.person.branch,type:'Manual OT',amount:100,dateAdded:stamp('2030-01-16T12:00:00+08:00')}];
+  h.records.staff_bonuses=[{id:'conflicting-bonus',staffId:'person-b',staffName:h.person.cashierName,branch:h.person.branch,type:'Manual OT',amount:100,dateAdded:otStamp('2030-01-16T12:00:00+08:00')}];
   let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();
   assert.equal(h.w.globalPayrollCache[h.person.cashierName].nightBonus,0);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱450.00');
   assert.ok(review.some(row=>row.records?.some(record=>record.id==='conflicting-bonus')));assert.equal(h.writes.length,0);

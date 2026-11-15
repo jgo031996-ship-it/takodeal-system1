@@ -108,6 +108,12 @@ import {loadStaffDirectory,staffDirectoryActorKey} from './staff-directory-reade
 import {installPaymentReviewScanner} from './payment-review-scanner.js';
 import {installHRReviewCenter,heldPayrollReviewHTML} from './hr-review-ui.js';
 import {installOwnerTimeOutCorrectionUI} from './owner-time-out-correction-ui.js';
+import {installAttendanceOvertimeUI,attendanceOvertimeAction} from './attendance-overtime-ui.js';
+import {canCorrectOwnerTimeOut as canCorrectOwnerTimeOutForOT} from './owner-time-out-correction.js';
+import {capturePayrollOvertimeRow,payrollOvertimePreview} from './payroll-overtime.js';
+const attendanceOvertimeUI=()=>window.attendanceOvertimeUI||(window.attendanceOvertimeUI=installAttendanceOvertimeUI(window,document));
+window.openAttendanceOvertime=timeOutId=>attendanceOvertimeUI().open(timeOutId);
+window.openOvertimeHistory=staffId=>attendanceOvertimeUI().history(staffId);
 import {installReliefScheduleReviewUI} from './relief-schedule-review-ui.js';
 window.openReliefScheduleReview = context => (window.reliefScheduleReviewUI ||= installReliefScheduleReviewUI(window,document)).open(context);
 window.openOwnerTimeOutCorrection = context => (window.ownerTimeOutCorrectionUI ||= installOwnerTimeOutCorrectionUI(window,document)).open(context);
@@ -8254,6 +8260,7 @@ window.loadAttendanceLogs = async function () {
                 </div>`;
             }
 
+            if(pType.includes('TIME OUT')&&canCorrectOwnerTimeOutForOT(window,data.branch))actionHtml=actionHtml.replace(/<\/div>\s*$/,attendanceOvertimeAction(data.id)+'</div>');
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; font-size: 13px; color: #64748b;">${timeStr}</td>
@@ -8268,6 +8275,7 @@ window.loadAttendanceLogs = async function () {
         });
 
         tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 20px;">No logs found for this date.</td></tr>';
+        for(const button of tbody.querySelectorAll('[data-attendance-ot]'))button.onclick=()=>window.openAttendanceOvertime(button.getAttribute('data-attendance-ot'));
     } catch (error) {
         console.error("Error loading attendance:", error);
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error processing feed. Check Console.</td></tr>';
@@ -10536,7 +10544,7 @@ window.loadPayrollGenerator = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
-                    attendanceLogId:activeShifts[name].attendanceId,branch:activeShifts[name].branch,
+                    attendanceLogId:activeShifts[name].attendanceId,timeOutLogId:log.id,branch:activeShifts[name].branch,
                     timeInAt:timeIn.toISOString(),timeOutAt:timeOut.toISOString(),
                     candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
                     holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
@@ -10645,6 +10653,7 @@ window.loadPayrollGenerator = async function() {
                 row.payrollAdjustments=Math.round(((row.payrollAdjustments||0)+credit.amount)*100)/100;(row.payrollAdjustmentRows ||= []).push(...credit.rows);
                 const sources=balanceSources.get(creditName)||[];sources.push({...b,id:docSnap.id});balanceSources.set(creditName,sources);return;
             }
+            if(b.type==='Overtime'&&['Paid','Cancelled','Canceled','Voided'].includes(b.status))return;
             const bonusIdentity=rosterResolver(b);
             if(bonusIdentity.status!=='matched'||bonusIdentity.nameCollision){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:bonusIdentity.reason,records:[{...b,id:docSnap.id,type:'Earned bonus · '+(b.type||'Bonus')}]});return;}
             let name=bonusIdentity.name;
@@ -10655,10 +10664,11 @@ window.loadPayrollGenerator = async function() {
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, perfBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
 
+            if(b.type==='Overtime'&&!capturePayrollOvertimeRow({...b,id:docSnap.id},{staffId:staffDict[name]?.staffId,name,branch:staffDict[name]?.branch,profile:staffDict[name],start:startDateRaw,end:endDateRaw}))return;
             let amt = parseFloat(b.amount) || 0;
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             let dateStr = bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-            let existingLog = staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
+            let existingLog = b.otVersion===1?staffData[name].logs.find(l=>l.timeOutLogId===b.timeOutLogId):staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
 
             if (b.type === "Performance Bonus") {
                 if (b.status === "Paid") return; // Safety check
@@ -10674,7 +10684,7 @@ window.loadPayrollGenerator = async function() {
             } else {
                 // Regular Manual Overtime
                 staffData[name].nightBonusTotal += amt; 
-                let remarkText = `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+                let remarkText = `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${escapeHtml(b.remarks || 'Bonus')})</span>`;
                 
                 if (existingLog) {
                     if (existingLog.remark.includes('Complete')) {
@@ -10726,7 +10736,7 @@ window.loadPayrollGenerator = async function() {
                     
                     // (Around line 1928) Update globalPayrollCache to include the perfBonus
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, payrollAdjustments:d.payrollAdjustments||0,payrollAdjustmentRows:d.payrollAdjustmentRows||[], ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],payrollRecoveryRows:d.payrollRecoveryRows||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId,...payrollOvertimePreview(bonusSnap.docs.map(row=>({...row.data(),id:row.id})),{staffId:profile.staffId,name,branch:d.branch,profile,start:startDateRaw,end:endDateRaw}), payrollAdjustments:d.payrollAdjustments||0,payrollAdjustmentRows:d.payrollAdjustmentRows||[], ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],payrollRecoveryRows:d.payrollRecoveryRows||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startDateRaw, end: endDateRaw,
@@ -11692,7 +11702,7 @@ window.generateAutoPayslips = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
-                    attendanceLogId:activeShifts[name].attendanceId,branch:activeShifts[name].branch,
+                    attendanceLogId:activeShifts[name].attendanceId,timeOutLogId:log.id,branch:activeShifts[name].branch,
                     timeInAt:timeIn.toISOString(),timeOutAt:timeOut.toISOString(),
                     candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
                     holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
@@ -11797,6 +11807,7 @@ window.generateAutoPayslips = async function() {
                 row.payrollAdjustments=Math.round(((row.payrollAdjustments||0)+credit.amount)*100)/100;(row.payrollAdjustmentRows ||= []).push(...credit.rows);
                 const sources=balanceSources.get(creditName)||[];sources.push({...b,id:docSnap.id});balanceSources.set(creditName,sources);return;
             }
+            if(b.type==='Overtime'&&['Paid','Cancelled','Canceled','Voided'].includes(b.status))return;
             const bonusIdentity=rosterResolver(b);
             if(bonusIdentity.status!=='matched'||bonusIdentity.nameCollision){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:bonusIdentity.reason,records:[{...b,id:docSnap.id,type:'Earned bonus · '+(b.type||'Bonus')}]});return;}
             let name=bonusIdentity.name;
@@ -11804,25 +11815,26 @@ window.generateAutoPayslips = async function() {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
+            if(b.type==='Overtime'&&!capturePayrollOvertimeRow({...b,id:docSnap.id},{staffId:staffDict[name]?.staffId,name,branch:staffDict[name]?.branch,profile:staffDict[name],start:startInput,end:endInput}))return;
             let amt = parseFloat(b.amount) || 0;
             staffData[name].nightBonusTotal += amt; 
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             let dateStr = bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
             
-            let existingLog = staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
+            let existingLog = b.otVersion===1?staffData[name].logs.find(l=>l.timeOutLogId===b.timeOutLogId):staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
             
             if (existingLog) {
                 if (existingLog.remark.includes('Complete')) {
                     existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
                 }
-                existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+                existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${escapeHtml(b.remarks || 'Bonus')})</span>`;
             } else {
                 staffData[name].logs.push({ 
                     date: dateStr, 
                     in: "---", 
                     out: "---", 
                     hrs: "0.00", 
-                    remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`,
+                    remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${escapeHtml(b.remarks || 'Bonus')})</span>`,
                     lateMins: 0 
                 });
             }
@@ -11866,7 +11878,7 @@ window.generateAutoPayslips = async function() {
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, payrollAdjustments:d.payrollAdjustments||0,payrollAdjustmentRows:d.payrollAdjustmentRows||[], ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],payrollRecoveryRows:d.payrollRecoveryRows||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId,...payrollOvertimePreview(bonusSnap.docs.map(row=>({...row.data(),id:row.id})),{staffId:profile.staffId,name,branch:d.branch,profile,start:startInput,end:endInput}), payrollAdjustments:d.payrollAdjustments||0,payrollAdjustmentRows:d.payrollAdjustmentRows||[], ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],payrollRecoveryRows:d.payrollRecoveryRows||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startInput, end: endInput,
@@ -12951,144 +12963,6 @@ window.submitManualAttendance = async function() {
         console.error('Manual attendance correction:',error);
         if(relevant())window.ManagerUI.notify(error.message || 'The attendance correction was not saved.');
     } finally {manualAttendanceBusy=false;if(relevant()){btn.innerText='Save correction';btn.disabled=false;}}
-};
-
-window.otCache = { staff: {}, schedule: null };
-window.currentCalculatedOtAmount = 0;
-
-window.openManualOvertimeModal = async function() {
-    const otSequence=window.manualOTDirectorySequence=(window.manualOTDirectorySequence||0)+1;let otActor;
-    const assertCurrent=()=>{if(otSequence!==window.manualOTDirectorySequence||document.getElementById('manualOvertimeModal')?.style.display!=='flex'||staffDirectoryActorKey(window,'payroll')!==otActor)throw Error('The overtime selection changed.');};
-    document.getElementById('manualOvertimeModal').style.display = 'flex';
-    let select = document.getElementById('manOtStaff');
-    select.innerHTML = '<option value="">Loading Staff...</option>';
-    
-    let now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    document.getElementById('manOtDate').value = now.toISOString().split('T')[0];
-    
-    document.getElementById('manOtHours').value = '';
-    document.getElementById('manOtRemarks').value = '';
-    document.getElementById('manOtCalcAmount').innerText = '₱0.00';
-    document.getElementById('manOtRateInfo').innerText = 'Select staff, date, and hours to calculate...';
-    window.currentCalculatedOtAmount = 0;
-
-    try {
-        otActor=staffDirectoryActorKey(window,'payroll');
-        const [schedSnap,staffProfiles]=await Promise.all([getDoc(doc(db,'settings','global_schedule')),loadStaffDirectory(window,{page:'payroll',assertCurrent,profileFilter:activeStaffProfile})]);
-        assertCurrent();
-        if(schedSnap.exists())window.otCache.schedule=schedSnap.data();
-        let html='<option value="">-- Select Staff --</option>',staffList=[];
-        window.otCache.staff={};
-        for(const profile of staffProfiles){staffList.push(profile.cashierName);window.otCache.staff[profile.cashierName]=profile;}
-        staffList.sort().forEach(name => {
-            html += `<option value="${name}">${name}</option>`;
-        });
-        select.innerHTML = html;
-    } catch (e) {
-        if(otActor){try{assertCurrent();}catch{return;}}
-        console.error(e);
-        select.innerHTML = '<option value="">Error loading staff</option>';
-    }
-};
-
-window.calcAutoOvertime = function() {
-    let staffName = document.getElementById('manOtStaff').value;
-    let dateRaw = document.getElementById('manOtDate').value;
-    let hoursRaw = document.getElementById('manOtHours').value;
-    let calcDisplay = document.getElementById('manOtCalcAmount');
-    let infoDisplay = document.getElementById('manOtRateInfo');
-
-    if (!staffName || !dateRaw || !hoursRaw) {
-        calcDisplay.innerText = '₱0.00';
-        infoDisplay.innerText = 'Select staff, date, and hours to calculate...';
-        window.currentCalculatedOtAmount = 0;
-        return;
-    }
-
-    let hours = parseFloat(hoursRaw) || 0;
-    let profile = window.otCache.staff[staffName];
-    if (!profile) return;
-
-    // Retrieve rates (Note: hourlyRate field acts as Daily Rate in Takodeal DB)
-    let dailyRate;
-    try{dailyRate=staffRateForDate(profile,dateRaw);if(dailyRate===null)throw Error('No salary is recorded for this work date.');}
-    catch(error){calcDisplay.innerText='—';infoDisplay.textContent=error.message;window.currentCalculatedOtAmount=0;return;}
-    const customNightRate = nightRate(profile);
-    
-    const matched = scheduledShiftForDate(new Date(dateRaw + 'T12:00:00+08:00'), profile.branch,
-        staffName, window.otCache.schedule, { [staffName]: profile });
-    const isNightShift = matched?.isNightShift === true;
-    const shiftName = matched?.shiftName || 'Unscheduled';
-
-    // Mathematical Engine
-    let effectiveDailyRate = dailyRate;
-    let appliedNightRate = 0;
-    
-    if (isNightShift) {
-        effectiveDailyRate += customNightRate;
-        appliedNightRate = customNightRate;
-    }
-
-    let ratePerHour = effectiveDailyRate / 8;
-    window.currentCalculatedOtAmount = ratePerHour * hours;
-
-    // Update UI
-    calcDisplay.innerText = `₱${window.currentCalculatedOtAmount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
-    let shiftTypeStr = isNightShift ? `Night Shift (+₱${appliedNightRate} diff)` : `Standard Shift`;
-    
-    infoDisplay.innerHTML = `
-        <span style="color: #92400e;">[${shiftName}]</span><br>
-        Base: ₱${dailyRate}/day | Applied: ₱${effectiveDailyRate}/day<br>
-        Rate: <b>₱${ratePerHour.toFixed(2)}/hr</b> (${shiftTypeStr})
-    `;
-};
-
-window.submitManualOvertime = async function() {
-    let staffName = document.getElementById('manOtStaff').value;
-    let dateRaw = document.getElementById('manOtDate').value;
-    let hours = parseFloat(document.getElementById('manOtHours').value);
-    let remarks = document.getElementById('manOtRemarks').value.trim();
-    let amount = window.currentCalculatedOtAmount || 0;
-
-    if (!staffName || !dateRaw || isNaN(hours) || hours <= 0 || !remarks) {
-        window.ManagerUI.notify("❌ Please select a staff member, enter valid hours, and provide a reason.");
-        return;
-    }
-
-    if (amount <= 0) {
-        window.ManagerUI.notify("❌ The calculated amount is 0. Please verify the staff's Daily Rate in their profile.");
-        return;
-    }
-
-    let btn = document.getElementById('btnSaveManualOt');
-    btn.innerText = "⏳ Saving..."; btn.disabled = true;
-
-    try {
-        let otDate = new Date(dateRaw + 'T12:00:00');
-
-        await addDoc(collection(db, "staff_bonuses"), {
-            staffName: staffName,
-            amount: amount,
-            hours: hours,
-            dateAdded: otDate,
-            type: "Overtime",
-            remarks: `[${hours} hrs] ${remarks}`, 
-            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: serverTimestamp()
-        });
-
-        window.ManagerUI.notify(`✅ Success! ₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})} Overtime Bonus added for ${staffName}.`);
-        document.getElementById('manualOvertimeModal').style.display = 'none';
-        
-        window.ManagerUI.notify("Reminder: If you are currently generating payroll, click 'Generate List' again to automatically inject this new bonus into their payslip.");
-
-    } catch (error) {
-        console.error("OT Log Error:", error);
-        window.ManagerUI.notify("❌ Failed to save overtime bonus.");
-    } finally {
-        btn.innerText = "💾 Save Overtime Bonus"; btn.disabled = false;
-    }
 };
 
 // ==========================================
