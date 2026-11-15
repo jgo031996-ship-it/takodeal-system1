@@ -2220,6 +2220,7 @@
               lock.style.display = 'none';
           }
       }
+      if (window.isCashierOwnerToolsMode?.()) window.cashierOwnerRegister?.paintStatus();
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
@@ -2489,7 +2490,7 @@
 
     // --- 4. SHIFT & EXPENSE SYSTEM ---
     async function checkCurrentShift() {
-      if (window.isCashierOwnerToolsMode?.()) { updateShiftUI({active:false}); return; }
+      if (window.isCashierOwnerToolsMode?.()) { window.cashierOwnerRegister?.start(); return; }
       const branch = window.sessionUser?.branch;
       const generation = window.shiftStatusGeneration = (window.shiftStatusGeneration || 0) + 1;
       let status = await window.checkShiftStatus(branch);
@@ -2499,6 +2500,7 @@
     }
 
     function updateShiftUI(status) {
+      if (window.isCashierOwnerToolsMode?.()) { window.cashierOwnerRegister?.start(); return; }
       // A completed open/close invalidates older status reads that could put
       // the just-opened register back behind its closed-register overlay.
       window.shiftStatusGeneration = (window.shiftStatusGeneration || 0) + 1;
@@ -2654,6 +2656,7 @@
 
 // --- THE DASHBOARD ENGINE ---
 window.loadSalesDashboard = async function (liveTransactions) {
+  if (window.isCashierOwnerToolsMode?.()) { window.cashierOwnerRegister?.refresh(); return; }
   if(!document.getElementById('view-sales')?.classList?.contains('active')){window.stopShiftSalesFeed?.();return;}
   const renderGeneration = window.shiftSalesRenderGeneration = (window.shiftSalesRenderGeneration || 0) + 1;
   document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
@@ -4560,7 +4563,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cashier-owner-workspace-20261115-r1"></script>
+    <script type="module" src="main.js?v=cashier-owner-register-20261115-r1"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

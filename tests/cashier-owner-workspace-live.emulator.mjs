@@ -6,6 +6,7 @@
 import test,{before,beforeEach,afterEach,after}from'node:test';import assert from'node:assert/strict';
 import{readFileSync,existsSync}from'node:fs';import{createHash}from'node:crypto';import{createRequire}from'node:module';import{execFileSync,spawn}from'node:child_process';import{once}from'node:events';import{createConnection}from'node:net';import{resolve}from'node:path';import{fileURLToPath}from'node:url';
 import{createCashierOwnerWorkspace}from'../Takodeal-POS/cashier-owner-workspace.js';
+import{installCashierOwnerRegister,ownerSalesTotals}from'../Takodeal-POS/cashier-owner-register.js';
 import{createCashierIncomingDeliveries}from'../Takodeal-POS/cashier-incoming-deliveries.js';
 import{receiveDispatch}from'../Takodeal-POS/dispatch-safety.js';
 if(process.env.GITHUB_ACTIONS!=='true'||process.env.GOOGLE_APPLICATION_CREDENTIALS||process.env.FIREBASE_TOKEN)throw Error('Use the credential-free hosted fictional HR gate only.');
@@ -73,3 +74,18 @@ test('real HQ role demotion before receiving denies the explicit Owner action wi
 test('real HQ role demotion after fresh action validation is reread inside the receive transaction and denies every write',async()=>{await shipment();const f=fixture();await f.enter();const feed=f.feed(),state=await ready(feed,{rows:1}),permit=await receivePermit(f,feed,state),run=f.w.runTransaction;let demoted=false;f.w.runTransaction=async(db,callback)=>{if(!demoted){demoted=true;await seed('hq_managers','fictional-owner-source',{...ownerRow,role:'Manager'});}return run(db,callback);};await assert.rejects(receiveDispatch(permit.api,receiveInput(permit,state.rows)),/Owner|inactive|review/);assert.equal(demoted,true);await noStockChanged(f);});
 
 test('actual production default listener upgrades identical cached Owner rows to confirmed after reconnect without stock writes',async()=>{await shipment();const f=fixture();await f.enter();const query=sdk.query(sdk.collection(f.ownerDb,'dispatch_logs'),sdk.where('toBranch','==',selectedBranch),sdk.where('status','in',['In Transit','Arrived']));assert.equal((await sdk.getDocsFromServer(query)).size,1);const feed=f.feed();await sdk.disableNetwork(f.ownerDb);try{feed.start();const until=Date.now()+10000;while(feed.state().phase!=='cached'&&Date.now()<until){if(feed.state().phase==='error')throw Error(feed.state().message);await pause(15);}const cached=feed.state();assert.equal(cached.phase,'cached');assert.equal(cached.rows.length,1);assert.throws(()=>feed.receiveContext(cached.rows.map(row=>row.id)),/Refresh incoming/);await sdk.enableNetwork(f.ownerDb);const confirmed=await ready(feed,{rows:1});assert.equal(confirmed.phase,'ready');assert.deepEqual(confirmed.rows,cached.rows);await noStockChanged(f);}finally{await sdk.enableNetwork(f.ownerDb);feed.stop();}});
+
+
+test('real Owner register monitor follows remote open, paid sales, offline metadata, reconnect and close without adopting or changing the drawer',{timeout:30000},async()=>{
+ const f=fixture();await f.enter();f.w.isCashierOwnerToolsMode=()=>f.workspace.isToolsMode();
+ const document={getElementById(id){const node=f.document.getElementById(id);node.querySelector=()=>null;node.classList={contains:()=>true};node.addEventListener=()=>{};return node;}};
+ const monitor=installCashierOwnerRegister(f.w,document,{setInterval:()=>1,clearInterval:()=>{}});stops.add(()=>monitor.stop());
+ async function phase(expected){const end=Date.now()+10000;while(Date.now()<end){const state=monitor.state();if(state.phase===expected)return state;if(state.phase==='error'||state.phase==='sales-error')throw Error(state.message);await pause(15);}throw Error('Owner register did not reach '+expected+': '+JSON.stringify(monitor.state()));}
+ monitor.start();await phase('closed');
+ await seed('shifts','fictional-live-drawer',{branch:selectedBranch,active:true,startTime:stamp,cashier:'Fictional Real Crew'});
+ await phase('ready');
+ await seed('transactions','fictional-live-sale',{branch:selectedBranch,shiftId:'fictional-live-drawer',timestamp:sdk.Timestamp.fromMillis(stamp.toMillis()+1000),status:'Paid',paymentMethod:'Cash',netTotal:240,receiptId:'FICTIONAL-REAL-SALE'});
+ const until=Date.now()+10000;while(monitor.state().rows.length!==1&&Date.now()<until)await pause(15);assert.equal(ownerSalesTotals(monitor.state().rows).total,240);f.preserved();
+ await sdk.disableNetwork(f.ownerDb);try{await phase('loading');assert.equal(monitor.state().rows.length,0);await sdk.enableNetwork(f.ownerDb);const state=await phase('ready');assert.equal(ownerSalesTotals(state.rows).total,240);}finally{await sdk.enableNetwork(f.ownerDb);}
+ const shift=await read(f.ownerDb,'shifts','fictional-live-drawer');assert.equal(shift.cashier,'Fictional Real Crew');await seed('shifts','fictional-live-drawer',{...shift,active:false});await phase('closed');assert.equal(monitor.state().rows.length,0);assert.equal(await count(f.ownerDb,'shifts'),1);assert.equal(await count(f.ownerDb,'transactions'),1);f.preserved();f.workspace.clear();assert.equal(monitor.state().phase,'signed-out');
+});

@@ -2,6 +2,7 @@ import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
 import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
 import {createCashierOwnerWorkspace} from './cashier-owner-workspace.js';
+import {installCashierOwnerRegister} from './cashier-owner-register.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
 import {installCashierPrep} from './cashier-prep.js';
 import {createCashierVoidAccess} from './cashier-void-access.js';
@@ -8961,7 +8962,7 @@ window.ownerBypassLogin = async function() {
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
             title: `Owner Access · ${selectedBranch}`,
-            text: 'Branch tools and receiving are ready. Use a Staff PIN for sales or register actions.',
+            text: 'Live branch register, sales, tools and receiving are ready. Use a Staff PIN to operate the register.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }
         });
@@ -9585,5 +9586,6 @@ window.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cas
 
 // Only explicit Owner tools mode is held at UI callers; ordinary engines and paid uploads keep their captured identity.
 cashierOwnerWorkspace.installStaffActionGuards();
+window.cashierOwnerRegister=installCashierOwnerRegister(window,document);
 
 window.cashierBranchDirectory=installLiveBranchDirectory(window,document,{kind:'cashier',subscribe:(next,error)=>firebaseOnSnapshot(firebaseCollection(primaryDb,'branches'),{includeMetadataChanges:true},next,error)});
