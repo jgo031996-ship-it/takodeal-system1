@@ -1,3 +1,4 @@
+import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {isIP} from 'node:net';
 import {ACCESS_OWNER,accessId,accessDocumentId,accessText,activeAccessStaff,operationalStaffProfile,isAccessOwner} from './access-model.mjs';
@@ -64,8 +65,7 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
   if(selected&&snap.id!==selected)badPin();return{id:snap.id,row:snap.data(),revision:millisToken(snap.updateTime)};
  }
  async function privateProfile(tx,body,actor){
-  const [configSnap,bindingSnap,profileSnap]=await Promise.all([read(tx,'staff_document_config/current'),read(tx,'staff_document_devices/'+actor.uid),read(tx,'cashiers/'+body.staffId)]),binding=data(bindingSnap),profile=data(profileSnap);
-  if(!privateConfig(data(configSnap))||binding?.active!==true||binding.uid!==actor.uid||binding.staffId!==body.staffId||binding.deviceId!==body.deviceId||!activeAccessStaff(profile)||binding.branch!==profile.branch)denied();
+  const profileSnap=await readPrivateStaffPhone(tx,db,{uid:actor.uid,...body},denied),profile=data(profileSnap);
   return{id:body.staffId,row:profile,revision:millisToken(profileSnap.updateTime)};
  }
  async function currentSession(tx,body,actor,branch){

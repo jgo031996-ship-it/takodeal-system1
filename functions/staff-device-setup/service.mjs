@@ -183,7 +183,7 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
   const privatePhone=object(docConfig)&&docConfig.enabled===true&&docConfig.policyVersion===2&&docConfig.brokerEndpoint==='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'
    &&object(docBinding)&&docBinding.active===true&&docBinding.uid===actor.uid&&docBinding.staffId===body.staffId&&docBinding.deviceId===body.deviceId&&docBinding.branch===profile.branch.trim();
   if(!privatePhone){
-   if(!configOf(config).enabled)fail(409,'setup-not-enabled','Use an HQ-approved personal phone and personal setup code. Ask HQ to confirm private phone approval before recovering this PIN.');
+   configOf(config); // Pausing new enrollment does not revoke an activated personal phone.
    const binding=bindingOf(rawBinding,actor.uid);if(!binding||binding.staffId!==body.staffId||binding.deviceId!==body.deviceId)unavailable();
    const slots=await readSlots(tx,body.staffId,savedSlots,credential);assertBindingSlot(slots,binding);
    if(protectedDevice(binding,index,mirror,profile).status!=='Active')unavailable();
