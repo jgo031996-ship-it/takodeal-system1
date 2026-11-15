@@ -1,6 +1,8 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync as _plottedRawFs, existsSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');

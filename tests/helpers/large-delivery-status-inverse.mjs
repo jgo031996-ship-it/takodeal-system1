@@ -1,3 +1,4 @@
+import {normalizePlottedRelease} from './plotted-release-inverse.mjs';
 import {restoreOwnerProfileMobile} from './owner-profile-mobile-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -5,6 +6,7 @@ import {createHash} from 'node:crypto';
 export const largeDeliveryProof=JSON.parse(readFileSync(new URL('../fixtures/large-delivery-status-inverse.json',import.meta.url),'utf8'));
 export const largeDeliverySha=value=>createHash('sha256').update(value).digest('hex');
 export function restoreLargeDeliveryStatus(source,file){
+ source=normalizePlottedRelease(source,file);
  source=restoreOwnerProfileMobile(source,file);
     const row=largeDeliveryProof.files[file];if(!row||largeDeliverySha(source)!==row.candidateSha256)return source;
     for(const edit of [...row.edits].reverse()){

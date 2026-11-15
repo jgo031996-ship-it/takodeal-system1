@@ -1,10 +1,13 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {isHistoricalOwnerChange,restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import {proof as mobileProof} from './helpers/owner-profile-mobile-inverse.mjs';
 import {ownerDeliveryProof,restoreOwnerDeliveryUpgrade} from './helpers/owner-delivery-upgrade-inverse.mjs';
 import {branchSettingsSaveProof} from './helpers/branch-settings-save-inverse.mjs';
 import {ownerHRRequestProof,restoreOwnerHRRequest} from './helpers/owner-hr-request-inverse.mjs';
 import {ownerPrepYieldProof,restoreOwnerPrepYield} from './helpers/owner-prep-yield-inverse.mjs';
-import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as _plottedRawFs} from 'node:fs';import {execFileSync as _plottedRawExec} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {ownerRemittanceDialogProof as proof,restoreOwnerRemittanceDialog} from './helpers/owner-remittance-dialog-inverse.mjs';
 import {ownerStockWarningsProof,restoreOwnerStockWarnings} from './helpers/owner-stock-warnings-inverse.mjs';
 import {ownerRemoteRequestProof,restoreOwnerRemoteRequest} from './helpers/owner-remote-staff-requests-inverse.mjs';

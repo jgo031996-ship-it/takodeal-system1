@@ -1,7 +1,10 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {readFileSync as _plottedRawFs} from 'node:fs';
+import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {commissaryProof as proof,commissarySha as sha,restoreCommissary} from './helpers/commissary-inverse.mjs';
 import {normalizeManualAttendanceSimple,isHistoricalManualAttendanceChange} from './helpers/manual-attendance-simple-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>normalizeManualAttendanceSimple(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:5e6});

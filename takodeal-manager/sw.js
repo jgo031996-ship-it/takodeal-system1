@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v157-manual-attendance-20261115-r1';
+const CACHE_NAME = 'takodeal-manager-core-v158-plotted-payroll-20261116-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [

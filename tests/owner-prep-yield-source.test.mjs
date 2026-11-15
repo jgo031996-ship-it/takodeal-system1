@@ -1,10 +1,13 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {isHistoricalOwnerChange,restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import {proof as mobileProof} from './helpers/owner-profile-mobile-inverse.mjs';
 import {ownerDeliveryProof,restoreOwnerDeliveryUpgrade} from './helpers/owner-delivery-upgrade-inverse.mjs';
 import {branchSettingsSaveProof} from './helpers/branch-settings-save-inverse.mjs';
 import {ownerRemoteRequestProof} from './helpers/owner-remote-staff-requests-inverse.mjs';
 import {ownerHRRequestProof,restoreOwnerHRRequest} from './helpers/owner-hr-request-inverse.mjs';
-import test from'node:test';import assert from'node:assert/strict';import{readFileSync,existsSync}from'node:fs';import{execFileSync}from'node:child_process';import{createHash}from'node:crypto';import{fileURLToPath}from'node:url';
+import test from'node:test';import assert from'node:assert/strict';import{readFileSync as _plottedRawFs,existsSync}from'node:fs';import{execFileSync as _plottedRawExec}from'node:child_process';import{createHash}from'node:crypto';import{fileURLToPath}from'node:url';
 import{ownerPrepYieldProof as proof,restoreOwnerPrepYield}from'./helpers/owner-prep-yield-inverse.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:5e6}),sha=x=>createHash('sha256').update(x).digest('hex');
 const paths=['takodeal-manager','Takodeal-POS','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules','storage.rules'];

@@ -1,9 +1,12 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {isHistoricalManualAttendanceChange} from './helpers/manual-attendance-simple-inverse.mjs';
 import {restoreCommissary,isCommissaryModule} from './helpers/commissary-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {readFileSync as _plottedRawFs} from 'node:fs';
+import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {branchInventorySetupProof as proof,branchInventorySetupSha as sha,restoreBranchInventorySetup} from './helpers/branch-inventory-setup-inverse.mjs';
 import {OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
 const root=new URL('../',import.meta.url),read=file=>restoreCommissary(readFileSync(new URL(file,root),'utf8'),file);
@@ -20,6 +23,6 @@ test('branch catalog setup changes only exact reviewed Owner files and preserves
  for(const [file,expected]of Object.entries(proof.newFiles))assert.equal(sha(read(file)),expected);
 });
 test('the new catalog modules and all release entry labels are available in the same Owner app generation',()=>{
- const release='branch-inventory-20261115-r1',worker=read('takodeal-manager/sw.js');assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v157-manual-attendance-20261115-r1');assert.ok(worker.includes('takodeal-manager-core-v155-'+release));assert.ok(readFileSync(new URL('takodeal-manager/sw.js',root),'utf8').includes(OWNER_DOCUMENT_RELEASE));assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));assert.ok(read('takodeal-manager/index.html').includes('auth.js?v='+release));
+ const release='branch-inventory-20261115-r1',worker=read('takodeal-manager/sw.js');assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v158-plotted-payroll-20261116-r1');assert.ok(worker.includes('takodeal-manager-core-v155-'+release));assert.ok(readFileSync(new URL('takodeal-manager/sw.js',root),'utf8').includes(OWNER_DOCUMENT_RELEASE));assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));assert.ok(read('takodeal-manager/index.html').includes('auth.js?v='+release));
  for(const path of Object.keys(proof.newFiles))assert.ok(worker.includes("'./"+path.split('/').pop()+"'"),path);
 });

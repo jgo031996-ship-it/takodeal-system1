@@ -1,11 +1,14 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {isHistoricalManualAttendanceChange} from './helpers/manual-attendance-simple-inverse.mjs';
 import {isCommissaryModule} from './helpers/commissary-inverse.mjs';
 import {branchInventorySetupProof} from './helpers/branch-inventory-setup-inverse.mjs';
 import {restoreScheduleCrossBranch,scheduleCrossBranchProof} from './helpers/schedule-cross-branch-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {readFileSync as _plottedRawFs} from 'node:fs';
+import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {attendanceOvertimeProof as proof,restoreAttendanceOvertime,overtimeSha} from './helpers/attendance-overtime-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>restoreScheduleCrossBranch(readFileSync(new URL(file,root),'utf8'),file),git=(file,base=proof.base)=>execFileSync('git',['show',base+':'+file],{cwd:root,encoding:'utf8',maxBuffer:4e6,windowsHide:true});
 test('exact OT source/release hunks restore the confirmed live Owner and reject unrelated or partially missing hunks',()=>{assert.equal(proof.base,'cd71b7daefdaf3db248328c981bf29b0e594e062');assert.equal(Object.keys(proof.files).length,7);assert.equal(Object.keys(proof.newFiles).length,3);for(const [file,row]of Object.entries(proof.files)){const source=read(file);assert.equal(overtimeSha(source),row.candidateSha256);assert.equal(restoreAttendanceOvertime(source,file),git(file));assert.throws(()=>restoreAttendanceOvertime(source+'\n// unreviewed change',file));const edit=row.edits[0],partial=source.replace(edit.after,edit.before);if(row.edits.length>1)assert.throws(()=>restoreAttendanceOvertime(partial,file));else assert.equal(restoreAttendanceOvertime(partial,file),git(file));}for(const [file,hash]of Object.entries(proof.newFiles))assert.equal(overtimeSha(read(file)),hash);});

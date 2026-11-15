@@ -1,3 +1,4 @@
+import {normalizePlottedRelease} from './plotted-release-inverse.mjs';
 import {isCommissaryModule} from './commissary-inverse.mjs';
 import {isHistoricalManualAttendanceChange} from './manual-attendance-simple-inverse.mjs';
 import {branchInventorySetupProof,restoreBranchInventorySetup} from './branch-inventory-setup-inverse.mjs';
@@ -9,6 +10,7 @@ import {execFileSync} from 'node:child_process';
 export const attendanceOvertimeProof=JSON.parse(readFileSync(new URL('../fixtures/attendance-overtime-inverse.json',import.meta.url),'utf8'));
 export const overtimeSha=value=>createHash('sha256').update(value).digest('hex');
 export function restoreAttendanceOvertime(source,file){
+ source=normalizePlottedRelease(source,file);
  source=restoreScheduleCrossBranch(source,file);
  const row=attendanceOvertimeProof.files[file];if(!row)return source;
  if(overtimeSha(source)===row.baselineSha256)return source;

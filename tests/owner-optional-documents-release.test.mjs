@@ -1,7 +1,9 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {readFileSync} from 'node:fs';
+import {readFileSync as _plottedRawFs} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {assertDocumentReleaseCopies,documentReleasePins} from './helpers/owner-document-release-pins.mjs';
 import {DOCUMENT_GROUPS,REQUIRED_DOCUMENT_GROUPS,OPTIONAL_DOCUMENT_GROUPS,SUPPORTED_DOCUMENT_GROUPS,documentSummary} from '../takodeal-manager/staff-document-model.js';
@@ -22,7 +24,7 @@ test('Owner v145 retains the complete six-kind graph with matching page/auth/cac
  const worker=read('sw.js'),context={self:{addEventListener(){},location:{origin:'https://takodeal-manager.vercel.app'}},URL};vm.runInNewContext(worker+'\nglobalThis.cached=[...CORE_ASSETS];',context);
  const cached=new Set(context.cached.map(path=>path.replace(/^\.\//,''))),seen=new Set();function walk(file){if(seen.has(file))return;seen.add(file);assert.ok(cached.has(file),file+' cached');for(const match of read(file).matchAll(/(?:from\s*|import\s*)['"]\.\/([^'"]+\.js)['"]/g))walk(match[1]);}walk('staff-document-hq.js');
  for(const file of Object.keys(documentReleasePins.owner))assert.ok(cached.has(file));
- const release='manual-attendance-20261115-r1';assert.match(read('index.html'),new RegExp('<meta name="takodeal-release" content="'+release+'">'));assert.match(read('index.html'),new RegExp('auth\\.js\\?v='+release+'"'));assert.match(read('auth.js'),new RegExp('main\\.js\\?v='+release));assert.ok(worker.includes("const CACHE_NAME = 'takodeal-manager-core-v157-manual-attendance-20261115-r1';"));assert.ok(read('owner-update-notice.js').includes('takodeal-manager-core-v157-manual-attendance-20261115-r1'));
+ const release='plotted-payroll-20261116-r1';assert.match(read('index.html'),new RegExp('<meta name="takodeal-release" content="'+release+'">'));assert.match(read('index.html'),new RegExp('auth\\.js\\?v='+release+'"'));assert.match(read('auth.js'),new RegExp('main\\.js\\?v='+release));assert.ok(worker.includes("const CACHE_NAME = 'takodeal-manager-core-v158-plotted-payroll-20261116-r1';"));assert.ok(read('owner-update-notice.js').includes('takodeal-manager-core-v158-plotted-payroll-20261116-r1'));
  assert.ok(worker.includes("const VENDOR_CACHE = 'takodeal-manager-vendors-v1';"));assert.ok(worker.includes("const IMAGE_CACHE = 'takodeal-manager-images-v1';"));assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
 });
 

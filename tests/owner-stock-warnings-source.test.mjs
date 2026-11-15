@@ -1,3 +1,6 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {isHistoricalOwnerChange,restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import {proof as mobileProof} from './helpers/owner-profile-mobile-inverse.mjs';
 import {ownerDeliveryProof,restoreOwnerDeliveryUpgrade} from './helpers/owner-delivery-upgrade-inverse.mjs';
@@ -5,7 +8,7 @@ import {branchSettingsSaveProof} from './helpers/branch-settings-save-inverse.mj
 import {ownerRemoteRequestProof} from './helpers/owner-remote-staff-requests-inverse.mjs';
 import {ownerHRRequestProof,restoreOwnerHRRequest} from './helpers/owner-hr-request-inverse.mjs';
 import {ownerPrepYieldProof,restoreOwnerPrepYield} from './helpers/owner-prep-yield-inverse.mjs';
-import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as _plottedRawFs} from 'node:fs';import {execFileSync as _plottedRawExec} from 'node:child_process';import {createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';
 import {ownerStockWarningsProof as proof,restoreOwnerStockWarnings} from './helpers/owner-stock-warnings-inverse.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),git=file=>execFileSync('git',['show',proof.base+':'+file],{cwd:root,windowsHide:true,encoding:'utf8',maxBuffer:4*1024*1024}),sha=value=>createHash('sha256').update(value).digest('hex');
 test('eighteen exact hooks/style/version changes restore all seven existing Owner files to live d728; both new modules are pinned',()=>{assert.equal(proof.base,'d72811abeab2ef139510d4514c124784e650b396');assert.equal(Object.keys(proof.files).length,7);assert.equal(Object.values(proof.files).reduce((n,row)=>n+row.edits.length,0),18);for(const file of Object.keys(proof.files)){assert.equal(restoreOwnerStockWarnings(file,read(file)),git(file),file);assert.throws(()=>restoreOwnerStockWarnings(file,read(file)+'\n// unreviewed change'));}assert.equal(Object.keys(proof.newFiles).length,2);for(const[file,hash]of Object.entries(proof.newFiles))assert.equal(sha(restoreOwnerPrepYield(file,read(file))),hash);for(const[file,hash]of Object.entries(proof.historicalProofs))assert.equal(sha(read('tests/fixtures/'+file)),hash);});
