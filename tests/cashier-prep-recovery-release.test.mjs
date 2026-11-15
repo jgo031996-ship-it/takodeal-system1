@@ -1,8 +1,11 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const originalReadFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {restoreLiveBranchDirectory} from './helpers/live-branch-directory-inverse.mjs';
 // Apply only the separately hash-verified public discovery patch before these
 // historical business/transport byte comparisons. The new source test pins it.
 const readFileSync=(path,...args)=>{const value=originalReadFileSync(path,...args),name=path instanceof URL?path.pathname:String(path);if(!name.endsWith('/Takodeal-POS/main.js'))return value;const restored=restoreLiveBranchDirectory(value.toString(),'Takodeal-POS/main.js');return typeof value==='string'?restored:Buffer.from(restored);};
-import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as originalReadFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as _plottedRawFs} from 'node:fs';import {execFileSync as _plottedRawExec} from 'node:child_process';import {createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';
 import {cashierPrepRecoveryReleaseProof as proof,restoreCashierPrepRecoveryRelease} from './helpers/cashier-prep-recovery-release-inverse.mjs';
 import {restoreCashierVoidRecovery} from './helpers/cashier-void-recovery-inverse.mjs';
 import {CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
@@ -25,7 +28,7 @@ test('tampered release files fail held and main, checkout, engines and identity 
 });
 
 test('actual entry, update presentation and shell agree while photo and queue/cache behavior stay unchanged',()=>{
- assert.equal(CASHIER_RELEASE,'cashier-simple-void-20261116-r1');assert.equal(proof.release,'cashier-prep-recovery-20261111-r1');assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+CASHIER_RELEASE));
+ assert.equal(CASHIER_RELEASE,'cashier-plotted-attendance-20261116-r1');assert.equal(proof.release,'cashier-prep-recovery-20261111-r1');assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+CASHIER_RELEASE));
  const sw=read('Takodeal-POS/sw.js');assert.ok(sw.includes("const CORE = 'takodeal-pos-core-"+CASHIER_RELEASE+"';"));assert.ok(sw.includes("const PHOTOS = 'takodeal-pos-photos-offline02';"));
  assert.equal(restoreCashierPrepRecoveryRelease(sw,'Takodeal-POS/sw.js'),git('Takodeal-POS/sw.js').toString(),'all routing, request and persistent-cache behavior is unchanged');
 });

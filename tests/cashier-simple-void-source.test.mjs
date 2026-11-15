@@ -1,4 +1,7 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
+import {plottedProof,legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as _plottedRawFs} from 'node:fs';import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {simpleVoidProof as proof,restoreSimpleVoid as restore} from './helpers/cashier-simple-void-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:7e6});
 test('five reviewed product files restore the exact live Cashier release while checkout, backend, rules and other apps stay unchanged',()=>{
@@ -8,5 +11,5 @@ test('five reviewed product files restore the exact live Cashier release while c
  for(const file of ['Takodeal-POS/main.js','Takodeal-POS/pos-checkout.js','Takodeal-POS/pos-safety.js','Takodeal-POS/cashier-correction-engine.js','Takodeal-POS/cashier-void-model.js','Takodeal-POS/cashier-void-queue.js','Takodeal-POS/cashier-owner-register.js','Takodeal-POS/cashier-incoming-deliveries.js','firestore.rules'])assert.equal(read(file),git('show',proof.base+':'+file));
 });
 test('the app cache and update notice share the new release without clearing saved financial data',()=>{
- assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+proof.release));assert.ok(read('Takodeal-POS/sw.js').includes("const CORE = 'takodeal-pos-core-"+proof.release+"';"));assert.ok(read('Takodeal-POS/cashier-data.js').includes("CASHIER_RELEASE = '"+proof.release+"'"));assert.match(read('Takodeal-POS/sw.js'),/const PHOTOS = 'takodeal-pos-photos-offline02'/);assert.doesNotMatch(read('Takodeal-POS/cashier-void.js'),/deleteDatabase|localStorage\.clear|removeItem\(/);
+ assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+plottedProof.release));assert.ok(read('Takodeal-POS/sw.js').includes("const CORE = 'takodeal-pos-core-"+plottedProof.release+"';"));assert.ok(read('Takodeal-POS/cashier-data.js').includes("CASHIER_RELEASE = '"+plottedProof.release+"'"));assert.match(read('Takodeal-POS/sw.js'),/const PHOTOS = 'takodeal-pos-photos-offline02'/);assert.doesNotMatch(read('Takodeal-POS/cashier-void.js'),/deleteDatabase|localStorage\.clear|removeItem\(/);
 });

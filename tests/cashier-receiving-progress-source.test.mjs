@@ -1,8 +1,11 @@
+import {plottedProof,legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {simpleVoidProof,legacyVoidSource,simpleVoidOnlyChange} from './helpers/cashier-simple-void-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {readFileSync as _plottedRawFs} from 'node:fs';
+import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {cashierReceivingProgressProof as proof,restoreCashierReceivingProgress as restore} from './helpers/cashier-receiving-progress-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>legacyVoidSource(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:7e6});
 test('receiving progress restores every reviewed hunk to the exact current live base with no other app, financial or authority changes',()=>{
@@ -16,6 +19,6 @@ test('receiving progress restores every reviewed hunk to the exact current live 
 test('receipt-triggered inventory-sheet loads are absent and cache labels remain coherent with the existing policy and assets',()=>{
  const main=read('Takodeal-POS/main.js'),start=main.indexOf('window.submitGroupedDispatch = async function('),end=main.indexOf('\n};',start)+3;
  assert.doesNotMatch(main.slice(start,end),/loadStockRequestUI|setTimeout|Promise\.race/);assert.doesNotMatch(main,/submitGroupedDispatch\([^\n]+setTimeout/);
- assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+simpleVoidProof.release));assert.ok(read('Takodeal-POS/cashier-data.js').includes("CASHIER_RELEASE = '"+simpleVoidProof.release+"'"));assert.ok(read('Takodeal-POS/sw.js').includes("const CORE = 'takodeal-pos-core-"+simpleVoidProof.release+"';"));
+ assert.ok(read('Takodeal-POS/index.html').includes('main.js?v='+plottedProof.release));assert.ok(read('Takodeal-POS/cashier-data.js').includes("CASHIER_RELEASE = '"+plottedProof.release+"'"));assert.ok(read('Takodeal-POS/sw.js').includes("const CORE = 'takodeal-pos-core-"+plottedProof.release+"';"));
  assert.match(read('Takodeal-POS/sw.js'),/const PHOTOS = 'takodeal-pos-photos-offline02'/);
 });

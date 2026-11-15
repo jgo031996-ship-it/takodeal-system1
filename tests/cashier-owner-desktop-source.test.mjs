@@ -1,10 +1,12 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const originalReadFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 import {restoreLiveBranchDirectory} from './helpers/live-branch-directory-inverse.mjs';
 // Apply only the separately hash-verified public discovery patch before these
 // historical business/transport byte comparisons. The new source test pins it.
 const readFileSync=(path,...args)=>{const value=originalReadFileSync(path,...args),name=path instanceof URL?path.pathname:String(path);if(!name.endsWith('/Takodeal-POS/main.js'))return value;const restored=restoreLiveBranchDirectory(value.toString(),'Takodeal-POS/main.js');return typeof value==='string'?restored:Buffer.from(restored);};
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync as originalReadFileSync} from 'node:fs';
+import {readFileSync as _plottedRawFs} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {restoreCashierOwnerDesktop} from './helpers/cashier-owner-desktop-inverse.mjs';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),sha=value=>createHash('sha256').update(value).digest('hex');

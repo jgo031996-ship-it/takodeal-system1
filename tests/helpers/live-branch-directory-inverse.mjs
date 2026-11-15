@@ -1,3 +1,4 @@
+import {normalizePlottedRelease} from './plotted-release-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -7,6 +8,7 @@ import {normalizeCashierOwnerWorkspace} from './cashier-owner-workspace-inverse.
 export const liveBranchDirectoryProof=JSON.parse(readFileSync(new URL('../fixtures/live-branch-directory-inverse.json',import.meta.url),'utf8'));
 export const liveBranchSha=value=>createHash('sha256').update(value).digest('hex');
 export function restoreLiveBranchDirectory(source,file) {
+ source=normalizePlottedRelease(source,file);
     source=normalizeCashierOwnerWorkspace(source,file);
     // Normalize only the exact newest candidate. Unknown/tampered sources still
     // reach the historical strict hash checks; old proof bytes stay unchanged.

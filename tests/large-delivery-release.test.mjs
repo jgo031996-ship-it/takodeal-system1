@@ -1,10 +1,13 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {simpleVoidProof,legacyVoidSource,simpleVoidOnlyChange} from './helpers/cashier-simple-void-inverse.mjs';
 import {normalizeCashierReceivingProgress} from './helpers/cashier-receiving-progress-inverse.mjs';
 import {cashierOwnerRegisterProof,excludeCashierOwnerRegisterLeaf} from './helpers/cashier-owner-register-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {readFileSync as _plottedRawFs} from 'node:fs';
+import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {largeDeliveryProof as proof,largeDeliverySha as sha,restoreLargeDeliveryStatus} from './helpers/large-delivery-status-inverse.mjs';
 import {cashierOwnerEntryProof,restoreCashierOwnerEntry} from './helpers/cashier-owner-entry-inverse.mjs';
 import {cashierOwnerWorkspaceProof,restoreCashierOwnerWorkspace} from './helpers/cashier-owner-workspace-inverse.mjs';
