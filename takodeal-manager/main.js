@@ -12854,7 +12854,7 @@ window.openManualAttendanceModal = async function() {
     window.manualAttendanceOperationId = crypto.randomUUID();
     document.getElementById('manualAttendanceModal').style.display = 'flex';
     document.getElementById('btnSaveManualAtt').disabled=false;
-    document.getElementById('btnSaveManualAtt').innerText='Save correction';
+    document.getElementById('btnSaveManualAtt').innerText='Save attendance';
     let select = document.getElementById('manAttStaff');
     select.innerHTML = '<option value="">Loading Staff...</option>';
     
@@ -12862,6 +12862,7 @@ window.openManualAttendanceModal = async function() {
     const time = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
     document.getElementById('manAttDateTime').value = scheduleDateKey(now)+'T'+time;
     document.getElementById('manAttRemarks').value = '';
+    window.resetManualAttendanceLink();
 
     try {
         const snap = await window.getDocsFromServer(window.collection(window.db,'cashiers'));
@@ -12886,6 +12887,12 @@ window.openManualAttendanceModal = async function() {
     }
 };
 
+window.resetManualAttendanceLink = function() {
+    window.manualAttendanceChoiceScope=null;
+    const select=document.getElementById('manAttTimeIn'),wrap=document.getElementById('manAttTimeInWrap'),status=document.getElementById('manAttStatus');
+    if(select){select.value='';select.innerHTML='';}if(wrap)wrap.hidden=true;if(status)status.textContent='';
+};
+
 let manualAttendanceBusy = false;
 window.submitManualAttendance = async function() {
     if (manualAttendanceBusy) return;
@@ -12898,17 +12905,24 @@ window.submitManualAttendance = async function() {
     const sameAccount=()=>window.auth?.currentUser?.uid===actor.uid&&window.auth?.currentUser?.email===actor.email&&window.sessionUser===session;
     const authorized = () => sameAccount() && canOpenWorkspacePage(window.sessionUser,'payroll');
     const relevant=()=>sameAccount()&&(window.manualAttendanceSequence||0)===sequence;
-    const fields=()=>JSON.stringify(['manAttStaff','manAttBranch','manAttType','manAttDateTime','manAttRemarks'].map(id=>document.getElementById(id).value));
+    const fields=()=>JSON.stringify(['manAttStaff','manAttBranch','manAttType','manAttDateTime','manAttRemarks','manAttTimeIn'].map(id=>document.getElementById(id)?.value||''));
     const entered=fields();
     const assertCurrent=()=>{if(!authorized()||!relevant()||document.getElementById('manualAttendanceModal').style.display!=='flex')throw Error('The attendance form or authorized account changed. Reopen the correction.');if(fields()!==entered)throw Error('The attendance details changed. Review the current form before saving.');};
+    const status=document.getElementById('manAttStatus'),started=Date.now();let waiting;
+    const message=(text,error=false)=>{if(!relevant())return;if(status){status.textContent=text;status.style.color=error?'#b91c1c':'#345847';}};
+    const phase=text=>{if(relevant()){btn.innerText=text;message(text);}};
+    if(typeof window.setInterval==='function')waiting=window.setInterval(()=>{if(Date.now()-started>=15000)message('Still waiting for HQ to confirm this save. Your entries are kept; no second submission is started.');},1000);
     try {
         assertCurrent();
+        const note=document.getElementById('manAttRemarks').value.trim();
+        if(note.length>1500)throw Error('Keep the attendance note to 1,500 characters or less.');
+        phase('Checking saved attendance…');
         const payload = validateManualAttendance({
             staffName:document.getElementById('manAttStaff').value,
             branch:document.getElementById('manAttBranch').value,
             type:document.getElementById('manAttType').value,
             dateTimeRaw:document.getElementById('manAttDateTime').value,
-            remarks:document.getElementById('manAttRemarks').value.trim()
+            remarks:note||'Manual attendance entry.'
         },{actor,allowed:authorized(),branchAllowed:window.isBranchAllowed});
         const staff = await window.getDocsFromServer(window.query(window.collection(window.db,'cashiers'),window.where('cashierName','==',payload.staffName)));
         assertCurrent();
@@ -12925,19 +12939,21 @@ window.submitManualAttendance = async function() {
             const archived={historyMonths:history?.historyMonths||{},payrollHistoryEnforcedFrom:history?.payrollHistoryEnforcedFrom};
             payload.scheduleSnapshot={...captureAttendanceSchedule(payload.timestamp,payload.branch,payload.staffName,archived,{[payload.staffName]:profile}),source:'manual-correction'};
         }else{
-            departure=await prepareManualTimeOut(window,payload,{operationId:window.manualAttendanceOperationId,assertCurrent,chooseReference:async choices=>{
-                const result=await Swal.fire({title:'Choose the original Time In',input:'select',inputOptions:Object.fromEntries(choices.map(row=>[row.id,new Date(attendanceMillis(row.timestamp)).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+' · '+row.branch])),inputPlaceholder:'Select the exact saved Time In',showCancelButton:true,confirmButtonText:'Use this Time In'});
-                return result.isConfirmed?result.value:null;
+            departure=await prepareManualTimeOut(window,{...payload,remarks:note},{operationId:window.manualAttendanceOperationId,assertCurrent,chooseReference:async choices=>{
+                const select=document.getElementById('manAttTimeIn'),wrap=document.getElementById('manAttTimeInWrap');
+                if(!select||!wrap)throw Error('Open the updated attendance form to choose this shift.');
+                const scope=JSON.stringify([payload.staffId,payload.branch,attendanceMillis(payload.timestamp),choices.map(row=>[row.id,attendanceMillis(row.timestamp)])]);
+                if(window.manualAttendanceChoiceScope!==scope){
+                    window.manualAttendanceChoiceScope=scope;select.innerHTML='<option value="">Choose the saved Time In</option>'+choices.map(row=>'<option value="'+escapeHtml(row.id)+'">'+escapeHtml(new Date(attendanceMillis(row.timestamp)).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+' · '+row.branch)+'</option>').join('');select.value='';
+                }
+                wrap.hidden=false;
+                if(!choices.some(row=>row.id===select.value))throw Object.assign(Error('Choose which saved Time In this Time Out belongs to, then save.'),{code:'manual-attendance/choose-time-in'});
+                return select.value;
             }});assertCurrent();
         }
-        const reference=departure?' Original Time In: '+new Date(departure.view.timeInAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+'. Confirm this is the verified actual departure. Assigned hours and lateness are reviewed separately.'+(departure.view.request?' This also accepts the associated staff reason: '+departure.view.request.reason+'.':''):payload.scheduleSnapshot.needsScheduleReview?' The saved shift needs separate HR review; this correction records the actual punch.':'';
-        const confirmation = await Swal.fire({title:departure?'Confirm actual departure':'Confirm attendance correction',
-            text:`${payload.staffName} · ${payload.branch} · ${payload.type} · ${payload.timestamp.toLocaleString('en-PH',{timeZone:'Asia/Manila'})}. Reason: ${payload.remarks}. This will be recorded under ${actor.email}.${reference}`,
-            icon:'question',showCancelButton:true,confirmButtonText:departure?(departure.view.request?'Accept reason & record Time Out':'Save confirmed actual Time Out'):'Save correction'});
-        if (!confirmation.isConfirmed) return;
         assertCurrent();
         if (!authorized() || !window.isBranchAllowed(payload.branch)) throw Error('Your account access changed. Reopen the correction.');
-        btn.innerText = 'Saving correction…';
+        phase('Saving attendance…');
         if(departure)await departure.save();
         else await saveManualAttendance(window,payload,{operationId:window.manualAttendanceOperationId,actor,authorize:()=>{assertCurrent();return true;}});
         window.invalidateCache?.('attendance_logs');
@@ -12945,18 +12961,24 @@ window.submitManualAttendance = async function() {
         const keptDraft=fields()!==entered;
         if(!keptDraft)document.getElementById('manualAttendanceModal').style.display='none';
         else window.manualAttendanceOperationId=crypto.randomUUID();
-        let refreshed=true;
-        try{
+        message('Attendance saved.');
+        window.ManagerUI.notify('Attendance saved.'+(keptDraft?' Your newer form entries were kept.':''));
+        // A saved punch is complete. A separate payroll view refresh must not
+        // keep Save locked or make an acknowledged entry look unsuccessful.
+        let refreshTimer;
+        const refreshWork=Promise.resolve().then(async()=>{
             const refreshCurrent=()=>{if(!authorized()||!relevant())throw Error('The attendance account or correction form changed.');};
             refreshCurrent();
             if(window.refreshPayrollAfterAttendanceCorrection)await window.refreshPayrollAfterAttendanceCorrection({reason:'manual-attendance',staffId:payload.staffId,branch:payload.branch,workDate:scheduleDateKey(payload.timestamp),assertCurrent:refreshCurrent});
             else await window.loadAttendanceLogs?.();
-        }catch(error){refreshed=false;console.error('Manual attendance saved; payroll refresh:',error);}
-        if(relevant())window.ManagerUI.notify('Attendance correction saved with your account and save time.'+(keptDraft?' Your newer form entries were kept.':'')+(refreshed?'':' Payroll refresh was not confirmed. Reconnect and refresh the selected cutoff; do not record the correction again.'));
+        });
+        const refreshed=typeof window.setTimeout==='function'?Promise.race([refreshWork,new Promise((_,reject)=>{refreshTimer=window.setTimeout(()=>reject(Error('Payroll refresh timed out')),8000);})]):refreshWork;
+        void refreshed.catch(error=>{console.error('Attendance saved; payroll refresh:',error);if(relevant())window.ManagerUI.notify('Attendance saved. Refresh the payroll list when connected; do not add the punch again.');}).finally(()=>{if(refreshTimer!==undefined)window.clearTimeout?.(refreshTimer);});
     } catch(error) {
         console.error('Manual attendance correction:',error);
-        if(relevant())window.ManagerUI.notify(error.message || 'The attendance correction was not saved.');
-    } finally {manualAttendanceBusy=false;if(relevant()){btn.innerText='Save correction';btn.disabled=false;}}
+        message(error.message||'The attendance save was not confirmed.',true);
+        if(relevant())window.ManagerUI.notify(error.message || 'The attendance save was not confirmed.');
+    } finally {if(waiting!==undefined)window.clearInterval?.(waiting);manualAttendanceBusy=false;if(relevant()){btn.innerText='Save attendance';btn.disabled=false;}}
 };
 
 // ==========================================

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "afade4cf34d99f7e0983cd751eaffd4dd66120ae",
+  "runtimeFiles": [
+    {
+      "path": "functions/cash-remittance-review/owner-time-out-handler.mjs",
+      "sha256": "abf3de725925024eb155d75af21067e9cd8d75657efa356026b273a5752264b2",
+      "baseSha256": "05b58ac8491dc1b81de76045463e7fc16848f919d68e4d8a57293e2cfcc5f8c5",
+      "inverse": [
+        {
+          "from": "createOwnerTimeOutService,TIME_OUT_OWNER,MANUAL_MISSING_PURPOSE",
+          "to": "createOwnerTimeOutService,TIME_OUT_OWNER"
+        },
+        {
+          "from": "'cutoffStart','cutoffEnd','from','to','purpose'",
+          "to": "'cutoffStart','cutoffEnd','from','to'"
+        },
+        {
+          "from": "||body.context.purpose!==undefined&&(body.context.purpose!==MANUAL_MISSING_PURPOSE||Object.hasOwn(body.context,'requestId'))",
+          "to": ""
+        }
+      ]
+    },
+    {
+      "path": "functions/cash-remittance-review/owner-time-out-service.mjs",
+      "sha256": "56581703a9e120ca6f3eab87cb78817cd2c95abdf2bef4fcb6f96dc7a897b5ce",
+      "baseSha256": "eb84c788b7eaa6ca8b9a7402c9902a43a03a52c88a03d4b77be1310cdaa62019",
+      "inverse": [
+        {
+          "from": " if(manual&&validEmergencyReliefMarker(start.emergencyRelief,start.branch)&&start.reliefRequestId!==undefined&&start.reliefRequestId!=='early-'+outId(context.staffId,start.id).slice('time-out-'.length))throw Error('The source emergency-cover reference needs a separate attendance review.');\n",
+          "to": ""
+        },
+        {
+          "from": "const reliefFields=relief?{emergencyRelief:s.request.emergencyRelief,reliefRequestId:s.request.id}:manual&&validEmergencyReliefMarker(s.start.emergencyRelief,s.start.branch)?{emergencyRelief:s.start.emergencyRelief,reliefRequestId:'early-'+s.targetId.slice('time-out-'.length)}:{};",
+          "to": "const reliefFields=relief?{emergencyRelief:s.request.emergencyRelief,reliefRequestId:s.request.id}:{};"
+        },
+        {
+          "from": "requiresScheduleReview:s.request?.status==='Pending'&&s.request?.reasonAccepted===true||!!(manual&&validEmergencyReliefMarker(s.start.emergencyRelief,s.start.branch))",
+          "to": "requiresScheduleReview:s.request?.status==='Pending'&&s.request?.reasonAccepted===true"
+        },
+        {
+          "from": "requestStatus:status,requiresScheduleReview:relief||!!(manual&&validEmergencyReliefMarker(s.start.emergencyRelief,s.start.branch))};",
+          "to": "requestStatus:status,requiresScheduleReview:relief};"
+        },
+        {
+          "from": "export const MANUAL_MISSING_PURPOSE='manual-missing';\n",
+          "to": ""
+        },
+        {
+          "from": "function contextOf(input){const manual=input?.purpose===MANUAL_MISSING_PURPOSE;if(input?.purpose!==undefined&&!manual||manual&&Object.hasOwn(input,'requestId'))throw Error('Manual missing attendance cannot select or approve a staff request.');",
+          "to": "function contextOf(input){"
+        },
+        {
+          "from": "if(manual)value.purpose=MANUAL_MISSING_PURPOSE;",
+          "to": ""
+        },
+        {
+          "from": "const context=contextOf(input),manual=context.purpose===MANUAL_MISSING_PURPOSE,[start",
+          "to": "const context=contextOf(input),[start"
+        },
+        {
+          "from": "!manual&&context.requestId?tx.get",
+          "to": "context.requestId?tx.get"
+        },
+        {
+          "from": "manual?[]:tx.query('staff_requests'",
+          "to": "tx.query('staff_requests'"
+        },
+        {
+          "from": "canSave:!s.covering.length&&(s.context.purpose!==MANUAL_MISSING_PURPOSE||!s.existing),canAmend:s.context.purpose!==MANUAL_MISSING_PURPOSE&&!!s.existing&&!s.covering.length",
+          "to": "canSave:!s.covering.length,canAmend:!!s.existing&&!s.covering.length"
+        },
+        {
+          "from": "const context=contextOf(input.context),manual=context.purpose===MANUAL_MISSING_PURPOSE;if(manual&&input.acceptReason!==false)throw Error('Manual attendance records a missing departure only; staff requests are not approved.');const intent=",
+          "to": "const context=contextOf(input.context),intent="
+        },
+        {
+          "from": "manual&&(prior.marker?.purpose!==MANUAL_MISSING_PURPOSE||s.existing?.reliefScheduleReview?.purpose!==MANUAL_MISSING_PURPOSE)||",
+          "to": ""
+        },
+        {
+          "from": "return {alreadySaved:true,...(manual?{purpose:MANUAL_MISSING_PURPOSE}:{}),",
+          "to": "return {alreadySaved:true,"
+        },
+        {
+          "from": "if(manual&&s.existing)throw Error('A Time Out is already recorded for this Time In. The missing-attendance form cannot replace it.');",
+          "to": ""
+        },
+        {
+          "from": "marker={kind:TIME_OUT_KIND,version:1,...(manual?{purpose:MANUAL_MISSING_PURPOSE}:{}),",
+          "to": "marker={kind:TIME_OUT_KIND,version:1,"
+        },
+        {
+          "from": "return {saved:true,...(manual?{purpose:MANUAL_MISSING_PURPOSE}:{}),",
+          "to": "return {saved:true,"
+        }
+      ]
+    }
+  ]
+}

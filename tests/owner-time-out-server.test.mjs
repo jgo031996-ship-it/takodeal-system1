@@ -4,15 +4,16 @@ import {createHash} from 'node:crypto';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {createOwnerTimeOutHandler,OWNER_TIME_OUT_ORIGIN} from '../functions/cash-remittance-review/owner-time-out-handler.mjs';
 import {createOwnerTimeOutStore} from '../functions/cash-remittance-review/owner-time-out-store.mjs';
-import {actualTimeOutInstant,TIME_OUT_KIND,createOwnerTimeOutService} from '../functions/cash-remittance-review/owner-time-out-service.mjs';
+import {actualTimeOutInstant,TIME_OUT_KIND,MANUAL_MISSING_PURPOSE,createOwnerTimeOutService} from '../functions/cash-remittance-review/owner-time-out-service.mjs';
 import {validEarlyTimeOutApproval} from '../takodeal-manager/early-time-out-model.js';
+const payrollConsumers=await Promise.all(['takodeal-manager','takodeal-staff','Takodeal-POS','takodeal-franchise'].map(app=>import('../'+app+'/payroll-attendance.js')));
 const email='jgo031996@gmail.com',staffId='fictional-employee',startId='fictional-time-in',name='Fictional Branch Cashier';
 const start=new Date('2026-11-02T14:04:00+08:00'),oldOut=new Date('2026-11-02T15:30:00+08:00'),actual=new Date('2026-11-03T03:28:00+08:00'),clock=Date.parse('2026-11-05T12:00:00+08:00');
 const canonicalOut='time-out-'+createHash('sha256').update(JSON.stringify([staffId,startId])).digest('hex'),canonicalRequest='early-'+canonicalOut.slice(9);
 async function fixture({existing=true,legacy=false,request=true,emergency=false}={}){
- const h=firestoreHarness(),queryCalls=[],verifyCalls=[];let physical=0;
+ const h=firestoreHarness(),queryCalls=[],verifyCalls=[],readCalls=[];let physical=0;
  const native=snap=>({id:snap.id,exists:snap.exists(),data:snap.data});
- const db={doc:path=>({path,id:path.split('/')[1]}),collection:table=>({table,where(field,op,value){return {...this,filters:[{field,op,value}]};},limit(n){return {...this,max:n};},select(...fields){return {...this,fields};}}),runTransaction:callback=>{physical++;return h.api.runTransaction({},outer=>callback({async get(ref){if(!ref.table)return native(await outer.get(ref));queryCalls.push(ref);const docs=[];for(const [path,row]of h.docs)if(path.startsWith(ref.table+'/')&&ref.filters.every(f=>row[f.field]===f.value)){const snap=await outer.get(db.doc(path)),data=snap.data();docs.push({id:snap.id,data:()=>ref.fields?Object.fromEntries(ref.fields.filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]])):data});if(docs.length>=ref.max)break;}return {docs,size:docs.length};},set:(ref,row)=>outer.set(ref,row),update:(ref,row)=>outer.update(ref,row),create(ref,row){assert.equal(h.docs.has(ref.path),false,'immutable create cannot overwrite');outer.set(ref,row);}}));}};
+ const db={doc:path=>({path,id:path.split('/')[1]}),collection:table=>({table,where(field,op,value){return {...this,filters:[{field,op,value}]};},limit(n){return {...this,max:n};},select(...fields){return {...this,fields};}}),runTransaction:callback=>{physical++;return h.api.runTransaction({},outer=>callback({async get(ref){if(!ref.table){readCalls.push(ref.path);return native(await outer.get(ref));}queryCalls.push(ref);const docs=[];for(const [path,row]of h.docs)if(path.startsWith(ref.table+'/')&&ref.filters.every(f=>row[f.field]===f.value)){const snap=await outer.get(db.doc(path)),data=snap.data();docs.push({id:snap.id,data:()=>ref.fields?Object.fromEntries(ref.fields.filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]])):data});if(docs.length>=ref.max)break;}return {docs,size:docs.length};},set:(ref,row)=>outer.set(ref,row),update:(ref,row)=>outer.update(ref,row),create(ref,row){assert.equal(h.docs.has(ref.path),false,'immutable create cannot overwrite');outer.set(ref,row);}}));}};
  const marker={version:1,homeBranch:'Maa',branch:'Cabantian',requiresReview:true},outId=legacy?'legacy-departure':canonicalOut;
  h.put('hq_managers/owner',{email,role:'Owner',pin:'fictional-owner-pin',active:true,assignedBranch:'All',permissions:['all']});
  h.put('cashiers/'+staffId,{cashierName:name,branch:emergency?'Maa':'Cabantian',active:true,pin:'fictional-staff-secret'});
@@ -22,7 +23,7 @@ async function fixture({existing=true,legacy=false,request=true,emergency=false}
  const actor={uid:'fiction-owner',email,email_verified:true,firebase:{sign_in_provider:'google.com'}},store=createOwnerTimeOutStore(db,{serverTimestamp:()=>new Date(clock),now:()=>clock}),handler=createOwnerTimeOutHandler({store,now:()=>clock,verifyToken:async(token,revoked)=>{verifyCalls.push([token,revoked]);return actor;}}),context={attendanceLogId:startId,staffId,branch:'Cabantian',...(request?{requestId:canonicalRequest}:{})};
  const call=(path,body,extra={})=>handler({method:'POST',path:'/owner-time-out/'+path,origin:OWNER_TIME_OUT_ORIGIN,query:{},contentType:'application/json',authorization:'Bearer '+'t'.repeat(24),rawSize:Buffer.byteLength(JSON.stringify(body)),body,...extra});
  const input=async(extra={})=>{const response=await call('inspect',{context});assert.equal(response.status,200,response.body.message);return {context:response.body.context,expectedFingerprint:response.body.expectedFingerprint,operationId:'fiction-operation-001',dateTimeRaw:'2026-11-03T03:28',reason:'Confirmed the actual departure with the branch attendance evidence.',managementReply:'Your actual departure has been reviewed and recorded.',confirmActualDeparture:true,acceptReason:!!response.body.request,...extra};};
- return {h,db,store,handler,service:createOwnerTimeOutService({store,now:()=>clock}),actor,context,outId,marker,queryCalls,verifyCalls,physical:()=>physical,call,input};
+ return {h,db,store,handler,service:createOwnerTimeOutService({store,now:()=>clock}),actor,context,outId,marker,queryCalls,verifyCalls,readCalls,physical:()=>physical,call,input};
 }
 
 test('Owner amendments use the same departure ID, private immutable evidence and exact operation receipt',async()=>{
@@ -71,7 +72,7 @@ test('multiple pending request sources hold the correction before any records ar
 });
 
 test('emergency relief records actual departure while retaining Pending HR hours review and its exact linkage',async()=>{
- for(const existing of [false,true]){const f=await fixture({emergency:true,existing}),result=await f.call('confirm',await f.input());assert.equal(result.status,200,result.body.message);assert.equal(result.body.requiresScheduleReview,true);assert.equal(result.body.requestStatus,'Pending');const request=f.h.get('staff_requests/'+canonicalRequest),out=f.h.get('attendance_logs/'+canonicalOut);assert.equal(request.status,'Pending');assert.equal(request.requiresScheduleReview,true);assert.equal(request.reasonAccepted,true);assert.deepEqual(out.emergencyRelief,f.marker);assert.equal(out.reliefRequestId,canonicalRequest);assert.match(request.decisionScope,/assigned hours still need/);}
+ for(const existing of [false,true]){const f=await fixture({emergency:true,existing}),result=await f.call('confirm',await f.input());assert.equal(result.status,200,result.body.message);assert.equal(result.body.requiresScheduleReview,true);assert.equal(result.body.requestStatus,'Pending');const request=f.h.get('staff_requests/'+canonicalRequest),out=f.h.get('attendance_logs/'+canonicalOut);assert.equal(request.status,'Pending');assert.equal(request.requiresScheduleReview,true);assert.equal(request.reasonAccepted,true);assert.deepEqual(out.emergencyRelief,f.marker);assert.equal(out.reliefRequestId,canonicalRequest);assert.match(request.decisionScope,/assigned hours still need/);for(const app of payrollConsumers)assert.equal(app.planPayrollAttendance([...f.h.docs].filter(([path])=>path.startsWith('attendance_logs/')).map(([path,row])=>({...row,id:path.split('/')[1]}))).heldNames.has(name),true);}
 });
 
 test('fresh saved Owner inactivity, employee revocation and changed source punches prevent writes',async()=>{
@@ -121,4 +122,58 @@ test('the separate Admin adapter permits only exact protected departure, request
 
 test('Owner request throttling stays bounded in the existing private attempts collection',async()=>{
  const f=await fixture();for(let n=0;n<120;n++)await f.store.rateOwner('fiction-owner');await assert.rejects(f.store.rateOwner('fiction-owner'),error=>error.status===429);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('cash_remittance_attempts/owner-time-out-')).length,1);
+});
+
+const manualContext=f=>{const {requestId,...context}=f.context;return {...context,purpose:MANUAL_MISSING_PURPOSE};};
+async function manualInput(f,patch={}){const response=await f.call('inspect',{context:manualContext(f)});assert.equal(response.status,200,response.body.message);return {context:response.body.context,expectedFingerprint:response.body.expectedFingerprint,operationId:'fiction-manual-001',dateTimeRaw:'2026-11-03T03:28',reason:'Manual Time Out entry.',managementReply:'',confirmActualDeparture:true,acceptReason:false,...patch};}
+const financialFacts=f=>[...f.h.docs].filter(([path])=>!path.startsWith('cash_remittance_attempts/'));
+
+test('manual missing mode ignores even conflicting malformed pending requests and records only one missing departure',async()=>{
+ const f=await fixture({existing:false});f.h.put('staff_requests/conflicting',{type:'Early Time Out',timeInLogId:startId,status:'Pending',staffId:'foreign-staff',requestVersion:-1});
+ const beforeRequests=structuredClone([...f.h.docs].filter(([path])=>path.startsWith('staff_requests/'))),beforeIn=structuredClone(f.h.get('attendance_logs/'+startId)),input=await manualInput(f),result=await f.call('confirm',input);
+ assert.equal(result.status,200,result.body.message);assert.equal(result.body.purpose,MANUAL_MISSING_PURPOSE);assert.equal(result.body.requestStatus,null);assert.equal(result.body.requiresScheduleReview,false);assert.equal(result.body.id,canonicalOut);
+ assert.deepEqual([...f.h.docs].filter(([path])=>path.startsWith('staff_requests/')),beforeRequests);assert.deepEqual(f.h.get('attendance_logs/'+startId),beforeIn);
+ assert.equal(f.queryCalls.some(q=>q.table==='staff_requests'),false);assert.equal(f.readCalls.some(path=>path.startsWith('staff_requests/')),false);
+ const out=f.h.get('attendance_logs/'+canonicalOut),audit=f.h.get('attendance_relief_reviews/'+result.body.auditId);assert.equal(out.reliefScheduleReview.purpose,MANUAL_MISSING_PURPOSE);assert.deepEqual(audit.marker,out.reliefScheduleReview);assert.equal(audit.requestBefore,null);assert.equal(audit.reason,'Manual Time Out entry.');assert.equal(audit.managementReply,'');assert.equal(audit.originalTimeOut,null);
+ assert.equal([...f.h.docs].some(([path])=>/^(payroll_records|expenses|cash_accounts)\//.test(path)),false);assert.equal(JSON.stringify(audit).includes('PRIVATE_ATTENDANCE_PHOTO'),false);
+});
+
+test('manual purpose rejects request selection, other purposes and unknown flags before reading business records',async()=>{
+ for(const context of [{purpose:MANUAL_MISSING_PURPOSE,requestId:canonicalRequest},{purpose:'manual-amend'},{purpose:MANUAL_MISSING_PURPOSE,allowAmend:'true'}]){const f=await fixture({existing:false}),result=await f.call('inspect',{context:{...manualContext(f),...context}});assert.equal(result.status,400);assert.equal(f.physical(),0);assert.equal(f.queryCalls.length,0);}
+ const f=await fixture({existing:false}),input=await manualInput(f),before=structuredClone(financialFacts(f));assert.equal((await f.call('confirm',{...input,acceptReason:true})).status,409);assert.deepEqual(financialFacts(f),before);
+});
+
+test('manual inspect and confirm never amend canonical or legacy existing departures',async()=>{
+ for(const legacy of [false,true]){const f=await fixture({legacy}),view=await f.call('inspect',{context:manualContext(f)}),before=structuredClone(financialFacts(f));assert.equal(view.status,200);assert.equal(view.body.context.purpose,MANUAL_MISSING_PURPOSE);assert.equal(view.body.request,null);assert.equal(view.body.canSave,false);assert.equal(view.body.canAmend,false);assert.equal(view.body.existingTimeOut.id,f.outId);const result=await f.call('confirm',await manualInput(f));assert.equal(result.status,409);assert.match(result.body.message,/already recorded/);assert.deepEqual(financialFacts(f),before);}
+});
+
+test('manual lost ACK replays the exact operation before the existing departure hold, but a different intent or new operation cannot amend it',async()=>{
+ const f=await fixture({existing:false}),input=await manualInput(f);f.h.loseNextAck();await assert.rejects(f.service.confirm(input,f.actor),/Connection lost after commit/);const before=structuredClone(financialFacts(f)),retry=await f.call('confirm',input);assert.equal(retry.status,200,retry.body.message);assert.equal(retry.body.alreadySaved,true);assert.equal(retry.body.purpose,MANUAL_MISSING_PURPOSE);assert.deepEqual(financialFacts(f),before);
+ for(const patch of [{dateTimeRaw:'2026-11-03T03:29'},{reason:'Manual Time Out entry. Note: changed'},{operationId:'fiction-manual-002'}]){assert.equal((await f.call('confirm',{...input,...patch})).status,409);assert.deepEqual(financialFacts(f),before);}
+});
+
+test('manual atomic rejection rolls back its audit and departure without changing any pending request',async()=>{
+ const f=await fixture({existing:false}),input=await manualInput(f),before=structuredClone(financialFacts(f));f.h.failNextCommit();await assert.rejects(f.service.confirm(input,f.actor),/Commit rejected/);assert.deepEqual(financialFacts(f),before);assert.equal((await f.call('confirm',input)).body.saved,true);
+});
+
+test('manual concurrent submissions serialize to one departure and one audit without accepting a request',async()=>{
+ const f=await fixture({existing:false}),first=await manualInput(f),second={...first,operationId:'fiction-manual-002'},results=await Promise.all([f.call('confirm',first),f.call('confirm',second)]);assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal([...f.h.docs.keys()].filter(p=>p.startsWith('attendance_relief_reviews/')).length,1);assert.equal([...f.h.docs.keys()].filter(p=>p.startsWith('attendance_logs/')).length,2);assert.equal(f.h.get('staff_requests/'+canonicalRequest).status,'Pending');
+});
+
+test('manual mode retains Owner, staff, source, overlap and paid cutoff protections',async()=>{
+ for(const mode of ['owner','staff','source','overlap','paid']){const f=await fixture({existing:false}),input=await manualInput(f);if(mode==='owner')f.h.put('hq_managers/owner',{email,role:'Owner',pin:'REVOKED',active:false});if(mode==='staff')f.h.put('cashiers/'+staffId,{cashierName:name,branch:'Cabantian',pin:'REVOKED'});if(mode==='source')f.h.put('attendance_logs/'+startId,{...f.h.get('attendance_logs/'+startId),timestamp:new Date(+start+60000)});if(mode==='overlap')f.h.put('attendance_logs/other-in',{staffId,staffName:name,branch:'Maa',type:'TIME IN',timestamp:new Date(+start+3600000)});if(mode==='paid')f.h.put('payroll_records/paid-custom',{staffId,staffName:name,startDate:'2026-11-01',endDate:'2026-11-15',isPaid:true,finalNetPay:900,frozenData:{keep:true}});const before=structuredClone(financialFacts(f)),response=await f.call('confirm',input);assert.equal(response.status,409,mode);assert.deepEqual(financialFacts(f),before,mode);}
+});
+
+test('manual optional notes use factual reasons without relaxing the server reason limit',async()=>{
+ for(const reason of ['', 'ok']){const f=await fixture({existing:false}),input=await manualInput(f,{reason});assert.equal((await f.call('confirm',input)).status,409);assert.equal(f.h.get('attendance_logs/'+canonicalOut),undefined);}
+ for(const note of ['', 'ok']){const f=await fixture({existing:false}),reason='Manual Time Out entry.'+(note?' Note: '+note:''),input=await manualInput(f,{reason,managementReply:note}),response=await f.call('confirm',input);assert.equal(response.status,200,response.body.message);const audit=f.h.get('attendance_relief_reviews/'+response.body.auditId);assert.equal(audit.reason,reason);assert.equal(audit.managementReply,note);}
+});
+
+test('manual emergency Time In remains intact and its pending schedule-review request is not accepted',async()=>{
+ const f=await fixture({existing:false,emergency:true}),before=structuredClone(financialFacts(f)),result=await f.call('confirm',await manualInput(f));assert.equal(result.status,200,result.body.message);assert.deepEqual(f.h.get('attendance_logs/'+startId),before.find(([p])=>p==='attendance_logs/'+startId)[1]);assert.deepEqual(f.h.get('staff_requests/'+canonicalRequest),before.find(([p])=>p==='staff_requests/'+canonicalRequest)[1]);assert.equal(f.h.get('staff_requests/'+canonicalRequest).reasonAccepted,undefined);assert.deepEqual(f.h.get('attendance_logs/'+canonicalOut).emergencyRelief,f.marker);assert.equal(f.h.get('attendance_logs/'+canonicalOut).reliefRequestId,canonicalRequest);assert.equal(result.body.requiresScheduleReview,true);for(const app of payrollConsumers)assert.equal(app.planPayrollAttendance([...f.h.docs].filter(([path])=>path.startsWith('attendance_logs/')).map(([path,row])=>({...row,id:path.split('/')[1]}))).heldNames.has(name),true);
+});
+
+
+test('manual emergency reference accepts only the canonical source linkage and never invents a request',async()=>{
+ for(const reference of [canonicalRequest,'unrelated-legacy-request']){const f=await fixture({existing:false,emergency:true,request:false});f.h.put('attendance_logs/'+startId,{...f.h.get('attendance_logs/'+startId),reliefRequestId:reference});const before=structuredClone(financialFacts(f)),view=await f.call('inspect',{context:manualContext(f)});if(reference!==canonicalRequest){assert.equal(view.status,409);assert.match(view.body.message,/emergency-cover reference/);assert.deepEqual(financialFacts(f),before);continue;}assert.equal(view.status,200,view.body.message);const result=await f.call('confirm',await manualInput(f));assert.equal(result.status,200,result.body.message);assert.equal(result.body.requiresScheduleReview,true);assert.equal([...f.h.docs.keys()].some(path=>path.startsWith('staff_requests/')),false);assert.equal(f.h.get('attendance_logs/'+canonicalOut).reliefRequestId,canonicalRequest);}
 });

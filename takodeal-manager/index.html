@@ -2,7 +2,7 @@
 <html lang="en">
  
 <head>
-<meta name="takodeal-release" content="commissary-20261115-r1">
+<meta name="takodeal-release" content="manual-attendance-20261115-r1">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome · TAKODEÁL Owner</title>
@@ -15,7 +15,7 @@
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="security-alert-links.css?v=20261102">
-  <link rel="stylesheet" href="private-prep-reviews.css?v=commissary-20261115-r1">
+  <link rel="stylesheet" href="private-prep-reviews.css?v=manual-attendance-20261115-r1">
   <link rel="stylesheet" href="rider-management.css?v=20261023-buttons">
   <link rel="stylesheet" href="menu-options.css?v=20261024">
   <link rel="stylesheet" href="bundle-category.css?v=20261025">
@@ -3607,19 +3607,19 @@
     <div id="manualAttendanceModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
       <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
           <div style="background: #f59e0b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 18px;">📝 Manual Attendance Override</h2>
+              <h2 style="margin: 0; font-size: 18px;">📝 Add attendance</h2>
               <span onclick="document.getElementById('manualAttendanceModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
           </div>
           <div style="padding: 25px; background: #f8fafc;">
-              <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Use this to fix missing logs if a staff member forgot to Time In or Time Out.</p>
+              <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Add a missing Time In or Time Out. Your account and save time are recorded automatically.</p>
 
               <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
-              <select id="manAttStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;"></select>
+              <select id="manAttStaff" onchange="window.resetManualAttendanceLink?.()" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;"></select>
 
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #334155;">Branch</label>
-                      <select id="manAttBranch" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+                      <select id="manAttBranch" onchange="window.resetManualAttendanceLink?.()" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
                           <option value="Cabantian">Cabantian</option>
                           <option value="Citygate">Citygate</option>
                           <option value="Maa">Maa</option>
@@ -3628,7 +3628,7 @@
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #334155;">Log Type</label>
-                      <select id="manAttType" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+                      <select id="manAttType" onchange="window.resetManualAttendanceLink?.()" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
                           <option value="TIME IN">TIME IN</option>
                           <option value="TIME OUT">TIME OUT</option>
                       </select>
@@ -3636,12 +3636,17 @@
               </div>
 
               <label style="font-size: 12px; font-weight: bold; color: #334155;">Exact Date & Time of Log (Philippine time)</label>
-              <input type="datetime-local" id="manAttDateTime" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold;">
+              <input type="datetime-local" id="manAttDateTime" onchange="window.resetManualAttendanceLink?.()" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold;">
 
-              <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Remarks / Reason</label>
-              <input type="text" id="manAttRemarks" placeholder="e.g. Forgot to clock out, battery died" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+              <div id="manAttTimeInWrap" hidden style="margin-bottom: 15px;">
+                  <label for="manAttTimeIn" style="font-size: 12px; font-weight: bold; color: #334155;">Time In for this shift</label>
+                  <select id="manAttTimeIn" style="width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px;"></select>
+              </div>
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Note (optional)</label>
+              <input type="text" id="manAttRemarks" maxlength="1500" placeholder="e.g. Forgot to clock out" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+              <p id="manAttStatus" role="status" aria-live="polite" style="font-size: 12px; color: #345847; margin: 0 0 15px;"></p>
 
-              <button id="btnSaveManualAtt" onclick="window.submitManualAttendance()" style="width: 100%; background: #17654f; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Review attendance correction</button>
+              <button id="btnSaveManualAtt" onclick="window.submitManualAttendance()" style="width: 100%; background: #17654f; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Save attendance</button>
           </div>
       </div>
   </div>
@@ -6570,7 +6575,7 @@
     import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';
     installAuditModalLayout();
   </script>
-  <script type="module" src="auth.js?v=commissary-20261115-r1"></script>
+  <script type="module" src="auth.js?v=manual-attendance-20261115-r1"></script>
   <script type="module" src="owner-pos-settings-access.js?v=20261018"></script>
   <script type="module">
     import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';

@@ -4,6 +4,12 @@ import {createOwnerTimeOutClient} from './owner-time-out-client.js';
 
 const clients=new WeakMap(),attempts=new WeakMap();
 const active=row=>!row.deleted&&!['Voided','Cancelled','Canceled','Deleted'].includes(row.status);
+export const MANUAL_MISSING_ATTENDANCE_PURPOSE='manual-missing';
+export function manualTimeOutAuditNote(value){
+ const note=String(value??'').trim();
+ if(note.length>1500)throw Error('Keep the attendance note to 1,500 characters or less.');
+ return {reason:'Manual Time Out entry.'+(note?' Note: '+note:''),managementReply:note};
+}
 export function manualTimeOutReferences(records,payload){
  const finish=attendanceMillis(payload?.timestamp);
  if(payload?.type!=='TIME OUT'||!payload.staffId||!Number.isFinite(finish))throw Error('Choose the saved employee and actual Time Out first.');
@@ -34,13 +40,17 @@ export async function prepareManualTimeOut(api,payload,{operationId,assertCurren
  assertCurrent();if(!selected)throw Error('Choose the exact original Time In before recording this departure.');
  const start=choices.find(row=>row.id===selected);if(!start)throw Error('The selected original Time In changed. Reopen this correction.');
  let service=client||clients.get(api);if(!service){service=createOwnerTimeOutClient(api);clients.set(api,service);}
- const context={attendanceLogId:start.id,staffId:payload.staffId,staffName:payload.staffName,branch:payload.branch};
+ const context={attendanceLogId:start.id,staffId:payload.staffId,staffName:payload.staffName,branch:payload.branch,purpose:MANUAL_MISSING_ATTENDANCE_PURPOSE};
  const view=await service.inspect(context);assertCurrent();
+ if(view.context?.purpose!==MANUAL_MISSING_ATTENDANCE_PURPOSE)throw Error('HQ has not enabled the direct manual attendance update yet. Keep your entries and retry after the update.');
+ if(view.request||view.context?.requestId)throw Error('The attendance response included a staff-request decision. Nothing was submitted; refresh this form.');
+ if(view.existingTimeOut)throw Error('A Time Out is already saved for this shift. Open the saved entry if its time needs changing.');
  if(!view.canSave)throw Error(view.paidCutoffs?.length?'A paid payslip covers this work date. Its original figures require a separate payroll adjustment.':'This saved departure needs a separate attendance review before it can be changed.');
  if(view.context?.attendanceLogId!==start.id||view.staffId!==payload.staffId||view.branch!==payload.branch||attendanceMillis(view.timeInAt)!==attendanceMillis(start.timestamp))throw Error('The original Time In changed during review. Reopen this correction.');
+ const note=manualTimeOutAuditNote(payload.remarks);
  const request=Object.freeze({context:{...view.context},expectedFingerprint:view.expectedFingerprint,operationId,
-  dateTimeRaw:new Date(attendanceMillis(payload.timestamp)+8*3600000).toISOString().slice(0,19),reason:payload.remarks,
-  managementReply:payload.remarks,confirmActualDeparture:true,acceptReason:!!view.request});
+  dateTimeRaw:new Date(attendanceMillis(payload.timestamp)+8*3600000).toISOString().slice(0,19),...note,
+  confirmActualDeparture:true,acceptReason:false});
  const prepared={view,request,async save(){
   assertCurrent();cached.set(key,prepared);
   try{const result=await service.save(request);cached.delete(key);return result;}
