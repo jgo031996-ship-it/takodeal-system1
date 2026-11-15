@@ -4,7 +4,7 @@ import {createVoidJournal,editableVoidCart,validateVoidView,voidCanonical,voidCl
 
 export const CASHIER_VOID_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/cashRemittanceReview/cashier-void/';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const held=()=>Error('This receipt still has a saved correction to check. Keep this tablet’s app data and use Check receipt correction.');
+const held=()=>Error('This saved receipt update could not finish yet. Keep this tablet’s app data and retry the same receipt when connected.');
 const changed=()=>Error('The cashier, branch, shift or order changed. Reopen the saved correction before continuing.');
 const replacementIdentity=row=>row.replacement&&({saleId:row.replacement.saleId,receiptId:row.replacement.receiptId,claimToken:row.replacement.claimToken});
 
@@ -78,14 +78,14 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
  function markCompletedCart(row){const owner=cartOwners.get(w.cart);if(owner?.operationId===row.operationId){owner.queued=true;active=null;}}
  function readCurrent(row){const saved=journal.get(JSON.parse(row.scope).uid,row.operationId);if(!saved||saved.scope!==row.scope||saved.reason!==row.reason||saved.saleId!==row.saleId)throw held();return saved;}
  function actorMatches(row,actor,metadataRecovery=false){const original=JSON.parse(row.scope);return ['uid','staffId','deviceId','branch'].every(key=>original[key]===actor[key])&&(actor.staffSessionId===(row.recoverySessionId||original.staffSessionId)||metadataRecovery&&['saved','claimed','queued'].includes(row.state)&&!!row.replacement);}
- async function connection(row,guard,{metadataRecovery=false}={}){
-  guard();const context=access.capture({metadataRecovery}),api=await context.resolve();
+ async function connection(row,guard,{metadataRecovery=false,operationId}={}){
+  guard();const context=access.capture({metadataRecovery,operationId:row?.operationId||operationId}),api=await context.resolve();
   guard();const actor=context.actor();
   if(row&&!actorMatches(row,actor,metadataRecovery))throw held();
   return {actor,api,confirmReceiptPin:scope=>context.confirmReceiptPin(scope),needsRecoveryPin:()=>context.needsRecoveryPin?.()===true,current(){guard();context.current();if(row)readCurrent(row);}};
  }
  async function refreshRecoveryPin(row,connected){
-  const expiry=Date.parse(row.recoveryPinExpiresAt||row.pinExpiresAt||''),recoveryExpiry=Date.parse(row.recoveryPinExpiresAt||'');if(row.recoveryPinVerificationId&&recoveryExpiry>now())return row;if(!connected.needsRecoveryPin()&&(!['saved','claimed','queued'].includes(row.state)||!row.pinVerificationId||!Number.isFinite(expiry)||expiry>now()))return row;
+  const expiry=Date.parse(row.recoveryPinExpiresAt||row.pinExpiresAt||''),recoveryExpiry=Date.parse(row.recoveryPinExpiresAt||'');if(row.recoveryPinVerificationId&&recoveryExpiry>now())return row;if(!connected.needsRecoveryPin()&&(!row.pinVerificationId||!Number.isFinite(expiry)||expiry>now()))return row;
   const scope=await voidPayloadHash({operationId:row.operationId,saleId:row.saleId,receiptId:row.receiptId,branch:row.branch,shiftId:row.shiftId,reason:row.reason},w.crypto);connected.current();const proof=await connected.confirmReceiptPin(scope);connected.current();return save({...readCurrent(row),recoveryPinVerificationId:proof.verificationId,recoveryPinExpiresAt:proof.expiresAt});
  }
  async function rememberRecoveryAuthority(row,view,actor,assertCurrent){
@@ -121,7 +121,7 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
   connection.current();guard();row=recordResult(row,view);
   if(view.state!=='saved')throw held();
   void Promise.resolve().then(()=>{connection.current();return w.refreshSavedVoidSales?.(view,connection.current);}).catch(error=>console.warn('Saved receipt refresh is awaiting connection:',error));
-  if(row.reason==='OrderCancelled'){await dialog({title:'Order cancelled',text:'The original receipt is voided. Only its applied saved deductions were returned to Live Stocks. No bank refund was made.',icon:'success'});return {saved:true};}
+  if(row.reason==='OrderCancelled'){await dialog({title:'Order cancelled',text:'Receipt voided, applied recipe deductions returned, and security alert recorded. No bank refund was made.',icon:'success',toast:true,position:'top-end',showConfirmButton:false,timer:2500});return {saved:true};}
   if(view.replacement.state==='abandoned'){save({...row,state:'closed'});markCompletedCart(row);return {abandoned:true};}
   if(view.replacement.state==='conflict')throw Error('The replacement receipt differs from its saved checkout. Keep the recovery reference for the Owner.');
   if(view.replacement.state==='committed'){save({...row,state:'closed'});markCompletedCart(row);void w.syncOfflineQueue?.();await dialog({title:'Replacement already saved',text:'Its receipt is already recorded. No cart was restored and no second payment was created.',icon:'info'});return {saved:true,replacementSaved:true};}
@@ -140,13 +140,24 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
   w.cart=cart;if(!w.platformCarts)w.platformCarts={};w.platformCarts[platform]=cart;active={operationId:row.operationId,uid:connection.actor.uid,cart,session:session(),context:connection,sourceFingerprint:row.sourceFingerprint};
   cartOwners.set(cart,active);
   w.renderCart?.();revealEditableVoidCart(w,d);
-  await dialog({title:'Order ready to correct',text:'The original receipt is voided. Edit these items, then use normal checkout with a new customer and payment. The replacement keeps one reserved receipt number.',icon:'success'});
+  await dialog({title:'Items returned to cart',text:'The receipt is voided and its applied recipe deductions were returned. Edit these items and check out the corrected order.',icon:'success',toast:true,position:'top-end',showConfirmButton:false,timer:2500});
   return {saved:true,restored:true};
  }
  async function resolveRow(row,captured){const connected=await connection(row,captured.guard);connected.current();const view=await rpc('status',row,connected);connected.current();return {row:recordResult(row,view),view,connected};}
- async function recover(operationId){ready();const captured=capture({requireOpen:false}),connected=await connection(null,captured.guard,{metadataRecovery:true}),rows=journal.list(connected.actor.uid).filter(row=>!['closed','cancelled'].includes(row.state));let row=operationId?rows.find(item=>item.operationId===operationId):rows.length===1?rows[0]:null;if(!row)throw Error(rows.length?'Choose the original receipt correction. Keep every recovery reference for the Owner.':'No unfinished receipt correction is saved for this cashier.');if(!actorMatches(row,connected.actor,true))throw held();row=await refreshRecoveryPin(row,connected);const view=await rpc('status',row,connected);connected.current();row=await rememberRecoveryAuthority(row,view,connected.actor,connected.current);connected.current();
+ async function recover(operationId,{restart=true}={}){
+  ready();const captured=capture({requireOpen:false});let connected=await connection(null,captured.guard,{metadataRecovery:true,operationId});
+  const operator=connected.actor,rows=journal.list(operator.uid).filter(row=>!['closed','cancelled'].includes(row.state)&&['uid','staffId','deviceId','branch'].every(key=>JSON.parse(row.scope)[key]===operator[key]));
+  let row=operationId?rows.find(item=>item.operationId===operationId):rows.length===1?rows[0]:null;
+  if(!row)throw Error(rows.length?'Select the receipt you want to resume.':'No unfinished receipt update is saved for this cashier.');
+  if(!actorMatches(row,connected.actor))connected=await connection(row,captured.guard,{metadataRecovery:true});
+  row=await refreshRecoveryPin(row,connected);let view=await rpc('status',row,connected);connected.current();row=await rememberRecoveryAuthority(row,view,connected.actor,connected.current);connected.current();
   if(view.state==='unknown'||view.state==='preview'){
-   const answer=await dialog({title:'Receipt save not confirmed',text:'The receipt is not confirmed as voided. Keep this reference to check again, or cancel this exact attempt before reviewing a new one.',showDenyButton:true,denyButtonText:'Cancel this attempt',confirmButtonText:'Keep reference'});connected.current();if(answer.isDenied){const cancelled=await rpc('cancel',row,connected);connected.current();row=recordResult(row,cancelled);if(cancelled.state==='saved')return restore(row,cancelled,connected,captured.guard);if(cancelled.state!=='cancelled')throw held();return {cancelled:true};}return {pending:true};
+   // A transactional tombstone either closes this uncommitted attempt or
+   // returns its already-saved void. Never erase a journal or guess its result.
+   view=await rpc('cancel',row,connected);connected.current();row=recordResult(row,view);
+   if(view.state==='saved')return restore(row,view,connected,captured.guard);
+   if(view.state!=='cancelled')throw held();
+   return restart?start(row.saleId,row.receiptId,{reason:row.reason}):{cancelled:true,retryable:true};
   }
   if(view.state==='cancelled')return {cancelled:true};
   if(view.replacement?.state==='abandoned'&&row.payload)throw Error('This draft was left without a replacement before its checkout was confirmed. Keep the frozen payment reference for the Owner to review; no new receipt will be created automatically.');
@@ -155,7 +166,8 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
    if(view.replacement?.state==='conflict')throw held();
    const restoreAttemptId=row.restoreAttemptId;if(typeof restoreAttemptId!=='string'||view.replacement?.restoreAttemptId!==restoreAttemptId||view.replacement?.checkoutAttemptId&&view.replacement.checkoutAttemptId!==row.checkoutAttemptId||view.replacement?.payloadHash&&view.replacement.payloadHash!==row.payloadHash)throw held();
    const local=await w.cashierVoidQueue?.list();connected.current();if(!Array.isArray(local))throw held();const queued=local.find(item=>item.saleId===row.replacement.saleId);if(queued){if(voidCanonical(queued.payload)!==voidCanonical(row.payload))throw held();void w.syncOfflineQueue?.();return {queued:true};}
-   emptyForReplacement(row.sourcePlatform||'Standard');const answer=await dialog({title:'Recover the saved replacement checkout',text:'Use the exact earlier checkout and payment details. Do not collect another payment. Its reserved receipt number will be reused.',showCancelButton:true,confirmButtonText:'Recover saved checkout',cancelButtonText:'Keep reference',focusCancel:true});connected.current();if(!answer.isConfirmed)return {pending:true};
+   // This is an already-confirmed immutable checkout, not another payment.
+   // Re-enqueue the exact receipt without touching the cashier's current cart.
    const proof=await rpc('replacement-claim',row,connected,{phase:'checkout',restoreAttemptId,expectedFingerprint:row.expectedFingerprint,checkoutAttemptId:row.checkoutAttemptId,payload:row.payload});connected.current();if(proof.replacement?.state==='committed'){save({...row,state:'closed'});return {replacementSaved:true};}if(proof.replacement?.state!=='claimed'||proof.replacement.payloadHash!==row.payloadHash||proof.replacement.checkoutAttemptId!==row.checkoutAttemptId)throw held();
    await w.cashierVoidQueue.enqueue(voidClone(row.payload));connected.current();save({...row,state:'queued'});void w.syncOfflineQueue?.();return {queued:true};
   }
@@ -163,6 +175,7 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
   const unpaidConflict=view.replacement?.state==='conflict'&&!row.payload&&!view.replacement.checkoutAttemptId&&!view.replacement.payloadHash;
   if(row.reason==='WrongPunched'&&(['unclaimed','draft'].includes(view.replacement?.state)||unpaidConflict)){
    const canRestore=!unpaidConflict&&w.currentShift?.active===true&&w.currentShift.shiftId===row.shiftId;
+   if(canRestore)return restore(row,view,connected,captured.guard);
    const answer=await dialog({title:'The original receipt is already voided',text:canRestore?'Restore its editable order, or leave it without a replacement. No original payment is refunded automatically.':unpaidConflict?'This reserved replacement is held for review. An unpaid draft may be left without a new order only after its saved records are checked. Any existing receipt or payment attempt must stay for Owner review.':'Its original shift is no longer open here. You can leave this unpaid correction without a new order; any payment attempt must stay for Owner review.',showConfirmButton:canRestore,showCancelButton:true,showDenyButton:true,confirmButtonText:'Restore editable order',denyButtonText:'Leave without new order',cancelButtonText:'Keep reference',focusCancel:true});connected.current();if(answer.isDenied)return abandon(row,view,connected,captured.guard);if(!answer.isConfirmed)return {pending:true};if(!canRestore)throw Error('Only the original open shift can restore this correction.');
   }
   return restore(row,view,connected,captured.guard);
@@ -190,29 +203,40 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
  async function previewRejected(row,connected,captured,error){
   const current=readCurrent(row);
   if(current.state!=='pending'||current.commitStarted!==false||!([400,409].includes(error.status)||error.status===403&&['cashier-void/original-cashier-required','cashier-void/original-pin-required'].includes(error.code))||typeof error.code!=='string'||!/^cashier-void\/[a-z0-9-]{1,80}$/.test(error.code))throw error;
-  const answer=await dialog({title:'Receipt review was not completed',text:error.message+' Keep reference '+row.receiptId+'. Check its saved result, or cancel this same review attempt. The current order stays unchanged.',showDenyButton:true,showCancelButton:true,confirmButtonText:'Check saved result',denyButtonText:'Cancel this review attempt',cancelButtonText:'Keep reference',focusCancel:true});connected.current();captured.guard();
-  if(answer.isDenied){const view=await rpc('cancel',row,connected);connected.current();row=recordResult(row,view);if(view.state==='saved')return restore(row,view,connected,captured.guard);if(view.state!=='cancelled')throw held();await dialog({title:'Review attempt cancelled',text:'This exact review reference is closed. It did not void the receipt. Check the receipt in Shift Sales before starting another review.',icon:'info'});return {cancelled:true};}
-  if(answer.isConfirmed)return recover(row.operationId);
-  return {pending:true,previewRejected:true,reference:row.operationId};
+  const view=await rpc('cancel',row,connected);connected.current();row=recordResult(row,view);
+  if(view.state==='saved')return restore(row,view,connected,captured.guard);
+  if(view.state!=='cancelled')throw held();
+  throw error;
  }
- async function start(saleId,receiptId){
+ async function start(saleId,receiptId,{reason:selectedReason}={}){
   ready();if(!voidId(saleId)||!voidId(receiptId)||saleId.startsWith('LOCAL-'))throw Error('Select an uploaded receipt with an exact saved reference.');
-  const captured=capture(),choice=await dialog({title:'Why are you voiding this order?',text:'Receipt '+receiptId,showDenyButton:true,showCancelButton:true,confirmButtonText:'Order cancelled',denyButtonText:'Wrong punched items',cancelButtonText:'Keep receipt',focusCancel:true});captured.guard();
-  const reason=choice.isConfirmed?'OrderCancelled':choice.isDenied?'WrongPunched':null;if(!reason)return {cancelled:true};if(reason==='WrongPunched')emptyForReplacement();
-  const connected=await connection(null,captured.guard),actor=connected.actor;connected.current();const pending=journal.list(actor.uid).filter(row=>!['closed','cancelled'].includes(row.state));
-  if(pending.length){const original=pending[0];if(pending.length!==1||original.saleId!==saleId||original.receiptId!==receiptId||original.reason!==reason||original.shiftId!==captured.start.shiftId||!actorMatches(original,actor,true))throw held();const answer=await dialog({title:'Check the saved receipt review first',text:'Receipt '+original.receiptId+' already has a saved review. No new void was started. Check that exact result before reviewing it again.',showCancelButton:true,confirmButtonText:'Check saved review',cancelButtonText:'Keep current order',focusCancel:true});connected.current();if(answer.isConfirmed)return recover(original.operationId);return {pending:true,reference:original.operationId};}
+  const captured=capture();let reason=selectedReason;
+  if(!reason){const choice=await dialog({title:'Why are you voiding this order?',text:'Receipt '+receiptId+'. Its applied recipe deductions will be returned and a security alert will be recorded.',showDenyButton:true,showCancelButton:true,confirmButtonText:'Order cancelled',denyButtonText:'Wrong punched items',cancelButtonText:'Keep receipt',focusCancel:true});captured.guard();reason=choice.isConfirmed?'OrderCancelled':choice.isDenied?'WrongPunched':null;}
+  if(!reason)return {cancelled:true};if(!['OrderCancelled','WrongPunched'].includes(reason))throw changed();if(reason==='WrongPunched'&&!journal.forOperator(captured.start).some(row=>row.saleId===saleId&&!['closed','cancelled'].includes(row.state)))emptyForReplacement();
+  let connected=await connection(null,captured.guard),actor=connected.actor;connected.current();
+  const pending=journal.forOperator(actor).filter(row=>!['closed','cancelled'].includes(row.state)&&row.saleId===saleId&&row.receiptId===receiptId&&JSON.parse(row.scope).uid===actor.uid);
+  // Resume only this receipt. An old attempt for another receipt or employee
+  // never imposes a tablet-wide hold on ordinary voids.
+  for(const original of pending){const result=await recover(original.operationId,{restart:false});if(!result.retryable)return result;captured.guard();}
+  if(pending.length){connected=await connection(null,captured.guard);actor=connected.actor;connected.current();}
   const operationId=makeId(),receiptScope=await voidPayloadHash({operationId,saleId,receiptId,branch:actor.branch,shiftId:captured.start.shiftId,reason},w.crypto);connected.current();const pinProof=await connected.confirmReceiptPin(receiptScope);connected.current();
   let row=save({version:1,operationId,scope:JSON.stringify(actor),saleId,receiptId,reason,branch:actor.branch,shiftId:captured.start.shiftId,state:'pending',sourceFingerprint:null,commitStarted:false,pinVerificationId:pinProof.verificationId,pinExpiresAt:pinProof.expiresAt,createdAt:now()}),view;
   try{const result=await readPreview(row,connected,captured);if(result.pending)return result;row=result.row;view=result.view;}catch(error){connected.current();return previewRejected(row,connected,captured,error);}
   connected.current();row=recordResult(row,view);if(view.state==='saved')return restore(row,view,connected,captured.guard);if(view.state!=='preview')throw held();
   if(reason==='WrongPunched')emptyForReplacement(voidSourcePlatform(view));
-  const answer=await dialog({title:reason==='WrongPunched'?'Void and correct this order?':'Cancel this saved order?',html:voidPreviewMarkup(view),showCancelButton:true,confirmButtonText:reason==='WrongPunched'?'Void and restore items':'Void order',cancelButtonText:'Keep receipt',focusCancel:true});connected.current();
-  if(!answer.isConfirmed){const result=await rpc('cancel',row,connected);connected.current();row=recordResult(row,result);if(result.state==='saved')return restore(row,result,connected,captured.guard);if(result.state!=='cancelled')throw held();return {cancelled:true};}
-  if(reason==='WrongPunched')emptyForReplacement(voidSourcePlatform(view));row=save({...readCurrent(row),commitStarted:true});view=await rpc('commit',row,connected,{expectedFingerprint:row.expectedFingerprint});connected.current();row=recordResult(row,view);if(view.state!=='saved')throw held();const result=await restore(row,view,connected,captured.guard);return result;
+  row=save({...readCurrent(row),commitStarted:true});
+  try{view=await rpc('commit',row,connected,{expectedFingerprint:row.expectedFingerprint});}
+  catch(error){
+   // A dropped acknowledgement can follow a successful transaction. Ask for
+   // that exact operation's saved result before presenting a retry.
+   connected.current();try{const checked=await refreshRecoveryPin(readCurrent(row),connected);view=await rpc('status',checked,connected);}catch{throw error;}
+   if(view.state!=='saved')throw error;
+  }
+  connected.current();row=recordResult(row,view);if(view.state!=='saved')throw held();return restore(row,view,connected,captured.guard);
  }
  function checkoutRow(payload){active=cartOwners.get(w.cart)||null;if(!active)return null;if(active.queued)throw Error('This replacement order is already queued. Clear the completed cart before entering another customer.');const row=journal.get(active.uid,active.operationId);if(!row||!['saved','claimed'].includes(row.state)||row.reason!=='WrongPunched')throw held();const s=active.session,current=session();if(current.person!==s.person||current.uid!==s.uid||current.staffId!==s.staffId||current.name!==s.name||current.branch!==s.branch||current.deviceId!==s.deviceId||current.shift!==s.shift||current.shiftId!==s.shiftId||!current.shift?.active||w.cart!==active.cart||checkoutPlatform(w,d)!==(row.sourcePlatform||'Standard')||payload.branch!==s.branch||payload.shiftId!==s.shiftId||active.checkoutCart&&voidCanonical(w.cart)!==active.checkoutCart)throw changed();active.context.current();return row;}
  const service={journal,
-  start:(saleId,receiptId)=>run(()=>start(saleId,receiptId)),recover:op=>run(()=>recover(op)),
+  start:(saleId,receiptId)=>run(()=>start(saleId,receiptId)),recover:(op,options)=>run(()=>recover(op,options)),
   invalidate(){generation++;active=null;access.invalidate();},
   blockLogout(){
    try{const current=session(),rows=journal.forOperator(current);if(!rows.some(row=>!['closed','cancelled'].includes(row.state)&&(row.state==='pending'||!!row.payload)))return false;}
@@ -246,10 +270,16 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
    return copy;
   },
   queued(payload){if(!payload.voidCorrection)return;const row=journal.get(active?.uid||session().uid?.uid,payload.voidCorrection.operationId);if(!row||voidCanonical(row.payload)!==voidCanonical(payload))throw held();save({...row,state:'queued'});if(active)active.queued=true;active=null;},
-  async verifyQueued(payload){const info=payload.voidCorrection;if(!info||!voidId(info.operationId))throw held();const captured=capture({cart:false,requireOpen:false}),connected=await connection(null,captured.guard,{metadataRecovery:true}),row=journal.get(connected.actor.uid,info.operationId);if(!row||!actorMatches(row,connected.actor)||voidCanonical(row.payload)!==voidCanonical(payload)||row.payloadHash!==await voidPayloadHash(payload,w.crypto))throw held();connected.current();const checked=await refreshRecoveryPin(row,connected),view=await rpc('status',checked,connected);connected.current();if(view.state!=='saved'||view.replacement?.checkoutAttemptId!==row.checkoutAttemptId||view.replacement?.payloadHash!==row.payloadHash||!['claimed','committed'].includes(view.replacement?.state))throw held();writers.set(info.operationId,{api:connected.api,user:connected.api.auth.currentUser,uid:connected.actor.uid});return view.replacement.state==='committed';},
+  async verifyQueued(payload){const info=payload.voidCorrection;if(!info||!voidId(info.operationId))throw held();const captured=capture({cart:false,requireOpen:false}),connected=await connection(null,captured.guard,{metadataRecovery:true,operationId:info.operationId}),row=journal.get(connected.actor.uid,info.operationId);if(!row||!actorMatches(row,connected.actor)||voidCanonical(row.payload)!==voidCanonical(payload)||row.payloadHash!==await voidPayloadHash(payload,w.crypto))throw held();connected.current();const checked=await refreshRecoveryPin(row,connected),view=await rpc('status',checked,connected);connected.current();if(view.state!=='saved'||view.replacement?.checkoutAttemptId!==row.checkoutAttemptId||view.replacement?.payloadHash!==row.payloadHash||!['claimed','committed'].includes(view.replacement?.state))throw held();writers.set(info.operationId,{api:connected.api,user:connected.api.auth.currentUser,uid:connected.actor.uid});return view.replacement.state==='committed';},
   async acknowledge(payload){if(!payload.voidCorrection)return;if(!await service.verifyQueued(payload))throw Error('The replacement receipt is not yet confirmed. It remains queued on this tablet.');const actor=access.capture();const api=await actor.resolve();actor.current();const row=journal.get(actor.actor().uid,payload.voidCorrection.operationId);if(!row)throw held();save({...row,state:'closed'});},
-  renderRecovery(){const box=placeCashierVoidRecovery(d);if(!box)return;box.replaceChildren();const button=d.createElement('button');button.type='button';button.textContent='Check receipt correction';button.onclick=()=>service.recover();box.append(button);try{for(const row of journal.forOperator(session()).filter(row=>!['closed','cancelled'].includes(row.state))){const note=d.createElement('p');note.textContent='Saved correction for '+row.receiptId+' · '+(row.payload?'keep its original checkout and payment for confirmation':'check its saved void result before starting another attempt');box.append(note);const check=d.createElement('button');check.type='button';check.textContent='Check correction for '+row.receiptId;check.onclick=()=>service.recover(row.operationId);box.append(check);}}catch{const note=d.createElement('p');note.textContent='A saved receipt correction needs Owner review. Keep this tablet’s app data.';box.append(note);}}
+  renderRecovery(){
+   const box=placeCashierVoidRecovery(d);if(!box)return;box.replaceChildren();
+   try{const currentOwner=cartOwners.get(w.cart),rows=journal.forOperator(session()).filter(row=>!['closed','cancelled'].includes(row.state)&&(!currentOwner||currentOwner.operationId!==row.operationId||!!row.payload));box.hidden=!rows.length;box.style.display=box.hidden?'none':'';
+    for(const row of rows){const note=d.createElement('p');note.textContent='Receipt '+row.receiptId+' · '+(row.payload?'saved checkout waiting to upload':row.state==='pending'?'saved receipt update waiting to finish':'editable correction saved');box.append(note);const button=d.createElement('button');button.type='button';button.textContent=row.payload?'Retry saved checkout':row.state==='pending'?'Resume receipt update':'Return items to cart';button.onclick=()=>service.recover(row.operationId);box.append(button);}
+   }catch{box.hidden=false;box.style.display='';const note=d.createElement('p');note.textContent='This device could not read a saved receipt update. Keep its app data and retry when connected.';box.append(note);}
+  }
+
  };
- async function run(work){if(flight)return flight;flight=(async()=>{try{return await work();}catch(error){if(error.code==='cashier-void/cancelled')return {cancelled:true};const message=['cashier-void/approval-required','access/approval'].includes(error.code)?'This tablet or employee setup is not confirmed for receipt changes. Keep any saved correction reference and ask the Owner to review the existing setup. Normal Cashier work is unchanged.':error.message;await dialog({title:'Receipt correction needs attention',text:message,icon:'warning'});return {error:message};}finally{service.renderRecovery();}})();flight.finally(()=>flight=null).catch(()=>{});return flight;}
+ async function run(work){if(flight)return flight;flight=(async()=>{try{return await work();}catch(error){if(error.code==='cashier-void/cancelled')return {cancelled:true};const message=['cashier-void/approval-required','access/approval'].includes(error.code)?'This tablet or employee setup is not confirmed for receipt changes. Keep any saved correction reference and ask the Owner to review the existing setup. Normal Cashier work is unchanged.':error.message;await dialog({title:'Receipt update not completed',text:message,icon:'warning'});return {error:message};}finally{service.renderRecovery();}})();flight.finally(()=>flight=null).catch(()=>{});return flight;}
  w.cashierVoid=service;return service;
 }

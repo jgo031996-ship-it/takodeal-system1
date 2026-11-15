@@ -1,3 +1,4 @@
+import {simpleVoidProof,legacyVoidSource,simpleVoidOnlyChange} from './helpers/cashier-simple-void-inverse.mjs';
 import {cashierOwnerRegisterProof,excludeCashierOwnerRegisterLeaf} from './helpers/cashier-owner-register-inverse.mjs';
 import {normalizeCashierReceivingProgress,cashierReceivingProgressProof} from './helpers/cashier-receiving-progress-inverse.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{execFileSync}from'node:child_process';
@@ -5,7 +6,7 @@ import{cashierOwnerWorkspaceProof as proof,cashierOwnerWorkspaceSha as sha,resto
 const root=new URL('../',import.meta.url),read=file=>normalizeCashierReceivingProgress(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:7e6});
 test('the exact tools/delivery cohort restores five prior files and pins two new leaves, including committed and untracked paths',()=>{
  assert.equal(proof.base,'af0dbe1cc854a87c439de2520e58d9a34e851a5f');assert.equal(Object.keys(proof.files).length,5);assert.equal(Object.values(proof.files).reduce((n,row)=>n+row.edits.length,0),24);
- const scope=['Takodeal-POS','takodeal-manager','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules','storage.rules'],changed=new Set([...git('diff','--name-only',proof.base,'--',...scope).split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scope).split(/\r?\n/)].filter(Boolean));assert.deepEqual([...changed].filter(file=>!excludeCashierOwnerRegisterLeaf(file,read)).sort(),[...Object.keys(proof.files),...Object.keys(proof.newFiles)].sort());
+ const scope=['Takodeal-POS','takodeal-manager','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules','storage.rules'],changed=new Set([...git('diff','--name-only',proof.base,'--',...scope).split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scope).split(/\r?\n/)].filter(Boolean));for(const file of [...changed])if(simpleVoidOnlyChange(file,read,()=>git('show',proof.base+':'+file)))changed.delete(file);assert.deepEqual([...changed].filter(file=>!excludeCashierOwnerRegisterLeaf(file,read)).sort(),[...Object.keys(proof.files),...Object.keys(proof.newFiles)].sort());
  for(const file of Object.keys(proof.files)){assert.equal(restore(read(file),file),git('show',proof.base+':'+file));assert.throws(()=>restore(read(file)+'\n// unreviewed code',file));}for(const[file,pin]of Object.entries(proof.newFiles))assert.equal(sha(read(file)),pin,file);
 });
 test('ordinary engines, paid queues, staff/protected authority and stock receive engine stay exact af0',()=>{

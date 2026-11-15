@@ -1,3 +1,4 @@
+import {simpleVoidProof,legacyVoidSource,simpleVoidOnlyChange} from './helpers/cashier-simple-void-inverse.mjs';
 import {normalizeCashierReceivingProgress} from './helpers/cashier-receiving-progress-inverse.mjs';
 import {cashierOwnerRegisterProof,excludeCashierOwnerRegisterLeaf} from './helpers/cashier-owner-register-inverse.mjs';
 import test from 'node:test';
@@ -21,7 +22,7 @@ test('large shipment fix retains every other live product and backend byte',()=>
         assert.equal(restored,git('show',cashierOwnerEntryProof.base+':'+file),'Only the exact Owner entry inverse may precede the historical scope check: '+file);
         if(cashierOwnerEntryProof.files[file])assert.throws(()=>restoreCashierOwnerEntry(source+'\n// unreviewed change',file));restoredEntry.set(file,restored);
     }
-    const historical=changed.filter(file=>{if(excludeCashierOwnerRegisterLeaf(file,read))return false;if(cashierOwnerWorkspaceProof.newFiles[file]){assert.equal(sha(read(file)),cashierOwnerWorkspaceProof.newFiles[file]);return false;}return !restoredEntry.has(file)||restoredEntry.get(file)!==git('show',proof.base+':'+file);});
+    const historical=changed.filter(file=>{if(simpleVoidOnlyChange(file,read,()=>git('show',proof.base+':'+file)))return false;if(excludeCashierOwnerRegisterLeaf(file,read))return false;if(cashierOwnerWorkspaceProof.newFiles[file]){assert.equal(sha(read(file)),cashierOwnerWorkspaceProof.newFiles[file]);return false;}return !restoredEntry.has(file)||restoredEntry.get(file)!==git('show',proof.base+':'+file);});
     assert.deepEqual(historical.sort(),Object.keys(proof.files).sort());
     for(const [file,pin]of Object.entries(proof.files)){
         const source=restoredEntry.get(file)??read(file);assert.equal(sha(source),pin.candidateSha256,file);
