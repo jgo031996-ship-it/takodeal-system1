@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import{read
 import{cashierOwnerWorkspaceProof as proof,cashierOwnerWorkspaceSha as sha,restoreCashierOwnerWorkspace as restore}from'./helpers/cashier-owner-workspace-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:7e6});
 test('the exact tools/delivery cohort restores five prior files and pins two new leaves, including committed and untracked paths',()=>{
- assert.equal(proof.base,'af0dbe1cc854a87c439de2520e58d9a34e851a5f');assert.equal(Object.keys(proof.files).length,5);assert.equal(Object.values(proof.files).reduce((n,row)=>n+row.edits.length,0),23);
+ assert.equal(proof.base,'af0dbe1cc854a87c439de2520e58d9a34e851a5f');assert.equal(Object.keys(proof.files).length,5);assert.equal(Object.values(proof.files).reduce((n,row)=>n+row.edits.length,0),24);
  const scope=['Takodeal-POS','takodeal-manager','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules','storage.rules'],changed=new Set([...git('diff','--name-only',proof.base,'--',...scope).split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scope).split(/\r?\n/)].filter(Boolean));assert.deepEqual([...changed].sort(),[...Object.keys(proof.files),...Object.keys(proof.newFiles)].sort());
  for(const file of Object.keys(proof.files)){assert.equal(restore(read(file),file),git('show',proof.base+':'+file));assert.throws(()=>restore(read(file)+'\n// unreviewed code',file));}for(const[file,pin]of Object.entries(proof.newFiles))assert.equal(sha(read(file)),pin,file);
 });
@@ -12,4 +12,5 @@ test('ordinary engines, paid queues, staff/protected authority and stock receive
 });
 test('cache, notice and main query agree and cache both new local dependency leaves without changing photos or cache policy',()=>{
  const sw=read('Takodeal-POS/sw.js'),page=read('Takodeal-POS/index.html'),data=read('Takodeal-POS/cashier-data.js');assert.ok(sw.includes("const CORE = 'takodeal-pos-core-"+proof.release+"';"));assert.ok(page.includes('main.js?v='+proof.release));assert.ok(data.includes("CASHIER_RELEASE = '"+proof.release+"'"));for(const file of Object.keys(proof.newFiles))assert.ok(sw.includes("'./"+file.split('/').at(-1)+"'"));assert.equal(restore(sw,'Takodeal-POS/sw.js'),git('show',proof.base+':Takodeal-POS/sw.js'));
+ assert.ok(page.includes('Open a shift to make sales. Receiving deliveries, printer settings and Time Clock remain available.'));assert.equal(page.includes('Open a shift to access the POS, Inventory, and Dispatch features.'),false);
 });
