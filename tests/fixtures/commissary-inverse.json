@@ -1,0 +1,72 @@
+{
+  "base": "a07a926c007b9431bcd286c00d8256ceeb7c81e9",
+  "release": "commissary-20261115-r1",
+  "files": {
+    "takodeal-manager/auth.js": {
+      "baselineSha256": "9d2ad6c3cf7d78a5385a3382f22478fc06423d59b93e572d24ad5802e892ac49",
+      "candidateSha256": "4dd03b63a36d3a8624c4bd5d7f1938e81b566db3f1f359f73b501285e64b4539",
+      "edits": [
+        {
+          "before": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=branch-inventory-20261115-r1');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n",
+          "after": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=commissary-20261115-r1');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n"
+        }
+      ]
+    },
+    "takodeal-manager/index.html": {
+      "baselineSha256": "fe604fd2b7d805c3f008e2613cb4b0224e69d0609a595fb1004bf8a95b66be2e",
+      "candidateSha256": "e530092ae42981a17afbbd9dab5403ddae39c090ff60e6cdde7275e965bdbb39",
+      "edits": [
+        {
+          "before": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"branch-inventory-20261115-r1\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome \u00b7 TAKODE\u00c1L Owner</title>\n",
+          "after": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"commissary-20261115-r1\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome \u00b7 TAKODE\u00c1L Owner</title>\n"
+        },
+        {
+          "before": "  <!-- \ud83d\uddfa\ufe0f FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=branch-inventory-20261115-r1\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n",
+          "after": "  <!-- \ud83d\uddfa\ufe0f FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=commissary-20261115-r1\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n"
+        },
+        {
+          "before": "<link rel=\"stylesheet\" href=\"stock-audit-ui.css?v=variance20261108\">\n<link rel=\"stylesheet\" href=\"payment-reconciliation-ui.css\">\n<link rel=\"stylesheet\" href=\"staff-deduction-history.css\">\n</head>\n\n<body class=\"manager-theme\">\n",
+          "after": "<link rel=\"stylesheet\" href=\"stock-audit-ui.css?v=variance20261108\">\n<link rel=\"stylesheet\" href=\"payment-reconciliation-ui.css\">\n<link rel=\"stylesheet\" href=\"staff-deduction-history.css\">\n  <link rel=\"stylesheet\" href=\"commissary.css?v=20261115-r1\">\n</head>\n\n<body class=\"manager-theme\">\n"
+        },
+        {
+          "before": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=branch-inventory-20261115-r1\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n",
+          "after": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=commissary-20261115-r1\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n"
+        },
+        {
+          "before": "\n  \n  <dialog id=\"masterStaffDocumentPreview\" class=\"staff-document-preview\"><div class=\"document-section-heading\"><h3 id=\"masterStaffDocumentPreviewTitle\">Document photo</h3><button type=\"button\" id=\"masterStaffDocumentPreviewClose\">Close</button></div><img id=\"masterStaffDocumentPreviewImage\" alt=\"Private employee document\"></dialog>\n</body>\n</html>\n",
+          "after": "\n  \n  <dialog id=\"masterStaffDocumentPreview\" class=\"staff-document-preview\"><div class=\"document-section-heading\"><h3 id=\"masterStaffDocumentPreviewTitle\">Document photo</h3><button type=\"button\" id=\"masterStaffDocumentPreviewClose\">Close</button></div><img id=\"masterStaffDocumentPreviewImage\" alt=\"Private employee document\"></dialog>\n  <script type=\"module\">\n    import {installCommissary} from './commissary-ui.js?v=20261115-r1';\n    installCommissary(window,document);\n  </script>\n</body>\n</html>\n"
+        }
+      ]
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "baselineSha256": "346c15bd80dbd0eb485366c4d6862cb5efac624d0fcaa707349f08471f8380fa",
+      "candidateSha256": "1f903a32654d7ddeb425b5cbbc59d4c226491d14356b0fd8de60b0491b744f68",
+      "edits": [
+        {
+          "before": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v155-branch-inventory-20261115-r1';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n",
+          "after": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v156-commissary-20261115-r1';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n"
+        }
+      ]
+    },
+    "takodeal-manager/sw.js": {
+      "baselineSha256": "681ce09b003d60e9bb2cad982b02478950d88e7c09a836e755b82bb3b67fa8f2",
+      "candidateSha256": "8837847abdd0b4094ee421556196d619171d8e6f1076fd9664a46118d9744701",
+      "edits": [
+        {
+          "before": "const CACHE_NAME = 'takodeal-manager-core-v155-branch-inventory-20261115-r1';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n",
+          "after": "const CACHE_NAME = 'takodeal-manager-core-v156-commissary-20261115-r1';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n"
+        },
+        {
+          "before": "CORE_ASSETS.push('./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');\nCORE_ASSETS.push('./owner-stock-audits.js','./stock-audit-model.js','./stock-audit-reader.js','./stock-audit-ui.js','./stock-audit-ui.css','./payment-reconciliation-model.js','./payment-reconciliation-service.js','./payment-reconciliation-ui.js','./payment-reconciliation-ui.css','./payment-statement-file.js','./payment-statement-worker.js','./pending-payment-reader.js');\nCORE_ASSETS.push('./gcash-reconciliation-client.js');\nconst VENDORS = [\n    ...['app','auth','firestore','storage'].map(name => `https://www.gstatic.com/firebasejs/13.1.0/firebase-${name}.js`),\n    'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',\n",
+          "after": "CORE_ASSETS.push('./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');\nCORE_ASSETS.push('./owner-stock-audits.js','./stock-audit-model.js','./stock-audit-reader.js','./stock-audit-ui.js','./stock-audit-ui.css','./payment-reconciliation-model.js','./payment-reconciliation-service.js','./payment-reconciliation-ui.js','./payment-reconciliation-ui.css','./payment-statement-file.js','./payment-statement-worker.js','./pending-payment-reader.js');\nCORE_ASSETS.push('./gcash-reconciliation-client.js');\nCORE_ASSETS.push('./commissary-model.js','./commissary-service.js','./commissary-ui.js','./commissary.css');\nconst VENDORS = [\n    ...['app','auth','firestore','storage'].map(name => `https://www.gstatic.com/firebasejs/13.1.0/firebase-${name}.js`),\n    'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',\n"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "takodeal-manager/commissary-model.js": "70e5c4fc23453f43dd01e11b8aa6e09eb15c5b7746edc58471e48b8c0f1806aa",
+    "takodeal-manager/commissary-service.js": "3b7d8270a87d932738db996790fa01c4eb6d3acfe5198abf9bd5bad71d75b776",
+    "takodeal-manager/commissary-ui.js": "f55a8e0cbe75f7f3983949547991c8e2275cd8a18cc5308d47310d577bcb180d",
+    "takodeal-manager/commissary.css": "ddb9a2e7eac98c022c75b29ea7ec6808fc547f2cb3f8f07cc938103dcdadbb56"
+  }
+}

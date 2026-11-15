@@ -18,7 +18,7 @@ test('the schedule release preserves every deployed Owner byte outside its exact
  }
 });
 test('the page, entry module, service worker and update notice identify the same schedule release',()=>{
- const release='branch-inventory-20261115-r1';assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v155-'+release);
+ const release='commissary-20261115-r1';assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v156-'+release);
  assert.ok(read('takodeal-manager/sw.js').includes(OWNER_DOCUMENT_RELEASE));
  assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));
  const html=read('takodeal-manager/index.html');assert.ok(html.includes('content="'+release+'"'));assert.ok(html.includes('auth.js?v='+release));

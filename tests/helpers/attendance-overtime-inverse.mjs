@@ -1,3 +1,4 @@
+import {isCommissaryModule} from './commissary-inverse.mjs';
 import {branchInventorySetupProof,restoreBranchInventorySetup} from './branch-inventory-setup-inverse.mjs';
 import {restoreScheduleCrossBranch,scheduleCrossBranchProof} from './schedule-cross-branch-inverse.mjs';
 import assert from 'node:assert/strict';
@@ -17,6 +18,7 @@ export function restoreAttendanceOvertime(source,file){
 // Historical scopes keep their original allowlists. Remove only exact OT-only
 // changes that restore to the actual Git byte content of that earlier base.
 export function isHistoricalOwnerChange(file,base){
+ if(isCommissaryModule(file))return false;
  if(Object.hasOwn(branchInventorySetupProof.newFiles,file)){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.equal(overtimeSha(source),branchInventorySetupProof.newFiles[file],'Exact branch inventory module: '+file);return false;}
  if(Object.hasOwn(branchInventorySetupProof.files,file)&&!attendanceOvertimeProof.files[file]&&!scheduleCrossBranchProof.files[file]){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.notEqual(restoreBranchInventorySetup(source,file),source,'Exact branch inventory layer: '+file);return false;}
  if(Object.hasOwn(scheduleCrossBranchProof.files,file)&&!attendanceOvertimeProof.files[file]&&!attendanceOvertimeProof.newFiles[file]){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.notEqual(restoreScheduleCrossBranch(source,file),source,'The exact scoped schedule change is inverted: '+file);return false;}
