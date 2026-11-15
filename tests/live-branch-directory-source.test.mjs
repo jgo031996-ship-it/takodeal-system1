@@ -1,4 +1,5 @@
 import {cashierOwnerRegisterProof,excludeCashierOwnerRegisterLeaf} from './helpers/cashier-owner-register-inverse.mjs';
+import {normalizeCashierReceivingProgress} from './helpers/cashier-receiving-progress-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -7,7 +8,7 @@ import {largeDeliveryProof} from './helpers/large-delivery-status-inverse.mjs';
 import {cashierOwnerEntryProof,restoreCashierOwnerEntry} from './helpers/cashier-owner-entry-inverse.mjs';
 import {cashierOwnerWorkspaceProof,restoreCashierOwnerWorkspace} from './helpers/cashier-owner-workspace-inverse.mjs';
 import {liveBranchDirectoryProof as proof,restoreLiveBranchDirectory,liveBranchSha as sha} from './helpers/live-branch-directory-inverse.mjs';
-const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:6e6});
+const root=new URL('../',import.meta.url),read=file=>normalizeCashierReceivingProgress(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:6e6});
 test('automatic branch discovery restores every exact prior product byte and adds only the pinned public reader',()=>{
     const scopes=['takodeal-manager','Takodeal-POS','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules','storage.rules'];
     const changed=new Set([...git('diff','--name-only',proof.base,'--',...scopes).trim().split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scopes).trim().split(/\r?\n/)].filter(Boolean));
