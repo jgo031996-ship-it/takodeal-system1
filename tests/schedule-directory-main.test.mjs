@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import * as directory from '../takodeal-manager/schedule-staff-directory.js';
-import {availableScheduleReliefStaff} from '../takodeal-manager/schedule-relief-staff.js';
+import {availableScheduleReliefStaff,availableScheduleTransferStaff} from '../takodeal-manager/schedule-relief-staff.js';
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import {leaveStatus} from '../takodeal-manager/leave-model.js';
 import {scheduleShiftHours} from '../takodeal-manager/schedule-layout.js';
@@ -30,8 +30,8 @@ function fixture(options={}){
   reviewOwnedScheduleLeave(date,name){calls.leaveReviews.push({date,name});return options.ownedLeave===name;},
   markScheduleDraftEdited:()=>calls.drafts.push(clone(context.currentSchedule)),
   saveToCloud:async()=>{calls.saves.push(clone(context.currentSchedule));return options.save?options.save():true;}};
- const Swal={fire:async(...args)=>{calls.dialogs.push(args);if(args[0]?.title==='Remove Staff?'&&options.poolConfirm)return {isConfirmed:true};if(args[0]?.title==='➕ Pull Staff to Branch'&&options.poolConfirm)return {isConfirmed:true,value:options.poolConfirm};if(args[0]?.title==='🔄 Reassign / Swap Shift'&&options.autoConfirm)return {isConfirmed:true,value:options.autoConfirm};return {isConfirmed:false};},showValidationMessage:message=>calls.notices.push(message)};
- context=vm.createContext({...directory,scheduleShiftHours,scheduleDateKey,Date:DraftDate,activeStaffProfile,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
+ const Swal={fire:async(...args)=>{calls.dialogs.push(args);if(args[0]?.title==='➕ Pull Staff to a Shift'&&options.pullSlot)return {isConfirmed:true,value:options.pullSlot};if(args[0]?.title==='Move staff between branches?'){await options.duringMove?.(context,w);return {isConfirmed:!!options.moveConfirm};}if(args[0]?.title==='🔄 Reassign / Swap Shift'&&options.autoConfirm)return {isConfirmed:true,value:options.autoConfirm};return {isConfirmed:false};},showValidationMessage:message=>calls.notices.push(message)};
+ context=vm.createContext({...directory,scheduleShiftHours,scheduleDateKey,Date:DraftDate,activeStaffProfile,availableScheduleReliefStaff,availableScheduleTransferStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
  for(const name of ['applyScheduleMemorySnapshot','findEmployeeProfile','confirmActiveScheduleStaff','openSwapModal','executeSwap','removeStaffFromBranchPool','addStaffToBranchPool'])vm.runInContext(extract(name),context);
  const html=()=>calls.dialogs.filter(args=>args[0]?.title==='🔄 Reassign / Swap Shift').at(-1)?.[0].html||'';
  const optionsFor=()=>[...html().matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(row=>({value:row[1],label:row[2]}));
@@ -111,11 +111,31 @@ test('a recovered draft cannot reintroduce revoked membership or erase its histo
  const f=fixture();f.w.scheduleDirectoryProfiles.find(row=>row.staffId==='existing').active=false;const snapshot={currentYear:2026,currentMonth:10,branchConfig:f.ctx.branchConfig,employees:[employee('existing','Existing')],currentSchedule:clone(f.ctx.currentSchedule),unavailability:{}};await f.w.applyScheduleMemorySnapshot(snapshot,{preserveDraftEmployees:true});assert.equal(f.w.employees.some(row=>row.staffId==='existing'),false);assert.equal(f.ctx.currentSchedule[28].Maa.scheduled.m1,'Existing');assert.equal(f.calls.saves.length,0);
 });
 
-test('confirmed pool transfers use the chosen stable ID and refresh both scheduling directories without changing any roster',async()=>{
- const f=fixture({poolConfirm:encodeURIComponent('anj@example.test')}),writes=[],before=clone(f.ctx.currentSchedule);f.w.updateDoc=async(ref,fields)=>writes.push({ref,fields});
- await f.w.addStaffToBranchPool('Agdao');assert.equal(writes.length,1);assert.equal(writes[0].ref.id,'anj@example.test');assert.equal(writes[0].fields.branch,'Agdao');assert.equal(f.w.scheduleDirectoryProfiles.find(row=>row.staffId==='anj@example.test').branch,'Agdao');assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.saves.length,0);
- await f.w.removeStaffFromBranchPool('Anj');assert.equal(writes.length,2);assert.equal(writes[1].ref.id,'anj@example.test');assert.equal(writes[1].fields.branch,'Unassigned');assert.equal(f.w.scheduleDirectoryProfiles.find(row=>row.staffId==='anj@example.test').branch,'Unassigned');assert.deepEqual(clone(f.ctx.currentSchedule),before);
+test('Pull Staff opens the selected dated assignment with no HR write or implicit home transfer',async()=>{
+ const f=fixture({pullSlot:encodeURIComponent(JSON.stringify([28,'m2']))}),before=clone({staff:f.w.employees,schedule:f.ctx.currentSchedule});f.w.updateDoc=()=>assert.fail('Scheduling cannot change a home branch');
+ await f.w.addStaffToBranchPool('Maa');assert.match(f.html(),/Maa · 2026-10-28/);assert.equal(f.ctx.swapData.shiftId,'m2');assert.deepEqual(clone({staff:f.w.employees,schedule:f.ctx.currentSchedule}),before);assert.equal(f.calls.saves.length,0);
+ await f.w.removeStaffFromBranchPool('Anj');assert.deepEqual(clone(f.w.employees),before.staff);
 });
-test('ambiguous name removal and denied branch transfers never update a staff account',async()=>{
- for(const ambiguous of [true,false]){const f=fixture({poolConfirm:encodeURIComponent('anj@example.test'),deniedBranches:ambiguous?[]:['Agdao']});f.w.updateDoc=()=>assert.fail('No transfer is authorized');if(ambiguous){f.w.scheduleDirectoryProfiles.push(employee('namesake','Anj'));await f.w.removeStaffFromBranchPool('Anj');}else await f.w.addStaffToBranchPool('Agdao');assert.equal(f.calls.saves.length,0);assert.equal(f.calls.dialogs.at(-1)[0],'Staff transfer not confirmed');}
+test('Pull Staff rejects denied branches and forged slot choices without changing a roster or HR account',async()=>{
+ for(const extra of [{deniedBranches:['Maa']},{pullSlot:'forged'}]){const f=fixture(extra),before=clone(f.ctx.currentSchedule);f.w.updateDoc=()=>assert.fail('No HR transfer');await f.w.addStaffToBranchPool('Maa');assert.equal(f.html(),'');assert.deepEqual(clone(f.ctx.currentSchedule),before);}
+});
+
+for(const branch of ['Maa','Cabantian','Citygate','Agdao','Unassigned',''])test('unscheduled staff from '+(branch||'missing home branch')+' are assignable without an HR transfer',async()=>{
+ const f=fixture();f.w.employees.push(employee('flex','Flexible',branch));await f.open('Cabantian','m2');const selected=f.option('Flexible');assert.ok(selected);assert.equal(await f.w.executeSwap(selected.value,false),true);assert.equal(f.ctx.currentSchedule[28].Cabantian.scheduled.m2,'Flexible');assert.equal(f.w.employees.find(row=>row.staffId==='flex').branch,branch||'Unassigned');assert.equal(f.calls.saves.length,0);
+});
+
+test('moving a dated shift requires a clear source/destination review and preserves HR, other dates and other staff',async()=>{
+ const f=fixture({moveConfirm:true}),before=clone({staff:f.w.employees,schedule:f.ctx.currentSchedule});f.w.updateDoc=()=>assert.fail('No HR changes');await f.open('Cabantian','m2');const selected=f.option('Existing');assert.ok(selected.value.startsWith('transfer_'));assert.equal(await f.w.executeSwap(selected.value,false),true);
+ const review=f.calls.dialogs.find(args=>args[0]?.title==='Move staff between branches?')[0];assert.match(review.html,/From: Maa/);assert.match(review.html,/To: Cabantian/);assert.match(review.html,/Needs Staff/);assert.equal(f.ctx.currentSchedule[28].Maa.scheduled.m1,'UNFILLED');assert.equal(f.ctx.currentSchedule[28].Cabantian.scheduled.m2,'Existing');assert.deepEqual(clone(f.ctx.currentSchedule[29]),before.schedule[29]);assert.deepEqual(clone(f.w.employees),before.staff);assert.equal(f.calls.saves.length,0);assert.equal(f.calls.drafts.length,1);
+});
+test('cancelled and stale move reviews preserve every roster row',async()=>{
+ for(const change of ['cancel','roster','permission','leave','account','hours']){const denied=[],f=fixture({moveConfirm:change!=='cancel',deniedBranches:denied,duringMove:(ctx,w)=>{if(change==='roster')ctx.currentSchedule[28].Maa.scheduled.m1='Standby';if(change==='permission')denied.push('Maa');if(change==='hours')ctx.branchConfig.Maa[0].startTime='11:00';if(change==='leave')ctx.unavailability['2026-10-28']={Existing:'Leave'};if(change==='account')w.auth.currentUser.uid='different';}});await f.open('Cabantian','m2');const result=await f.w.executeSwap(f.option('Existing').value,false);assert.equal(result,false,change);assert.equal(f.ctx.currentSchedule[28].Cabantian.scheduled.m2,'UNFILLED');assert.equal(f.calls.drafts.length,0);assert.equal(f.calls.saves.length,0);}
+});
+test('moves cannot recruit a staff account revoked in the fresh server profile',async()=>{
+ const f=fixture({moveConfirm:true,readProfile:async()=>({exists:()=>true,data:()=>({cashierName:'Sample Existing',scheduleNickname:'Existing',branch:'Maa',active:false}),metadata:{fromCache:false,hasPendingWrites:false}})});await f.open('Cabantian','m2');const before=clone(f.ctx.currentSchedule);assert.equal(await f.w.executeSwap(f.option('Existing').value,false),false);assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.drafts.length,0);
+});
+
+test('every branch displays the full active pool, home labels and no HR-transfer removal control',()=>{
+ const staff=[employee('maa','Maa Crew'),employee('agdao','Agdao Crew','Agdao'),employee('none','Flexible','Unassigned'),employee('former','Former','Maa',{active:false})],wrapper={children:[],previousElementSibling:{},appendChild(node){this.children.push(node);}},document={getElementById:id=>id==='staffListWrapper'?wrapper:{style:{}},querySelector:()=>null,createElement:()=>({style:{}})},window={employees:staff,currentActiveTab:'Cabantian'};
+ vm.runInNewContext(extract('updateStaffDisplay'),{window,document,employees:staff,activeStaffProfile,escapeHtml:esc});window.updateStaffDisplay();assert.equal(wrapper.children.length,3);assert.ok(wrapper.children.some(row=>row.textContent==='Agdao Crew · Home: Agdao'));assert.match(wrapper.previousElementSibling.innerHTML,/All Branches/);assert.doesNotMatch(wrapper.previousElementSibling.innerHTML,/removeStaffFromBranchPool/);
 });
