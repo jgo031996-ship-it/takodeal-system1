@@ -9,7 +9,7 @@ test('large shipment fix retains every other live product and backend byte',()=>
     const scopes=['takodeal-manager','Takodeal-POS','takodeal-franchise','takodeal-staff','takodeal-delivery','Customer','functions','firestore.rules','firestore.policy.rules','storage.rules'];
     const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:6e6});
     const changed=git('diff','--name-only',proof.base,'--',...scopes).trim().split(/\r?\n/).filter(Boolean);
-    assert.equal(cashierOwnerEntryProof.base,'dfa305e3ed9267eb41c1ade0ab2c613b10b2821e');assert.equal(Object.keys(cashierOwnerEntryProof.files).length,4);assert.equal(Object.values(cashierOwnerEntryProof.files).reduce((n,row)=>n+row.edits.length,0),4);
+    assert.equal(cashierOwnerEntryProof.base,'dfa305e3ed9267eb41c1ade0ab2c613b10b2821e');assert.equal(Object.keys(cashierOwnerEntryProof.files).length,5);assert.equal(Object.values(cashierOwnerEntryProof.files).reduce((n,row)=>n+row.edits.length,0),6);
     const restoredEntry=new Map();
     for(const file of Object.keys(cashierOwnerEntryProof.files)){
         const source=read(file),restored=restoreCashierOwnerEntry(source,file);

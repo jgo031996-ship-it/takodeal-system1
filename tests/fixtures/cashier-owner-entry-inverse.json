@@ -42,6 +42,20 @@
           "after": "export const CASHIER_RELEASE = 'cashier-owner-entry-20261115-r1';\n"
         }
       ]
+    },
+    "Takodeal-POS/main.js": {
+      "baselineSha256": "7423f5975d8842cbca6abdf401e132e0a037d9d93ace217ffcf376ee5d3648ed",
+      "candidateSha256": "46fae3fd48805a7d7eee81aedd1d1425bf7c849e807399e4deb48012471e12e0",
+      "edits": [
+        {
+          "before": "        Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});\n",
+          "after": "        Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, showConfirmButton: false});\n        Swal.showLoading();\n"
+        },
+        {
+          "before": "        Swal.fire({title: 'Fetching Network...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});\n",
+          "after": "        Swal.fire({title: 'Fetching Network...', allowOutsideClick: false, showConfirmButton: false});\n        Swal.showLoading();\n"
+        }
+      ]
     }
   }
 }

@@ -8903,7 +8903,8 @@ window.ownerBypassLogin = async function() {
         if(['projectId','appId','apiKey','authDomain'].some(key=>ownerApp.options?.[key]!==firebaseConfig[key]))throw Error('Owner Access belongs to a different project. Ask HQ to review the app.');
         const ownerAuth=getAuth(ownerApp),ownerDb=getFirestore(ownerApp),ownerProvider=new GoogleAuthProvider();
         ownerProvider.setCustomParameters({prompt:'select_account'});
-        Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, showConfirmButton: false});
+        Swal.showLoading();
         
         const result = await signInWithPopup(ownerAuth, ownerProvider);
         const user = result.user;
@@ -8914,7 +8915,8 @@ window.ownerBypassLogin = async function() {
         }
 
         // 3. SUCCESS! Fetch active branches to let the Owner choose where to "teleport"
-        Swal.fire({title: 'Fetching Network...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        Swal.fire({title: 'Fetching Network...', allowOutsideClick: false, showConfirmButton: false});
+        Swal.showLoading();
         
         const bSnap = await window.getDocs(window.query(window.collection(ownerDb, "branches")));
         let branchOptions = {};
