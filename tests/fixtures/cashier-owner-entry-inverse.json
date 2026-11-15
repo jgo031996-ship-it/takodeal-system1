@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "base": "dfa305e3ed9267eb41c1ade0ab2c613b10b2821e",
+  "release": "cashier-owner-entry-20261115-r1",
+  "files": {
+    "Takodeal-POS/cashier-startup.js": {
+      "baselineSha256": "dbcad6da3cb0fc906804d1ad4075595fcbf6f3c6553e1bd4e3a904d5832dbe71",
+      "candidateSha256": "75b865999e3bdec228e8579eba7218342d953c4e793c83aef49e3a84fdb010e2",
+      "edits": [
+        {
+          "before": "export function cashierStartupBusy(w){\n if(w.sessionUser||w.cart?.length||Object.values(w.platformCarts||{}).some(items=>Array.isArray(items)&&items.length)||w.cashierCashCountActive||w.cashierRemitSubmitting||w.isProcessingOrder||w.isSubmittingOrder||w.cashierShiftOpening)return true;\n",
+          "after": "// The static login shell has this exact display placeholder before a PIN login.\n// Every other retained session still requires an explicit Cashier sign-out.\nconst loginPlaceholder=user=>user&&typeof user==='object'&&!Array.isArray(user)&&Reflect.ownKeys(user).length===4&&['email','branch','cashierName','isOwner'].every(name=>Object.hasOwn(user,name))&&user.email===''&&user.branch==='Loading...'&&user.cashierName==='User'&&user.isOwner===false;\nexport function cashierStartupBusy(w){\n if(w.sessionUser&&!loginPlaceholder(w.sessionUser)||w.cart?.length||Object.values(w.platformCarts||{}).some(items=>Array.isArray(items)&&items.length)||w.cashierCashCountActive||w.cashierRemitSubmitting||w.isProcessingOrder||w.isSubmittingOrder||w.cashierShiftOpening)return true;\n"
+        }
+      ]
+    },
+    "Takodeal-POS/index.html": {
+      "baselineSha256": "a34057305db0321538a0ee15e9d5908197ad8c5f0a2e4d6924ce871384df357c",
+      "candidateSha256": "3680bffcf828aa2d344e4563592f47bd3f11f9897e2207c216ff91fb4b81788d",
+      "edits": [
+        {
+          "before": "    <script type=\"module\" src=\"main.js?v=cashier-large-delivery-20261114-r1\"></script>\n",
+          "after": "    <script type=\"module\" src=\"main.js?v=cashier-owner-entry-20261115-r1\"></script>\n"
+        }
+      ]
+    },
+    "Takodeal-POS/sw.js": {
+      "baselineSha256": "c326f60b96aded9dcddcb50228bcf4cf268ecdc019af0a2cb8d623710aca0ac6",
+      "candidateSha256": "0f6322e42c4e6dd88789c766e7d988bc7419e61bf614cae2a04bc77f8b8dc372",
+      "edits": [
+        {
+          "before": "const CORE = 'takodeal-pos-core-cashier-large-delivery-20261114-r1';\n",
+          "after": "const CORE = 'takodeal-pos-core-cashier-owner-entry-20261115-r1';\n"
+        }
+      ]
+    },
+    "Takodeal-POS/cashier-data.js": {
+      "baselineSha256": "c6f4842603c97bfe7e1b4c3027c924168c250932bfd152dc2bdc141df571a577",
+      "candidateSha256": "1609264f6b99b40b3ba33129fa56be017cb22ca1248bf166b827312337e695f6",
+      "edits": [
+        {
+          "before": "export const CASHIER_RELEASE = 'cashier-large-delivery-20261114-r1';\n",
+          "after": "export const CASHIER_RELEASE = 'cashier-owner-entry-20261115-r1';\n"
+        }
+      ]
+    }
+  }
+}
