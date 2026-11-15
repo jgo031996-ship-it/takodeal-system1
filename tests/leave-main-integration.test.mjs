@@ -20,6 +20,7 @@ import * as leave from '../takodeal-manager/leave-model.js';
 import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
 import {readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
+import {capturePayrollOvertimeRow,payrollOvertimePreview} from '../takodeal-manager/payroll-overtime.js';
 
 const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 function extract(name){const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,name+' source exists');return source.slice(start+1,end+3);}
@@ -39,7 +40,7 @@ function harness(options={}){
  api.getDocFromServer=async ref=>{const row=(records[ref.table]||[]).find(row=>row.id===ref.id);return{id:ref.id,exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
- const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...adjustments,...completion,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({capturePayrollOvertimeRow,payrollOvertimePreview,activeStaffProfile,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...adjustments,...completion,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
 }

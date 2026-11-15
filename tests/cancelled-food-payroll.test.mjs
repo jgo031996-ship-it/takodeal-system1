@@ -24,6 +24,7 @@ import { assembleScheduleHistory, resolveScheduleForDate } from '../takodeal-man
 import { closeShiftAtomic } from '../Takodeal-POS/cash-settlement.js';
 import { escapeHtml } from '../takodeal-manager/manager-workspace.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
+import {capturePayrollOvertimeRow,payrollOvertimePreview} from '../takodeal-manager/payroll-overtime.js';
 
 const roots = ['takodeal-manager','takodeal-staff','takodeal-franchise','Takodeal-POS'];
 const models = [payroll,staffPayroll,franchisePayroll,posPayroll];
@@ -70,7 +71,7 @@ function payrollFixture({deductions=[],frozen=null}={}) {
     api.auth={currentUser:{uid:'sample-payroll-owner',email:OWNER_EMAIL,emailVerified:true}};
     api.sessionUser={uid:'sample-payroll-owner',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>assembleScheduleHistory(schedule),ManagerUI:{notify:message=>errors.push(message)}};
-    const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
+    const context=vm.createContext({capturePayrollOvertimeRow,payrollOvertimePreview,activeStaffProfile,...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
         escapeHtml:value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])),
         document:{getElementById:id=>id==='payrollBalanceReview'?null:elements[id]||null},alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);
