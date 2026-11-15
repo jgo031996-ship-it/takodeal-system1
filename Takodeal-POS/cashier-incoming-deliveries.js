@@ -5,6 +5,16 @@ const branchValue=value=>typeof value==='string'&&value.trim()===value&&value.le
 const statuses=new Set(['In Transit','Arrived']);
 const receiptFields=['id','toBranch','batchId','dispatchId','sourceBranch','fromBranch','sourceId','item','qty','uom','displayQty','displayUom','convRate','unitCost','franchiseCharged','supplyInvoiceVersion','franchiseSupplyOrderId'];
 export const deliveryReceiptSource=row=>JSON.stringify(Object.fromEntries(receiptFields.filter(field=>row?.[field]!==undefined).map(field=>[field,row[field]])));
+// Elapsed notices observe the physical request; they never cancel or retry it.
+export function createDeliveryReceiptProgress(api,{itemCount,onProgress=()=>{},now=()=>Date.now(),setInterval:every=globalThis.setInterval,clearInterval:clear=globalThis.clearInterval}={}){
+ const started=now();let checked=0,phase='checking',finished=false;
+ function publish(){if(finished)return;const elapsed=Math.max(0,Math.floor((now()-started)/1000));const message=phase==='checking'?'Checking shipment '+checked+' of '+itemCount+' and its stock records.':'Saving stock and the delivery record together.';try{onProgress(message+' '+elapsed+'s elapsed.'+(elapsed>=15?' Still waiting for confirmation. Keep this page open; do not receive this shipment again.':''));}catch{}}
+ const observed=Object.create(api);
+ Object.defineProperty(observed,'getDocFromServer',{value:async reference=>{const value=await api.getDocFromServer(reference);if(reference.path?.startsWith('dispatch_logs/'))checked++;publish();return value;}});
+ Object.defineProperty(observed,'runTransaction',{value:async(db,work)=>{phase='saving';publish();return api.runTransaction(db,work);}});
+ const timer=every(publish,1000);timer?.unref?.();publish();
+ return {api:observed,finish(){if(finished)return;finished=true;clear(timer);}};
+}
 export function createIncomingDeliveryFormDrafts(d,{isReceiving=()=>false}={}){
  let scope=null,renderedRows=[],held=false;
  const dirty=()=>renderedRows.some(row=>String(d.getElementById('recv_val_'+row.id)?.value||'').length>0||d.getElementById('missing_check_'+row.id)?.checked===true||String(d.getElementById('remark_val_'+row.id)?.value||'').length>0);
@@ -15,7 +25,7 @@ export function createIncomingDeliveryFormDrafts(d,{isReceiving=()=>false}={}){
   if(state.phase==='ready'&&signature(renderedRows)!==signature(state.rows))held=true;
   const blocked=held||state.phase!=='ready'||isReceiving();
   for(const row of renderedRows){const button=d.getElementById('btn_submit_dispatch_'+(row.batchId||row.dispatchId||`${row.date}_${row.driver}`));if(button)button.disabled=blocked;}
-  if(held){const note=d.getElementById('incomingDeliveriesStatus');if(note)note.textContent='The shipment changed while you were counting. Your entries are kept on this screen. Use Refresh to review the changed shipment before receiving.';}
+  if(held&&!isReceiving()){const note=d.getElementById('incomingDeliveriesStatus');if(note)note.textContent='The shipment changed while you were counting. Your entries are kept on this screen. Use Refresh to review the changed shipment before receiving.';}
   return true;
  }
  return {preserve,rendered(state){scope=state.scopeToken;renderedRows=state.rows.map(row=>({...row}));held=false;},isHeld:()=>held,hasDraft:dirty,discard(){renderedRows=[];held=false;}};

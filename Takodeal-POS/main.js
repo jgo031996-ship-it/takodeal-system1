@@ -31,7 +31,7 @@ import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent
 import {loadPrinterLogo} from './printer-logo.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
-import {createCashierIncomingDeliveries,createIncomingDeliveryFormDrafts} from './cashier-incoming-deliveries.js';
+import {createCashierIncomingDeliveries,createIncomingDeliveryFormDrafts,createDeliveryReceiptProgress} from './cashier-incoming-deliveries.js';
 import { MALL_FLOAT, mallOpeningCash, businessClock } from './branch-operations.js';
 import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
@@ -4537,7 +4537,7 @@ window.incomingDeliveriesFeed=createCashierIncomingDeliveries(window,{primaryAut
     const nav=document.getElementById('nav-deliveries'),badge=document.getElementById('deliveryBadge'),status=document.getElementById('incomingDeliveriesStatus');
     if(nav)nav.style.display=state.phase==='signed-out'?'none':'flex';
     if(badge){badge.textContent=state.phase==='error'?'!':String(state.rows.length);badge.style.display=state.phase==='error'||state.rows.length?'inline-block':'none';badge.style.animation='none';}
-    if(status)status.textContent=state.message;
+    if(status&&!window.cashierDispatchReceiving)status.textContent=state.message;
     window.renderDeliveriesTab?.();
     if(document.getElementById('view-stockreq')?.classList.contains('active'))window.loadStockRequestUI?.();
 }});
@@ -4626,7 +4626,7 @@ window.renderDeliveriesTab = function() {
                     <span style="font-size: 24px;">⚠️</span> 
                     <span>IMPORTANT: Enter the physical quantity using the UNIT SHOWN ABOVE (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!</span>
                 </div>
-                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}'); setTimeout(()=>window.loadStockRequestUI(), 2000);" style="width: 100%; background: #16a34a; color: white; border: none; padding: 18px; font-weight: 900; font-size: 16px; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.3); transition: 0.2s;">
+                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}');" style="width: 100%; background: #16a34a; color: white; border: none; padding: 18px; font-weight: 900; font-size: 16px; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.3); transition: 0.2s;">
                     📥 Confirm and Receive Complete Shipment
                 </button>`;
         } else {
@@ -4694,7 +4694,7 @@ window.toggleMissingItemRow = function(itemId) {
 window.submitGroupedDispatch = async function(groupKey, encodedItems) {
     const button=document.getElementById('btn_submit_dispatch_'+groupKey);
     if(button?.disabled||window.cashierDispatchReceiving)return;
-    let permit=null,submitted=false,confirmed=false;
+    let permit=null,submitted=false,confirmed=false,progress=null;
     try {
         const items=JSON.parse(decodeURIComponent(encodedItems)),values=[];
         if(window.incomingDeliveryDrafts?.isHeld())throw Error('The shipment changed. Use Refresh and review its latest quantities before receiving.');
@@ -4709,16 +4709,21 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
         const confirm=await Swal.fire({title:'Receive this shipment?',text:'Confirm the physical quantities for '+permit.branch+'. Stock will be added once. An open cash register is not required.',icon:'question',showCancelButton:true});
         if(!confirm.isConfirmed)return;
         permit.assertCurrent();if(button){button.disabled=true;button.innerText='Receiving shipment…';}submitted=true;
-        await receiveDispatch(permit.api,{branch:permit.branch,actor:permit.actor,items:values});confirmed=true;
-        permit.assertCurrent();window.incomingDeliveryDrafts?.discard();window.renderDeliveriesTab?.();window.invalidateCache?.('inventory');await window.loadStockRequestUI?.();permit.assertCurrent();
+        progress=createDeliveryReceiptProgress(permit.api,{itemCount:values.length,onProgress:message=>{permit.assertCurrent();const note=document.getElementById('incomingDeliveriesStatus');if(note)note.textContent=message;}});
+        await receiveDispatch(progress.api,{branch:permit.branch,actor:permit.actor,items:values});confirmed=true;progress.finish();
+        permit.assertCurrent();const note=document.getElementById('incomingDeliveriesStatus');if(note)note.textContent='Receipt saved for '+permit.branch+' shipment '+String(groupKey)+'. Stock and the delivery record were saved together.';window.invalidateCache?.('inventory');
         Swal.fire('Shipment received','Stock and the delivery record were saved together.','success');
+        window.incomingDeliveryDrafts?.discard();window.renderDeliveriesTab?.();
     } catch(error) {
         let current=true;try{permit?.assertCurrent();}catch{current=false;}
-        if(current)Swal.fire(confirmed?'Shipment received':submitted?'Receipt result not confirmed':'Check shipment',confirmed?'Stock and the delivery record were saved. The screen could not refresh: '+error.message:error.message+(submitted?' Refresh the same shipment before retrying; it may already be saved.':''),confirmed?'info':'error');
+        if(current){
+            if(submitted&&!confirmed){const note=document.getElementById('incomingDeliveriesStatus');if(note)note.textContent='Receipt result is unconfirmed for '+permit.branch+' shipment '+String(groupKey)+'. Keep your counts and use Refresh to check the original shipment before retrying; it may already be saved.';}
+            Swal.fire(confirmed?'Shipment received':submitted?'Receipt result not confirmed':'Check shipment',confirmed?'Stock and the delivery record were saved. The screen could not refresh: '+error.message:error.message+(submitted?' Check the original '+permit.branch+' shipment '+String(groupKey)+' with Refresh before retrying; it may already be saved.':''),confirmed?'info':'error');
+        }
         else if(submitted){const note=document.getElementById('incomingDeliveriesStatus');if(note)note.textContent=(confirmed?'Receipt saved. ':'Receipt result is unconfirmed. ')+'The workspace changed. Check the original '+permit.branch+' shipment '+String(groupKey)+' before retrying. No automatic receipt was started.';}
     } finally {
-        window.cashierDispatchReceiving=false;
-        if(button){button.disabled=false;button.innerText='Confirm and Receive Complete Shipment';}
+        progress?.finish();window.cashierDispatchReceiving=false;
+        if(button){button.disabled=confirmed||submitted;button.innerText=confirmed?'Shipment received':submitted?'Refresh the original shipment to check its result':'Confirm and Receive Complete Shipment';}
     }
 };
 // ==========================================

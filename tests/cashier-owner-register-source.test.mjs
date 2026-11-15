@@ -1,10 +1,12 @@
+import {normalizeCashierReceivingProgress,cashierReceivingProgressProof} from './helpers/cashier-receiving-progress-inverse.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
 import {cashierOwnerRegisterProof as proof,cashierOwnerRegisterSha as sha,restoreCashierOwnerRegister as restore} from './helpers/cashier-owner-register-inverse.mjs';
-const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:7e6});
+const root=new URL('../',import.meta.url),read=file=>normalizeCashierReceivingProgress(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:7e6});
 test('the read-only Owner fix restores the exact live Cashier source and pins its sole new leaf',()=>{
  assert.equal(proof.base,'097e0992c2f218526425afa6dfe134752fd0fd4e');
  const scopes=['Takodeal-POS','takodeal-manager','takodeal-staff','takodeal-franchise','takodeal-delivery','Customer','functions','firestore.rules','firestore.policy.rules','storage.rules'];
  const changed=new Set([...git('diff','--name-only',proof.base,'--',...scopes).split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scopes).split(/\r?\n/)].filter(Boolean));
+ for(const file of [...changed])if(!proof.files[file]&&!proof.newFiles[file]){assert.ok(cashierReceivingProgressProof.files[file],'Only a strictly reviewed later receiving delta may be normalized: '+file);assert.equal(read(file),git('show',proof.base+':'+file));changed.delete(file);}
  assert.deepEqual([...changed].sort(),[...Object.keys(proof.files),...Object.keys(proof.newFiles)].sort());
  for(const file of Object.keys(proof.files)){assert.equal(restore(read(file),file),git('show',proof.base+':'+file));assert.throws(()=>restore(read(file)+'\n// unreviewed',file));}
  for(const [file,pin] of Object.entries(proof.newFiles))assert.equal(sha(read(file)),pin);

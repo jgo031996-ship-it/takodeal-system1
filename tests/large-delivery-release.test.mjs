@@ -1,3 +1,4 @@
+import {normalizeCashierReceivingProgress} from './helpers/cashier-receiving-progress-inverse.mjs';
 import {cashierOwnerRegisterProof,excludeCashierOwnerRegisterLeaf} from './helpers/cashier-owner-register-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {largeDeliveryProof as proof,largeDeliverySha as sha,restoreLargeDeliveryStatus} from './helpers/large-delivery-status-inverse.mjs';
 import {cashierOwnerEntryProof,restoreCashierOwnerEntry} from './helpers/cashier-owner-entry-inverse.mjs';
 import {cashierOwnerWorkspaceProof,restoreCashierOwnerWorkspace} from './helpers/cashier-owner-workspace-inverse.mjs';
-const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8');
+const root=new URL('../',import.meta.url),read=file=>normalizeCashierReceivingProgress(readFileSync(new URL(file,root),'utf8'),file);
 test('large shipment fix retains every other live product and backend byte',()=>{
     const scopes=['takodeal-manager','Takodeal-POS','takodeal-franchise','takodeal-staff','takodeal-delivery','Customer','functions','firestore.rules','firestore.policy.rules','storage.rules'];
     const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:6e6});
