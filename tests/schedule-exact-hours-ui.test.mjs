@@ -1,3 +1,5 @@
+import {createScheduleRosterView,scheduleIdentityDirectory} from '../takodeal-manager/schedule-staff-directory.js';
+import {scheduleDateKey} from '../takodeal-manager/schedule-history.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -41,7 +43,7 @@ test('a slot assigned while its deletion confirmation is open is preserved',asyn
 test('actual roster presents distinct exact hours and warns which earlier dates require saved history',()=>{
  const config={Cabantian:[morning('m1','Morning 1'),morning('m2','Morning 2','10:00','18:30')]},roster={28:{Cabantian:{scheduled:{m1:'Ari',m2:'Mika'},rest:[],unavailable:[]}},29:{Cabantian:{scheduled:{m1:'Ari',m2:'Mika'},rest:[],unavailable:[]}}},before=clone(roster);
  function element(){return {children:[],innerHTML:'',appendChild(node){this.children.push(node);}};}const container=element(),w={globalActiveBranches:['Cabantian'],isBranchAllowed:()=>true,employees:[]};
- const context=vm.createContext({window:w,document:{getElementById:id=>id==='scheduleEffectiveFrom'?{value:'2026-10-29'}:container,createElement:element},branchConfig:config,currentSchedule:roster,currentYear:2026,currentMonth:10,currentActiveTab:'Cabantian',scheduleShiftHours,enhanceScheduleLayout(){}});
+ const context=vm.createContext({createScheduleRosterView,scheduleIdentityDirectory,scheduleDateKey,window:w,document:{getElementById:id=>id==='scheduleEffectiveFrom'?{value:'2026-10-29'}:container,createElement:element},branchConfig:config,currentSchedule:roster,currentYear:2026,currentMonth:10,currentActiveTab:'Cabantian',scheduleShiftHours,enhanceScheduleLayout(){}});
  vm.runInContext(extract('renderTables'),context);w.renderTables();const html=container.children[1].children[0].innerHTML;
  assert.match(html,/9:00 AM – 5:30 PM/);assert.match(html,/10:00 AM – 6:30 PM/);assert.match(html,/Earlier saved version: review History/);assert.match(html,/Editor hours · from 2026-10-29/);assert.deepEqual(roster,before);
 });

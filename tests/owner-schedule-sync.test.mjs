@@ -1,3 +1,5 @@
+import {createScheduleRosterView,scheduleIdentityDirectory} from '../takodeal-manager/schedule-staff-directory.js';
+import {scheduleDateKey} from '../takodeal-manager/schedule-history.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -97,7 +99,7 @@ test('actual Save Edits rejects invalid controls and never announces success aft
 test('actual calendar render is read-only for full names, unknown profiles, historical branches and swaps',()=>{
  const branchConfig=copy(schedule().branchConfig),currentSchedule=copy(schedule().currentSchedule),before=copy(currentSchedule);
  function element(){return {children:[],innerHTML:'',appendChild(child){this.children.push(child);}};}const container=element();
- const context=vm.createContext({scheduleShiftHours,window:{globalActiveBranches:['Maa'],isBranchAllowed:()=>true,employees:[]},branchConfig,currentSchedule,currentYear:2026,currentMonth:10,currentActiveTab:'Maa',document:{getElementById:()=>container,createElement:element},enhanceScheduleLayout(){}});vm.runInContext(block('window.renderTables = function() {','// 🖱️ MANAGE STANDBY STAFF ENGINE'),context);context.window.renderTables();assert.deepEqual(currentSchedule,before);const html=container.children[1].children.map(row=>row.innerHTML).join('');assert.match(html,/Former Full Name/);assert.match(html,/Unknown Staff/);assert.match(html,/Old Full Name/);assert.match(html,/Closed Branch Name/);assert.match(html,/Ana/);
+ const context=vm.createContext({createScheduleRosterView,scheduleIdentityDirectory,scheduleDateKey,scheduleShiftHours,window:{globalActiveBranches:['Maa'],isBranchAllowed:()=>true,employees:[]},branchConfig,currentSchedule,currentYear:2026,currentMonth:10,currentActiveTab:'Maa',document:{getElementById:()=>container,createElement:element},enhanceScheduleLayout(){}});vm.runInContext(block('window.renderTables = function() {','// 🖱️ MANAGE STANDBY STAFF ENGINE'),context);context.window.renderTables();assert.deepEqual(currentSchedule,before);const html=container.children[1].children.map(row=>row.innerHTML).join('');assert.match(html,/Former Full Name/);assert.match(html,/Unknown Staff/);assert.match(html,/Old Full Name/);assert.match(html,/Closed Branch Name/);assert.match(html,/Ana/);
 });
 
 function fakeDom(){

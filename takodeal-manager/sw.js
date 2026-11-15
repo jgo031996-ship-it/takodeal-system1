@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v153-schedule-flexible-20261115-r1';
+const CACHE_NAME = 'takodeal-manager-core-v154-schedule-flexible-20261115-r2';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [

@@ -95,7 +95,7 @@ import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleFo
 import {createPayrollBonusHistoryStore} from './payroll-bonus-templates.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
-import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff,resolveScheduleEmployeeReference,scheduleIdentityDirectory} from './schedule-staff-directory.js';
+import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff,resolveScheduleEmployeeReference,scheduleIdentityDirectory,createScheduleRosterView} from './schedule-staff-directory.js';
 import {availableScheduleReliefStaff,availableScheduleTransferStaff} from './schedule-relief-staff.js';
 import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
@@ -8834,6 +8834,7 @@ window.updateUnavailabilityList = function() {
     list.innerHTML = '';
     
     const dates = Object.keys(unavailability).sort();
+    const roster=createScheduleRosterView(scheduleIdentityDirectory(window.scheduleDirectoryProfiles||[],employees)),today=scheduleDateKey(new Date());
     let hasLeaves = false;
 
     let reliefStaffNames = new Set();
@@ -8850,6 +8851,7 @@ window.updateUnavailabilityList = function() {
 
     dates.forEach(date => {
         for (const emp in unavailability[date]) {
+            if(!window.scheduleMemoryReadOnly&&date>=today&&roster.inactive({name:emp,...(typeof unavailability[date][emp]==='object'?unavailability[date][emp]:{})}))continue;
             let eObj = window.findEmployeeProfile(emp);
             if ((eObj && eObj.branch === targetBranch) || reliefStaffNames.has(emp)) {
                 hasLeaves = true;
@@ -9084,7 +9086,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     }
 
     let profileFunc = window.findEmployeeProfile || function() { return null; };
-    let currentProfile = profileFunc(curStaff) || { scheduleNickname: curStaff };
+    let currentProfile = profileFunc(curStaff) || { scheduleNickname: createScheduleRosterView(scheduleIdentityDirectory(window.scheduleDirectoryProfiles||[],employees)).inactive(curStaff)?'Needs Staff':curStaff };
     let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || curStaff;
 
     let optionsHtml = '<option value="">-- Choose Staff --</option>';
@@ -9264,12 +9266,13 @@ window.executeSwap = async function(target, markAsSwap) {
     try{const guard=()=>{if(!ownsAssignment()||context&&(context.dayState!==JSON.stringify(schedObj[day])||context.configState!==JSON.stringify(branchConfig)||context.timeOffState!==JSON.stringify(unavailability[targetDate]||{}))||window.scheduleMemoryReadOnly||!canOpenWorkspacePage(window.sessionUser,'schedule')||window.isBranchAllowed?.(branch)!==true||selectedTransferStaff&&JSON.stringify(currentTransfer())!==JSON.stringify(selectedTransferStaff))throw Error('This staff list or schedule changed. Reopen the assignment window.');};guard();
         if(selectedTransferStaff){
             const source=selectedTransferStaff.scheduledSource,rule=branchConfig[source.branch]?.find(shift=>shift.id===source.shiftId),destination=branchConfig[branch]?.find(shift=>shift.id===shiftId);
-            const review=await Swal.fire({title:'Move staff between branches?',html:'<p><b>'+escapeHtml(targetPerson)+'</b> · '+escapeHtml(targetDate)+' (PH)</p><p>From: '+escapeHtml(source.branch)+' · '+escapeHtml(rule?.name||source.shiftId)+' · '+escapeHtml(scheduleShiftHours(rule))+'</p><p>To: '+escapeHtml(branch)+' · '+escapeHtml(destination?.name||shiftId)+' · '+escapeHtml(scheduleShiftHours(destination))+'</p><p>The source shift will become <b>Needs Staff</b>. '+(!['N/A','UNFILLED'].includes(curStaff)?escapeHtml(curStaff)+' will move to Standby at '+escapeHtml(branch)+'. ':'')+'This changes only this work date. Use Save Edits to share the draft.</p>',showCancelButton:true,confirmButtonText:'Move this dated assignment'});
+            const review=await Swal.fire({title:'Move staff between branches?',html:'<p><b>'+escapeHtml(targetPerson)+'</b> · '+escapeHtml(targetDate)+' (PH)</p><p>From: '+escapeHtml(source.branch)+' · '+escapeHtml(rule?.name||source.shiftId)+' · '+escapeHtml(scheduleShiftHours(rule))+'</p><p>To: '+escapeHtml(branch)+' · '+escapeHtml(destination?.name||shiftId)+' · '+escapeHtml(scheduleShiftHours(destination))+'</p><p>The source shift will become <b>Needs Staff</b>. '+(!['N/A','UNFILLED'].includes(curStaff)&&window.findEmployeeProfile(curStaff)?escapeHtml(curStaff)+' will move to Standby at '+escapeHtml(branch)+'. ':'')+'This changes only this work date. Use Save Edits to share the draft.</p>',showCancelButton:true,confirmButtonText:'Move this dated assignment'});
             if(!review.isConfirmed)return false;guard();
         }
         await window.confirmActiveScheduleStaff(targetReference,{assertCurrent:guard});guard();if(target.startsWith('shift_')&&!["N/A","UNFILLED"].includes(curStaff)){await window.confirmActiveScheduleStaff(curStaff,{assertCurrent:guard});guard();}
     }catch(error){window.ManagerUI.notify(error.message);return false;}
 
+    const displacedStaffActive=!!window.findEmployeeProfile(curStaff);
     if (!schedObj[day][branch].swaps) schedObj[day][branch].swaps = {};
 
     if (target.startsWith('shift_')) {
@@ -9288,22 +9291,22 @@ window.executeSwap = async function(target, markAsSwap) {
         for(const source of chosenStaff.standbySources||[])schedObj[day][source.branch].rest=schedObj[day][source.branch].rest.filter(name=>name!==source.name);
         schedObj[day][branch].scheduled[shiftId] = newStaff;
 
-        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && displacedStaffActive && !schedObj[day][branch].rest.includes(curStaff)) {
             schedObj[day][branch].rest.push(curStaff);
         }
-        if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap && displacedStaffActive) schedObj[day][branch].swaps[shiftId] = curStaff;
 
     } else if (target.startsWith('rest_')) {
         const rIdx = parseInt(target.replace('rest_', ''));
         newStaff = schedObj[day][branch].rest[rIdx];
         schedObj[day][branch].scheduled[shiftId] = newStaff;
 
-        if (curStaff !== "UNFILLED" && curStaff !== "N/A") {
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && displacedStaffActive) {
             schedObj[day][branch].rest[rIdx] = curStaff;
         } else {
             schedObj[day][branch].rest.splice(rIdx, 1);
         }
-        if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap && displacedStaffActive) schedObj[day][branch].swaps[shiftId] = curStaff;
         
     } else if (target.startsWith('unavail_')) {
         // 🔥 OVERRIDE LEAVE: Handle pulling someone off their leave
@@ -9311,10 +9314,10 @@ window.executeSwap = async function(target, markAsSwap) {
         newStaff = staffToPull;
         schedObj[day][branch].scheduled[shiftId] = newStaff;
 
-        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && displacedStaffActive && !schedObj[day][branch].rest.includes(curStaff)) {
             schedObj[day][branch].rest.push(curStaff);
         }
-        if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap && displacedStaffActive) schedObj[day][branch].swaps[shiftId] = curStaff;
 
         // Clear the leave from the master unavailability tracker
         let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
@@ -9379,6 +9382,8 @@ window.renderTables = function() {
     
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
     const safeText=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const roster=createScheduleRosterView(scheduleIdentityDirectory(window.scheduleDirectoryProfiles||[],window.employees||[]));
+    const today=scheduleDateKey(new Date());
     const effectiveFrom=document.getElementById('scheduleEffectiveFrom')?.value || '';
     // Keep permitted branch navigation available while a new month has no rows.
     schedObj ||= {};
@@ -9418,9 +9423,10 @@ window.renderTables = function() {
             const hoursSource=effectiveFrom && fullDateStr<effectiveFrom?'Earlier saved version: review History':effectiveFrom?'Editor hours · from '+effectiveFrom:'Editor hours · check save status';
             tableHTML += `<tr data-schedule-date-label="${safeText(dStr)}" data-schedule-hours-source="${safeText(hoursSource)}"><td class="date-col">${dStr}<small class="schedule-hours-source">${safeText(hoursSource)}</small></td>`;
 
-            let dayData = schedObj[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
+            const historical=window.scheduleMemoryReadOnly||fullDateStr<today;
+            let dayData=roster.day(schedObj[day][branch]||{scheduled:{},rest:[],unavailable:[],swaps:{}},{historical});
 
-            // Rendering is read-only. Historical/unknown assigned names stay visible for review.
+            // Inactive names are excluded from active dates; the saved source and History remain intact.
 
             activeShifts.forEach(s => {
                 const val = dayData.scheduled[s.id];
@@ -9443,7 +9449,7 @@ window.renderTables = function() {
                     tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="empty-shift" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
                 }
                 else {
-                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="clickable" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
+                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="clickable" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${safeText(val)}</span>${swapBadge}</td>`;
                 }
             });
 
@@ -9466,7 +9472,7 @@ window.renderTables = function() {
             
             for (let otherBranch in schedObj[day]) {
                 if (otherBranch !== branch) {
-                    let otherDayData = schedObj[day][otherBranch];
+                    let otherDayData = roster.day(schedObj[day][otherBranch],{historical});
                     if (otherDayData && otherDayData.scheduled) {
                         for (let otherSId in otherDayData.scheduled) {
                             let assignedStaff = otherDayData.scheduled[otherSId];
@@ -16863,7 +16869,7 @@ window.processResignation = async function() {
             // 3. Refresh current membership without rewriting dated schedules.
             if(window.globalStaffData?.[docId])window.globalStaffData[docId]={...window.globalStaffData[docId],pin:'REVOKED',status:'Resigned'};
             if(Array.isArray(window.scheduleDirectoryProfiles))window.scheduleDirectoryProfiles=window.scheduleDirectoryProfiles.map(row=>row.staffId===docId?{...row,active:false,status:'Resigned',scheduleEligible:false}:row);
-            if(window.employees){employees=upsertScheduleEmployee(window.employees,{...(window.globalStaffData?.[docId]||{}),cashierName:name,status:'Resigned'},docId);window.employees=employees;window.updateStaffDisplay?.();window.updateAvailDropdown?.();}
+            if(window.employees){employees=upsertScheduleEmployee(window.employees,{...(window.globalStaffData?.[docId]||{}),cashierName:name,status:'Resigned'},docId);window.employees=employees;window.updateStaffDisplay?.();window.updateAvailDropdown?.();window.renderTables?.();window.updateUnavailabilityList?.();}
             document.getElementById('employeeProfileModal').style.display = 'none';
             if (typeof window.loadHRModule === 'function') window.loadHRModule(); 
             
@@ -20593,7 +20599,7 @@ window.deleteCurrentStaff = async function() {
         if(window.auth?.currentUser!==user||window.sessionUser!==session)return;
         window.globalStaffData ||= {};window.globalStaffData[docId]=saved;
         if(Array.isArray(window.scheduleDirectoryProfiles))window.scheduleDirectoryProfiles=window.scheduleDirectoryProfiles.map(row=>row.staffId===docId?{...row,active:false,status:'Archived',scheduleEligible:false}:row);
-        if(window.employees){employees=upsertScheduleEmployee(window.employees,saved,docId);window.employees=employees;window.updateStaffDisplay?.();window.updateAvailDropdown?.();}
+        if(window.employees){employees=upsertScheduleEmployee(window.employees,saved,docId);window.employees=employees;window.updateStaffDisplay?.();window.updateAvailDropdown?.();window.renderTables?.();window.updateUnavailabilityList?.();}
         document.getElementById('employeeProfileModal').style.display='none';await window.loadHRModule();
         await Swal.fire('Staff archived','The archived profile is available in Staff & Security. All linked history and balances remain on file.','success');
     }catch(error){await Swal.fire('Archive was not confirmed',error.message||'Reconnect and review the saved employee profile.','warning');}
@@ -25813,14 +25819,14 @@ window.addStaffToBranchPool = async function(branchValue) {
     const current=()=>window.auth?.currentUser===user&&window.sessionUser===session&&currentYear===year&&currentMonth===month
         &&JSON.stringify(currentSchedule)===state&&!window.scheduleMemoryReadOnly&&canOpenWorkspacePage(window.sessionUser,'schedule')&&window.isBranchAllowed?.(targetBranch)===true;
     if(!current())return Swal.fire('Schedule unavailable','Open an editable schedule for an approved branch.','info');
-    const slots=[];
+    const slots=[],roster=createScheduleRosterView(scheduleIdentityDirectory(window.scheduleDirectoryProfiles||[],employees));
     for(const [number,branches]of Object.entries(currentSchedule).sort((a,b)=>Number(a[0])-Number(b[0]))){
         const date=`${year}-${String(month).padStart(2,'0')}-${String(number).padStart(2,'0')}`;
         if(date<today)continue;
         for(const rule of branchConfig[targetBranch]||[]){
             const name=branches?.[targetBranch]?.scheduled?.[rule.id];
             if(rule.active===false||name===undefined||name==='N/A')continue;
-            slots.push({day:Number(number),shiftId:rule.id,value:encodeURIComponent(JSON.stringify([Number(number),rule.id])),label:date+' · '+rule.name+' · '+scheduleShiftHours(rule)+' · '+name});
+            slots.push({day:Number(number),shiftId:rule.id,value:encodeURIComponent(JSON.stringify([Number(number),rule.id])),label:date+' · '+rule.name+' · '+scheduleShiftHours(rule)+' · '+(roster.inactive(name)?'Needs Staff':name)});
         }
     }
     if(!slots.length)return Swal.fire('Prepare the roster first','Use Create Monthly Schedule to prepare shifts, then pull staff to any branch.','info');

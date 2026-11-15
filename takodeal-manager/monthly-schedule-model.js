@@ -1,5 +1,5 @@
 import {monthKey,scheduleDateKey} from './schedule-history.js';
-import {availableSchedulePoolStaff,scheduleIdentityDirectory,resolveScheduleEmployeeReference,mergeScheduleEmployeeAliases} from './schedule-staff-directory.js';
+import {availableSchedulePoolStaff,createScheduleRosterView,scheduleIdentityDirectory,resolveScheduleEmployeeReference,mergeScheduleEmployeeAliases} from './schedule-staff-directory.js';
 import {activeLeaveDates,leaveStatus} from './leave-model.js';
 import {suspensionDates} from './sanction-schedule.js';
 import {validateShiftConfig} from './payroll-safety.js';
@@ -64,8 +64,8 @@ function protectedDates({approvedLeaves,sanctions,directory,snapshot,branch,from
   const nameIds=index.ids({staffName:row.staffName||row.name}),hasId=row.staffId!==undefined&&row.staffId!==null&&row.staffId!=='',person=hasId?index.byId.get(row.staffId):null,candidates=hasId?(person?[person]:[]):nameIds.map(id=>index.byId.get(id)).filter(Boolean);
   const working=dates.length?dates:selectedDates,dated=(candidate,rawName=row.staffName||row.name)=>working.some(date=>{const ref=refs.get(date);return ref&&(candidate&&ref.ids.has(candidate.staffId)||rawName&&ref.names.has(nameKey(rawName))||candidate&&aliases(candidate).some(name=>ref.names.has(nameKey(name))));});
   // A known inactive recipient must never be rebound to a newer namesake.
-  if(person&&!eligible(person)){if(!dated(person))return null;throw protectionIssue(kind,row,working,'This archived or inactive employee is still referenced in the selected roster. Review that dated assignment; no recipient was guessed.');}
-  if(!hasId&&candidates.length&&candidates.every(candidate=>!eligible(candidate))){if(!candidates.some(candidate=>dated(candidate)))return null;throw protectionIssue(kind,row,working,'Only archived or inactive accounts match a name still used in the selected roster. Review that dated assignment.');}
+  if(person&&!eligible(person))return null;
+  if(!hasId&&candidates.length&&candidates.every(candidate=>!eligible(candidate)))return null;
   const touchesSelected=candidate=>eligible(candidate)&&(nameKey(candidate.branch)===selectedBranch||dated(candidate));
   const savedBranch=nameKey(row.branch),definitelyOther=savedBranch&&savedBranch!==selectedBranch&&knownBranches.has(savedBranch);
   const relevant=candidates.some(touchesSelected)||nameIds.some(id=>touchesSelected(index.byId.get(id)))||dated(null)||!candidates.length&&!definitelyOther;
@@ -91,7 +91,7 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
  const selected=monthKey(month);if(scheduleDateKey(today)!==today)throw Error('Use the current Philippine work date.');if(!object(snapshot)||monthKey(snapshot)!==selected||!object(snapshot.currentSchedule||{}))throw Error('Load the selected month before creating its roster.');if(selected<today.slice(0,7))throw Error('Earlier schedule months stay in history. Choose the current or a future month.');if(typeof branch!=='string'||!branch.trim()||branch==='Main Office')throw Error('Choose a store branch first.');if(!['prepare','auto'].includes(mode))throw Error('Choose Prepare empty slots or Fill empty slots.');
  const from=effectiveFrom||[today,selected+'-01'].sort().at(-1);scheduleDateKey(from);if(from.slice(0,7)!==selected||from<today)throw Error('Choose an effective date in this month, today or later.');
  const count=new Date(Date.UTC(Number(selected.slice(0,4)),Number(selected.slice(5,7)),0)).getUTCDate();if(count<28||count>31)throw Error('Choose a valid schedule month.');const to=selected+'-'+String(count).padStart(2,'0'),rules=rulesFor(snapshot,branch);
- const profiles=validateRows(staffProfiles,'current staff directory',2000),directory=scheduleIdentityDirectory(profiles,snapshot.employees||[]),index=identityIndex(directory);validateRows(approvedLeaves,'approved leave records');validateRows(sanctions,'reviewed suspension records');
+ const profiles=validateRows(staffProfiles,'current staff directory',2000),directory=scheduleIdentityDirectory(profiles,snapshot.employees||[]),index=identityIndex(directory),roster=createScheduleRosterView(directory);validateRows(approvedLeaves,'approved leave records');validateRows(sanctions,'reviewed suspension records');
  const originalSnapshot=snapshot,calendarRepair=planScheduleCalendar(snapshot);snapshot=calendarRepair.snapshot;
  const recovered=reconcileScheduleLeaveMarkers({snapshot,branch,from,to,staffProfiles:profiles,leaveSources});
  const protection=protectedDates({approvedLeaves,sanctions,directory,snapshot:recovered.snapshot,branch,from,to}),output=recovered.snapshot;output.currentSchedule||={};output.employees=mergeScheduleEmployeeAliases(profiles,snapshot.employees||[]);const assignments=[],warnings=[],conflicts=[],days=[],counts={datesPrepared:0,slotsCreated:0,slotsActivated:0,existingAssignments:0,autoAssigned:0,unfilled:0,standby:0,unavailable:0,untouchedPastDates:0};
@@ -103,6 +103,9 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
   const date=selected+'-'+String(number).padStart(2,'0');if(date<from){counts.untouchedPastDates++;continue;}
   const oldBranches=output.currentSchedule[number]||{},old=oldBranches[branch];if(old!==undefined&&!object(old))throw Error(date+': the saved branch row needs review.');
   const row=old?copy(old):{scheduled:{},rest:[],unavailable:[],swaps:{}};if(!object(row.scheduled||{})||Object.values(row.scheduled||{}).some(value=>value!=null&&typeof value!=='string')||!Array.isArray(row.rest||[])||(row.rest||[]).some(value=>typeof value!=='string')||!Array.isArray(row.unavailable||[])||(row.unavailable||[]).some(value=>!object(value))||!object(row.swaps||{}))throw Error(date+': the saved roster details need review.');row.scheduled||={};row.rest||=[];row.unavailable||=[];row.swaps||={};
+  const activeRow=roster.day(row);
+  if(JSON.stringify(row.scheduled)!==JSON.stringify(activeRow.scheduled)||row.rest.length!==activeRow.rest.length)warning('Archived and offboarded staff are excluded from this draft. Their earlier work dates remain in History.');
+  row.scheduled=activeRow.scheduled;row.rest=activeRow.rest;row.swaps=activeRow.swaps;
   const flags=output.unavailability?.[date]||{};if(!object(flags))throw Error(date+': the saved time-off flags need review.');
   const blocked=new Set();const take=reference=>index.ids(reference).forEach(id=>blocked.add(id));
   for(const branches of Object.values(oldBranches))for(const entry of branches?.unavailable||[])take(entry);
