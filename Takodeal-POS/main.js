@@ -1,3 +1,4 @@
+import {createPlottedTimeInBatch} from './plotted-time-in.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
 import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
@@ -3582,10 +3583,10 @@ window.submitAttendance = async function(type) {
             if (type === 'TIME OUT') {
                 timeOutResult=await earlyClockOut.service.close({start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,attendance,records:pendingAttendanceRecords,reliefForReview:earlyClockOut.reliefForReview===true,assertCurrent:assertClockCurrent});
                 assertClockCurrent();
-            } else if (pendingAttendanceRecords.length || attendance.scheduleDeclaration) {
-                const batch=writeBatch(db);
-                pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data));
+            } else {
                 const attendanceRef=doc(collection(db,'attendance_logs'));
+                const batch=createPlottedTimeInBatch({db,doc,runTransaction},{attendanceRef,attendance,profile:staffProfile,assertCurrent:()=>{assertClockCurrent();window.assertAttendanceFaceFresh(faceResult);if(Date.now()-gpsReceivedAt>60000)throw Error('Location verification expired. Reopen Clock to refresh your branch location.');}});
+                pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data));
                 if(attendance.scheduleDeclaration){
                     const requestRef=doc(collection(db,'staff_requests'));
                     attendance.scheduleDeclarationRequestId=requestRef.id;
@@ -3596,7 +3597,7 @@ window.submitAttendance = async function(type) {
                 }
                 batch.set(attendanceRef,attendance);
                 await batch.commit();
-            } else await addDoc(collection(db, "attendance_logs"), attendance);
+            }
             
             localStorage.setItem(punchCooldownKey, Date.now());
             

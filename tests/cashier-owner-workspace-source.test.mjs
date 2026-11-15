@@ -1,7 +1,10 @@
+import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
+const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
+const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
 import {simpleVoidProof,legacyVoidSource,simpleVoidOnlyChange} from './helpers/cashier-simple-void-inverse.mjs';
 import {cashierOwnerRegisterProof,excludeCashierOwnerRegisterLeaf} from './helpers/cashier-owner-register-inverse.mjs';
 import {normalizeCashierReceivingProgress,cashierReceivingProgressProof} from './helpers/cashier-receiving-progress-inverse.mjs';
-import test from 'node:test';import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{execFileSync}from'node:child_process';
+import test from 'node:test';import assert from 'node:assert/strict';import{readFileSync as _plottedRawFs}from'node:fs';import{execFileSync as _plottedRawExec}from'node:child_process';
 import{cashierOwnerWorkspaceProof as proof,cashierOwnerWorkspaceSha as sha,restoreCashierOwnerWorkspace as restore}from'./helpers/cashier-owner-workspace-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>normalizeCashierReceivingProgress(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:7e6});
 test('the exact tools/delivery cohort restores five prior files and pins two new leaves, including committed and untracked paths',()=>{

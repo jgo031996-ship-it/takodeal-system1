@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-cashier-simple-void-20261116-r1';
+const CORE = 'takodeal-pos-core-cashier-plotted-attendance-20261116-r1';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -9,7 +9,7 @@ const sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';
 required.push('./cashier-device-setup.js');
 required.push('./cashier-startup.js','./cashier-startup.css','./cashier-appearance-model.js','./cashier-appearance.js','./cashier-appearance-boot.js','./cashier-appearance.css');
 required.push('./cashier-owner-workspace.js','./cashier-incoming-deliveries.js','./cashier-owner-register.js');
-required.push('./attendance-schedule-preview.js');
+required.push('./attendance-schedule-preview.js','./plotted-time-in.js');
 required.push('./cart-layout.js','./remittance-safety.js','./schedule-history.js','./payroll-safety.js');
 required.push('./payroll-bonus-templates.js');
 required.push('./recipe-feed.js','./sanction-schedule.js');

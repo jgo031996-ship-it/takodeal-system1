@@ -1,9 +1,11 @@
+import {normalizePlottedRelease} from './plotted-release-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {restorePrepReviewIntegration} from './cashier-prep-review-inverse.mjs';
 const fixture=JSON.parse(readFileSync(new URL('../fixtures/cashier-void-integration.json',import.meta.url)));
 export function restoreCashierVoidIntegration(source,file='Takodeal-POS/main.js'){
+ source=normalizePlottedRelease(source,file);
  source=restorePrepReviewIntegration(source,file);
  const record=fixture.files[file];assert.ok(record,'Only the reviewed Cashier integration files may be restored.');
  for(const edit of [...record.edits].reverse()){assert.equal(source.split(edit.after).length,2,'Exact reviewed void hunk: '+file);source=source.replace(edit.after,()=>edit.before);}

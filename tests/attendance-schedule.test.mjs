@@ -1,3 +1,4 @@
+import {createPlottedTimeInBatch} from '../Takodeal-POS/plotted-time-in.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -56,11 +57,19 @@ function dom() {
         Swal:{fire:async(...args)=>{alerts.push(args);return {isConfirmed:args[0]?.confirmButtonText!=='Retry HQ connection'};},close(){},showLoading(){}},
         alert:message=>alerts.push([message]),confirm:()=>true,console:{error(){},warn(){},log(){}}};
 }
+// Bridge the historical string-reference test adapter to the actual SDK-shaped
+// transaction helper. The production save implementation is exercised unchanged.
+function plottedMemoryBatch(api,options,clock){
+ const ref=value=>typeof value==='string'?{path:value,id:value.split('/').at(-1)}:value;
+ const bridge={...api,doc:(...args)=>ref(api.doc(...args)),runTransaction:(db,work)=>api.runTransaction(db,tx=>work({get:value=>tx.get(value.path||value),set:(value,data)=>tx.set(value.path||value,data),update:(value,data)=>tx.update(value.path||value,data)}))};
+ const batch=createPlottedTimeInBatch(bridge,{...options,attendanceRef:ref(options.attendanceRef),now:()=>+new Date(clock)});
+ const wrapper={set(value,data){batch.set(ref(value),data);return wrapper;},commit:()=>batch.commit()};return wrapper;
+}
 function staffClock(h,clock) {
     const ui=dom(),fix={branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:+new Date(clock)};
     const window={...h.api,getAttendanceLocation:async()=>fix,checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){}};
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
+    const context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,createPlottedTimeInBatch:(api,options)=>plottedMemoryBatch(api,options,clock),prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
     const start=staffSource.indexOf('window.punchTime = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start)),context);
     return {...ui,window};
@@ -77,7 +86,7 @@ function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test
         return h.api.getDocs(q);
     }};api.getDocsFromServer=async q=>{if(h.serverError)throw h.serverError;return api.getDocs(q);};Object.assign(window,api);
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
+    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,createPlottedTimeInBatch:(api,options)=>plottedMemoryBatch(api,options,clock),prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
         navigator:{geolocation:{getCurrentPosition:ok=>{gpsDone=ok({coords:{latitude:7,longitude:125}});}}}};
     const start=cashierSource.indexOf('window.submitAttendance = async function');
     vm.runInNewContext(cashierSource.slice(start,cashierSource.indexOf('// 📥 STAFF REQUEST HUB (WITH INBOX)',start)),context);
