@@ -54,6 +54,19 @@ test('a timed-out authority check cannot adopt a branch after it completes late'
  const gate=deferred(),f=fixture({token:()=>gate.promise,timeoutMs:5}),pending=f.enter();await assert.rejects(pending,/could not confirm/);assert.equal(f.writes.length,0);gate.resolve();await new Promise(resolve=>setTimeout(resolve,0));assert.equal(f.workspace.current(),null);assert.equal(f.w.sessionUser,f.original.session);assert.equal(f.writes.length,0);f.unchanged();
 });
 
+test('initial null primary Auth may restore its retained user before the guarded final snapshot, without creating a sign-in',async()=>{
+ const gate=deferred(),f=fixture();f.primaryAuth.currentUser=null;let ready=0;f.primaryAuth.authStateReady=async()=>{ready++;await gate.promise;f.primaryAuth.currentUser=f.original.primaryUser;};
+ const pending=f.enter();assert.equal(ready,1);assert.equal(f.tokenCalls,0);assert.equal(f.writes.length,0);gate.resolve();const context=await pending;assert.doesNotThrow(context.assertCurrent);assert.equal(f.primaryAuth.currentUser,f.original.primaryUser);assert.equal(f.tokenCalls,1);f.unchanged();
+});
+
+for(const change of ['clear','replace'])test('a known primary account changing while Auth restores holds before Owner verification or branch writes: '+change,async()=>{
+ const gate=deferred(),f=fixture();f.primaryAuth.authStateReady=()=>gate.promise;const pending=f.enter();f.primaryAuth.currentUser=change==='clear'?null:{uid:'fictional-other-account',isAnonymous:true};gate.resolve();await assert.rejects(pending,/changed/);assert.equal(f.tokenCalls,0);assert.equal(f.writes.length,0);assert.equal(f.w.sessionUser,f.original.session);assert.equal(f.workspace.current(),null);assert.equal(f.nodes.get('loginOverlay').style.display,'flex');
+});
+
+test('primary Auth readiness timeout never performs late Owner verification or preview writes',async()=>{
+ const gate=deferred(),f=fixture({timeoutMs:5});f.primaryAuth.authStateReady=()=>gate.promise;const pending=f.enter();await assert.rejects(pending,/could not confirm/);gate.resolve();await new Promise(resolve=>setTimeout(resolve,0));assert.equal(f.tokenCalls,0);assert.equal(f.writes.length,0);assert.equal(f.workspace.current(),null);assert.equal(f.w.sessionUser,f.original.session);f.unchanged();
+});
+
 test('established context loss throws rather than returning a fallback writer or anonymous permit',async()=>{
  for(const change of ['named','primary','session','branch','device']){const f=fixture(),context=await f.enter();if(change==='named')f.ownerAuth.currentUser=null;if(change==='primary')f.primaryAuth.currentUser={uid:'new'};if(change==='session')f.w.sessionUser={...f.w.sessionUser};if(change==='branch')f.values.set('takodeal_device_branch','Other branch');if(change==='device')f.values.set('takodeal_device_id','OTHER');assert.throws(context.assertCurrent,/changed/);assert.throws(()=>f.workspace.current(),/changed/);}
 });

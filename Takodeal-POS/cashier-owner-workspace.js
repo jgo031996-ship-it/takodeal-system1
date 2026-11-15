@@ -70,12 +70,18 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
  async function enter({auth,db,user,branch:selectedBranch}={}){
   if(flight)throw Error('Owner Access is still checking this branch. Keep the current screen and wait for its result.');
   if(state||w.cashierDispatchReceiving===true||cashierStartupBusy(w))throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
-  const token=++epoch,session=w.sessionUser,primaryUser=primaryAuth?.currentUser,deviceId=w.localStorage.getItem('takodeal_device_id'),oldBranch=w.localStorage.getItem('takodeal_device_branch'),cart=w.cart,carts=w.platformCarts,entries=Object.entries(carts||{}),cartContents=contents(cart),cacheContents=contents(carts);let retired=false,timer;
+  const token=++epoch,session=w.sessionUser,deviceId=w.localStorage.getItem('takodeal_device_id'),oldBranch=w.localStorage.getItem('takodeal_device_branch'),cart=w.cart,carts=w.platformCarts,entries=Object.entries(carts||{}),cartContents=contents(cart),cacheContents=contents(carts);let primaryUser=primaryAuth?.currentUser,retired=false,timer;
   const assertCurrent=()=>{
    if(retired||epoch!==token||primaryAuth?.currentUser!==primaryUser||w.db!==primaryDb||w.sessionUser!==session||w.localStorage.getItem('takodeal_device_id')!==deviceId||w.localStorage.getItem('takodeal_device_branch')!==oldBranch||w.cart!==cart||w.platformCarts!==carts||entries.some(([key,value])=>w.platformCarts?.[key]!==value)||contents(w.cart)!==cartContents||contents(w.platformCarts)!==cacheContents||w.cashierDispatchReceiving===true||cashierStartupBusy(w)||auth?.currentUser!==user||!isCashierOwnerActionUser(user))throw error();
   };
   const work=(async()=>{
    if(!branch(selectedBranch))throw Error('Choose an active branch before opening Owner Access.');
+   if(typeof primaryAuth?.authStateReady==='function'){
+    const knownPrimary=primaryUser;await primaryAuth.authStateReady();
+    if(knownPrimary!=null&&primaryAuth.currentUser!==knownPrimary)throw error();
+    primaryUser=primaryAuth.currentUser;
+   }
+   assertCurrent();
    const verified=await account({auth,db,user,assertCurrent});
    await authority({db,user,branch:selectedBranch,deviceId},assertCurrent);assertCurrent();
    // Owner inspection/local tools do not request or create device approval.
