@@ -1,5 +1,6 @@
 import {activePOSStaff} from './pos-settings-model.js';
 import {installParkedRecovery} from './pos-parked-recovery.js';
+import {CASHIER_OWNER_WORKSPACE} from './cashier-owner-workspace.js';
 const bindings={toggleAuditMode:'audit',toggleKDS:'kds',kickCashDrawer:'manualDrawer',setAutoDrawer:'autoDrawer',
     parkOrder:'parkedOrders',parkOrderToDB:'parkedOrders',showParkedOrders:'parkedOrders',resumeOrder:'parkedOrders',printParkedReceipt:'parkedOrders',deleteParkedOrderManually:'parkedOrders',discardParkedOrder:'parkedOrders',deleteParkedOrder:'parkedOrders',
     openPrinterManager:'printerTools',setPrinterMode:'printerTools',setReceiptLogoMode:'printerTools',connectSpecificPrinter:'printerTools',testPrinterLogo:'printerTools',testPrint:'printerTools'};
@@ -11,8 +12,10 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
     const sessionKey=()=>{const s=w.sessionUser;if(s&&!sessions.has(s))sessions.set(s,++nextSession);return JSON.stringify([primaryAuth?.currentUser?.uid,s&&sessions.get(s),s?.staffId,s?.cashierName,s?.branch,branch(),w.localStorage.getItem('takodeal_device_id')]);};
     const notice=message=>{const el=d.getElementById('posSettingsStatus');if(el)el.textContent=message;};
     const message=error=>w.Swal?.fire?.('POS Settings',error.message||String(error),'info');
-    function checkSession(){const s=w.sessionUser;if(!s||!String(s.cashierName||'').trim()||!branch()||s.branch!==branch())throw Error('Sign in to the Cashier app for the selected branch before using Settings.');return s;}
-    function authorize(){const key=sessionKey(),generation=epoch,s=checkSession();
+    function ownerContext(s){if(s?.workspaceKind!==CASHIER_OWNER_WORKSPACE)return null;const context=w.getCashierOwnerWorkspaceContext?.();if(!context||context.session!==s||context.branch!==branch()||typeof context.assertCurrent!=='function')throw Error('Reopen verified Owner Access before using these branch tools.');context.assertCurrent();return context;}
+    function checkSession(){const s=w.sessionUser;if(!s||!String(s.cashierName||'').trim()||!branch()||s.branch!==branch())throw Error('Sign in to the Cashier app for the selected branch before using Settings.');ownerContext(s);return s;}
+    function authorize(action){const key=sessionKey(),generation=epoch,s=checkSession(),owner=ownerContext(s);
+        if(owner&&!['printerTools','manualDrawer','autoDrawer','kds'].includes(action))throw Error('Sign in with a Staff PIN before changing inventory audit or saved orders. Owner Access keeps printer and local settings available.');
         const assertCurrent=()=>{checkSession();if(key!==sessionKey()||generation!==epoch)throw Error('The signed-in cashier or branch changed. Reopen Settings before continuing.');};
         return {assertCurrent,branch:branch(),actor:s.cashierName,manageRecovery:false};
     }
@@ -32,7 +35,7 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
     }
     function refresh(){try{checkSession();paint();notice('Settings ready for '+w.sessionUser.cashierName+' · '+branch()+'.');return true;}catch(error){paint();notice(error.message);return false;}}
     function paint(){const view=d.getElementById('view-settings');if(!view)return;let ready=false;try{checkSession();ready=true;}catch{}
-        for(const button of view.querySelectorAll('[data-pos-action]'))button.disabled=!ready;
+        for(const button of view.querySelectorAll('[data-pos-action]'))button.disabled=!ready||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&!['printerTools','manualDrawer','autoDrawer','kds'].includes(button.dataset.posAction);
         const printer=d.getElementById('view-printer');if(printer)for(const control of printer.querySelectorAll('button,input,select,textarea'))control.disabled=!ready;
         const info=d.getElementById('posSettingsDevice');if(info)info.textContent=(w.localStorage.getItem('takodeal_device_name')||'This device')+' · '+(branch()||'Branch not selected');
         const audit=d.getElementById('posAuditState');if(audit)audit.textContent=w.isAuditModeActive?'Inventory deductions paused':'Inventory deductions active';

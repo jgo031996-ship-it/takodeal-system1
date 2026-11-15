@@ -1,6 +1,7 @@
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
 import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
+import {createCashierOwnerWorkspace} from './cashier-owner-workspace.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
 import {installCashierPrep} from './cashier-prep.js';
 import {createCashierVoidAccess} from './cashier-void-access.js';
@@ -29,6 +30,7 @@ import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent
 import {loadPrinterLogo} from './printer-logo.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
+import {createCashierIncomingDeliveries,createIncomingDeliveryFormDrafts} from './cashier-incoming-deliveries.js';
 import { MALL_FLOAT, mallOpeningCash, businessClock } from './branch-operations.js';
 import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
@@ -132,6 +134,10 @@ window.setDoc = setDoc;
 // Device approvals use their own matching auth/database context when Google is signed in.
 const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
 const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+const cashierOwnerWorkspace=createCashierOwnerWorkspace(window,document,{primaryAuth:auth,primaryDb:db,firebaseConfig});
+window.getCashierOwnerWorkspaceContext=()=>cashierOwnerWorkspace.current();
+window.clearCashierOwnerWorkspace=()=>cashierOwnerWorkspace.clear();
+window.isCashierOwnerToolsMode=()=>cashierOwnerWorkspace.isToolsMode();
 window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 window.ensureStockAuditDevice = createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 
@@ -500,6 +506,7 @@ window.menuListenerUnsubscribe = null;
 window.loadPOSData = async function() {
     window.applySidebarLayout(); 
     window.recipeFeed?.start();
+    window.incomingDeliveriesFeed?.start();
 
     // ========================================================================
     // 🚀 1. THE LIGHTNING-FAST OFFLINE ENGINE (INSTANT BOOT IN 1ms)
@@ -4524,58 +4531,37 @@ window.renderMixMatchList = function() {
 // 🚚 INCOMING DISPATCH RECEIVER (SMART TAB ENGINE)
 // ========================================================
 window.incomingDeliveriesList = [];
-
-setTimeout(() => {
-    let safeBranch = localStorage.getItem('takodeal_device_branch');
-    if (!safeBranch) return;
-
-    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "in", ["In Transit", "Arrived"])), (snap) => {
-        window.incomingDeliveriesList = [];
-        snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
-
-        let badge = document.getElementById('deliveryBadge');
-        let navTab = document.getElementById('nav-deliveries'); // Grab the Sidebar Tab!
-
-        if (window.incomingDeliveriesList.length > 0) {
-            // 🔥 SHOW THE TAB AND BADGE
-            if (navTab) navTab.style.display = 'flex';
-            if (badge) {
-                badge.innerText = window.incomingDeliveriesList.length;
-                badge.style.display = 'inline-block';
-                badge.style.animation = 'pulse 2s infinite';
-            }
-        } else {
-            // 🔥 HIDE THE TAB AND BADGE
-            if (navTab) navTab.style.display = 'none';
-            if (badge) {
-                badge.style.display = 'none';
-                badge.style.animation = 'none';
-            }
-            // If they are currently looking at the tab when it empties, kick them to the POS screen automatically!
-            let viewDeliveries = document.getElementById('view-deliveries');
-            if (viewDeliveries && viewDeliveries.classList.contains('active')) {
-                window.switchView('pos');
-            }
-        }
-
-        // If they are currently looking at the Stock Request tab, refresh it instantly
-        if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
-             if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
-        }
-        // Also refresh the Deliveries tab if they are actively looking at it!
-        if (document.getElementById('view-deliveries') && document.getElementById('view-deliveries').classList.contains('active')) {
-             if (typeof window.renderDeliveriesTab === 'function') window.renderDeliveriesTab();
-        }
-    });
-}, 3000);
+window.incomingDeliveryDrafts=createIncomingDeliveryFormDrafts(document,{isReceiving:()=>window.cashierDispatchReceiving===true});
+window.incomingDeliveriesFeed=createCashierIncomingDeliveries(window,{primaryAuth:auth,primaryDb:db,onChange:state=>{
+    const nav=document.getElementById('nav-deliveries'),badge=document.getElementById('deliveryBadge'),status=document.getElementById('incomingDeliveriesStatus');
+    if(nav)nav.style.display=state.phase==='signed-out'?'none':'flex';
+    if(badge){badge.textContent=state.phase==='error'?'!':String(state.rows.length);badge.style.display=state.phase==='error'||state.rows.length?'inline-block':'none';badge.style.animation='none';}
+    if(status)status.textContent=state.message;
+    window.renderDeliveriesTab?.();
+    if(document.getElementById('view-stockreq')?.classList.contains('active'))window.loadStockRequestUI?.();
+}});
+window.refreshIncomingDeliveries=async()=>{
+    if(window.cashierDispatchReceiving)return;
+    if(window.incomingDeliveryDrafts.isHeld()&&window.incomingDeliveryDrafts.hasDraft()){
+        const scope=window.incomingDeliveriesFeed.state().scopeToken;
+        const answer=await Swal.fire({title:'Review changed shipment?',text:'Your entered counts have not been submitted. Refreshing this changed shipment clears those entries so you can check its latest units and quantities.',icon:'warning',showCancelButton:true,confirmButtonText:'Clear entries & refresh',cancelButtonText:'Keep my entries'});
+        if(!answer.isConfirmed||window.incomingDeliveriesFeed.state().scopeToken!==scope||window.cashierDispatchReceiving)return;window.incomingDeliveryDrafts.discard();
+    }
+    window.incomingDeliveriesFeed.refresh();
+};
 
 window.renderDeliveriesTab = function() {
     let container = document.getElementById('deliveriesContainer');
     if (!container) return;
 
+    const deliveryState=window.incomingDeliveriesFeed?.state();
+    if(deliveryState&&window.incomingDeliveryDrafts.preserve(deliveryState))return;
+    if(deliveryState&&deliveryState.phase!=='ready'){
+        container.replaceChildren();const note=document.createElement('p');note.setAttribute('role','status');note.style.cssText='padding:24px;background:white;border:1px solid #cbd5e1;border-radius:10px';note.textContent=deliveryState.message;container.append(note);window.incomingDeliveryDrafts.rendered(deliveryState);return;
+    }
     if (window.incomingDeliveriesList.length === 0) {
         container.innerHTML = '<div style="text-align:center; padding: 60px; color: #64748b; font-size: 16px; font-weight: bold; background: white; border: 2px dashed #cbd5e1; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">No incoming deliveries at this time.</div>';
-        return;
+        if(deliveryState)window.incomingDeliveryDrafts.rendered(deliveryState);return;
     }
 
     // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH
@@ -4684,6 +4670,7 @@ window.renderDeliveriesTab = function() {
         `;
     }
     container.innerHTML = html;
+    if(deliveryState)window.incomingDeliveryDrafts.rendered(deliveryState);
 };
 
 // Quick UI Toggle visual treatment for missing items
@@ -4705,25 +4692,34 @@ window.toggleMissingItemRow = function(itemId) {
 
 window.submitGroupedDispatch = async function(groupKey, encodedItems) {
     const button=document.getElementById('btn_submit_dispatch_'+groupKey);
-    if (button?.disabled) return;
-    const items=JSON.parse(decodeURIComponent(encodedItems)),values=[];
-    for (const item of items) {
-        const input=document.getElementById('recv_val_'+item.id),missing=document.getElementById('missing_check_'+item.id)?.checked;
-        const actualDisplayQty=missing?0:Number(input?.value===''?input.placeholder:input?.value);
-        if (!Number.isFinite(actualDisplayQty) || actualDisplayQty<0) return Swal.fire('Check quantity','Enter a valid received quantity for '+item.item+'.','warning');
-        values.push({id:item.id,actualDisplayQty,isMissing:!!missing,remarks:document.getElementById('remark_val_'+item.id)?.value.trim() || ''});
-    }
-    const confirm=await Swal.fire({title:'Receive this shipment?',text:'The saved quantities will be added to this branch once.',icon:'question',showCancelButton:true});
-    if (!confirm.isConfirmed) return;
-    if (button) {button.disabled=true;button.innerText='Receiving shipment…';}
+    if(button?.disabled||window.cashierDispatchReceiving)return;
+    let permit=null,submitted=false,confirmed=false;
     try {
-        await receiveDispatch(window,{branch:localStorage.getItem('takodeal_device_branch'),actor:localStorage.getItem('cashierName') || 'Cashier',items:values});
-        window.invalidateCache?.('inventory');await window.loadStockRequestUI?.();
+        const items=JSON.parse(decodeURIComponent(encodedItems)),values=[];
+        if(window.incomingDeliveryDrafts?.isHeld())throw Error('The shipment changed. Use Refresh and review its latest quantities before receiving.');
+        permit=window.incomingDeliveriesFeed.receiveContext(items.map(item=>item.id),{expectedRows:items});
+        for(const item of items){
+            const input=document.getElementById('recv_val_'+item.id),missing=document.getElementById('missing_check_'+item.id)?.checked;
+            const actualDisplayQty=missing?0:Number(input?.value===''?input.placeholder:input?.value);
+            if(!Number.isFinite(actualDisplayQty)||actualDisplayQty<0)throw Error('Enter a valid received quantity for '+item.item+'.');
+            values.push({id:item.id,actualDisplayQty,isMissing:!!missing,remarks:document.getElementById('remark_val_'+item.id)?.value.trim()||''});
+        }
+        permit.assertCurrent();window.cashierDispatchReceiving=true;
+        const confirm=await Swal.fire({title:'Receive this shipment?',text:'Confirm the physical quantities for '+permit.branch+'. Stock will be added once. An open cash register is not required.',icon:'question',showCancelButton:true});
+        if(!confirm.isConfirmed)return;
+        permit.assertCurrent();if(button){button.disabled=true;button.innerText='Receiving shipment…';}submitted=true;
+        await receiveDispatch(permit.api,{branch:permit.branch,actor:permit.actor,items:values});confirmed=true;
+        permit.assertCurrent();window.incomingDeliveryDrafts?.discard();window.renderDeliveriesTab?.();window.invalidateCache?.('inventory');await window.loadStockRequestUI?.();permit.assertCurrent();
         Swal.fire('Shipment received','Stock and the delivery record were saved together.','success');
-    } catch(error) {Swal.fire('Receipt not completed',error.message,'error');}
-    finally {if(button){button.disabled=false;button.innerText='Confirm and Receive Complete Shipment';}}
+    } catch(error) {
+        let current=true;try{permit?.assertCurrent();}catch{current=false;}
+        if(current)Swal.fire(confirmed?'Shipment received':submitted?'Receipt result not confirmed':'Check shipment',confirmed?'Stock and the delivery record were saved. The screen could not refresh: '+error.message:error.message+(submitted?' Refresh the same shipment before retrying; it may already be saved.':''),confirmed?'info':'error');
+        else if(submitted){const note=document.getElementById('incomingDeliveriesStatus');if(note)note.textContent=(confirmed?'Receipt saved. ':'Receipt result is unconfirmed. ')+'The workspace changed. Check the original '+permit.branch+' shipment '+String(groupKey)+' before retrying. No automatic receipt was started.';}
+    } finally {
+        window.cashierDispatchReceiving=false;
+        if(button){button.disabled=false;button.innerText='Confirm and Receive Complete Shipment';}
+    }
 };
-
 // ==========================================
 // 🚚 DELIVERY HISTORY MODAL ENGINE (COLLAPSIBLE UI)
 // ==========================================
@@ -6170,6 +6166,7 @@ window.hasSignedNTE = false;
 
 window.logoutCashier = function() {
     if (window.cashierVoid?.blockLogout()) return;
+    if (window.clearCashierOwnerWorkspace?.() === false) return;
     window.cashierVoid?.invalidate();
     window.cashierPrepAccess?.invalidate();
     window.cashierLowStock?.reset();
@@ -6524,16 +6521,12 @@ window.applySidebarLayout = async function() {
                 // 🔥 THE BULLETPROOF FIX: Only apply styles if the tab actually exists!
                 if (el) {
                     navMenu.appendChild(el); 
-                    if (tabData.isHidden) {
+                    if (tabData.isHidden && id !== 'nav-deliveries') {
                         el.style.display = 'none';
                     } else {
                         // 🔥 PROTECT THE INCOMING STOCK TAB SO IT ONLY SHOWS WHEN NEEDED!
                         if (id === 'nav-deliveries') {
-                            if (!window.incomingDeliveriesList || window.incomingDeliveriesList.length === 0) {
-                                el.style.display = 'none';
-                            } else {
-                                el.style.display = 'flex';
-                            }
+                            el.style.display=window.incomingDeliveriesFeed?.isAvailable()?'flex':'none';
                         } else {
                             el.style.display = 'flex'; 
                         }
@@ -8957,27 +8950,18 @@ window.ownerBypassLogin = async function() {
         // Recheck the exact Owner identity after the branch dialog before
         // changing any local preview state. Cashier sign-in is kept separate.
         if(ownerAuth.currentUser!==user||user.email!=='jgo031996@gmail.com'||user.emailVerified!==true)throw Error('The Owner account changed. Reopen Owner Access before starting a branch preview.');
-        // 5. Save the original tablet branch before entering the preview.
-        beginCashierOwnerPreview(window,selectedBranch);
-        refreshCashierBranchLabel(window,document);
-        localStorage.setItem('cashierName', 'Owner (System Test)');
-        
-        // 6. Forcefully destroy the login screen UI
-        let loginScreen = document.getElementById('loginOverlay');
-        let pinOverlay = document.getElementById('pinOverlay');
-        
-        if (loginScreen) loginScreen.style.display = 'none';
-        if (pinOverlay) pinOverlay.style.display = 'none';
-
-        // 7. Fire up the POS Engine without calling the GPS Geolocation function!
+        // Boot a tools-only workspace from the actual isolated Owner account.
+        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch});
+        workspace.assertCurrent();
+        // Menu/branch reads keep their existing engine; no shift, staff or paid queue is adopted.
         if (typeof window.loadPOSData === 'function') {
             window.loadPOSData();
         }
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
-            title: `Teleported to ${selectedBranch}`, 
-            text: 'Sales will be tagged as System Tests.',
+            title: `Owner Access · ${selectedBranch}`,
+            text: 'Branch tools and receiving are ready. Use a Staff PIN for sales or register actions.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }
         });
@@ -9598,5 +9582,8 @@ installCashierVoid(window,document,{access:window.cashierVoidAccess});
 // Audited prep uses its own confirmed context; normal Cashier entry is unchanged.
 window.cashierPrepAccess=createCashierPrepAccess(window,{resolveOwnerDesktop:cashierOwnerDesktopContext});
 window.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cashierPrepAccess}).confirm();
+
+// Only explicit Owner tools mode is held at UI callers; ordinary engines and paid uploads keep their captured identity.
+cashierOwnerWorkspace.installStaffActionGuards();
 
 window.cashierBranchDirectory=installLiveBranchDirectory(window,document,{kind:'cashier',subscribe:(next,error)=>firebaseOnSnapshot(firebaseCollection(primaryDb,'branches'),{includeMetadataChanges:true},next,error)});

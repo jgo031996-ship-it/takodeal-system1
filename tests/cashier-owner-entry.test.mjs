@@ -6,6 +6,8 @@ import vm from 'node:vm';
 import {OWNER_PREVIEW_KEY,cashierStartupBusy,beginCashierOwnerPreview,refreshCashierBranchLabel,createCashierBranchRecovery} from '../Takodeal-POS/cashier-startup.js';
 import {CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
 import {cashierOwnerEntryProof,restoreCashierOwnerEntry} from './helpers/cashier-owner-entry-inverse.mjs';
+import {createCashierOwnerWorkspace,CASHIER_OWNER_WORKSPACE} from '../Takodeal-POS/cashier-owner-workspace.js';
+import {cashierOwnerWorkspaceProof,restoreCashierOwnerWorkspace} from './helpers/cashier-owner-workspace-inverse.mjs';
 
 const BASE='dfa305e3ed9267eb41c1ade0ab2c613b10b2821e';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
@@ -23,19 +25,20 @@ function fixture(options={}){
  const storage={get length(){return values.size;},key:index=>[...values.keys()][index]??null,getItem:key=>values.get(key)??null,setItem(key,value){writes.push([key,String(value)]);values.set(key,String(value));},removeItem(){assert.fail('Owner entry must not erase a saved record');},clear(){assert.fail('Owner entry must not clear storage');}};
  for(const id of ['loginOverlay','pinOverlay','loginBranchDisplay','displayDeviceLocation'])nodes.set(id,{style:{display:'flex'}});
  const d={getElementById:id=>nodes.get(id)||null},primary={uid:'fictional-tablet',isAnonymous:true},primaryAuth={currentUser:primary};
- const owner={uid:'fictional-owner',email:'jgo031996@gmail.com',emailVerified:true,...options.owner},ownerAuth={currentUser:owner},config={projectId:'fictional-project',appId:'fictional-app',apiKey:'fictional-public-key',authDomain:'fixture.invalid'},app={name:'takodeal-pos-owner-preview-v1',options:config},ownerDb={app};
- const state={popups:0,reads:0,loads:0,messages,writes},w={auth:primaryAuth,localStorage:storage,cart:[],platformCarts:{Standard:[],Grab:[],Foodpanda:[]},currentShift:null,
-  query:value=>value,collection:(db,table)=>{assert.equal(db,ownerDb);assert.equal(table,'branches');return{db,table};},
+ const owner={uid:'fictional-owner',email:'jgo031996@gmail.com',emailVerified:true,isAnonymous:false,displayName:'Fictional Owner',providerData:[{providerId:'google.com'}],getIdTokenResult:async()=>({claims:{sub:'fictional-owner',email:'jgo031996@gmail.com',email_verified:true,firebase:{sign_in_provider:'google.com'}}}),...options.owner},config={projectId:'takodeal-pos',appId:'fictional-app',apiKey:'fictional-public-key',authDomain:'fixture.invalid'},app={name:'takodeal-pos-owner-preview-v1',options:config},ownerAuth={app,currentUser:owner},ownerDb={app},primaryDb={app:{name:'fictional-primary'}};
+ const state={popups:0,reads:0,loads:0,messages,writes},w={db:primaryDb,auth:primaryAuth,localStorage:storage,cart:[],platformCarts:{Standard:[],Grab:[],Foodpanda:[]},currentShift:null,
+  query:(value,...filters)=>({...value,filters}),where:(field,op,value)=>({field,op,value}),limit:value=>({limit:value}),collection:(db,table)=>{assert.equal(db,ownerDb);assert.ok(['branches','hq_managers','pos_devices'].includes(table));return{db,table};},
   getDocs:async()=>{state.reads++;await options.read?.(f);return{forEach:callback=>callback({data:()=>({name:'Preview branch'})})};},
+  getDocsFromServer:async ref=>({metadata:{fromCache:false,hasPendingWrites:false},docs:(ref.table==='hq_managers'?[{id:'fictional-owner',email:'jgo031996@gmail.com',role:'Owner'}]:ref.table==='branches'?[{id:'fictional-branch',name:'Preview branch'}]:[]).map(row=>({id:row.id,metadata:{fromCache:false,hasPendingWrites:false},data:()=>row}))}),
   loadPOSData:()=>state.loads++};
  bootstrap(w);
- const f={w,d,state,values,storage,nodes,primary,primaryAuth,owner,ownerAuth,ownerDb,writes,placeholder:w.sessionUser};
+ const workspace=createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseConfig:config}),f={w,d,state,values,storage,nodes,primary,primaryAuth,owner,ownerAuth,ownerDb,writes,placeholder:w.sessionUser,workspace};
  class Provider{setCustomParameters(value){assert.equal(value.prompt,'select_account');}}
  const deferredOpen=[],Swal={showLoading(){state.activeDialog.loading=true;state.activeDialog.confirmVisible=false;},async fire(...args){messages.push(args);const config=typeof args[0]==='object'?args[0]:{};state.activeDialog={config,loading:false,confirmVisible:config.showConfirmButton!==false};if(config.didOpen)deferredOpen.push(config.didOpen);if(config.input==='select'){if(options.flushDeferredOpen)for(const open of deferredOpen.splice(0))open();state.selectLoading=state.activeDialog.loading;state.selectConfirmVisible=state.activeDialog.confirmVisible;await options.select?.(f);return{value:options.cancel?undefined:'Preview branch'};}return{};}};
  vm.runInNewContext(options.handler||ownerHandler,{window:w,document:d,localStorage:storage,firebaseConfig:config,getApps:()=>[app],initializeApp:()=>assert.fail('Reuse only the isolated Owner app'),
   getAuth:value=>{assert.equal(value,app);return ownerAuth;},getFirestore:value=>{assert.equal(value,app);return ownerDb;},GoogleAuthProvider:Provider,
   signInWithPopup:async auth=>{assert.equal(auth,ownerAuth,'Never sign the Cashier Auth in as Owner');state.popups++;await options.popup?.(f);return{user:owner};},
-  cashierStartupBusy,beginCashierOwnerPreview,refreshCashierBranchLabel,Swal,console:{error(){}}});
+  cashierStartupBusy,beginCashierOwnerPreview,refreshCashierBranchLabel,cashierOwnerWorkspace:workspace,Swal,console:{error(){}}});
  f.enter=()=>w.ownerBypassLogin();f.retained=()=>{assert.equal(primaryAuth.currentUser,primary);assert.equal(values.get('paid-receipts-sentinel'),'kept exact');assert.equal(values.get('parked-orders-sentinel'),'kept exact');};
  return f;
 }
@@ -49,7 +52,7 @@ test('the actual live shell initializer reproduces the old false busy state; onl
 test('actual shell plus actual Owner handler reaches isolated verified Google login and a branch preview without changing Cashier Auth',async()=>{
  const f=fixture();f.w.currentShift={status:'Closed',active:false};await f.enter();
  assert.equal(f.state.popups,1);assert.equal(f.state.reads,1);assert.equal(f.state.loads,1);assert.equal(f.nodes.get('loginOverlay').style.display,'none');
- assert.equal(f.w.sessionUser,f.placeholder);assert.equal(f.values.get('takodeal_device_branch'),'Preview branch');
+ assert.equal(f.w.sessionUser.workspaceKind,CASHIER_OWNER_WORKSPACE);assert.equal(f.w.sessionUser.branch,'Preview branch');assert.equal(f.w.sessionUser.staffId,undefined);assert.equal(f.values.get('takodeal_device_branch'),'Preview branch');
  const marker=JSON.parse(f.values.get(OWNER_PREVIEW_KEY));assert.equal(marker.originalBranch,'Registered branch');assert.equal(marker.previewBranch,'Preview branch');
  assert.equal(f.values.get('cashierName'),'Owner (System Test)');f.retained();
 });
@@ -106,6 +109,7 @@ test('the actual login placeholder permits only existing fresh-binding branch re
  // The recovery module alone owns removal of its known, verified preview marker.
  f.storage.removeItem=key=>{assert.equal(key,OWNER_PREVIEW_KEY);f.writes.push([key,null]);f.values.delete(key);};
  const recovery=createCashierBranchRecovery(f.w,f.d,{deviceContext:{resolve:async({assertCurrent})=>{assertCurrent();return{auth:f.primaryAuth,deviceApi};}}});
+ assert.equal((await recovery.recover()).status,'Busy');f.workspace.clear();bootstrap(f.w);
  const result=await recovery.recover();assert.equal(result.status,'Restored');assert.equal(f.values.get('takodeal_device_branch'),'Registered branch');assert.equal(f.values.has(OWNER_PREVIEW_KEY),false);assert.deepEqual(reads,['pos_bindings/'+user.uid,'pos_devices/FLEET_FIXTURE']);f.retained();
 });
 
@@ -117,11 +121,11 @@ test('only the two Owner loading dialogs change in main; authentication, sale an
 });
 
 test('the Owner entry release has five files and six exact inverse hunks to live dfa with no cache-policy or historical-proof changes',()=>{
- assert.equal(cashierOwnerEntryProof.base,BASE);assert.equal(cashierOwnerEntryProof.release,'cashier-owner-entry-20261115-r1');assert.equal(CASHIER_RELEASE,cashierOwnerEntryProof.release);
+ assert.equal(cashierOwnerEntryProof.base,BASE);assert.equal(cashierOwnerEntryProof.release,'cashier-owner-entry-20261115-r1');assert.equal(CASHIER_RELEASE,cashierOwnerWorkspaceProof.release);
  assert.deepEqual(Object.keys(cashierOwnerEntryProof.files).sort(),['Takodeal-POS/cashier-startup.js','Takodeal-POS/index.html','Takodeal-POS/sw.js','Takodeal-POS/cashier-data.js','Takodeal-POS/main.js'].sort());assert.equal(Object.values(cashierOwnerEntryProof.files).reduce((n,row)=>n+row.edits.length,0),6);
  for(const file of Object.keys(cashierOwnerEntryProof.files)){const source=read(file);assert.equal(restoreCashierOwnerEntry(source,file),baseline(file),file);assert.throws(()=>restoreCashierOwnerEntry(source+'\n// unreviewed change',file));}
  const sw=read('Takodeal-POS/sw.js');assert.ok(sw.includes("const CORE = 'takodeal-pos-core-"+CASHIER_RELEASE+"';"));assert.ok(page.includes('main.js?v='+CASHIER_RELEASE));assert.ok(sw.includes("'./cashier-startup.js'"));
- for(const file of ['Takodeal-POS/index.html','Takodeal-POS/sw.js','Takodeal-POS/cashier-data.js'])assert.equal(read(file).replaceAll(CASHIER_RELEASE,'cashier-large-delivery-20261114-r1'),baseline(file),'Only the release label changes: '+file);
+ for(const file of ['Takodeal-POS/index.html','Takodeal-POS/sw.js','Takodeal-POS/cashier-data.js'])assert.equal(restoreCashierOwnerWorkspace(read(file),file).replaceAll(cashierOwnerEntryProof.release,'cashier-large-delivery-20261114-r1'),baseline(file),'Only the earlier release label changes after the exact workspace inverse: '+file);
  for(const file of ['tests/fixtures/live-branch-directory-inverse.json','tests/fixtures/large-delivery-status-inverse.json','tests/fixtures/cashier-measured-prep-inverse.json','tests/fixtures/cashier-actual-prep-inverse.json'])assert.equal(read(file),baseline(file),file);
 });
 

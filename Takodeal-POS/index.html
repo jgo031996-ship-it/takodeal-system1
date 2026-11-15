@@ -518,6 +518,7 @@
                   alert("Invalid Password."); passInput.value = ""; btn.innerText = "Secure Login"; btn.disabled = false; return; 
               }
 
+              if (window.clearCashierOwnerWorkspace?.() === false) throw Object.assign(new Error('A delivery receipt is still being checked.'), {code:'cashier-login/changed'});
               sessionUser = identity;
 
               if (typeof window.requestWakeLock === 'function') window.requestWakeLock();
@@ -1292,9 +1293,10 @@
                     </h2>
                     <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Verify and receive stock dispatched from the Main Office.</span>
                 </div>
-                <button class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 12px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;" onclick="window.renderDeliveriesTab()">🔄 Refresh</button>
+                <button class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 12px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;" onclick="window.refreshIncomingDeliveries()">🔄 Refresh</button>
             </div>
             <div style="padding: 30px; background: #f1f5f9; flex: 1; overflow-y: auto;">
+                <p id="incomingDeliveriesStatus" role="status" aria-live="polite">Sign in to this branch to check incoming deliveries.</p>
                 <div id="deliveriesContainer" style="display: flex; flex-direction: column; gap: 25px;"></div>
             </div>
         </div>
@@ -2210,7 +2212,7 @@
 
       // 🔥 ENFORCE GLOBAL SHIFT LOCKOUT 🔥
       let lock = document.getElementById('globalShiftLockout');
-      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'settings', 'sales', 'remit'];
+      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'settings', 'sales', 'remit', 'deliveries'];
       if (lock) {
           if (!currentShift && !exemptViews.includes(viewName)) {
               lock.style.display = 'flex';
@@ -2487,6 +2489,7 @@
 
     // --- 4. SHIFT & EXPENSE SYSTEM ---
     async function checkCurrentShift() {
+      if (window.isCashierOwnerToolsMode?.()) { updateShiftUI({active:false}); return; }
       const branch = window.sessionUser?.branch;
       const generation = window.shiftStatusGeneration = (window.shiftStatusGeneration || 0) + 1;
       let status = await window.checkShiftStatus(branch);
@@ -2538,7 +2541,7 @@
 
           let currentView = document.querySelector('.view-container.active');
           let viewId = currentView ? currentView.id.replace('view-', '') : 'pos';
-          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'settings', 'sales', 'remit'];
+          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'settings', 'sales', 'remit', 'deliveries'];
           
           if (lock && !exemptViews.includes(viewId)) {
               lock.style.display = "flex"; 
@@ -4557,7 +4560,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cashier-owner-entry-20261115-r1"></script>
+    <script type="module" src="main.js?v=cashier-owner-workspace-20261115-r1"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
