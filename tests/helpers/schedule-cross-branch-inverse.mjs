@@ -1,3 +1,4 @@
+import {restoreBranchInventorySetup} from './branch-inventory-setup-inverse.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -6,6 +7,7 @@ export const scheduleCrossBranchSha=value=>createHash('sha256').update(value).di
 // Older release checks can examine their original reviewed bytes after this
 // exact, separately reviewed schedule layer is removed. Never normalize edits.
 export function restoreScheduleCrossBranch(source,file){
+ source=restoreBranchInventorySetup(source,file);
  const row=scheduleCrossBranchProof.files[file];
  if(!row||scheduleCrossBranchSha(source)!==row.candidateSha256)return source;
  for(const edit of [...row.edits].reverse()){
