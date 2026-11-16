@@ -108,6 +108,6 @@ export async function registerBranchRecord({name, user, read, write, timestamp})
     if (existing && existing.name !== name) throw Error('This registration no longer matches. Refresh the directory.');
     if (existing) return {existing:true,name};
     // The caller retains the same reference across retries. Never invent GPS coordinates.
-    await write({name,isCore:false,createdAt:timestamp()});
+    await write({name,isCore:false,isMallBranch:false,createdAt:timestamp()});
     return {existing:false,name};
 }

@@ -229,7 +229,7 @@ import { createLiveReport } from './live-report.js';
 import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus, calculateShiftEarnings,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
     shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule,
-    staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh } from './payroll-safety.js';
+    staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh,validEquivalentHours } from './payroll-safety.js';
 const historyLive = createLiveReport({
     subscribe: (...args) => window.onSnapshot(...args),
     status: text => { const el = document.getElementById('histLiveStatus'); if (el) el.textContent = text; }
@@ -9879,6 +9879,8 @@ window.updateLateRequestPreview = function() {
     const attendance = context.logs.find(log => log.id === id);
     const target = document.getElementById('replyLateCalculation');
     const button=document.getElementById('btnSubmitReply');context.selectedLatePreview=null;
+    const hoursField=document.getElementById('replyEquivalentHours'),hoursBox=document.getElementById('replyEquivalentBox');
+    if(hoursBox)hoursBox.hidden=true;
     if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.';if(button)button.disabled=true;return; }
     const shift = resolveAttendanceShift(attendance,context.schedule,{[attendance.staffName]:context.profile});
     const summary=lateRequestSummary(context.request,{attendance,shift}),dated=shift?.attendanceCorrectionVerified===true||shift?.amendmentNeedsReview===true||shift?.assignmentReconciliationRequired===true;
@@ -9901,8 +9903,21 @@ window.updateLateRequestPreview = function() {
     }
     const rateProfile=staffProfileForWork(context.profile,attendance,shift);
     if(context.action==='Rejected'&&!(Number(staffRateForDate(rateProfile,rateProfile.salaryWorkDate))>0)){target.innerHTML+='<p>Set the Daily Rate effective on this work date before calculating a deduction.</p>';if(button)button.disabled=true;return;}
-    const minutes=requestLateMinutes(context.request,attendance),late=latePay(minutes,rateProfile,shift,context.action==='Approved');
-    context.selectedLatePreview={attendanceId:attendance.id,corrected:false};if(button){button.disabled=false;button.innerText='Confirm '+context.action;}
+    const minutes=requestLateMinutes(context.request,attendance);
+    let deduction;
+    if(hoursField && hoursBox && window.sessionUser?.isOwner===true && context.action==='Rejected' && !shift?.reliefNeedsReview && !shift?.reliefReviewVerified && !shift?.amendmentReviewVerified && !shift?.payrollShiftConfirmationError){
+        const maximum=Math.ceil(minutes/60);
+        hoursBox.hidden=false;hoursField.max=String(maximum);
+        if(context.hoursAttendanceId!==attendance.id){hoursField.value=String(maximum);context.hoursAttendanceId=attendance.id;}
+        const hours=Number(hoursField.value);
+        if(hoursField.value.trim()===''||!validEquivalentHours(hours,minutes)){
+            target.innerHTML+='<p>Enter 0 to '+maximum+' hours, using up to two decimal places.</p>';
+            if(button)button.disabled=true;return;
+        }
+        deduction={hours,minutes,ratePerHour:latePay(minutes,rateProfile,shift).ratePerHour};
+    }
+    const late=latePay(minutes,rateProfile,shift,context.action==='Approved',deduction?.hours);
+    context.selectedLatePreview={attendanceId:attendance.id,corrected:false,deduction};if(button){button.disabled=false;button.innerText='Confirm '+context.action;}
     target.innerHTML+='<p><b>Review of the original reported minutes:</b> '+(context.action==='Approved'?`${minutes} minutes reported — exempted from the late deduction.`:`${minutes} minutes reported → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}.`)+'</p>';
 };
 window.openLateRequestAttendance = function() {
@@ -10006,6 +10021,11 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
                         ${window.lateRequestContext.logs.length > 1 ? '<option value="">Select the correct clock-in</option>' : ''}
                         ${window.lateRequestContext.logs.map(log => `<option value="${requestEscape(log.id)}">${requestEscape(log.timestamp.toDate ? log.timestamp.toDate().toLocaleString('en-PH') : new Date(log.timestamp).toLocaleString('en-PH'))}</option>`).join('')}
                     </select>
+                    <div id="replyEquivalentBox" hidden style="margin:10px 0">
+                        <label for="replyEquivalentHours"><strong>Equivalent hours to deduct</strong></label>
+                        <input id="replyEquivalentHours" type="number" inputmode="decimal" min="0" step="0.01" oninput="window.updateLateRequestPreview()" style="display:block;padding:8px;margin:5px 0;width:8em">
+                        <small>Choose zero, a fraction, or the suggested hours. The original late minutes stay on the letter.</small>
+                    </div>
                     <div id="replyLateCalculation" style="font-size:12px;color:#166534;line-height:1.5;"></div>
                 </div>` : ''}
 
@@ -10073,7 +10093,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
                 requestId: docId, attendanceId: document.getElementById('replyAttendanceLog').value,
                 profileId:context.profile.staffId || context.profile.id,
                 proposalDecision:document.getElementById('replyStaffShiftDecision')?.value||undefined,
-                expectedDeclaration:context.declarationFingerprint,
+                expectedDeclaration:context.declarationFingerprint,deduction:preview.deduction,
                 action, reply: replyMsg, actor: window.sessionUser?.cashierName || 'Manager'
             });
             if(!ownsLateReply())return;
@@ -10082,7 +10102,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             await window.loadInbox();
             Swal.fire(`Request ${action}`, result.repeated ? 'This decision was already saved. No additional deduction was created.'
                 : action === 'Approved' ? 'Late deduction exempted. Regenerate the unpaid payroll preview to apply it.'
-                : `${result.minutes} minutes late rounds up to ${result.hours} hour(s). Regenerate the unpaid payroll preview to apply the deduction once.`, 'success');
+                : `${result.minutes} minutes reported. Equivalent deduction: ${result.hours} hour(s). Regenerate the unpaid payroll preview to apply the deduction once.`, 'success');
             return;
         }
         let identityQuote=null;
@@ -16038,7 +16058,7 @@ window.pushBranchUpdate = async function(docId, branchName, targetVersion) {
 window.initializeCoreBranches = async function() {
     let core = ["Main Office", "Cabantian", "Citygate", "Maa"];
     for (let b of core) {
-        await addDoc(collection(db, "branches"), { name: b, isCore: true, createdAt: serverTimestamp() });
+        await addDoc(collection(db, "branches"), { name: b, isCore: true, isMallBranch: false, createdAt: serverTimestamp() });
     }
     window.loadBranchManager();
 };
@@ -16088,7 +16108,7 @@ window.saveNewBranch = async function() {
         const known=await window.getDocsFromServer(window.collection(window.db,'branches'));guard();
         if(known.metadata?.fromCache!==false||known.metadata?.hasPendingWrites!==false)throw Error('Reconnect to confirm the current branch list.');
         if(known.docs.some(row=>row.data().name===name))throw Error('This branch is already saved. Use Sync Stock Items in Branch Manager to finish or repair its item setup.');
-        const payload={name,isCore:false,createdAt:window.serverTimestamp(),inventorySetupVersion:1,inventorySetupStatus:'Pending'};
+        const payload={name,isCore:false,isMallBranch:false,createdAt:window.serverTimestamp(),inventorySetupVersion:1,inventorySetupStatus:'Pending'};
         if(latRaw!==''&&lngRaw!==''&&latRaw!=null&&lngRaw!=null){const lat=Number(latRaw),lng=Number(lngRaw);if(!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180)throw Error('Choose valid branch map coordinates.');payload.lat=lat;payload.lng=lng;}
         const branchId=(await branchInventoryId('branch-registration',name)).replace('branch-stock-','branch-');guard();
         await window.runTransaction(window.db,async tx=>{const ref=window.doc(window.db,'branches',branchId),saved=await tx.get(ref);guard();if(saved.exists())throw Error('This branch was already created. Refresh Branch Manager and use Sync Stock Items.');tx.set(ref,payload);});registered=true;
@@ -16168,7 +16188,7 @@ window.removeLogo = function(event) {
 window.openBranchSettings = async function(docId) {
     let d = window.globalBranchData[docId];
     if (!d) return;
-    const user=window.auth?.currentUser,session=window.sessionUser,loadToken={id:docId,user,session};
+    const user=window.auth?.currentUser,session=window.sessionUser,loadToken={id:docId,user,session,mallMode:d.isMallBranch===true};
     window.branchNetworkSettingsLoad=loadToken;
     window.branchNetworkSettingsExpected=null;
     document.getElementById('btnSaveBranchSettings').disabled=true;
@@ -16200,7 +16220,7 @@ window.openBranchSettings = async function(docId) {
     } else {
         window.removeLogo();
     }
-    if (document.getElementById('settingMallBranch')) document.getElementById('settingMallBranch').checked = d.isMallBranch || false;
+    if (document.getElementById('settingMallBranch')) document.getElementById('settingMallBranch').checked = loadToken.mallMode;
     document.getElementById('branchSettingsModal').style.display = 'flex';
     try{
         const saved=await readBranchNetworkSettings(window,docId);
@@ -16230,7 +16250,6 @@ window.saveBranchSettings = async function() {
         receiptLogoBase64: window.uploadedLogoBase64, 
         logoWidthScale: parseFloat(document.getElementById('logoWidthScale').value) || 1,
         logoHeightScale: parseFloat(document.getElementById('logoHeightScale').value) || 1,
-        isMallBranch: document.getElementById('settingMallBranch') ? document.getElementById('settingMallBranch').checked : false,
         lat: latVal ? parseFloat(latVal) : null,
         lng: lngVal ? parseFloat(lngVal) : null
     };
@@ -16238,6 +16257,8 @@ window.saveBranchSettings = async function() {
     try {
         const load=window.branchNetworkSettingsLoad,expected=window.branchNetworkSettingsExpected;
         if(!load||load.id!==docId||!expected)throw Error('Private branch settings are still loading. Reopen this branch before saving.');
+        const modeControl=document.getElementById('settingMallBranch');
+        if(modeControl && modeControl.checked!==load.mallMode) payload.isMallBranch=modeControl.checked;
         const wifi=document.getElementById('settingWifi').value.trim();
         branchSettingsSavePending=true;
         saveButton.disabled=true;

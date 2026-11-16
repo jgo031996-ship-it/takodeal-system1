@@ -7,7 +7,7 @@ export async function reviewLateRequestWorkedShift(api,d,context,attendance){
  const reply=d.getElementById('replyMessage')?.value||'',decision=d.getElementById('replyStaffShiftDecision')?.value||'';
  const current=()=>{if(api.auth?.currentUser!==user||api.sessionUser!==session||api.lateRequestOpenToken!==token)throw Error('The account or request changed. Reopen the saved letter.');};
  current();
- const input={attendanceLogId:attendance.id,staffId:attendance.staffId||context.profile.staffId||request.staffId,branch:attendance.branch,workDate:request.staffShiftProposal.workDate};
+ const input={attendanceLogId:attendance.id,staffId:attendance.staffId||context.profile.staffId||request.staffId,branch:attendance.branch,workDate:request.staffShiftProposal.workDate,proposedShiftId:request.staffShiftProposal.shiftId};
  d.getElementById('dynamicReplyModal')?.remove();api.lateRequestContext=null;
  let returned=false,applied=false;
  const reopen=async(cancelled=false)=>{
@@ -22,7 +22,7 @@ export async function reviewLateRequestWorkedShift(api,d,context,attendance){
  try{
   const ui=api.workedShiftCorrectionUI||(api.workedShiftCorrectionUI=installWorkedShiftCorrectionUI(api,d));
   const result=await ui.open(input,{assertCurrent:current,onApplied:async()=>{current();applied=true;api.invalidateCache?.('global_schedule');api.invalidateCache?.('attendance_logs');await reopen();}});
-  if(result?.addEventListener)result.addEventListener('close',()=>{if(!applied)void reopen(true).catch(()=>{});},{once:true});
+  if(result?.addEventListener)result.addEventListener('close',()=>{if(!applied&&result.dataset?.workedShiftSaved!=='true')void reopen(true).catch(()=>{});},{once:true});
   else if(!applied)await reopen(true);
   return result;
  }catch(error){try{current();await reopen(true);api.ManagerUI?.notify?.(error.message||'The worked shift could not be reviewed.');}catch{/* A newer account or request owns the view. */}return false;}

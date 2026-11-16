@@ -105,7 +105,7 @@ test('branch registration retries a lost response without a second write or inve
         write:async payload=>{stored=payload;writes++;throw Error('Response lost');}};
     await assert.rejects(registerBranchRecord(request),/Response lost/);
     assert.deepEqual(await registerBranchRecord(request),{existing:true,name:'New branch'});
-    assert.equal(writes,1); assert.deepEqual(stored,{name:'New branch',isCore:false,createdAt:123});
+    assert.equal(writes,1); assert.deepEqual(stored,{name:'New branch',isCore:false,isMallBranch:false,createdAt:123});
 });
 test('registration cannot overwrite a different branch or run with non-owner identity',async()=>{
     let writes=0; const request={name:'New branch',user:owner,read:async()=>({name:'Different branch'}),write:async()=>writes++,timestamp:()=>123};

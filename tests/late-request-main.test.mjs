@@ -140,3 +140,24 @@ test('account replacement while zero service is pending suppresses its old-form 
     const held=deferred(),entered=deferred(),f=await fixture({zeroService:async()=>{entered.resolve();await held.promise;return {resolved:true};}});await f.open();const pending=f.submit();await entered.promise;const modal=f.node('dynamicReplyModal');f.w.auth.currentUser={...f.w.auth.currentUser,uid:'different-owner'};const before=f.alerts.length;held.resolve();await pending;
     assert.equal(f.node('dynamicReplyModal'),modal);assert.equal(f.calls.inbox,0);assert.equal(f.alerts.length,before);
 });
+
+test('Owner selection updates the preview and commits the identical fraction once through the real reply',async()=>{
+ const f=await fixture({mode:'legacy',action:'Rejected'});await f.open();
+ const hours=f.node('replyEquivalentHours');assert.equal(hours.value,'8');
+ hours.value='0.5';f.w.updateLateRequestPreview();
+ assert.equal(f.w.lateRequestContext.selectedLatePreview.deduction.hours,0.5);
+ assert.match(f.node('replyLateCalculation').innerHTML,/0.5 hour/);
+ const before=structuredClone(f.get('payroll_records/sample-paid'));await f.submit();
+ assert.equal(f.get('staff_requests/'+f.requestId).lateDeductionHours,0.5);
+ const punch=f.get('attendance_logs/'+f.attendanceId);assert.equal(punch.reviewedLateMinutes,462);
+ assert.equal(punch.lateReviewHistory.length,1);assert.deepEqual(f.get('payroll_records/sample-paid'),before);
+});
+test('blank and excessive hours disable confirm; stale rate cannot charge at a different amount',async()=>{
+ const f=await fixture({mode:'legacy',action:'Rejected'});await f.open();
+ const field=f.node('replyEquivalentHours');
+ for(const value of ['','9','0.123']){field.value=value;f.w.updateLateRequestPreview();assert.equal(f.node('btnSubmitReply').disabled,true);}
+ field.value='0';f.w.updateLateRequestPreview();assert.equal(f.node('btnSubmitReply').disabled,false);
+ const key='cashiers/'+f.staffId;f.put(key,{...f.get(key),hourlyRate:1234});
+ await f.submit();assert.equal(f.get('staff_requests/'+f.requestId).status,'Pending');
+ assert.equal(f.get('attendance_logs/'+f.attendanceId).lateReviewHistory,undefined);
+});

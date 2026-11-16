@@ -1,7 +1,7 @@
 import {OWNER_EMAIL,createWorkspaceSession,canOpenWorkspacePage} from './workspace-access-model.js';
 import {resolveHQAccount,savedPin} from './hq-account-model.js';
 import {loadClockOutSchedule} from './attendance-schedule-reader.js';
-import {resolveAttendanceShift,attendanceLateMinutes,isLatenessRequest,requestLateMinutes,legacyAttendanceCandidates,reviewLateRequest} from './payroll-safety.js';
+import {resolveAttendanceShift,attendanceLateMinutes,isLatenessRequest,requestLateMinutes,legacyAttendanceCandidates,reviewLateRequest,staffProfileForWork,loadStaffSalaryTimeline,latePay,validEquivalentHours} from './payroll-safety.js';
 import {attendanceAmendmentReviewFingerprint} from './attendance-amendment-review-model.js';
 import {memoizedAttendanceTransaction} from './attendance-transaction-reader.js';
 import {inspectStaffShiftProposal,validateSavedShiftProposal} from './saved-shift-proposal.js';
@@ -62,7 +62,7 @@ export async function resolveCorrectedLateRequest(api,{requestId,attendanceId,ex
 // The original decision path remains available to approved HQ managers. Its
 // schedule guard runs in the very same transaction as the unchanged legacy
 // attendance updates, so a correction arriving after preview cannot be missed.
-export async function reviewOriginalLateRequest(api,{requestId,attendanceId,profileId,action,reply='',actor,proposalDecision,expectedDeclaration}){
+export async function reviewOriginalLateRequest(api,{requestId,attendanceId,profileId,action,reply='',actor,proposalDecision,expectedDeclaration,deduction}){
  if(!validId(requestId)||!validId(attendanceId)||!validId(profileId)||!['Approved','Rejected'].includes(action)||typeof reply!=='string'||reply.length>1500||typeof actor!=='string'||!actor.trim()||actor.length>200)throw Error('Reopen the original attendance letter and its exact employee profile.');
  const identity=()=>{const user=api.auth?.currentUser,session=api.sessionUser;if(!user?.uid||!user.email||user.emailVerified!==true||!user.providerData?.some(row=>row.providerId==='google.com')||session?.uid!==user.uid||key(session.email)!==key(user.email)||session.isFranchisee===true||!canOpenWorkspacePage(session,'inbox'))throw Error('Sign in with approved HQ Request Inbox access to review this letter.');return JSON.stringify([user.uid,user.email,session.uid,session.email,session.role,session.isOwner,session.isFranchisee,session.permissions,session.allowedBranches,session.branch]);};
  const user=api.auth?.currentUser,session=api.sessionUser,captured=identity(),current=()=>{if(api.auth?.currentUser!==user||api.sessionUser!==session||identity()!==captured)throw Error('The signed-in HQ account changed. Reopen the attendance letter.');};
@@ -81,6 +81,15 @@ export async function reviewOriginalLateRequest(api,{requestId,attendanceId,prof
     :await loadClockOutSchedule({db:api.db,doc:api.doc},log,{...person,id:profileId,staffId:profileId},{read,assertCurrent:guard});
    const shift=resolveAttendanceShift(log,history,{[log.staffName]:{...person,staffId:profileId}},log.staffName);guard();
   if(shift?.attendanceCorrectionVerified===true||shift?.amendmentNeedsReview===true||shift?.assignmentReconciliationRequired===true)throw Error('A dated schedule correction now applies to this attendance. Open its HR review before resolving the original letter.');
+  if(deduction!==undefined){
+   authority(api);
+   const minutes=requestLateMinutes(request,log);
+   if(action!=='Rejected'||deduction.minutes!==minutes||!validEquivalentHours(deduction.hours,minutes))throw Error('Reopen the deduction and check the original minutes and equivalent hours.');
+   if(shift?.reliefNeedsReview||shift?.reliefReviewVerified||shift?.amendmentReviewVerified||shift?.payrollShiftConfirmationError)throw Error('Resolve the linked attendance review before choosing deduction hours.');
+   const profile=await loadStaffSalaryTimeline(api,{...person,staffId:profileId},{read});guard();
+   const rate=latePay(minutes,staffProfileForWork(profile,log,shift),shift).ratePerHour;
+   if(!(rate>0)||rate!==deduction.ratePerHour)throw Error('The work-date rate changed. Reopen the preview before confirming.');
+  }
   if(request.staffShiftProposal&&action==='Approved'){
    const message='Review this proposed shift on linked attendance first or reject the proposed schedule; original records stay on file.';
    if(proposalDecision==='Keep original assigned hours'){
@@ -102,5 +111,5 @@ export async function reviewOriginalLateRequest(api,{requestId,attendanceId,prof
   }
   return callback(bound);
  })};
- current();return reviewLateRequest(guardedAPI,{requestId,attendanceId,action,reply,actor});
+ current();return reviewLateRequest(guardedAPI,{requestId,attendanceId,action,reply,actor,deduction});
 }

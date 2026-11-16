@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import {restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
@@ -155,7 +157,12 @@ test('legacy matching keeps ambiguous entries separate and filters unrelated att
     assert.deepEqual(payroll.legacyAttendanceCandidates(req,rows).map(x=>x.id),['a','b']);
     assert.throws(()=>payroll.requestLateMinutes({...req,explanationMessage:'no minutes'},{}),/no recorded/);
 });
-const source=restoreAttendanceOvertime(readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),'takodeal-manager/main.js');
+// Older payroll fixtures use the historical generator API. Only undo the
+// exact Owner review release before applying the existing historical inverses.
+const currentSource=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url));
+const blob=createHash('sha1').update('blob '+currentSource.length+'\0').update(currentSource).digest('hex');
+const earlier=blob==='7176d23dfbadcb6e2bea5fcf849f1915feeb90c4'?execFileSync('git',['cat-file','blob','a60c84fd990eb7b1d7f0ee6d523d695c4c4a3821'],{cwd:new URL('../',import.meta.url),maxBuffer:8e6}):currentSource;
+const source=restoreAttendanceOvertime(earlier.toString(),'takodeal-manager/main.js');
 function extract(name) {
     const start=source.indexOf(`
 window.${name} = `) + 1;
@@ -655,4 +662,20 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']) test(gen
     const out=new Date('2026-10-17T01:30:00+08:00'),logs=[{...attendance(time,{scheduleSnapshot:snapshot,lateMinutes:237,lateExempted:false}),timestamp:{toDate:()=>time}},{...attendance(out),type:'TIME OUT',timestamp:{toDate:()=>out}}],raw=JSON.stringify(snapshot);
     const h=payrollUi({logs,scheduleData:original,historyData:history,startDate:'2026-10-16',endDate:'2026-10-16'});vm.runInContext(extract(generator),h.context);await h.window[generator]();
     assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];assert.equal(row.lateDeduction,0);assert.equal(row.attendanceReviewRequired,false);assert.equal(JSON.stringify(snapshot),raw);
+});
+
+test('118 reported minutes retain their source while a fractional or zero review is applied once',async()=>{
+ for(const hours of [0,0.5,1,1.5,2]){
+  const h=decisionFixture(),key='staff_requests/letter',attKey='attendance_logs/punch';
+  h.put(key,{...h.get(key),lateMinutes:118});
+  const decideHours=hours=>payroll.reviewLateRequest(h.api,{requestId:'letter',attendanceId:'punch',action:'Rejected',reply:'Fictional review',actor:'Test Owner',deduction:{minutes:118,hours,ratePerHour:56.25}});
+  await Promise.all([decideHours(hours),decideHours(hours)]);
+  const att={...h.get(attKey),id:'punch'},profile={hourlyRate:450};
+  assert.equal(att.reviewedLateMinutes,118);assert.equal(att.lateReviewHistory.length,1);
+  const shift=payroll.resolveAttendanceShift(att,{}, {[att.staffName]:profile});
+  assert.deepEqual(payroll.latePay(118,profile,shift),{hours,ratePerHour:56.25,amount:Math.round(hours*5625)/100});
+  assert.equal(h.get(key).lateDeductionHours,hours);assert.equal(h.docs.size,2);
+  await assert.rejects(decideHours(hours===0?1:0),/already reviewed/);
+ }
+ for(const bad of [-1,2.1,1.001,NaN,Infinity,'1',null])assert.equal(payroll.validEquivalentHours(bad,118),false);
 });

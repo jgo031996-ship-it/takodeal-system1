@@ -86,3 +86,15 @@ test('a completed save cannot close another branch opened during the commit',asy
     assert.equal(h.field('settingBranchId').value,'b2');assert.equal(h.field('branchSettingsModal').style.display,'flex');
     assert.equal(h.successes.length,0);assert.equal(h.field('btnSaveBranchSettings').disabled,false);
 });
+
+test('only an explicit mode edit can change the saved branch mode',async()=>{
+ const f=fixture();await f.w.openBranchSettings('b1');
+ assert.equal(f.field('settingMallBranch').checked,false);
+ f.rows.set('branches/b1',{...f.rows.get('branches/b1'),isMallBranch:true});
+ f.field('settingAddress').value='Updated address';await f.w.saveBranchSettings();
+ assert.equal(f.rows.get('branches/b1').isMallBranch,true);
+ f.w.globalBranchData.b1=f.rows.get('branches/b1');await f.w.openBranchSettings('b1');
+ assert.equal(f.field('settingMallBranch').checked,true);
+ f.field('settingMallBranch').checked=false;await f.w.saveBranchSettings();
+ assert.equal(f.rows.get('branches/b1').isMallBranch,false);
+});
