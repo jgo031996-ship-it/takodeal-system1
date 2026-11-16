@@ -23,7 +23,7 @@ try {
         button.scrollIntoView({block:'center'});button.focus();
         const rect=button.getBoundingClientRect();
         const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
-        if(hit!==button||rect.height<44)throw Error('Cannot tap '+name+' at '+Math.round(rect.x)+','+Math.round(rect.y)+'; hit '+(hit?.id||hit?.tagName||'outside viewport'));
+        if(hit!==button||rect.height<44)throw Error('Cannot tap '+name+' at '+Math.round(rect.x)+','+Math.round(rect.y)+'; hit '+(hit?.dataset?.profileTab||hit?.id||hit?.tagName||'outside viewport')+' height '+rect.height+' viewport '+innerWidth+' layout '+getComputedStyle(button.parentElement).display);
         hit.click();
         const panel=modal.querySelector('[data-profile-panel="'+name+'"]');
         if(!panel.getClientRects().length||modal.querySelectorAll('[data-profile-panel]:not([hidden])').length!==1)throw Error('Cannot open '+name);
@@ -43,9 +43,10 @@ test('employees can tap all six profile sections at phone and desktop widths',{s
     const page=await readFile(new URL('index.html',root),'utf8');
     const profile=page.slice(page.indexOf('<div id="profileModal"'),page.indexOf('<div id="requestModal"'));
     assert.ok(profile.includes('staffPanelSecurity'));
-    const styles=['style.css','staff-theme.css','staff-documents.css','staff-employee.css'].map(name=>'<link rel="stylesheet" href="/'+name+'">').join('');
+    const cssFiles=['style.css','staff-theme.css','staff-documents.css','staff-employee.css'];
+    const styles=(await Promise.all(cssFiles.map(file=>readFile(new URL(file,root),'utf8')))).join('\n');
     const server=createServer(async(req,res)=>{
-        if(req.url==='/frame'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'+styles+profile+exercise);return;}
+        if(req.url==='/frame'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+styles+'</style>'+profile+exercise);return;}
         if(/^\/\?(390|1280)$/.test(req.url)){
             const width=Number(req.url.slice(2));res.setHeader('Content-Type','text/html');
             res.end('<output id="result">pending</output><script>onmessage=e=>{if(e.origin===location.origin)document.querySelector("output").textContent=e.data}</script><iframe style="width:'+width+'px;height:650px;border:0" src="/frame"></iframe>');return;
