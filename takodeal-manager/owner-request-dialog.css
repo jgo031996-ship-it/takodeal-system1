@@ -41,3 +41,4 @@
 #dynamicReplyModal[data-request-kind="lateness"] { --request-accent: #68481d; }
 #dynamicReplyModal[data-request-kind="finance"] { --request-accent: #24536a; }
 #dynamicReplyModal #requestReplyTitle { border-left: 4px solid var(--request-accent); padding-left: .65rem; }
+#replyAttendanceLog[hidden] { display: none !important; }

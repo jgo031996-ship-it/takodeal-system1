@@ -1,4 +1,5 @@
 import {canResolveInboxShift,prepareInboxShift} from './owner-request-actions.js';
+import {requestLateMinutes} from './payroll-safety.js';
 import {acknowledgeScheduleDeclaration} from './attendance-swap-declaration.js';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25,8 +26,8 @@ export function installOwnerRequestDialog(api,d,{makeService}={}){
         node.setAttribute('aria-labelledby','ownerRequestTitle');node.setAttribute('data-request-kind',declaration?'schedule':'lateness');
         node.innerHTML='<header><p>'+escape(request.type)+'</p><h2 id="ownerRequestTitle">'+(declaration?'Confirm worked shift':'Review late arrival')+'</h2></header>'
             +'<section><p><strong>'+escape(request.staffName)+'</strong> · '+escape(request.branch)+'</p><p><strong>'+escape(shift)+'</strong><br>'+escape(time(begin))+' → '+escape(time(end))+' (PH)</p>'
-            +'<p>'+(declaration?'Confirm the shift for this employee and mark the statement reviewed. The coworker keeps their plotted shift.':'Approve the letter and waive its late deduction for this clock-in.')+'</p>'
-            +'<details><summary>Employee explanation</summary><p>'+escape(declaration?p.explanation:request.explanationMessage||'No explanation recorded.')+'</p></details>'
+            +'<p>'+(declaration?'Confirm the shift for this employee and mark the statement reviewed. The coworker keeps their plotted shift.':'Approve this letter and waive the deduction for '+escape(requestLateMinutes(request,attendance))+' reported late minutes.')+'</p>'
+            +'<details><summary>Employee explanation</summary><p>'+escape(declaration?'Reported swap with '+p.coworkerName+'. '+p.explanation:request.explanationMessage||'No explanation recorded.')+'</p></details>'
             +(declaration?'':'<label for="inboxShiftReply">Reply (optional)</label><textarea id="inboxShiftReply" maxlength="1500" rows="2"></textarea>')
             +'<p data-notes></p><p role="status" aria-live="polite" data-status>Checking the saved roster and attendance…</p></section>'
             +'<footer><button type="button" data-save disabled></button><button type="button" data-alt></button><button type="button" data-close>Close</button></footer>';

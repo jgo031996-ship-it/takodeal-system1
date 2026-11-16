@@ -10011,6 +10011,11 @@ window.handleRequest = async function(docId, action, type, amount, staffName, op
                 manual:()=>window.handleRequest(docId,action,type,amount,staffName,{manual:true,keepOriginal:true})});
         }
     }
+    const clockInLabel=log=>{
+        const stamp=log.timestamp;
+        const at=stamp?.toDate?.()??new Date(stamp?.seconds!=null?stamp.seconds*1000:stamp);
+        return at.toLocaleString('en-PH',{timeZone:'Asia/Manila'})+' (PH)';
+    };
     const isLateLetter = isLatenessRequest(req);
     const isReasonLetter = !isLateLetter && (type === "Reason Letter" || type === "Cash Shortage / Mishandling");
 
@@ -10032,9 +10037,10 @@ window.handleRequest = async function(docId, action, type, amount, staffName, op
                 ${isLateLetter ? `
                 <div style="background:#f0fdf4;border:1px dashed #bbf7d0;padding:15px;border-radius:8px;margin-bottom:20px;">
                     <label for="replyAttendanceLog" style="font-size:12px;font-weight:bold;">Linked clock-in</label>
-                    <select id="replyAttendanceLog" onchange="window.updateLateRequestPreview()" style="width:100%;padding:8px;margin:6px 0;">
+                    ${window.lateRequestContext.logs.length===1 ? '<p>'+requestEscape(clockInLabel(window.lateRequestContext.logs[0]))+'</p>' : ''}
+                    <select id="replyAttendanceLog" onchange="window.updateLateRequestPreview()" ${window.lateRequestContext.logs.length===1 ? 'hidden' : ''} style="width:100%;padding:8px;margin:6px 0;">
                         ${window.lateRequestContext.logs.length > 1 ? '<option value="">Select the correct clock-in</option>' : ''}
-                        ${window.lateRequestContext.logs.map(log => `<option value="${requestEscape(log.id)}">${requestEscape(log.timestamp.toDate ? log.timestamp.toDate().toLocaleString('en-PH') : new Date(log.timestamp).toLocaleString('en-PH'))}</option>`).join('')}
+                        ${window.lateRequestContext.logs.map(log => `<option value="${requestEscape(log.id)}">${requestEscape(clockInLabel(log))}</option>`).join('')}
                     </select>
                     <div id="replyEquivalentBox" hidden style="margin:10px 0">
                         <label for="replyEquivalentHours"><strong>Equivalent hours to deduct</strong></label>

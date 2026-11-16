@@ -11,14 +11,14 @@ import {join} from 'node:path';
 const chrome=['/usr/bin/google-chrome','/usr/bin/chromium','/opt/google/chrome/chrome'].find(existsSync);
 const root=new URL('../takodeal-manager/',import.meta.url);
 const fixture=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="/owner-request-dialog.css"></head><body><output id="result">pending</output>
+<link rel="stylesheet" href="/manager-theme.css"><link rel="stylesheet" href="/manager-mobile.css"><link rel="stylesheet" href="/owner-dialogs.css"><link rel="stylesheet" href="/owner-request-dialog.css"></head><body><output id="result">pending</output>
 <script type="module">
 import {installOwnerRequestDialog} from '/owner-request-dialog.js';
 import {OWNER_EMAIL} from '/workspace-access-model.js';
 try{
  const start='2026-11-13T09:30:00Z',end='2026-11-13T18:00:00Z',workDate='2026-11-13';
  const p={shiftId:'night',shiftName:'Night 1',workDate,expectedStartAt:start,expectedEndAt:end,sourceRevisionId:'original',branch:'QA'};
- const request={type:'Reason Letter',id:'test-letter',status:'Pending',branch:'QA',staffId:'crew',staffName:'Test Crew',attendanceLogId:'in',staffShiftProposal:p};
+ const request={type:'Reason Letter',id:'test-letter',status:'Pending',branch:'QA',staffId:'crew',staffName:'Test Crew',attendanceLogId:'in',lateMinutes:88,staffShiftProposal:p};
  const attendance={id:'in',branch:'QA',staffId:'crew',staffName:'Test Crew'};
  const choice={...p,key:'night',reportedRevisionId:'original',occupied:true,attendanceOnly:true,blockers:[],undatedLeaveIds:[]};
  let saves=0;
@@ -27,6 +27,7 @@ try{
  workedShiftCorrectionUI:{service:{inspect:async()=>({blockers:[],choices:[choice],timeInAt:start,timeOutAt:end}),propose:()=>choice,apply:async()=>{saves++;}}}};
  const dialog=installOwnerRequestDialog(api,document,{makeService:()=>api.workedShiftCorrectionUI.service});
  const node=await dialog.open({request,attendance,profileId:'crew'});
+ if(!node.textContent.includes('88 reported late minutes'))throw Error('Reported minutes are missing');
  const button=node.querySelector('[data-save]');
  button.focus();button.scrollIntoView({block:'center'});
  const r=button.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
