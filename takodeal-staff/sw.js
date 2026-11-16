@@ -448,11 +448,11 @@ const SHELL_INTEGRITY = {
     "bytes": 1868
   },
   "./staff-employee.css": {
-    "sha256": "aae94a4241a40e0ac8ddc599f6cc0c763b47cf3f3b8d0e8d997382bb46ce1773",
-    "bytes": 3942
+    "sha256": "7e62e4cf00df8ed67a8af9a1598380e07edc248ffa3dd39e341edbac02014f81",
+    "bytes": 3998
   }
 };
-const COHORT_HASH = "da5c130418933d9cc3d2c78d6b83254540dac1c36040ce0460a2d7523a9d3044";
+const COHORT_HASH = "fe6a70e2aaee8d7055225c67e19baaa4aa025d6d42b1bad51f6774442104108c";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces

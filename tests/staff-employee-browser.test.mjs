@@ -14,16 +14,18 @@ const browser=['/usr/bin/google-chrome','/usr/bin/chromium','/opt/google/chrome/
 const exercise=`<script type="module">
 import {installEmployeeProfileSections} from '/staff-employee-sections.js';
 try {
+    if(innerWidth!==Number(location.search.slice(1)))throw Error('Unexpected frame width '+innerWidth);
     const modal=document.getElementById('profileModal');
     modal.style.display='flex';
     const sections=installEmployeeProfileSections(document);
     sections.show({cashierName:'Synthetic crew',role:'Service crew',branch:'Test branch',dateHired:'2025-01-01'});
     for(const name of ['employment','contact','pay','documents','security','personal']){
         const button=modal.querySelector('[data-profile-tab="'+name+'"]');
-        button.scrollIntoView({block:'center'});button.focus();
+        button.focus({preventScroll:true});
         const rect=button.getBoundingClientRect();
+        if(rect.left<0||rect.top<0||rect.right>innerWidth||rect.bottom>innerHeight)throw Error('Tab is outside the viewport: '+name);
         const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
-        if(hit!==button||rect.height<44)throw Error('Cannot tap '+name+' at '+Math.round(rect.x)+','+Math.round(rect.y)+'; hit '+(hit?.dataset?.profileTab||hit?.id||hit?.tagName||'outside viewport')+' height '+rect.height+' viewport '+innerWidth+' layout '+getComputedStyle(button.parentElement).display);
+        if(hit!==button||rect.height<44)throw Error('Cannot tap '+name+' at '+Math.round(rect.x)+','+Math.round(rect.y)+'; hit '+(hit?.dataset?.profileTab||hit?.id||hit?.tagName||'outside viewport')+' height '+rect.height+' viewport '+innerWidth+' layout '+[...button.parentElement.children].map(b=>{const r=b.getBoundingClientRect();return b.textContent+' '+[r.x,r.y,r.width,r.height].map(Math.round).join(',')}).join(' / '));
         hit.click();
         const panel=modal.querySelector('[data-profile-panel="'+name+'"]');
         if(!panel.getClientRects().length||modal.querySelectorAll('[data-profile-panel]:not([hidden])').length!==1)throw Error('Cannot open '+name);
@@ -46,10 +48,10 @@ test('employees can tap all six profile sections at phone and desktop widths',{s
     const cssFiles=['style.css','staff-theme.css','staff-documents.css','staff-employee.css'];
     const styles=(await Promise.all(cssFiles.map(file=>readFile(new URL(file,root),'utf8')))).join('\n');
     const server=createServer(async(req,res)=>{
-        if(req.url==='/frame'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+styles+'</style>'+profile+exercise);return;}
+        if(/^\/frame\?(390|1280)$/.test(req.url)){res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+styles+'</style>'+profile+exercise);return;}
         if(/^\/\?(390|1280)$/.test(req.url)){
             const width=Number(req.url.slice(2));res.setHeader('Content-Type','text/html');
-            res.end('<output id="result">pending</output><script>onmessage=e=>{if(e.origin===location.origin)document.querySelector("output").textContent=e.data}</script><iframe style="width:'+width+'px;height:650px;border:0" src="/frame"></iframe>');return;
+            res.end('<!doctype html><html><body style="margin:0"><output id="result" hidden>pending</output><script>onmessage=e=>{if(e.origin===location.origin)document.querySelector("output").textContent=e.data}</script><iframe style="position:fixed;inset:0;width:'+width+'px;height:650px;border:0" src="/frame?'+width+'"></iframe></body></html>');return;
         }
         if(!/^\/[\w.-]+\.(js|css)$/.test(req.url)){res.writeHead(404).end();return;}
         try{const asset=await readFile(new URL(req.url.slice(1),root));res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':'text/css');res.end(asset);}
@@ -60,8 +62,8 @@ test('employees can tap all six profile sections at phone and desktop widths',{s
         for(const width of [390,1280]){
             const dir=await mkdtemp(join(tmpdir(),'staff-employee-browser-'));
             try{
-                const {stdout}=await promisify(execFile)(browser,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-networking','--no-first-run','--user-data-dir='+dir,'--window-size='+width+',720','--virtual-time-budget=3000','--dump-dom','http://127.0.0.1:'+server.address().port+'/?'+width],{timeout:25000,maxBuffer:2e6});
-                assert.match(stdout,/<output id="result">checked<\/output>/,'Viewport '+width+' '+stdout.match(/<output[^>]*>[^<]*/)?.[0]);
+                const {stdout}=await promisify(execFile)(browser,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-networking','--no-first-run','--user-data-dir='+dir,'--window-size=1440,900','--virtual-time-budget=3000','--dump-dom','http://127.0.0.1:'+server.address().port+'/?'+width],{timeout:25000,maxBuffer:2e6});
+                assert.match(stdout,/<output id="result"[^>]*>checked<\/output>/,'Viewport '+width+' '+stdout.match(/<output[^>]*>[^<]*/)?.[0]);
             }finally{await rm(dir,{recursive:true,force:true,maxRetries:5});}
         }
     }finally{await new Promise(resolve=>server.close(resolve));}

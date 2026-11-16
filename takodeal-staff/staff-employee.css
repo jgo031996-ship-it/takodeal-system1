@@ -5,15 +5,15 @@
 #detectRegistrationBranch {width:auto;margin:0 0 1rem;padding:.45rem .8rem}
 .setup-personal-action[hidden],#profileModal [data-profile-panel][hidden],#btnSaveProfileData[hidden] {display:none!important}
 #profileModal {box-sizing:border-box}
-#profileModal>.modal-card {width:min(100%,840px);min-width:0;overflow:hidden!important}
+#profileModal>.modal-card {width:min(100%,840px);height:min(85dvh,760px);min-width:0;overflow:hidden!important}
 #profileModal>.modal-card>div:first-child {flex-shrink:0}
 .staff-profile-navigation {padding:.75rem 1rem 0;flex:0 0 auto;text-align:left}
 .staff-profile-body {padding:0 1rem 1rem;min-height:0;min-width:0;overflow:auto;flex:1 1 auto;text-align:left}
 .staff-profile-heading {display:grid;gap:.25rem;color:#174235}
 .staff-profile-heading strong {font-size:1.25rem}
 .staff-profile-heading span {color:#4b655a}
-.staff-profile-tabs {display:flex;gap:.4rem;flex-wrap:wrap;padding:.75rem 0;margin-bottom:1rem;border-bottom:1px solid #cee0d5}
-.staff-profile-tabs button {flex:1 0 auto;width:auto;min-height:44px;padding:.4rem .65rem;border:1px solid #c2d5ca;border-radius:8px;color:#244d40;background:white;cursor:pointer;font:inherit}
+.staff-profile-tabs {display:grid;width:100%;grid-template-columns:repeat(6,minmax(0,1fr));gap:.4rem;padding:.75rem 0;margin-bottom:1rem;border-bottom:1px solid #cee0d5}
+.staff-profile-tabs button {width:100%;min-width:0;overflow-wrap:anywhere;min-height:44px;padding:.4rem .65rem;border:1px solid #c2d5ca;border-radius:8px;color:#244d40;background:white;cursor:pointer;font:inherit}
 .staff-profile-tabs button[aria-pressed="true"] {color:white;background:#175640;border-color:#175640;font-weight:700}
 .staff-profile-tabs button:focus-visible, .setup-personal-action:focus-visible {outline:3px solid #b78029;outline-offset:2px}
 .staff-service-fields {margin:.25rem 0 1rem;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
@@ -41,9 +41,10 @@
     .staff-slip-view .staff-slip-attendance td[colspan] {display:block}
     .staff-slip-view .staff-slip-attendance td[colspan]::before {content:none}
 }
+@media(max-width:680px){
+    .staff-profile-tabs {grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:.5rem}
+}
 @media(max-width:520px){
-    .staff-profile-tabs {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:.5rem}
-    .staff-profile-tabs button {min-width:0}
     #profileModal .profile-grid {grid-template-columns:minmax(0,1fr)!important}
     #profileModal input,#profileModal button {max-width:100%;box-sizing:border-box}
 }

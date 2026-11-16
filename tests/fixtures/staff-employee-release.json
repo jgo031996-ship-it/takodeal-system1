@@ -19,7 +19,7 @@
     },
     "takodeal-staff/staff-employee.css": {
       "before": null,
-      "after": "74fd9d55d32b0521dbcf8b413139447234fc94ec"
+      "after": "2999fee9151b82bd0091c705834ba9d49483f6d3"
     },
     "takodeal-staff/staff-pay-phone.js": {
       "before": null,
@@ -59,7 +59,7 @@
     },
     "takodeal-staff/sw.js": {
       "before": "1700b4c355468ea436f27543eebe45d117011e8c",
-      "after": "f1adc5c2ab31b0bb66228ce4068e8d7998a7ef3d"
+      "after": "c06c20ff1044af9f8735b94a36f349b5f64be67b"
     }
   }
 }
