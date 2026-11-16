@@ -1,5 +1,5 @@
-const STAFF_RELEASE = 'staff-plotted-attendance-20261116-r1';
-const CACHE_NAME = 'takodeal-staff-v62-plotted-attendance-20261116-r1';
+const STAFF_RELEASE = 'staff-worked-shift-review-20261116-r1';
+const CACHE_NAME = 'takodeal-staff-v63-worked-shift-review-20261116-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./live-branch-directory.js');
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
@@ -44,12 +44,12 @@ SHELL.push('./staff-startup.js');
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "d66ca49110613799a466aeff9495df658af487617075fff48695438b4d527613",
-    "bytes": 105923
+    "sha256": "ae4888fc6e7d0a45d6d8a0afaa86b6375f2a9055033ebb67bf14b301f3e36d75",
+    "bytes": 105926
   },
   "./index.html": {
-    "sha256": "d66ca49110613799a466aeff9495df658af487617075fff48695438b4d527613",
-    "bytes": 105923
+    "sha256": "ae4888fc6e7d0a45d6d8a0afaa86b6375f2a9055033ebb67bf14b301f3e36d75",
+    "bytes": 105926
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -88,8 +88,8 @@ const SHELL_INTEGRITY = {
     "bytes": 4331
   },
   "./payroll-safety.js": {
-    "sha256": "26fdefdd805391113032d06dbc3eda5608f71d6e985dc992f5b3c308cfd03e62",
-    "bytes": 53035
+    "sha256": "7abcceabe6d33bc438d8b03f0d9316ec84e6f8f55c3b2e173599ad1a519f2e5d",
+    "bytes": 53933
   },
   "./schedule-history.js": {
     "sha256": "07b6752918d47cb4fa5c5cbf273d71a2f15ff5c6baf25f9ec8bfc9429915616c",
@@ -136,8 +136,8 @@ const SHELL_INTEGRITY = {
     "bytes": 12881
   },
   "./worked-shift-reference.js": {
-    "sha256": "880459d2940897c5af3a15b515faaafbb121b9042bc382928d8c742ea80e05fc",
-    "bytes": 7480
+    "sha256": "a2b1dc4498c7852c39d5f33619157b5e05df5c9ac6e6f6f75a0aab44829e39c6",
+    "bytes": 8063
   },
   "./payroll-confirmed-shifts.js": {
     "sha256": "dc96c45597badd52e8cd80a7b7f99797685af82b22098e6ab27f22b1273e601e",
@@ -432,11 +432,11 @@ const SHELL_INTEGRITY = {
     "bytes": 13747
   },
   "./staff-startup.js": {
-    "sha256": "4f85b4593be378b9bebc11f87781cc0ab82082814eb9017c50df7c24a1058e04",
-    "bytes": 18520
+    "sha256": "59da2edbaa1eaf3d006f75e077037cd19e7ea561bdb247b8da0a0b27768a6ce3",
+    "bytes": 18521
   }
 };
-const COHORT_HASH = "5873c658855ffc0a891dbe7e9a0ab6cbecc2b7e40a86af0e077a9b07615a76ac";
+const COHORT_HASH = "5fbb13daa49470294c1b02fccc5b50d7f7ad43f94b61336980fb8d0de3bab313";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces
