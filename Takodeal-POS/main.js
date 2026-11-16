@@ -8896,10 +8896,12 @@ document.addEventListener("DOMContentLoaded", () => {
 // 🛡️ OWNER "GOD MODE" TELEPORTER ENGINE
 // ========================================================
 window.ownerBypassLogin = async function() {
+    const setupOverlay=document.getElementById('deviceSetupOverlay'),setupDisplay=setupOverlay?.style.display;
     try {
         // 1. Trigger Google Login
         const existingOwner=cashierOwnerWorkspace.current();
         if(cashierStartupBusy(window,{ownerSession:existingOwner?.session}))throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
+        if(setupOverlay)setupOverlay.style.display='none';
         const ownerAppName='takodeal-pos-owner-preview-v1';
         const ownerApp=getApps().find(app=>app.name===ownerAppName)||initializeApp(firebaseConfig,ownerAppName);
         if(['projectId','appId','apiKey','authDomain'].some(key=>ownerApp.options?.[key]!==firebaseConfig[key]))throw Error('Owner Access belongs to a different project. Ask HQ to review the app.');
@@ -8982,6 +8984,8 @@ window.ownerBypassLogin = async function() {
         if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
             Swal.fire('Authentication Failed', error.message, 'error');
         }
+    } finally {
+        if(setupOverlay&&setupDisplay&&setupDisplay!=='none'&&!cashierOwnerWorkspace.isToolsMode())setupOverlay.style.display=setupDisplay;
     }
 };
 

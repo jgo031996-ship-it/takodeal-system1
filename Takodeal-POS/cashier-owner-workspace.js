@@ -99,7 +99,7 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
    refreshCashierBranchLabel(w,d);
    const branchLabel=d.getElementById('displayBranchText')||d.getElementById('displayBranch'),cashierLabel=d.getElementById('displayCashierText')||d.getElementById('displayCashier');
    if(branchLabel)branchLabel.textContent=selectedBranch;if(cashierLabel)cashierLabel.textContent='Owner · '+displayName;
-   for(const id of ['loginOverlay','pinOverlay','ownerAccessBtnContainer']){const node=d.getElementById(id);if(node)node.style.display='none';}
+   for(const id of ['loginOverlay','pinOverlay','ownerAccessBtnContainer','deviceSetupOverlay']){const node=d.getElementById(id);if(node)node.style.display='none';}
    emit();return context;
   })();
   flight=work;try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{retired=true;reject(Error('Owner Access could not confirm this branch yet. Keep saved orders and retry when connected.'));},timeoutMs);})]);}

@@ -13,6 +13,7 @@ const script=`
 import {installCashierOwnerRegister} from './cashier-owner-register.js';
 const report=document.getElementById('owner-register-proof');
 try{
+ const setup=document.getElementById('deviceSetupOverlay');setup.style.display='flex';const setupOwner=setup.querySelector('[data-owner-access-portable]');if(!setupOwner)throw Error('Unregistered device hides Owner Access');setupOwner.disabled=false;window.ownerBypassLogin=()=>{window.fixtureSetupAccess=true;setup.style.display='none';};setupOwner.click();if(!window.fixtureSetupAccess||setup.style.display!=='none')throw Error('Setup Owner button failed');
  const db={},user={uid:'fictional'},auth={currentUser:user},session=Object.freeze({branch:'Agdao',workspaceKind:'verified-owner-workspace-v1'}),reads=[];
  const owner={db,user,auth,session,branch:'Agdao',assertCurrent(){if(window.sessionUser!==session)throw Error('changed');}};
  Object.assign(window,{sessionUser:session,currentShift:null,isCashierOwnerToolsMode:()=>window.sessionUser===session,getCashierOwnerWorkspaceContext:()=>owner,collection:(db,table)=>({db,table}),where:(field,op,value)=>({field,op,value}),limit:count=>({count}),orderBy:(field,direction)=>({field,direction}),query:(q,...filters)=>({...q,filters}),stopShiftSalesFeed(){},Swal:{fire:options=>{window.fixtureDetails=options;}}});

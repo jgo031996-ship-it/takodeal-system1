@@ -29,7 +29,7 @@ const extractHandler=source=>{const first=source.indexOf('window.ownerBypassLogi
 function fixture(options={}){
  const values=new Map([['takodeal_device_id','DEV-FICTIONAL1'],['takodeal_device_branch','Registered branch'],['paid-receipts-sentinel','kept exact'],['parked-orders-sentinel','kept exact']]),writes=[],messages=[],nodes=new Map();
  const storage={get length(){return values.size;},key:index=>[...values.keys()][index]??null,getItem:key=>values.get(key)??null,setItem(key,value){writes.push([key,String(value)]);values.set(key,String(value));},removeItem(){assert.fail('Owner entry must not erase a saved record');},clear(){assert.fail('Owner entry must not clear storage');}};
- for(const id of ['loginOverlay','pinOverlay','loginBranchDisplay','displayDeviceLocation'])nodes.set(id,{style:{display:'flex'}});
+ for(const id of ['loginOverlay','pinOverlay','loginBranchDisplay','displayDeviceLocation','deviceSetupOverlay'])nodes.set(id,{style:{display:'flex'}});
  const d={getElementById:id=>nodes.get(id)||null},primary={uid:'fictional-tablet',isAnonymous:true},primaryAuth={currentUser:primary};
  const owner={uid:'fictional-owner',email:'jgo031996@gmail.com',emailVerified:true,isAnonymous:false,displayName:'Fictional Owner',providerData:[{providerId:'google.com'}],getIdTokenResult:async()=>({claims:{sub:'fictional-owner',email:'jgo031996@gmail.com',email_verified:true,firebase:{sign_in_provider:'google.com'}}}),...options.owner},config={projectId:'takodeal-pos',appId:'fictional-app',apiKey:'fictional-public-key',authDomain:'fixture.invalid'},app={name:'takodeal-pos-owner-preview-v1',options:config},ownerAuth={app,currentUser:owner},ownerDb={app},primaryDb={app:{name:'fictional-primary'}};
  const state={popups:0,reads:0,loads:0,messages,writes},w={db:primaryDb,auth:primaryAuth,localStorage:storage,cart:[],platformCarts:{Standard:[],Grab:[],Foodpanda:[]},currentShift:null,
@@ -135,3 +135,7 @@ test('the Owner entry release has five files and six exact inverse hunks to live
  for(const file of ['tests/fixtures/live-branch-directory-inverse.json','tests/fixtures/large-delivery-status-inverse.json','tests/fixtures/cashier-measured-prep-inverse.json','tests/fixtures/cashier-actual-prep-inverse.json'])assert.equal(read(file),baseline(file),file);
 });
 
+
+test('unregistered setup exposes the real Owner entry and is restored on cancel, then hidden after verified inspection',async()=>{
+ const f=fixture();f.values.delete('takodeal_device_id');f.values.delete('takodeal_device_branch');await f.enter();assert.equal(f.nodes.get('deviceSetupOverlay').style.display,'none');assert.equal(f.w.sessionUser.branch,'Preview branch');assert.equal(f.writes.length,0);assert.ok(page.includes('data-owner-access-portable'));const g=fixture({cancel:true});await g.enter();assert.equal(g.nodes.get('deviceSetupOverlay').style.display,'flex');assert.equal(g.w.sessionUser,g.placeholder);assert.equal(g.writes.length,0);
+});
