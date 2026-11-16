@@ -35,7 +35,7 @@
     },
     "takodeal-staff/staff-registration.js": {
       "before": "f16481212d5da0be0c249cf8c6daad6f840df796",
-      "after": "f41396f365bb471e569d32abc5a5a07a27436e74"
+      "after": "55c9b7b6dc2af46c5d23f5f5e22e53a8af103c6c"
     },
     "takodeal-staff/staff-saved-payslips.js": {
       "before": "7889efa9206280741d846de8807eee78f763df57",
@@ -59,7 +59,7 @@
     },
     "takodeal-staff/sw.js": {
       "before": "1700b4c355468ea436f27543eebe45d117011e8c",
-      "after": "e4c3f059583543d9e040604e3bab59276ee6dd59"
+      "after": "328eb1761e75df7d0816da0fe094d280bf131325"
     }
   }
 }

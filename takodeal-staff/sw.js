@@ -72,8 +72,8 @@ const SHELL_INTEGRITY = {
     "bytes": 17508
   },
   "./staff-registration.js": {
-    "sha256": "fac42f33cf3ee8482f997ddf27ad803e8be398b4b1d81beeb560d3d8f2677461",
-    "bytes": 12846
+    "sha256": "67e926ef153866eb12ad1bf2add08e34453726e63f4ba7d1f237b1569265ddb2",
+    "bytes": 12771
   },
   "./staff-phone.js": {
     "sha256": "a96ba955cb33ba00138eacee1fcd6c4f25f15832ae405ee3483d83c1fe06d425",
@@ -452,7 +452,7 @@ const SHELL_INTEGRITY = {
     "bytes": 3417
   }
 };
-const COHORT_HASH = "4616a168ebcb708a69573858d797a069b2b824fe0801229ca76442316467ba7a";
+const COHORT_HASH = "c9cce8a80cce4045bc22c0e6a481aad0955465f539b0fded93f8043483560c08";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces

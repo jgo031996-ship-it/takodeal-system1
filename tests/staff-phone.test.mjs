@@ -130,6 +130,18 @@ test('manual branch registration works without GPS and failures retain a retryab
         approval({exists:()=>true,data:()=>({status:'Approved'}),metadata:{fromCache:false,hasPendingWrites:false}});assert.equal(requests,1);
     });
 });
+test('setup suggests a branch only for a fresh accurate location with one listed match',async()=>{
+    const h=domHarness();let fix=position(300,Date.now());
+    await globals({...h,navigator:{geolocation:{getCurrentPosition:ok=>ok(fix)}}},async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:()=>assert.fail('Location must not submit')});
+        const select=h.node('deviceBranchInput'),locate=h.node('detectRegistrationBranch');
+        await locate.onclick();assert.equal(select.value,'');
+        fix=position(5,Date.now()-90000);await locate.onclick();assert.equal(select.value,'');
+        fix=position(5,Date.now());await locate.onclick();assert.equal(select.value,'Maa');
+        select.value='';h.window.BRANCH_ZONES={Maa:zones.Maa,'Test New Branch':zones.Maa};
+        await locate.onclick();assert.equal(select.value,'');assert.equal(h.store.size,0);
+    });
+});
 test('GPS failure leaves manual registration available and sends no request or approval alert',async()=>{
     const h=domHarness();h.node('deviceNameInput').value='Sample phone';let writes=0;
     await globals({...h,navigator:{geolocation:{getCurrentPosition:(_,fail)=>fail({code:3,message:'Timeout expired'})}}},async()=>{

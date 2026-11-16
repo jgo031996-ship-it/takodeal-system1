@@ -1,3 +1,4 @@
+import {locationAssessment} from './staff-location.js';
 import {installStaffSetupGate} from './staff-setup-access.js';
 // Legacy registration remains available only when the trusted service explicitly
 // returns disabled rollout mode. Public device records never grant protected setup.
@@ -79,12 +80,11 @@ export function installStaffRegistration(config) {
                 new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error()),7500);})
             ]);
             if(!current())return;
-            const {latitude,longitude}=pos.coords;
-            const nearby=Object.entries(window.BRANCH_ZONES||{}).filter(([name])=>listed(name))
-                .map(([name,zone])=>({name,meters:window.getDistanceInMeters(latitude,longitude,zone.lat,zone.lng)}))
-                .filter(row=>Number.isFinite(row.meters)&&row.meters<=(window.ALLOWED_RADIUS_METERS||50));
+            const radius=window.ALLOWED_RADIUS_METERS||50;
+            const nearby=Object.entries(window.BRANCH_ZONES||{}).filter(([name,zone])=>
+                listed(name)&&locationAssessment(pos,{[name]:zone},radius).state==='verified');
             if(nearby.length!==1)throw Error();
-            select.value=nearby[0].name;message('Branch found. Check the selection and tap Request access.');
+            select.value=nearby[0][0];message('Branch found. Check the selection and tap Request access.');
         }catch{if(current()){message('Choose your branch from the list to continue without GPS.');select.focus?.();}}
         finally{clearTimeout(timer);if(attempt===locating)locate.disabled=false;}
     };
