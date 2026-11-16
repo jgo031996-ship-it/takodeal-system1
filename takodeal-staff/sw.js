@@ -44,12 +44,12 @@ SHELL.push('./staff-startup.js','./staff-pay-phone.js','./staff-employee-section
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "574f7a50037e0e126e2a9b75c245c3aea2f9e3da8a9c7caa5d7c6efabdfb941e",
-    "bytes": 108041
+    "sha256": "64cadff5b56488231c017bd7a10e907c20b5bc66ef812c94332a704524645dbf",
+    "bytes": 108248
   },
   "./index.html": {
-    "sha256": "574f7a50037e0e126e2a9b75c245c3aea2f9e3da8a9c7caa5d7c6efabdfb941e",
-    "bytes": 108041
+    "sha256": "64cadff5b56488231c017bd7a10e907c20b5bc66ef812c94332a704524645dbf",
+    "bytes": 108248
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -452,7 +452,7 @@ const SHELL_INTEGRITY = {
     "bytes": 3998
   }
 };
-const COHORT_HASH = "fe6a70e2aaee8d7055225c67e19baaa4aa025d6d42b1bad51f6774442104108c";
+const COHORT_HASH = "6cf156a6376bd66f25dd154e53368e1a634e7d4855a7e6e0d5392ad5b4534bba";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces

@@ -7,7 +7,7 @@
     },
     "takodeal-staff/index.html": {
       "before": "91e879e76f292a304e7c0bcb345c3b7f4f358c3d",
-      "after": "edf49b25e063667e59cf3299f5659ee17fbd973a"
+      "after": "fff9af5c4825605f45e2f2bcbb115e07ad925957"
     },
     "takodeal-staff/private-phone-identity.js": {
       "before": "ed6f71e7639d3dfc557bc747472a8326a913c45d",
@@ -59,7 +59,7 @@
     },
     "takodeal-staff/sw.js": {
       "before": "1700b4c355468ea436f27543eebe45d117011e8c",
-      "after": "c06c20ff1044af9f8735b94a36f349b5f64be67b"
+      "after": "3369a294825150f28c12729c3286cf3e2a6060b8"
     }
   }
 }

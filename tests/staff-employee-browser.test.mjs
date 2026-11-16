@@ -16,6 +16,10 @@ import {installEmployeeProfileSections} from '/staff-employee-sections.js';
 try {
     if(innerWidth!==Number(location.search.slice(1)))throw Error('Unexpected frame width '+innerWidth);
     const modal=document.getElementById('profileModal');
+    const body=modal.querySelector('.modal-card>.staff-profile-body');
+    if(modal.children.length!==1||body?.querySelectorAll(':scope > [data-profile-panel]').length!==6||
+       !modal.querySelector('#staffPanelDocuments #staffDocumentCards')||!modal.querySelector('.modal-card #btnSaveProfileData'))
+        throw Error('The profile sections must share a card and keep their own controls.');
     modal.style.display='flex';
     const sections=installEmployeeProfileSections(document);
     sections.show({cashierName:'Synthetic crew',role:'Service crew',branch:'Test branch',dateHired:'2025-01-01'});
