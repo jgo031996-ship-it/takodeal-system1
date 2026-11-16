@@ -118,7 +118,7 @@ async function workedLetterIntegration(boundary=false,occupied=false,quick){
  for(const name of ['updateLateRequestPreview','openLateRequestAttendance','handleRequest','submitCurrentRequestReply','submitRequestReply'])vm.runInContext(handler(name),context);
  if(quick){
   api.workedShiftCorrectionUI=installWorkedShiftCorrectionUI(api,document,{service:f.service});
-  api.ownerRequestDialog=installOwnerRequestDialog(api,document);
+  api.ownerRequestDialog=installOwnerRequestDialog(api,document,{makeService:()=>f.service});
   const reqPath='staff_requests/'+requestId,attendancePath='attendance_logs/'+start.id,original=f.get(reqPath);
   if(quick.startsWith('declaration')){
    const p=original.staffShiftProposal;

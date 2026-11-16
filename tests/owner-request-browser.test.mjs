@@ -25,7 +25,7 @@ try{
  const api={auth:{currentUser:{uid:'synthetic',email:OWNER_EMAIL,emailVerified:true,providerData:[{providerId:'google.com'}]}},
  sessionUser:{uid:'synthetic',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']},isBranchAllowed:()=>true,
  workedShiftCorrectionUI:{service:{inspect:async()=>({blockers:[],choices:[choice],timeInAt:start,timeOutAt:end}),propose:()=>choice,apply:async()=>{saves++;}}}};
- const dialog=installOwnerRequestDialog(api,document);
+ const dialog=installOwnerRequestDialog(api,document,{makeService:()=>api.workedShiftCorrectionUI.service});
  const node=await dialog.open({request,attendance,profileId:'crew'});
  const button=node.querySelector('[data-save]');
  button.focus();button.scrollIntoView({block:'center'});
@@ -38,12 +38,17 @@ try{
  const blocked=await dialog.open({request,attendance,profileId:'crew'}),next=blocked.querySelector('[data-save]');
  if(next.disabled||next.textContent!=='Open linked attendance')throw Error('No usable recovery action');
  next.click();await Promise.resolve();if(linked!=='in'||saves!==1)throw Error('Wrong recovery target');
- document.querySelector('output').textContent='checked';
-}catch(error){document.querySelector('output').textContent=error.message;}
+ if(innerWidth!==Number(location.search.slice(1)))throw Error('Unexpected CSS viewport '+innerWidth);
+ document.querySelector('output').textContent='checked';parent.postMessage('checked',location.origin);
+}catch(error){document.querySelector('output').textContent=error.message;parent.postMessage(error.message,location.origin);}
 </script></body></html>`;
 test('browser can focus and click the Owner decision and its recovery action at phone and desktop widths',{skip:!chrome,timeout:60000},async()=>{
  const server=createServer(async(req,res)=>{
-  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end(fixture);return;}
+  if(/^\/frame\?(390|1280)$/.test(req.url)){res.setHeader('Content-Type','text/html');res.end(fixture);return;}
+  if(/^\/\?(390|1280)$/.test(req.url)){
+   const width=Number(req.url.slice(2));res.setHeader('Content-Type','text/html');
+   res.end('<output id="result">pending</output><script>onmessage=e=>{if(e.origin===location.origin)document.querySelector("output").textContent=e.data}</script><iframe style="width:'+width+'px;height:650px;border:0" src="/frame?'+width+'"></iframe>');return;
+  }
   if(!/^\/[\w.-]+\.(js|css)$/.test(req.url)){res.writeHead(404).end();return;}
   try{const file=await readFile(new URL(req.url.slice(1),root));res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':'text/css');res.end(file);}
   catch{res.writeHead(404).end();}
@@ -51,7 +56,7 @@ test('browser can focus and click the Owner decision and its recovery action at 
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{for(const width of [390,1280]){
   const profile=await mkdtemp(join(tmpdir(),'owner-request-browser-'));
-  try{const {stdout}=await promisify(execFile)(chrome,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-networking','--no-first-run','--user-data-dir='+profile,'--window-size='+width+',720','--virtual-time-budget=2500','--dump-dom','http://127.0.0.1:'+server.address().port],{timeout:22000,maxBuffer:2e6});
+  try{const {stdout}=await promisify(execFile)(chrome,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-networking','--no-first-run','--user-data-dir='+profile,'--window-size='+width+',720','--virtual-time-budget=2500','--dump-dom','http://127.0.0.1:'+server.address().port+'/?'+width],{timeout:22000,maxBuffer:2e6});
    assert.match(stdout,/<output id="result">checked<\/output>/,'Browser width '+width+': '+stdout.match(/<output[^>]*>[^<]*/)?.[0]);}
   finally{await rm(profile,{recursive:true,force:true,maxRetries:3});}
  }}finally{await new Promise(resolve=>server.close(resolve));}

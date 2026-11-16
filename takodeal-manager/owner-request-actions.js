@@ -29,7 +29,7 @@ function decisionApi(api,tx,changes,current){
     return adapter;
 }
 
-export async function prepareInboxShift(api,{request,attendance,profileId,fingerprint,assertCurrent}){
+export async function prepareInboxShift(api,{request,attendance,profileId,fingerprint,assertCurrent},service=createWorkedShiftCorrectionService(api)){
     const user=api.auth?.currentUser,session=api.sessionUser;
     function current(){
         assertCurrent();
@@ -44,7 +44,6 @@ export async function prepareInboxShift(api,{request,attendance,profileId,finger
         throw Error('Choose the exact saved employee, branch and shift in attendance.');
     if(request.scheduleDeclaration&&scheduleDeclarationSourceFingerprint(request,attendance)!==fingerprint)
         throw Error('Reopen the declaration to check its original clock-in.');
-    const service=api.workedShiftCorrectionUI?.service||createWorkedShiftCorrectionService(api);
     const view=await service.inspect({attendanceLogId:attendance.id,staffId:request.staffId,branch:request.branch,workDate:p.workDate});
     current();
     if(view.blockers.length)throw Error(view.blockers.join(' '));

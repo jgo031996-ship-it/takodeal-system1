@@ -10015,7 +10015,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName, op
     const isReasonLetter = !isLateLetter && (type === "Reason Letter" || type === "Cash Shortage / Mishandling");
 
     const modalHtml = `
-        <div id="dynamicReplyModal" role="dialog" aria-modal="true" aria-labelledby="requestReplyTitle" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
+        <div id="dynamicReplyModal" data-request-kind="${isLateLetter ? 'lateness' : isReasonLetter ? 'statement' : amount > 0 ? 'finance' : 'general'}" role="dialog" aria-modal="true" aria-labelledby="requestReplyTitle" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
             <div style="background: white; padding: 25px; border-radius: 12px; width: 450px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
                 <h3 id="requestReplyTitle" style="margin-top: 0; color: #174c3c;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} ${requestEscape(type)}</h3>
                 <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${requestEscape(staffName)}</strong> regarding this ${requestEscape(type)}.</p>

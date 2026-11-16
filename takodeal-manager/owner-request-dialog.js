@@ -4,7 +4,7 @@ import {acknowledgeScheduleDeclaration} from './attendance-swap-declaration.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time=value=>new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
 
-export function installOwnerRequestDialog(api,d){
+export function installOwnerRequestDialog(api,d,{makeService}={}){
     let active=null;
     function canOpen(request){
         return canResolveInboxShift(api,request.branch);
@@ -40,18 +40,21 @@ export function installOwnerRequestDialog(api,d){
         node.addEventListener('close',release);
         node.addEventListener('cancel',event=>{if(state.busy)event.preventDefault();});
         close.onclick=()=>{if(!state.busy)node.close();};
-        function openAttendance(){
+        async function openAttendance(){
             current();
             if(typeof api.openAttendanceRecovery!=='function')throw Error('Attendance is still loading. Reopen the Inbox and try again.');
             const args={staffId:request.staffId,staffName:request.staffName,branch:request.branch,attendanceLogId:attendance.id,from:p.workDate,to:p.workDate};
-            node.close();return api.openAttendanceRecovery(args);
+            const shown=await api.openAttendanceRecovery(args);
+            if(shown===false)throw Error('The linked attendance could not open. Check your connection and retry.');
+            if(node.open)node.close();
+            return shown;
         }
         async function act(ackOnly){
             if(state.busy||!node.open)return;
             let saved=false;
             try{
                 current();
-                if(!ackOnly&&blocked)return await openAttendance();
+                if(!ackOnly&&blocked){state.busy=true;close.disabled=alt.disabled=save.disabled=true;return await openAttendance();}
                 if(ackOnly&&!declaration){node.close();return await manual();}
                 if(!ackOnly&&!review)return;
                 state.busy=true;close.disabled=alt.disabled=save.disabled=true;
@@ -72,9 +75,13 @@ export function installOwnerRequestDialog(api,d){
             }
         }
         save.onclick=()=>act(false);alt.onclick=()=>act(true);
+        let timer;
         try{
             if(referenceError)throw Error(referenceError);
-            review=await prepareInboxShift(api,{request,attendance,profileId,fingerprint,assertCurrent:current});current();
+            review=await Promise.race([
+                prepareInboxShift(api,{request,attendance,profileId,fingerprint,assertCurrent:current},makeService?.()),
+                new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Roster check timed out. Reopen the request to retry or open the linked attendance.')),15000);})
+            ]);current();
             const row=review.row;
             notes.textContent=[row.occupied&&!declaration?'Only this employee’s duty is confirmed. The coworker keeps their plotted shift.':(!row.attendanceOnly&&!row.alreadyCorrected?'The saved roster will use this shift for this employee on this date.':''),
                 row.undatedLeaveIds.length?'A leave has incomplete dates. Confirm only if you verified the employee worked this shift.':''].filter(Boolean).join(' ');
@@ -83,7 +90,7 @@ export function installOwnerRequestDialog(api,d){
         }catch(error){
             if(active!==state||!node.open)return;
             blocked=true;save.textContent='Open linked attendance';status.textContent=error.message;
-        }
+        }finally{clearTimeout(timer);}
         if(active===state&&node.open&&!state.busy)save.disabled=false;
         return node;
     }

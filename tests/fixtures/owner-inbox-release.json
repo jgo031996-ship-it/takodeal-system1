@@ -3,7 +3,7 @@
   "files": {
     "takodeal-manager/attendance-swap-declaration.js": {
       "before": "d53da3e02f9a6731c29483375be73ca5c1f3d9dc",
-      "after": "e2679f144ee505729392067c1f7e1e3496147811"
+      "after": "24a1b51cba43846c18478d2f7d4b81955b912eb2"
     },
     "takodeal-manager/auth.js": {
       "before": "4ff3c5b854f00458ccc99e442f3da1b09eee6fea",
@@ -15,19 +15,19 @@
     },
     "takodeal-manager/main.js": {
       "before": "7176d23dfbadcb6e2bea5fcf849f1915feeb90c4",
-      "after": "29d68308026bb0aac348356d8d56acbe4bbc49bf"
+      "after": "69bad95679c4524f2bc0bac59191c194887afaf3"
     },
     "takodeal-manager/owner-request-actions.js": {
       "before": null,
-      "after": "a9d8e72939b4d239415f5dbbbf035d3214f5833e"
+      "after": "efb9f501e06b5e94e03eeead5e13df0bb5230844"
     },
     "takodeal-manager/owner-request-dialog.css": {
       "before": null,
-      "after": "111d318b607dae31ed825201134521907d89b127"
+      "after": "4399d116a2a834ff4f63f4953248729c714457ab"
     },
     "takodeal-manager/owner-request-dialog.js": {
       "before": null,
-      "after": "0de935fa95c6f7a2e3dda4e50925238461e3f61a"
+      "after": "093296eb3255ba869edb20293221878570254d58"
     },
     "takodeal-manager/owner-update-notice.js": {
       "before": "47739b2cc5a4fdeb73eca2dcfbf80495fd7540fa",

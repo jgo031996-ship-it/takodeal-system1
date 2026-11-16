@@ -36,3 +36,8 @@
   .owner-request-dialog footer button { flex: 1 1 auto; }
   .owner-request-dialog footer [data-save] { flex-basis: 100%; }
 }
+
+#dynamicReplyModal { --request-accent: #176550; }
+#dynamicReplyModal[data-request-kind="lateness"] { --request-accent: #68481d; }
+#dynamicReplyModal[data-request-kind="finance"] { --request-accent: #24536a; }
+#dynamicReplyModal #requestReplyTitle { border-left: 4px solid var(--request-accent); padding-left: .65rem; }
