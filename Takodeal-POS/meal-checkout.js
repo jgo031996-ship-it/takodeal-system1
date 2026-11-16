@@ -68,7 +68,6 @@ export async function findMealIdentity(api,pin,level) {
 }
 export function installMealCheckout({window:w=window,document:d=document}={}) {
     const settings=()=>w.masterPOSData?.settings||{};
-    const read=async(source,field,value)=>{const snap=await bounded(w.getDocsFromServer(w.query(w.collection(w.db,source),w.where(field,'==',value))));return snap.docs.map(row=>({id:row.id,data:row.data()}));};
     w.isMealDiscount=isMealType;
     w.getMealLevel=id=>requireMealLevel(settings(),id);
     w.calculateMealDiscount=id=>mealDiscount(w.cart||[],w.masterPOSData?.items||[],w.getMealLevel(id),w.currentGrandTotal||0);
@@ -87,29 +86,33 @@ export function installMealCheckout({window:w=window,document:d=document}={}) {
     };
     w.collectCustomCheckoutFields=()=>checkoutSelections(settings().customCheckoutFields||[],Object.fromEntries([...d.querySelectorAll('[data-checkout-field]')].map(node=>[node.dataset.checkoutField,node.value])));
     w.authorizeMealPin=async(pin,id,{refresh=false}={})=>{
+        const session=w.sessionUser,branch=w.localStorage?.getItem('takodeal_device_branch'),key=JSON.stringify([session?.staffId??session?.id??null,session?.cashierName,session?.branch,session?.pin??null]);
+        const guard=()=>{const current=w.sessionUser;if(current!==session||w.localStorage?.getItem('takodeal_device_branch')!==branch||JSON.stringify([current?.staffId??current?.id??null,current?.cashierName,current?.branch,current?.pin??null])!==key)throw Error('The cashier or branch changed. Reopen this meal checkout.');};
+        const api=typeof w.resolveCashierMealApi==='function'?await w.resolveCashierMealApi({assertCurrent:guard}):w;guard();
+        const read=async(source,field,value)=>{const snap=await bounded(api.getDocsFromServer(api.query(api.collection(api.db,source),api.where(field,'==',value))));guard();return snap.docs.map(row=>({id:row.id,data:row.data()}));};
         if(refresh){
-            const snap=await bounded(w.getDocFromServer(w.doc(w.db,'settings','global_pos_config'))),data=snap.exists()?snap.data():{};
-            w.masterPOSData.settings={...settings(),...data};
+            const snap=await bounded(api.getDocFromServer(api.doc(api.db,'settings','global_pos_config'))),data=snap.exists()?snap.data():{};
+            guard();w.masterPOSData.settings={...settings(),...data};
         }
         const level=requireMealLevel(settings(),id);
         const deviceId=w.localStorage?.getItem('takodeal_device_id');
         if(deviceId){const devices=await read('pos_devices','deviceId',deviceId);if(devices.some(row=>String(row.data.status||'').toLowerCase()==='blocked'))throw Error('This device is blocked. Ask HQ to review device access.');}
-        const identity=await findMealIdentity({read},String(pin),level);
+        const identity=await findMealIdentity({read},String(pin),level);guard();
         // Apply the staff daily limit to every level that permits Staff, even a custom level.
         if(identity.role==='staff'){
-            const start=new Date();start.setHours(0,0,0,0);
-            const queued = await w.saleOutbox?.list?.() || [];
+            const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),start=new Date(day+'T00:00:00+08:00');
+            const queued = await w.saleOutbox?.list?.() || [];guard();
             if(queued.some(row=>{const sale=row.payload;return sale.mealStaffName===identity.cashierName && sale.mealRole==='staff' && new Date(sale.localTimestamp)>=start;}))
                 throw Error('This staff member already has a meal awaiting synchronization today.');
             let requests;
-            try{requests=await readStaffMealClaims(w,{staffName:identity.cashierName,start});}
+            try{requests=await readStaffMealClaims(api,{staffName:identity.cashierName,start});guard();}
             catch(error){
                 if(error?.code){const failure=Error('Meal verification could not finish. Your cart is unchanged and no meal was recorded. Check the connection and retry, or ask HQ to review access.');failure.code=error.code;failure.cause=error;throw failure;}
                 throw error;
             }
             if(requests.docs.some(row=>mealRequest(row.data())))throw Error('This staff member has already claimed one meal today.');
         }
-        return {...identity,level};
+        guard();return {...identity,level};
     };
     w.verifyStaffMealPin=async()=>{
         const pin=d.getElementById('checkoutStaffPin').value,id=d.getElementById('checkoutDiscountType').value,name=d.getElementById('finalCustomerName');

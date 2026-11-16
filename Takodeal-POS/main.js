@@ -1,3 +1,4 @@
+import {createCashierMealContext} from './cashier-meal-context.js';
 import {readCashierBranchPolicy} from './cashier-branch-policy.js';
 import {createPlottedTimeInBatch} from './plotted-time-in.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
@@ -136,6 +137,8 @@ window.getDoc = getDoc;
 window.setDoc = setDoc;
 // Device approvals use their own matching auth/database context when Google is signed in.
 const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+const cashierMealContext=createCashierMealContext(window,{primaryAuth:auth,deviceContext:cashierDeviceContext});
+window.resolveCashierMealApi=options=>cashierMealContext.read(options);
 const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
 const cashierOwnerWorkspace=createCashierOwnerWorkspace(window,document,{primaryAuth:auth,primaryDb:db,firebaseConfig});
 window.getCashierOwnerWorkspaceContext=()=>cashierOwnerWorkspace.current();
@@ -1334,7 +1337,7 @@ window.recipeFeed = createRecipeFeed({db,doc,collection,getDocFromServer,getDocs
         window.masterPOSData.recipeVersion=snapshot.version; window.masterPOSData.recipeRevisionId=snapshot.revisionId;},
     report:error=>console.warn('Recipe refresh is awaiting connection:',error)
 });
-installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot });
+installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot, resolveMealApi:payload=>cashierMealContext.sale(payload) });
 const shiftSalesFeed = createShiftSalesFeed({db, collection, query, where, onSnapshot}, rows => {
     if (document.getElementById('view-sales')?.classList.contains('active') && window.sessionUser && window.currentShift) {
         return window.loadSalesDashboard?.(rows);
