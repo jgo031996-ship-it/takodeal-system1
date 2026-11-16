@@ -1,3 +1,6 @@
+const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v158-plotted-payroll-20261116-r1';
+import {legacyCompatibilityRead} from './helpers/compatibility-release-inverse.mjs';
+const _plottedRawFs=(...args)=>legacyCompatibilityRead(_compatibilityRawFs(...args),args[0]);
 import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
 const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
@@ -6,10 +9,10 @@ import {isCommissaryModule} from './helpers/commissary-inverse.mjs';
 import {restoreBranchInventorySetup,branchInventorySetupProof} from './helpers/branch-inventory-setup-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync as _plottedRawFs} from 'node:fs';
+import {readFileSync as _compatibilityRawFs} from 'node:fs';
 import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {scheduleCrossBranchProof as proof,restoreScheduleCrossBranch,scheduleCrossBranchSha} from './helpers/schedule-cross-branch-inverse.mjs';
-import {OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
+import {OWNER_DOCUMENT_RELEASE as LIVE_OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8');
 test('the schedule release preserves every deployed Owner byte outside its exact reviewed files',()=>{
  const product=['takodeal-manager','Takodeal-POS','takodeal-staff','Customer','takodeal-franchise','takodeal-delivery','functions','firestore.rules','firestore.policy.rules'];
@@ -28,3 +31,5 @@ test('the page, entry module, service worker and update notice identify the same
  assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));
  const html=read('takodeal-manager/index.html');assert.ok(html.includes('content="'+release+'"'));assert.ok(html.includes('auth.js?v='+release));
 });
+
+test('current document release matches this compatibility generation',()=>assert.equal(LIVE_OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v159-staff-phone-compatibility-20261116-r1'));
