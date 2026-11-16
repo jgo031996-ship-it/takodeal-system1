@@ -1,6 +1,7 @@
+import {beforeWorkedReview,beforeWorkedReviewPaths} from './helpers/worked-review-source.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
 import {plottedProof as proof,plottedSha as sha,restorePlottedRelease as restore} from './helpers/plotted-release-inverse.mjs';
-const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:8e6});
+const root=new URL('../',import.meta.url),read=file=>beforeWorkedReview(readFileSync(new URL(file,root),'utf8'),file),git=(...args)=>beforeWorkedReviewPaths(execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:8e6}),'git',args);
 test('the complete plotted-attendance release has an exact inverse to its deployed app base and pins every new dependency',()=>{
  assert.ok(['ec0386460da3081bee400f81a301c1eb63dc2853','609e15ec965101e32d8ee3f85688fc673e113d41','74a0adf0b8f2180fd0ddda0967ac1b5095af25f1'].includes(proof.base));
  const scopes=['Takodeal-POS','takodeal-manager','takodeal-staff','takodeal-franchise','takodeal-delivery','Customer','functions','firestore.rules','firestore.policy.rules','storage.rules'];

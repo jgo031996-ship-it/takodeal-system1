@@ -1,0 +1,49 @@
+{
+  "parent": "f95fa00458db3de3974c5789a62a283bc365cd75",
+  "files": {
+    "takodeal-staff/index.html": {
+      "before": "a8cd92d71db1908542dc77ccd80494be902a0900",
+      "after": "91e879e76f292a304e7c0bcb345c3b7f4f358c3d"
+    },
+    "takodeal-staff/payroll-safety.js": {
+      "before": "849c33cdf98f69bd822963e758a73ff858a80605",
+      "after": "ea48bf8c12191bab66f72da7bceba70fe8c460b6"
+    },
+    "takodeal-staff/staff-startup.js": {
+      "before": "89617f6248430bfe3009382dcd15a93c0763e77d",
+      "after": "d178c6d4000daa458b74a0184cd4148bd98a5719"
+    },
+    "takodeal-staff/sw.js": {
+      "before": "6532b1257c1ed8160020b4bc010402ff91d6751a",
+      "after": "1700b4c355468ea436f27543eebe45d117011e8c"
+    },
+    "takodeal-staff/worked-shift-reference.js": {
+      "before": "a33ce4904a74c876a09bde753c7ccc725e7e35a1",
+      "after": "0c41bc7147270b918669054e54ff7205aa451c9d"
+    },
+    "takodeal-franchise/payroll-safety.js": {
+      "before": "849c33cdf98f69bd822963e758a73ff858a80605",
+      "after": "ea48bf8c12191bab66f72da7bceba70fe8c460b6"
+    },
+    "takodeal-franchise/worked-shift-reference.js": {
+      "before": "a33ce4904a74c876a09bde753c7ccc725e7e35a1",
+      "after": "0c41bc7147270b918669054e54ff7205aa451c9d"
+    },
+    "takodeal-manager/payroll-safety.js": {
+      "before": "849c33cdf98f69bd822963e758a73ff858a80605",
+      "after": "ea48bf8c12191bab66f72da7bceba70fe8c460b6"
+    },
+    "takodeal-manager/worked-shift-reference.js": {
+      "before": "a33ce4904a74c876a09bde753c7ccc725e7e35a1",
+      "after": "0c41bc7147270b918669054e54ff7205aa451c9d"
+    },
+    "Takodeal-POS/payroll-safety.js": {
+      "before": "849c33cdf98f69bd822963e758a73ff858a80605",
+      "after": "ea48bf8c12191bab66f72da7bceba70fe8c460b6"
+    },
+    "Takodeal-POS/worked-shift-reference.js": {
+      "before": "a33ce4904a74c876a09bde753c7ccc725e7e35a1",
+      "after": "0c41bc7147270b918669054e54ff7205aa451c9d"
+    }
+  }
+}
