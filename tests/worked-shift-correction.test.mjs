@@ -18,6 +18,10 @@ import {resolveEmergencyShift} from '../takodeal-manager/emergency-shift-model.j
 import {createScheduleHistoryStore,scheduleDateKey} from '../takodeal-manager/schedule-history.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
 import {reviewLateRequestWorkedShift,reviewLateRequestDatedAttendance} from '../takodeal-manager/late-request-worked-shift-ui.js';
+import {clockInDeclarationIdentity} from '../takodeal-staff/attendance-shift-declaration.js';
+import {attendanceScheduleIdentity} from '../takodeal-staff/attendance-schedule-preview.js';
+import {installOwnerRequestDialog} from '../takodeal-manager/owner-request-dialog.js';
+import {installScheduleDeclarationReview} from '../takodeal-manager/attendance-swap-declaration.js';
 import {ReviewDocument,ReviewElement} from './helpers/review-dom.mjs';
 
 const owner='jgo031996@gmail.com',branch='Fictional Branch',name='Fictional Crew',staffId='fictional-crew',metadata={fromCache:false,hasPendingWrites:false};
@@ -100,7 +104,7 @@ test('a cross-branch plotted assignment and a separately completed same-day duty
 test('a fresh app session recognizes the same already-audited actual pair instead of appending a duplicate correction',async()=>{const f=fixture();await apply(f);const before=f.calls.writes.length,another=f.makeService(),view=await another.inspect(f.context),choice=view.choices.find(row=>row.shiftId==='night');assert.equal(choice.alreadyCorrected,true);const result=await another.apply(another.propose(view));assert.equal(result.alreadySaved,true);assert.equal(result.revisionId,'worked-operation-1');assert.equal(f.calls.writes.length,before);assert.equal(revisions(f).length,1);});
 const windowQueries=f=>f.calls.queries.filter(query=>query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='timestamp'));
 
-async function workedLetterIntegration(boundary=false,occupied=false){
+async function workedLetterIntegration(boundary=false,occupied=false,quick){
  const nightSlots=occupied?{rules:[rule('morning','09:00','17:30','morning'),rule('night','17:30','02:00','night'),rule('night2','17:30','02:00','night')],extraDay:{scheduled:{morning:'CREW',night:'Crew A',night2:'Crew B'}}}:{};
  const f=fixture(nightSlots),requestId='worked-letter',start=f.get('attendance_logs/'+f.start.id);start.lateMinutes=88;delete start.lateDecision;
  if(occupied)f.put('staff_requests/undated',{type:'Leave',status:'Approved',staffId,staffName:name});
@@ -112,6 +116,50 @@ async function workedLetterIntegration(boundary=false,occupied=false){
  const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),handler=name=>{const begin=main.indexOf('\nwindow.'+name+' = '),end=main.indexOf('\n};',begin+1);return main.slice(begin+1,end+3);};
  const context=vm.createContext({...payrollFunctions,...lateSummaries,...lateResolution,...proposals,reviewLateRequestWorkedShift,reviewLateRequestDatedAttendance,resolveEmergencyShift,attendanceMillis,scheduleDateKey,OWNER_EMAIL:owner,requestEscape:value=>String(value??''),window:api,document,Date,console,tkOwnerDoc:ref=>api.getDocFromServer(ref),tkOwnerDocs:q=>api.getDocsFromServer(q),Swal:{fire:(...args)=>alerts.push(args)}});
  for(const name of ['updateLateRequestPreview','openLateRequestAttendance','handleRequest','submitCurrentRequestReply','submitRequestReply'])vm.runInContext(handler(name),context);
+ if(quick){
+  api.workedShiftCorrectionUI=installWorkedShiftCorrectionUI(api,document,{service:f.service});
+  api.ownerRequestDialog=installOwnerRequestDialog(api,document);
+  const reqPath='staff_requests/'+requestId,attendancePath='attendance_logs/'+start.id,original=f.get(reqPath);
+  if(quick.startsWith('declaration')){
+   const p=original.staffShiftProposal;
+   const declaration={schemaVersion:1,kind:'unrequested-swap',referenceOnly:true,staffId,staffName:name,attendanceBranch:branch,
+    coworkerStaffId:'crew-a',coworkerName:'Crew A',coworkerHomeBranch:branch,targetBranch:branch,workDate:p.workDate,targetShiftId:p.shiftId,
+    targetShiftName:p.shiftName,targetAssignedName:'Crew A',targetStartAt:p.expectedStartAt,targetEndAt:p.expectedEndAt,
+    declaredAt:start.timestamp.toISOString(),sourceRevisionId:p.sourceRevisionId,sourceFingerprint:'reference',originalScheduleFingerprint:'punch',explanation:'Reported night duty.'};
+   const keys=['coworkerStaffId','coworkerName','coworkerHomeBranch','workDate','targetBranch','targetShiftId','targetShiftName','targetAssignedName','targetStartAt','targetEndAt','sourceRevisionId'];
+   declaration.sourceFingerprint=clockInDeclarationIdentity({...Object.fromEntries(keys.map(k=>[k,declaration[k]])),shiftType:'night',amendmentIds:[]});
+   declaration.originalScheduleFingerprint=attendanceScheduleIdentity(start.scheduleSnapshot);
+   f.put(reqPath,{...original,type:'Schedule Declaration',scheduleDeclaration:declaration});
+   f.put(attendancePath,{...f.get(attendancePath),scheduleDeclaration:declaration,scheduleDeclarationRequestId:requestId});
+  }
+  if(quick==='paid')f.put('payroll_records/paid-test',{staffId,staffName:name,startDate:'2026-10-16',endDate:'2026-10-31',isPaid:true});
+  if(quick==='source'){const altered={...original.staffShiftProposal,sourceFingerprint:'wrong'};f.put(reqPath,{...original,staffShiftProposal:altered});}
+  if(quick==='active')f.docs.delete('attendance_logs/'+f.out.id);
+  let opened;
+  api.openAttendanceRecovery=args=>{opened=args;};
+  const initial=structuredClone([...f.docs]);
+  if(quick.startsWith('declaration'))await installScheduleDeclarationReview(api,document).open(requestId);
+  else await api.handleRequest(requestId,'Approved','Reason Letter',0,name);
+  const node=document.querySelector('[data-request-kind]');assert.ok(node,JSON.stringify(alerts));
+  const button=node.querySelector('[data-save]'),alt=node.querySelector('[data-alt]'),status=node.querySelector('[data-status]');
+  assert.deepEqual([...f.docs],initial);assert.equal(button.disabled,false);
+  if(quick==='keep'){await alt.onclick();assert.equal(document.getElementById('replyStaffShiftDecision').value,'Keep original assigned hours');assert.deepEqual([...f.docs],initial);return;}
+  if(['active','paid','source'].includes(quick)){assert.equal(button.textContent,'Open linked attendance');await button.onclick();assert.equal(opened.attendanceLogId,start.id);assert.deepEqual([...f.docs],initial);return;}
+  if(quick==='declaration-only'){await alt.onclick();assert.equal(f.get(reqPath).status,'Reviewed');assert.equal(revisions(f).length,0);return;}
+  if(quick==='stale')f.put(reqPath,{...original,explanationMessage:'A different explanation.'});
+  if(quick==='failure')f.failNextCommit();
+  if(quick==='lost')f.loseNextAck();
+  await Promise.all([button.onclick(),button.onclick()]);
+  if(quick==='stale'){assert.equal(revisions(f).length,0);assert.equal(f.get(reqPath).status,'Pending');return;}
+  if(quick==='failure'){assert.deepEqual([...f.docs],initial);assert.equal(button.disabled,false);await button.onclick();}
+  if(quick==='lost'){assert.equal(revisions(f).length,1);await button.onclick();}
+  const saved=f.get(reqPath),isDecl=quick.startsWith('declaration');
+  assert.equal(saved.status,isDecl?'Reviewed':'Approved',status.textContent+' '+JSON.stringify(alerts));
+  assert.equal(saved.ownerShiftResolution.revisionId,'worked-operation-1');assert.equal(revisions(f).length,1);
+  assert.equal(f.get(attendancePath).lateExempted,!isDecl);assert.equal(f.get(attendancePath).lateMinutes,88);
+  if(occupied)assert.deepEqual(f.get('settings/schedule_revision_worked-operation-1').snapshot.currentSchedule[17][branch],f.snapshot.currentSchedule[17][branch]);
+  return;
+ }
  await api.handleRequest(requestId,'Approved','Reason Letter',0,name);assert.equal(document.getElementById('btnSubmitReply').disabled,true);document.getElementById('replyMessage').value='Swapped and approved; exact Night hours checked.';
  api.workedShiftCorrectionUI=installWorkedShiftCorrectionUI(api,document,{service:f.service});
  const dialog=await api.openLateRequestAttendance();assert.ok(dialog?.querySelector,JSON.stringify(alerts));const confirm=dialog.querySelector('[data-apply]');
@@ -149,3 +197,7 @@ test('a held default window response cannot cross a replaced Owner account or br
  f.api.getDocsFromServer=async query=>{if(query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='timestamp')){arrive();await gate;}return read(query);};const pending=inspect(f);await entered;f.api.auth.currentUser={...f.api.auth.currentUser};release();await assert.rejects(pending,/Owner account/);assert.equal(f.calls.writes.length,0);assert.equal(f.calls.transactionReads.length,0);
 });
 test('the bounded default reader rejects an overfull or unconfirmed window before selecting any source',async()=>{for(const mode of ['overfull','cached']){const f=fixture({defaultReader:true});if(mode==='overfull')for(let i=0;i<2000;i++)f.put('attendance_logs/foreign-'+i,{...f.start,id:'foreign-'+i,staffId:'different-staff'});else{const read=f.api.getDocsFromServer;f.api.getDocsFromServer=async query=>{const snapshot=await read(query);return query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='timestamp')?{...snapshot,metadata:{fromCache:true,hasPendingWrites:false}}:snapshot;};}await assert.rejects(inspect(f),/Too many attendance records|Reconnect to HQ/);assert.equal(f.calls.writes.length,0);}});
+
+for(const mode of ['confirm','declaration','declaration-only','failure','lost','stale','active','paid','source','keep']){
+ test('Owner Inbox linked action through its actual dialog: '+mode,()=>workedLetterIntegration(false,mode.startsWith('declaration')||mode==='confirm',mode));
+}

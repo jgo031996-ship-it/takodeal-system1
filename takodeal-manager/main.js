@@ -50,6 +50,7 @@ runManagerDomReady(() => installOwnerPayslipSharing(window,document,{actorKey:()
 runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollAdjustmentRefresh(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
+import {installOwnerRequestDialog} from './owner-request-dialog.js';
 import {installScheduleDeclarationReview,scheduleDeclarationSourceFingerprint} from './attendance-swap-declaration.js';
 import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest,verifiedWorkedShiftProposal} from './late-request-resolution.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
@@ -9856,6 +9857,7 @@ window.submitReasonLetter = function() {
 
 // Keep the sidebar badge live while respecting the current account scope.
 installInboxBadge(window,document);
+window.ownerRequestDialog=installOwnerRequestDialog(window,document);
 installScheduleDeclarationReview(window,document);
 
 window.loadInbox = async function() {
@@ -9878,7 +9880,7 @@ window.updateLateRequestPreview = function() {
     const id = document.getElementById('replyAttendanceLog').value;
     const attendance = context.logs.find(log => log.id === id);
     const target = document.getElementById('replyLateCalculation');
-    const button=document.getElementById('btnSubmitReply');context.selectedLatePreview=null;
+    const button=document.getElementById('btnSubmitReply');if(button)button.onclick=()=>window.submitCurrentRequestReply();context.selectedLatePreview=null;
     const hoursField=document.getElementById('replyEquivalentHours'),hoursBox=document.getElementById('replyEquivalentBox');
     if(hoursBox)hoursBox.hidden=true;
     if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.';if(button)button.disabled=true;return; }
@@ -9888,7 +9890,7 @@ window.updateLateRequestPreview = function() {
     if(dated){
         const zero=summary?.linked&&summary.reviewedMinutes===0&&shift.amendmentNeedsReview!==true&&shift.needsScheduleReview!==true;
         context.selectedLatePreview={attendanceId:attendance.id,corrected:true,zero,fingerprint:zero?lateRequestResolutionFingerprint(context.request,attendance,shift):null};
-        if(button){button.disabled=!zero;button.innerText=zero?'Close reviewed zero-lateness letter':'Review dated attendance first';}
+        if(button){button.disabled=false;button.innerText=zero?'Close reviewed zero-lateness letter':'Review dated attendance';if(!zero)button.onclick=()=>window.openLateRequestAttendance();}
         target.innerHTML+='<p>'+ (zero?'The verified dated attendance has zero late minutes. Closing this letter keeps the original submission and the saved attendance review intact.':'Complete the dated attendance review before closing this letter. The original reported minutes will not overwrite the corrected review.')+'</p>';return;
     }
     if(context.action==='Approved'&&context.request.staffShiftProposal){
@@ -9898,6 +9900,7 @@ window.updateLateRequestPreview = function() {
             reviewed=context.proposalHoursReviewed===true&&!context.proposalReferenceError&&context.request.attendanceLogId===attendance.id;
         if(decision==='Keep original assigned hours'?!keep:!reviewed){
             if(button){button.disabled=true;button.innerText='Review proposed hours first';}
+            if(decision==='Keep original assigned hours'){target.innerHTML+='<p>Enter a reason of at least 8 characters after checking the original hours.</p>';if(button)button.innerText='Approve with original shift';return;}
             target.innerHTML+='<p><strong>Step 1: review the proposed worked shift.</strong> The Owner must confirm the assigned hours using the exact saved shift before this letter can be approved.</p><button type="button" onclick="window.openLateRequestAttendance()" style="padding:11px 15px;background:#176552;color:white;border:0;border-radius:7px;font-weight:bold">Review proposed worked shift →</button><p>If this shift is still in progress, keep the letter pending until its actual Time Out is recorded. Then return to review the worked shift. The original punches, paid payslips and lateness decisions stay on file. After a dated correction, complete its linked attendance review before closing the letter.</p><p>Use “Keep original assigned hours” only when the proposed shift is wrong and the original hours have been verified; add a reason of at least 8 characters. This selection alone does not change the schedule or waive lateness.</p>';return;
         }
     }
@@ -9930,7 +9933,7 @@ window.openLateRequestAttendance = function() {
     document.getElementById('dynamicReplyModal')?.remove();window.lateRequestContext=null;
     return window.openAttendanceRecovery(recovery);
 };
-window.handleRequest = async function(docId, action, type, amount, staffName) {
+window.handleRequest = async function(docId, action, type, amount, staffName, options={}) {
     const openingUser=window.auth?.currentUser,openingSession=window.sessionUser,openingToken=Symbol('request review');window.lateRequestOpenToken=openingToken;
     const assertOpening=()=>{if(window.auth?.currentUser!==openingUser||window.sessionUser!==openingSession||window.lateRequestOpenToken!==openingToken)throw Error('The open request or account changed. Reopen this letter.');};
     const cachedRequest = window.ownerInbox?.request(docId);
@@ -9996,13 +9999,25 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
                 declarationFingerprint:req.scheduleDeclaration?scheduleDeclarationSourceFingerprint({...req,id:docId},logs[0]):undefined };
         }
     } catch (error) { return Swal.fire('Check request', error.message, 'warning'); }
+    assertOpening();
+    const context=window.lateRequestContext;
+    if(!options.manual && action==='Approved' && type==='Reason Letter' && context?.requestId===docId
+        && req.staffShiftProposal && req.attendanceLogId && context.logs.length===1 && window.ownerRequestDialog?.canOpen(req)){
+        const attendance=context.logs[0],shift=resolveAttendanceShift(attendance,context.schedule,{[attendance.staffName]:context.profile});
+        if(!shift?.attendanceCorrectionVerified && !shift?.amendmentNeedsReview && !shift?.assignmentReconciliationRequired){
+            document.getElementById('dynamicReplyModal')?.remove();
+            return window.ownerRequestDialog.open({request:context.request,attendance,profileId:context.profile.staffId,
+                fingerprint:context.declarationFingerprint,referenceError:context.proposalReferenceError,assertCurrent:assertOpening,
+                manual:()=>window.handleRequest(docId,action,type,amount,staffName,{manual:true,keepOriginal:true})});
+        }
+    }
     const isLateLetter = isLatenessRequest(req);
     const isReasonLetter = !isLateLetter && (type === "Reason Letter" || type === "Cash Shortage / Mishandling");
 
     const modalHtml = `
-        <div id="dynamicReplyModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
+        <div id="dynamicReplyModal" role="dialog" aria-modal="true" aria-labelledby="requestReplyTitle" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
             <div style="background: white; padding: 25px; border-radius: 12px; width: 450px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-                <h3 style="margin-top: 0; color: #0f172a;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} Request</h3>
+                <h3 id="requestReplyTitle" style="margin-top: 0; color: #174c3c;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} ${requestEscape(type)}</h3>
                 <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${requestEscape(staffName)}</strong> regarding this ${requestEscape(type)}.</p>
 
                 ${isLateLetter&&req.staffShiftProposal ? staffShiftProposalHTML(req.staffShiftProposal)+(window.lateRequestContext?.proposalReferenceError?'<p role="status" style="color:#a14124">'+requestEscape(window.lateRequestContext.proposalReferenceError)+'</p>':'<p>Saved plotted reference checked with HQ. Original Time In: '+requestEscape(new Date(window.lateRequestContext.proposalActualTimeInAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))+' (PH). The proposed hours still require a separate authorized review.</p>')+'<label for="replyStaffShiftDecision">Proposed schedule review</label><select id="replyStaffShiftDecision" onchange="window.updateLateRequestPreview()" style="width:100%;padding:10px;margin:8px 0"><option value="">Review proposed hours on linked attendance first</option><option value="Keep original assigned hours">Keep original assigned hours; review the explanation separately</option></select>' : ''}
@@ -10044,6 +10059,11 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
     document.getElementById('dynamicReplyModal')?.remove();
     window.currentRequestReply = { docId, action, type, amount, staffName };
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    if(options.keepOriginal){
+        const choice=document.getElementById('replyStaffShiftDecision');
+        if(choice)choice.value='Keep original assigned hours';
+        document.getElementById('replyMessage')?.focus?.();
+    }
     if (isLateLetter) window.updateLateRequestPreview();
 };
 
