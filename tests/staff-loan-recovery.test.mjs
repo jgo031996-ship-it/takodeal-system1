@@ -58,7 +58,7 @@ test('loan assets are installed in the stable shell and its worker still bypasse
   assert.ok(worker.includes('./'+asset));assert.ok(readFileSync(new URL('../takodeal-staff/'+asset,import.meta.url)).length);
  }
  assert.match(html,/staffMyLoansStatus/);assert.match(html,/staffMyLoansClose/);assert.match(html,/staffMyLoansRefresh/);
- assert.match(html,/staff-worked-shift-review-20261116-r1/);assert.match(worker,/takodeal-staff-v63-worked-shift-review-20261116-r1/);assert.ok(worker.includes('./private-phone-identity.js'));assert.ok(worker.includes('./document-metadata-client.js'));
+ assert.match(html,/staff-employee-access-20261116-r1/);assert.match(worker,/takodeal-staff-v64-employee-access-20261116-r1/);assert.ok(worker.includes('./private-phone-identity.js'));assert.ok(worker.includes('./document-metadata-client.js'));
  assert.match(worker,/request\.method!=='GET'/);assert.match(worker,/url\.origin!==SHELL_ROOT\.origin/);
  assert.doesNotMatch(app,/from '\.\/staff-(?:operational-records|private-profile)\.js'/);
 });

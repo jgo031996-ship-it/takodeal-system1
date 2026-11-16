@@ -62,22 +62,43 @@ export function installStaffRegistration(config) {
         if(el('devicePendingId'))el('devicePendingId').textContent=`Device ID: ${id}`;
         if(el('deviceRetryButton'))el('deviceRetryButton').hidden=!retry;
     }
+    const select=el('deviceBranchInput'),locate=el('detectRegistrationBranch');
+    const listed=name=>Boolean(name&&name!=='Auto'&&Array.from(select?.options||[]).some(option=>option.value===name&&!option.disabled));
+    let locating=0;
+    select?.addEventListener?.('change',()=>{locating++;if(locate)locate.disabled=false;message('');});
+    if(locate)locate.onclick=async()=>{
+        if(locate.disabled||busy)return;
+        const attempt=++locating,initial=select.value;
+        const current=()=>attempt===locating&&!busy&&!document.hidden&&!el('legacyBranchFields')?.hidden&&select.value===initial;
+        locate.disabled=true;message('Finding a nearby branch. You can also choose it from the list.');
+        let timer;
+        try{
+            if(!navigator.geolocation)throw Error();
+            const pos=await Promise.race([
+                new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{maximumAge:15000,timeout:7000})),
+                new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error()),7500);})
+            ]);
+            if(!current())return;
+            const {latitude,longitude}=pos.coords;
+            const nearby=Object.entries(window.BRANCH_ZONES||{}).filter(([name])=>listed(name))
+                .map(([name,zone])=>({name,meters:window.getDistanceInMeters(latitude,longitude,zone.lat,zone.lng)}))
+                .filter(row=>Number.isFinite(row.meters)&&row.meters<=(window.ALLOWED_RADIUS_METERS||50));
+            if(nearby.length!==1)throw Error();
+            select.value=nearby[0].name;message('Branch found. Check the selection and tap Request access.');
+        }catch{if(current()){message('Choose your branch from the list to continue without GPS.');select.focus?.();}}
+        finally{clearTimeout(timer);if(attempt===locating)locate.disabled=false;}
+    };
     window.requestDeviceAccess=async function() {
         if(busy)return;
         const name=el('deviceNameInput')?.value.trim(),selected=el('deviceBranchInput')?.value;
         if(!name)return window.Swal.fire('Device name required','Give this phone a name so HQ can identify it.','warning');
-        busy=true;window.staffDeviceRegistrationBusy=true;stop();
+        if(!listed(selected)){message('Choose your branch to send a request.');select?.focus?.();return;}
+        locating++;if(locate)locate.disabled=true;busy=true;window.staffDeviceRegistrationBusy=true;stop();
         const button=document.querySelector('#registerCard .btn-primary');
         if(button){button.disabled=true;button.textContent='Sending request…';}
         message('Connecting to HQ. Please keep this page open.');
         try {
-            let branch=selected;
-            if(selected==='Auto') {
-                if(!navigator.geolocation)throw Error('Choose your branch manually. Location is unavailable.');
-                const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:false,maximumAge:15000,timeout:15000}));
-                window.currentLat=position.coords.latitude;window.currentLng=position.coords.longitude;branch=window.getClosestBranch();
-            }
-            if(!Object.prototype.hasOwnProperty.call(window.BRANCH_ZONES,branch))throw Error('Choose your branch manually and try again.');
+            const branch=selected;
             const registration={deviceId:draft()?.deviceId || localStorage.getItem('takodeal_device_id') || 'DEV-'+(window.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)+Date.now().toString(36)).toUpperCase(),name,branch};
             localStorage.setItem(key,JSON.stringify(registration));
             await submit(registration);
@@ -89,8 +110,8 @@ export function installStaffRegistration(config) {
         } catch(e) {
             const registration=draft();
             message(registration?`Not confirmed by HQ yet. Your request is saved on this phone. Retry with ${registration.deviceId}; no duplicate request will be created.`:'Request not sent. Choose your branch manually if location is unavailable.');
-            window.Swal.fire('Request not confirmed',e.message || 'Check your connection and retry.','warning');
-        } finally {busy=false;window.staffDeviceRegistrationBusy=false;if(button){button.disabled=false;button.textContent='Request access';}}
+            if(!registration)message('Request could not be saved on this phone. Check browser storage and retry.');
+        } finally {busy=false;if(locate)locate.disabled=false;window.staffDeviceRegistrationBusy=false;if(button){button.disabled=false;button.textContent='Request access';}}
     };
     window.retryDeviceRegistration=()=>{
         const registration=draft();

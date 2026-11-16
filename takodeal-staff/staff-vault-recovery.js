@@ -6,7 +6,7 @@ const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,fields)=>object(value)&&Object.keys(value).sort().join(',')===[...fields].sort().join(',');
 const recoveryError=Symbol('staff-vault-recovery');
 const failure=(message,code='recovery-unavailable')=>Object.assign(Error(message),{code,[recoveryError]:true});
-const unavailable=()=>failure('Use your personally approved Staff phone. Ask HQ to confirm its personal setup and give you your personal setup code.');
+const unavailable=()=>failure('Activate this phone with your personal setup code, then reopen PIN recovery. If it is already activated, reconnect or ask HQ to review its registration.');
 const messages={
  'setup-code-invalid':'The personal setup code could not be verified. Check it with HQ and try again.',
  'setup-not-enabled':'Personal phone setup is not enabled. Ask HQ to confirm your phone before recovering this PIN.',
@@ -94,7 +94,7 @@ async function recoveryForPhone({auth,authority,identity,deviceId,createPrivateC
  await auth?.authStateReady?.();local();const primaryUser=auth?.currentUser,a=typeof authority==='function'?authority():authority;
  const primaryCurrent=()=>{local();if(auth?.currentUser!==primaryUser)throw failure('Your Staff phone identity changed. Reopen PIN recovery.','account-changed');};
  if(primaryUser?.uid&&primaryUser.isAnonymous===true&&a?.confirm){
-  try{const result=await a.confirm(selectedDevice);primaryCurrent();const b=a.binding?.();if(result?.enabled===true&&a.mode?.()==='protected'&&b?.status==='Active'&&b.staffId===staffId&&b.deviceId===selectedDevice)return createStaffVaultRecoveryClient({auth,authority,identity,deviceId,...options});}
+  try{await a.confirm(selectedDevice);primaryCurrent();const b=a.binding?.();if(a.isVerified?.()&&a.mode?.()==='protected'&&b?.status==='Active'&&b.staffId===staffId&&b.deviceId===selectedDevice)return createStaffVaultRecoveryClient({auth,authority,identity,deviceId,...options});}
   catch{primaryCurrent();}
  }
  primaryCurrent();if(typeof createPrivateClient!=='function')throw unavailable();

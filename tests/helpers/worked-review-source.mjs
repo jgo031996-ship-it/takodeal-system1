@@ -6,6 +6,7 @@ import {isAbsolute,relative,sep} from 'node:path';
 
 const root=new URL('../../',import.meta.url);
 const proof=JSON.parse(readFileSync(new URL('../fixtures/worked-review-release.json',import.meta.url),'utf8'));
+const employeePortal=JSON.parse(readFileSync(new URL('../fixtures/staff-employee-release.json',import.meta.url),'utf8'));
 const pathKey=name=>{const file=name instanceof URL?fileURLToPath(name):String(name);return (isAbsolute(file)?relative(fileURLToPath(root),file):file).split(sep).join('/');};
 const hash=bytes=>createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
 const originals=new Map();
@@ -13,8 +14,10 @@ const originals=new Map();
 // Historical checks can remove only a complete byte-identical release change.
 // The current release scope test reads the working tree directly.
 export function beforeWorkedReview(value,path){
- const row=proof.files[pathKey(path)];
- if(!row)return value;
+ return historicalBlob(historicalBlob(value,employeePortal.files[pathKey(path)]),proof.files[pathKey(path)]);
+}
+function historicalBlob(value,row){
+ if(!row?.before)return value;
  const bytes=Buffer.from(value);
  if(hash(bytes)!==row.after)return value;
  if(!originals.has(row.before)){
@@ -32,10 +35,15 @@ export function beforeWorkedReviewPaths(output,command,args){
  const base=args.find(arg=>/^[a-f0-9]{40}$/.test(arg));
  if(!base)return output;
  const kept=output.toString().split(/\r?\n/).filter(Boolean).filter(file=>{
-  const row=proof.files[file];if(!row)return true;
-  if(hash(readFileSync(new URL(file,root)))!==row.after)return true;
-  try{return execFileSync('git',['rev-parse','--verify',base+':'+file],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim()!==row.before;}
-  catch{return true;}
+  const bytes=readFileSync(new URL(file,root));
+  const revision=employeePortal.files[file],key=hash(bytes);
+  if(revision&&key!==revision.after)return true;
+  const previous=revision?revision.before:key;
+  const row=proof.files[file];
+  if(!revision&&(!row||previous!==row.after))return true;
+  const original=row&&previous===row.after?row.before:previous;
+  const listing=execFileSync('git',['ls-tree',base,'--',file],{cwd:root,encoding:'utf8'}).trim();
+  return (listing.split(/\s+/)[2]||null)!==original;
  });
  const result=kept.join('\n')+(kept.length?'\n':'');return typeof output==='string'?result:Buffer.from(result);
 }
