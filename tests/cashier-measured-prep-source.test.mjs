@@ -1,3 +1,4 @@
+import {compatibilityProof} from './helpers/compatibility-release-inverse.mjs';
 import {ownerAccessProof} from './helpers/owner-access-history-inverse.mjs';
 import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
 const originalReadFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
@@ -12,7 +13,7 @@ import {cashierMeasuredPrepProof as proof,restoreCashierMeasuredPrep as restore,
 import {CASHIER_RELEASE as LIVE_CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
 // Historical reads above compose the exact new inverse before checking this cohort.
 const CASHIER_RELEASE='cashier-plotted-attendance-20261116-r1';
-assert.equal(LIVE_CASHIER_RELEASE,ownerAccessProof.release);
+assert.equal(LIVE_CASHIER_RELEASE,compatibilityProof.release);
 const root=new URL('../',import.meta.url),read=file=>legacyVoidSource(readFileSync(new URL(file,root),'utf8'),file),git=file=>execFileSync('git',['show',proof.base+':'+file],{cwd:root,windowsHide:true,encoding:'utf8',maxBuffer:8*1024*1024});
 test('the exact measured-prep inverse restores all five existing product files to live9033 without rehashing old proofs',()=>{assert.equal(proof.base,'9033ed113bf485dcb9e8378e581d057e20e1e5c9');assert.equal(Object.keys(proof.files).length,5);for(const[file,row]of Object.entries(proof.files)){assert.equal(sha(git(file)),row.baselineSha256,file);assert.equal(restore(read(file),file),git(file),file);assert.throws(()=>restore(read(file)+'\n// unauthorized change\n',file),/(?:Only the reviewed automatic branch hooks|Only the reviewed measured-prep)/);}for(const[file,hash]of Object.entries(proof.newFiles))assert.equal(sha(read(file)),hash,file);for(const file of['tests/fixtures/cashier-actual-prep-inverse.json','tests/fixtures/cashier-prep-recovery-inverse.json','tests/fixtures/cashier-prep-recovery-release-inverse.json'])assert.equal(sha(read(file)),sha(git(file)),file);});
 test('main, auth, protected phone, session, void, checkout, both engines and every other app keep exact live9033 bytes',()=>{for(const file of['Takodeal-POS/main.js','Takodeal-POS/cashier-prep-access.js','Takodeal-POS/cashier-prep.css','Takodeal-POS/cashier-void.js','Takodeal-POS/cashier-void-access.js','Takodeal-POS/cashier-protected-action.js','Takodeal-POS/cashier-device-auth.js','Takodeal-POS/cashier-staff-access.js','Takodeal-POS/pos-checkout.js','Takodeal-POS/pos-safety.js','takodeal-manager/pos-safety.js','takodeal-staff/app.js','takodeal-manager/main.js','Customer/customer-menu.js','takodeal-delivery/main.js','takodeal-franchise/auth.js'])assert.equal(sha(read(file)),sha(git(file)),file);});

@@ -1,3 +1,4 @@
+import {readCashierBranchPolicy} from './cashier-branch-policy.js';
 import {createPlottedTimeInBatch} from './plotted-time-in.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
@@ -2419,28 +2420,30 @@ window.openExpenseModal = async function () {
     window.expenseCart = [];
     window.renderExpenseCart();
 
-    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    window.isMallBranch=false;
+    window.expenseInventoryCache=[];
+    const oldSource=document.getElementById('expenseSourceContainer');if(oldSource)oldSource.innerHTML='';
+    try {
+    const working=await readCashierBranchPolicy(window,{readPolicy:readBranchPolicy});
+    const branch=working.branch,expenseDb=working.api.db;
+    working.assertCurrent();
     window.expenseInventoryCache = [];
     window.isMallBranch = false;
     
     // 1. Fetch Inventory
     try {
-        const q = query(collection(db, "inventory"), where("branch", "==", branch));
-        const snap = await getDocs(q);
+        const q = query(collection(expenseDb, "inventory"), where("branch", "==", branch));
+        const snap = await getDocsFromServer(q);
+        working.assertCurrent();
         snap.forEach(docSnap => {
             let item = docSnap.data();
             item.id = docSnap.id;
             window.expenseInventoryCache.push(item);
         });
-    } catch (e) { console.error("Error loading inventory for expenses:", e); }
+    } catch (e) { working.assertCurrent(); console.error("Error loading inventory for expenses:", e); }
 
-    // 2. Fetch Branch Settings (Check for Mall Branch Mode)
-    try {
-        const bSnap = await getDocs(query(collection(db, "branches"), where("name", "==", branch)));
-        if (!bSnap.empty) {
-            window.isMallBranch = bSnap.docs[0].data().isMallBranch || false;
-        }
-    } catch(e) {}
+    // The selected verified branch supplies the current policy, including false.
+    working.assertCurrent();window.isMallBranch=working.isMallBranch;
 
     // 3. Inject the UI dynamically
     let sourceContainer = document.getElementById('expenseSourceContainer');
@@ -2453,6 +2456,8 @@ window.openExpenseModal = async function () {
         sourceContainer = document.getElementById('expenseSourceContainer');
     }
 
+    sourceContainer.dataset.branch=branch;
+    sourceContainer.setAttribute('aria-label',branch+' · '+(working.isMallBranch?'Mall branch':'Standard branch'));
     if (window.isMallBranch) {
         sourceContainer.innerHTML = `
             <div style="margin-top: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 2px dashed #fcd34d;">
@@ -2466,6 +2471,12 @@ window.openExpenseModal = async function () {
         `;
     } else {
         sourceContainer.innerHTML = '';
+    }
+    } catch(error) {
+        window.isMallBranch=false;window.expenseInventoryCache=[];
+        const source=document.getElementById('expenseSourceContainer');if(source)source.innerHTML='';
+        document.getElementById('expenseModal').style.display='none';
+        await Swal.fire('Branch settings unavailable',error.message,'error');
     }
 };
 
