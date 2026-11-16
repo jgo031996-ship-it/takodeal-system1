@@ -1,0 +1,75 @@
+{
+  "base": "7dd52a1438725fef212984bfad39e3d25ce50486",
+  "release": "staff-phone-compatibility-20261116-r1",
+  "files": {
+    "takodeal-manager/auth.js": {
+      "baselineSha256": "4cc10ec44559cffcc3fe3ea8fde6ea164f07dffa540efd2c774e5b5026c6c53c",
+      "candidateSha256": "8ccedcccd49309f652a4bb27c8fa771c0e81373594bfe581586be6f5c69f1400",
+      "edits": [
+        {
+          "before": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=plotted-payroll-20261116-r1');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n",
+          "after": "        try {\n            await loadManagerLibraries();\n            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');\n            await import('./main.js?v=staff-phone-compatibility-20261116-r1');\n            runtimeLoaded = true;\n            installWorkspaceAccess(window,document);\n            prepareManagerTools();\n"
+        }
+      ]
+    },
+    "takodeal-manager/index.html": {
+      "baselineSha256": "06458cc372452f14dfe2aa1183c99c95621f0d3415329418a8eede4095d356ff",
+      "candidateSha256": "df433ea2d64500227b7168b85cd6450b39474d2d0705033f651e7bf80fadea32",
+      "edits": [
+        {
+          "before": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"plotted-payroll-20261116-r1\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome \u00b7 TAKODE\u00c1L Owner</title>\n",
+          "after": "<html lang=\"en\">\n \n<head>\n<meta name=\"takodeal-release\" content=\"staff-phone-compatibility-20261116-r1\">\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Welcome \u00b7 TAKODE\u00c1L Owner</title>\n"
+        },
+        {
+          "before": "  <!-- \ud83d\uddfa\ufe0f FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=plotted-payroll-20261116-r1\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n",
+          "after": "  <!-- \ud83d\uddfa\ufe0f FREE MAP ENGINE FOR BRANCH PINS -->\n  <link rel=\"stylesheet\" href=\"style.css\">\n  <link rel=\"stylesheet\" href=\"security-alert-links.css?v=20261102\">\n  <link rel=\"stylesheet\" href=\"private-prep-reviews.css?v=staff-phone-compatibility-20261116-r1\">\n  <link rel=\"stylesheet\" href=\"rider-management.css?v=20261023-buttons\">\n  <link rel=\"stylesheet\" href=\"menu-options.css?v=20261024\">\n  <link rel=\"stylesheet\" href=\"bundle-category.css?v=20261025\">\n"
+        },
+        {
+          "before": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=plotted-payroll-20261116-r1\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n",
+          "after": "    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';\n    installAuditModalLayout();\n  </script>\n  <script type=\"module\" src=\"auth.js?v=staff-phone-compatibility-20261116-r1\"></script>\n  <script type=\"module\" src=\"owner-pos-settings-access.js?v=20261018\"></script>\n  <script type=\"module\">\n    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';\n"
+        }
+      ]
+    },
+    "takodeal-manager/main.js": {
+      "baselineSha256": "1c95d3020039d2512bafa8eda138746736c00ad90337a9cd2d577922e8d73ec0",
+      "candidateSha256": "b978a6432ad9a1c0a438d2e314165fc1849bb11610f650057f841b5fb38f1895",
+      "edits": [
+        {
+          "before": "import {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';\nimport {installBranchInventorySetup,branchInventoryActor} from './branch-inventory-setup.js';\nimport {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';\n",
+          "after": "import {repairApprovedStaffPhoneLabels} from './staff-phone-compatibility.js';\nimport {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';\nimport {installBranchInventorySetup,branchInventoryActor} from './branch-inventory-setup.js';\nimport {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';\n"
+        },
+        {
+          "before": "window.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});\n\ninstallDispatchDeliveryRadar(window,document);\n",
+          "after": "window.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});\n\ninstallDispatchDeliveryRadar(window,document);\n\n// Existing Owner-approved legacy phones retain their status and PINs.\nwindow.repairApprovedStaffPhones=()=>repairApprovedStaffPhoneLabels(window,{auth:window.auth});\nPromise.resolve().then(()=>window.repairApprovedStaffPhones()).then(result=>{window.staffPhoneCompatibilityResult=result;}).catch(error=>console.warn('Existing Staff phone check is awaiting Owner connection:',error.message));\n"
+        }
+      ]
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "baselineSha256": "f25f5d329d991dc0259a9a9e6446018d8bbbd6da680692e3dffb1edd22d01aa8",
+      "candidateSha256": "8b32e7c69bf7d7d2d1b3186dc9bccbe5d8c291c75b7a2f2912454aeb262b5ca3",
+      "edits": [
+        {
+          "before": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v158-plotted-payroll-20261116-r1';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n",
+          "after": "import {waitForAppUpdate} from './owner-app-update.js';\n\nexport const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v159-staff-phone-compatibility-20261116-r1';\nconst installations=new WeakMap();\nconst validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);\nconst noticeText='App update ready. Save open edits, then reload to use the latest fixes.';\n"
+        }
+      ]
+    },
+    "takodeal-manager/sw.js": {
+      "baselineSha256": "9b66c4d8693cc40d6422da09a83be599bba2438d930caec36f614ad6bf1f3406",
+      "candidateSha256": "bb8c8a7f9afe7e9220f5f1b78039585c2e810b04964a1490eddecd8e012e6b35",
+      "edits": [
+        {
+          "before": "const CACHE_NAME = 'takodeal-manager-core-v158-plotted-payroll-20261116-r1';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n",
+          "after": "const CACHE_NAME = 'takodeal-manager-core-v159-staff-phone-compatibility-20261116-r1';\nconst VENDOR_CACHE = 'takodeal-manager-vendors-v1';\nconst IMAGE_CACHE = 'takodeal-manager-images-v1';\nconst CORE_ASSETS = [\n"
+        },
+        {
+          "before": "  './owner-prep-measured-model.js','./owner-prep-actual-model.js',\n    './document-metadata-client.js',\n  'staff-deduction-history.js', 'staff-deduction-history.css', 'deduction-authority-draft.js', 'payroll-bonus-review-hint.js','./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];\nCORE_ASSETS.push('./manual-attendance-review.js','./payroll-confirmed-shifts.js');\nCORE_ASSETS.push('./ai-board.js','./ai-board-model.js','./ai-board.css');\nCORE_ASSETS.push('./schedule-swap-model.js','./schedule-swap-review.js');\n",
+          "after": "  './owner-prep-measured-model.js','./owner-prep-actual-model.js',\n    './document-metadata-client.js',\n  'staff-deduction-history.js', 'staff-deduction-history.css', 'deduction-authority-draft.js', 'payroll-bonus-review-hint.js','./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];\nCORE_ASSETS.push('./staff-phone-compatibility.js');\nCORE_ASSETS.push('./manual-attendance-review.js','./payroll-confirmed-shifts.js');\nCORE_ASSETS.push('./ai-board.js','./ai-board-model.js','./ai-board.css');\nCORE_ASSETS.push('./schedule-swap-model.js','./schedule-swap-review.js');\n"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "takodeal-manager/staff-phone-compatibility.js": "24b496b0f0b72e9488e194564e747a78456586fc9a10fed86b8539ef64fd564e"
+  }
+}

@@ -1,11 +1,14 @@
+const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v158-plotted-payroll-20261116-r1';
+import {legacyCompatibilityRead} from './helpers/compatibility-release-inverse.mjs';
+const _plottedRawFs=(...args)=>legacyCompatibilityRead(_compatibilityRawFs(...args),args[0]);
 import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
 const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync as _plottedRawFs,existsSync} from 'node:fs';
+import {readFileSync as _compatibilityRawFs,existsSync} from 'node:fs';
 import {posix} from 'node:path';
 import vm from 'node:vm';
-import {OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
+import {OWNER_DOCUMENT_RELEASE as LIVE_OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 const apps=[['takodeal-manager','CORE_ASSETS','main.js'],['Takodeal-POS','required','main.js'],['takodeal-staff','SHELL','app.js'],['takodeal-franchise','CORE','main_franchise.js'],['takodeal-delivery','urlsToCache','main.js'],['Customer',null,'index.html']];
 function assets(app,name){if(!name)return [];const source=read(app+'/sw.js'),literal=source.match(new RegExp('const '+name+'\\s*=\\s*(\\[[^;]+\\]);'));assert.ok(literal,app+' static shell exists');const paths=Array.from(vm.runInNewContext(literal[1]));for(const match of source.matchAll(new RegExp(name+'\\.push\\(([^;]+)\\);','g')))paths.push(...vm.runInNewContext('['+match[1]+']'));return [...new Set(paths.map(path=>path.replace(/^\.\//,'').split(/[?#]/)[0]||'index.html'))];}
@@ -29,3 +32,5 @@ test('POS offline catalog preparation rejects private proof URLs but preserves p
 test('release IDs and entry URLs match the new security generation; Customer stays network-only offline',async()=>{
  assert.match(read('takodeal-manager/sw.js'),new RegExp(OWNER_DOCUMENT_RELEASE));assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v158-plotted-payroll-20261116-r1');assert.match(read('takodeal-manager/auth.js'),/main\.js\?v=plotted-payroll-20261116-r1/);for(const [app]of apps)assert.match(read(app+'/index.html'),new RegExp('<meta name="takodeal-release" content="[^"]*'+(app==='takodeal-manager'?'20261116':'20261109')));assert.match(read('Takodeal-POS/index.html'),/main\.js\?v=security-stock-loans-prep-20261109-r1/);assert.match(read('takodeal-staff/index.html'),/app\.js\?v=staff-security-loans-20261109/);assert.match(read('takodeal-franchise/index.html'),/auth\.js\?v=security-stock-loans-prep-20261109/);assert.match(read('takodeal-delivery/index.html'),/main\.js\?v=rider-protected-access-20261109/);const w=worker('Customer',{offline:true}),response=await w.request('https://sample.invalid/app/index.html',{mode:'navigate'});assert.equal(response.status,503);assert.match(await response.text(),/No order was submitted/);assert.doesNotMatch(read('Customer/sw.js'),/caches\.(open|put|match)/);
 });
+
+test('current document release matches this compatibility generation',()=>assert.equal(LIVE_OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v159-staff-phone-compatibility-20261116-r1'));

@@ -1,3 +1,6 @@
+const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v158-plotted-payroll-20261116-r1';
+import {legacyCompatibilityRead} from './helpers/compatibility-release-inverse.mjs';
+const _plottedRawFs=(...args)=>legacyCompatibilityRead(_compatibilityRawFs(...args),args[0]);
 import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
 const readFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
@@ -10,14 +13,14 @@ import {ownerHRRequestProof,restoreOwnerHRRequest} from './helpers/owner-hr-requ
 import {ownerPrepYieldProof,restoreOwnerPrepYield} from './helpers/owner-prep-yield-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync as _plottedRawFs,existsSync} from 'node:fs';
+import {readFileSync as _compatibilityRawFs,existsSync} from 'node:fs';
 import {execFileSync as _plottedRawExec} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {privatePrepReleaseProof,restorePrivatePrepRelease} from './helpers/private-prep-release-inverse.mjs';
 import {ownerRemittanceDialogProof} from './helpers/owner-remittance-dialog-inverse.mjs';
 import {ownerStockWarningsProof} from './helpers/owner-stock-warnings-inverse.mjs';
-import {OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
+import {OWNER_DOCUMENT_RELEASE as LIVE_OWNER_DOCUMENT_RELEASE} from '../takodeal-manager/owner-update-notice.js';
 import {PRIVATE_PREP_ENDPOINT} from '../takodeal-manager/private-prep-reviews.js';
 const root=fileURLToPath(new URL('../',import.meta.url)),read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,windowsHide:true,maxBuffer:4*1024*1024});
 function worker(){const listeners={},context={URL,Headers,Request,Response,AbortController,setTimeout,clearTimeout,console,self:{location:{origin:'https://takodeal-owner.vercel.app',href:'https://takodeal-owner.vercel.app/sw.js'},addEventListener:(type,fn)=>listeners[type]=fn},caches:{open(){assert.fail('Private traffic may not access a cache');}},fetch(){assert.fail('The worker must not intercept private authenticated API traffic');}};vm.runInNewContext(read('takodeal-manager/sw.js')+'\nglobalThis.privatePrepCache=[...CORE_ASSETS];',context);return{listeners,cached:new Set(context.privatePrepCache.map(file=>file.replace(/^\.\//,'')))};}
@@ -27,3 +30,5 @@ test('v145 page/auth/cache/notice versions agree and deep private prep dependenc
 test('authenticated private prep reads bypass the worker completely and storage-reset APIs remain absent',()=>{const{listeners}=worker();for(const method of['POST','GET']){let intercepted=false;listeners.fetch({request:{url:PRIVATE_PREP_ENDPOINT+'reviews',method,headers:new Headers({Authorization:'Bearer FICTIONAL_ONLY'}),destination:'',mode:'cors'},respondWith(){intercepted=true;}});assert.equal(intercepted,false);}assert.doesNotMatch(read('takodeal-manager/private-prep-reviews.js'),/indexedDB|localStorage|sessionStorage|deleteDatabase|caches\./);});
 test('other five app trees, all backend code and both database policies stay exact d70',()=>{const changed=git('diff','--name-only',privatePrepReleaseProof.base,'--','functions','server','api','Takodeal-POS','Customer','takodeal-staff','takodeal-franchise','takodeal-delivery','firestore.rules','firestore.policy.rules','storage.rules').toString().trim().split(/\r?\n/).filter(Boolean).filter(file=>isHistoricalOwnerChange(file,privatePrepReleaseProof.base));for(const path of changed){assert.ok(ownerDeliveryProof.files[path],path);assert.equal(restoreOwnerDeliveryUpgrade(read(path),path),git('show',privatePrepReleaseProof.base+':'+path).toString());}const product=git('diff','--name-only',privatePrepReleaseProof.base,'--','takodeal-manager').toString().trim().split(/\r?\n/).filter(Boolean).filter(file=>isHistoricalOwnerChange(file,privatePrepReleaseProof.base));const allowed=new Set([...Object.keys(privatePrepReleaseProof.files),...Object.keys(ownerRemittanceDialogProof.files),...Object.keys(ownerStockWarningsProof.files),...Object.keys(ownerStockWarningsProof.newFiles),...Object.keys(ownerPrepYieldProof.files),...Object.keys(ownerPrepYieldProof.newFiles),...Object.keys(ownerHRRequestProof.files),...Object.keys(ownerRemoteRequestProof.files),...Object.keys(branchSettingsSaveProof.files),...Object.keys(ownerDeliveryProof.files),...Object.keys(ownerDeliveryProof.newFiles),...Object.keys(mobileProof.files),'takodeal-manager/live-branch-directory.js','takodeal-manager/private-prep-reviews.js','takodeal-manager/private-prep-reviews.css']);assert.ok(product.every(path=>allowed.has(path)));});
 test('hosted verification is scoped to this exact Owner branch, read-only and uses immutable official actions/full history',()=>{const source=read('.github/workflows/owner-private-prep-checks.yml');assert.match(source,/branches: \[fix\/owner-private-prep-reviews\]/);assert.match(source,/github\.ref == 'refs\/heads\/fix\/owner-private-prep-reviews'/);assert.match(source,/contents: read/);assert.match(source,/actions\/checkout@[a-f0-9]{40}/);assert.match(source,/actions\/setup-node@[a-f0-9]{40}/);assert.match(source,/fetch-depth: 0/);assert.match(source,/node --test --test-concurrency=1/);assert.doesNotMatch(source,/firebase deploy|vercel deploy|secrets\./);});
+
+test('current document release matches this compatibility generation',()=>assert.equal(LIVE_OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v159-staff-phone-compatibility-20261116-r1'));

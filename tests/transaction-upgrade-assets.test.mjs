@@ -1,6 +1,8 @@
+import {legacyCompatibilityRead} from './helpers/compatibility-release-inverse.mjs';
+const readFileSync=(...args)=>legacyCompatibilityRead(_compatibilityRawFs(...args),args[0]);
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,existsSync} from 'node:fs';
+import {readFileSync as _compatibilityRawFs,existsSync} from 'node:fs';
 import vm from 'node:vm';
 const source=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
 function assets(app,name){
