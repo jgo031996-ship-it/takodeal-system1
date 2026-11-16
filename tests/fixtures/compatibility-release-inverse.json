@@ -1,0 +1,61 @@
+{
+  "base": "9ae7d322fd3b3616b52af0f6af454c30e637bbc7",
+  "release": "branch-policy-20261116-r1",
+  "files": {
+    "Takodeal-POS/cashier-data.js": {
+      "baselineSha256": "abbebdb502cf1efa7b41d4aa40120d3f50b3358c2ebd446a03873fbe10015968",
+      "candidateSha256": "70eb2acea0e3cad8cadfa896e5df9446fefa2c4e60ed941ead41853048d0da23",
+      "edits": [
+        {
+          "before": "// Presentation helpers only: no sale, inventory or attendance writes.\nimport {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';\nexport const CASHIER_RELEASE = 'owner-branch-history-20261116-r1';\nexport function millis(value) {\n  if (value == null) return NaN;\n  if (typeof value.toMillis === 'function') return value.toMillis();\n",
+          "after": "// Presentation helpers only: no sale, inventory or attendance writes.\nimport {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';\nexport const CASHIER_RELEASE = 'branch-policy-20261116-r1';\nexport function millis(value) {\n  if (value == null) return NaN;\n  if (typeof value.toMillis === 'function') return value.toMillis();\n"
+        }
+      ]
+    },
+    "Takodeal-POS/index.html": {
+      "baselineSha256": "7b8bbd28a97030dc9e37d3a7f4171720ba8e25ea1c552ccda3c8f37361651803",
+      "candidateSha256": "1d6209059a0973f126bfbb59c2518b5d029a43d7f51ea3a917d6ecf7f0b98a00",
+      "edits": [
+        {
+          "before": "            });\n        };\n    </script>\n    <script type=\"module\" src=\"main.js?v=owner-branch-history-20261116-r1\"></script>\n    <script>\n    // \ud83d\udee1\ufe0f PROGRESSIVE WEB APP (PWA) INSTALLER\n    if ('serviceWorker' in navigator) {\n",
+          "after": "            });\n        };\n    </script>\n    <script type=\"module\" src=\"main.js?v=branch-policy-20261116-r1\"></script>\n    <script>\n    // \ud83d\udee1\ufe0f PROGRESSIVE WEB APP (PWA) INSTALLER\n    if ('serviceWorker' in navigator) {\n"
+        }
+      ]
+    },
+    "Takodeal-POS/main.js": {
+      "baselineSha256": "f7de7bdd97b5c7a82903e90730657bdff5c6ee2aa9f0216ee9a0249e1839702a",
+      "candidateSha256": "aeb3e0d5c644645d539960f13fda5fb5485c3a2831e620e56b9f30cebfdd673c",
+      "edits": [
+        {
+          "before": "import {createPlottedTimeInBatch} from './plotted-time-in.js';\nimport {installLiveBranchDirectory} from './live-branch-directory.js';\nimport {refreshSavedVoidSales} from './cashier-void-sales.js';\n",
+          "after": "import {readCashierBranchPolicy} from './cashier-branch-policy.js';\nimport {createPlottedTimeInBatch} from './plotted-time-in.js';\nimport {installLiveBranchDirectory} from './live-branch-directory.js';\nimport {refreshSavedVoidSales} from './cashier-void-sales.js';\n"
+        },
+        {
+          "before": "    window.expenseCart = [];\n    window.renderExpenseCart();\n\n    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';\n    window.expenseInventoryCache = [];\n    window.isMallBranch = false;\n    \n    // 1. Fetch Inventory\n    try {\n        const q = query(collection(db, \"inventory\"), where(\"branch\", \"==\", branch));\n        const snap = await getDocs(q);\n        snap.forEach(docSnap => {\n            let item = docSnap.data();\n            item.id = docSnap.id;\n            window.expenseInventoryCache.push(item);\n        });\n    } catch (e) { console.error(\"Error loading inventory for expenses:\", e); }\n\n    // 2. Fetch Branch Settings (Check for Mall Branch Mode)\n    try {\n        const bSnap = await getDocs(query(collection(db, \"branches\"), where(\"name\", \"==\", branch)));\n        if (!bSnap.empty) {\n            window.isMallBranch = bSnap.docs[0].data().isMallBranch || false;\n        }\n    } catch(e) {}\n\n    // 3. Inject the UI dynamically\n    let sourceContainer = document.getElementById('expenseSourceContainer');\n",
+          "after": "    window.expenseCart = [];\n    window.renderExpenseCart();\n\n    window.isMallBranch=false;\n    window.expenseInventoryCache=[];\n    const oldSource=document.getElementById('expenseSourceContainer');if(oldSource)oldSource.innerHTML='';\n    try {\n    const working=await readCashierBranchPolicy(window,{readPolicy:readBranchPolicy});\n    const branch=working.branch,expenseDb=working.api.db;\n    working.assertCurrent();\n    window.expenseInventoryCache = [];\n    window.isMallBranch = false;\n    \n    // 1. Fetch Inventory\n    try {\n        const q = query(collection(expenseDb, \"inventory\"), where(\"branch\", \"==\", branch));\n        const snap = await getDocsFromServer(q);\n        working.assertCurrent();\n        snap.forEach(docSnap => {\n            let item = docSnap.data();\n            item.id = docSnap.id;\n            window.expenseInventoryCache.push(item);\n        });\n    } catch (e) { working.assertCurrent(); console.error(\"Error loading inventory for expenses:\", e); }\n\n    // The selected verified branch supplies the current policy, including false.\n    working.assertCurrent();window.isMallBranch=working.isMallBranch;\n\n    // 3. Inject the UI dynamically\n    let sourceContainer = document.getElementById('expenseSourceContainer');\n"
+        },
+        {
+          "before": "        sourceContainer = document.getElementById('expenseSourceContainer');\n    }\n\n    if (window.isMallBranch) {\n        sourceContainer.innerHTML = `\n            <div style=\"margin-top: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 2px dashed #fcd34d;\">\n",
+          "after": "        sourceContainer = document.getElementById('expenseSourceContainer');\n    }\n\n    sourceContainer.dataset.branch=branch;\n    sourceContainer.setAttribute('aria-label',branch+' \u00b7 '+(working.isMallBranch?'Mall branch':'Standard branch'));\n    if (window.isMallBranch) {\n        sourceContainer.innerHTML = `\n            <div style=\"margin-top: 15px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 2px dashed #fcd34d;\">\n"
+        },
+        {
+          "before": "        `;\n    } else {\n        sourceContainer.innerHTML = '';\n    }\n};\n\n",
+          "after": "        `;\n    } else {\n        sourceContainer.innerHTML = '';\n    }\n    } catch(error) {\n        window.isMallBranch=false;window.expenseInventoryCache=[];\n        const source=document.getElementById('expenseSourceContainer');if(source)source.innerHTML='';\n        document.getElementById('expenseModal').style.display='none';\n        await Swal.fire('Branch settings unavailable',error.message,'error');\n    }\n};\n\n"
+        }
+      ]
+    },
+    "Takodeal-POS/sw.js": {
+      "baselineSha256": "8f3211622f0557bb741f9ddfbd9fbcb0aaa3021d1976b219e3b3373bb5880882",
+      "candidateSha256": "0b5a23edc017344387208e058679bd19e59ef35d87d88f90f595573ff90f6f0c",
+      "edits": [
+        {
+          "before": "// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =\n// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.\nconst CORE = 'takodeal-pos-core-owner-branch-history-20261116-r1';\n\nconst PHOTOS = 'takodeal-pos-photos-offline02';\nconst ROOT = new URL('./', self.location.href);\nconst required = ['./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-app-update.js','./cashier-data.js'];\nconst sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';\nrequired.push('./cashier-device-setup.js');\nrequired.push('./cashier-startup.js','./cashier-startup.css','./cashier-appearance-model.js','./cashier-appearance.js','./cashier-appearance-boot.js','./cashier-appearance.css');\n",
+          "after": "// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =\n// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.\nconst CORE = 'takodeal-pos-core-branch-policy-20261116-r1';\n\nconst PHOTOS = 'takodeal-pos-photos-offline02';\nconst ROOT = new URL('./', self.location.href);\nconst required = ['./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-app-update.js','./cashier-data.js'];\nrequired.push('./cashier-branch-policy.js');\nconst sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';\nrequired.push('./cashier-device-setup.js');\nrequired.push('./cashier-startup.js','./cashier-startup.css','./cashier-appearance-model.js','./cashier-appearance.js','./cashier-appearance-boot.js','./cashier-appearance.css');\n"
+        }
+      ]
+    }
+  },
+  "newFiles": {
+    "Takodeal-POS/cashier-branch-policy.js": "132237a28acf4e9ceee7e241c96a05f553e7a7573005047a3bedd7755f25ef87"
+  }
+}

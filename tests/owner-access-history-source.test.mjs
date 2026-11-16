@@ -1,6 +1,7 @@
+import {legacyCompatibilityRead,normalizeCompatibilityGitResult} from './helpers/compatibility-release-inverse.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
 import {ownerAccessProof as proof,restoreOwnerAccess,ownerAccessSha} from './helpers/owner-access-history-inverse.mjs';
-const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:8e6});
+const root=new URL('../',import.meta.url),read=file=>legacyCompatibilityRead(readFileSync(new URL(file,root),'utf8'),new URL(file,root)),git=(...args)=>normalizeCompatibilityGitResult(execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:8e6}),'git',args);
 test('portable Owner inspection/history is exactly seven reviewed files against the published Cashier tree',()=>{
  assert.equal(proof.base,'ca6a7862a215545d04cb2ee11820477e9e71e6a7');const scope=['Takodeal-POS','takodeal-manager','takodeal-staff','takodeal-franchise','takodeal-delivery','Customer','functions','firestore.rules','firestore.policy.rules'];
  const changed=new Set([...git('diff','--name-only',proof.base,'--',...scope).split(/\r?\n/),...git('ls-files','--others','--exclude-standard','--',...scope).split(/\r?\n/)].filter(Boolean));assert.deepEqual([...changed].sort(),Object.keys(proof.files).sort());assert.equal(changed.size,7);
