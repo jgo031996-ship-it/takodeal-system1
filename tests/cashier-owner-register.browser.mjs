@@ -13,9 +13,10 @@ const script=`
 import {installCashierOwnerRegister} from './cashier-owner-register.js';
 const report=document.getElementById('owner-register-proof');
 try{
+ const setup=document.getElementById('deviceSetupOverlay');setup.style.display='flex';const setupOwner=setup.querySelector('[data-owner-access-portable]');if(!setupOwner)throw Error('Unregistered device hides Owner Access');setupOwner.disabled=false;window.ownerBypassLogin=()=>{window.fixtureSetupAccess=true;setup.style.display='none';};setupOwner.click();if(!window.fixtureSetupAccess||setup.style.display!=='none')throw Error('Setup Owner button failed');
  const db={},user={uid:'fictional'},auth={currentUser:user},session=Object.freeze({branch:'Agdao',workspaceKind:'verified-owner-workspace-v1'}),reads=[];
  const owner={db,user,auth,session,branch:'Agdao',assertCurrent(){if(window.sessionUser!==session)throw Error('changed');}};
- Object.assign(window,{sessionUser:session,currentShift:null,isCashierOwnerToolsMode:()=>window.sessionUser===session,getCashierOwnerWorkspaceContext:()=>owner,collection:(db,table)=>({db,table}),where:(field,op,value)=>({field,op,value}),limit:count=>({count}),query:(q,...filters)=>({...q,filters}),stopShiftSalesFeed(){},Swal:{fire:options=>{window.fixtureDetails=options;}}});
+ Object.assign(window,{sessionUser:session,currentShift:null,isCashierOwnerToolsMode:()=>window.sessionUser===session,getCashierOwnerWorkspaceContext:()=>owner,collection:(db,table)=>({db,table}),where:(field,op,value)=>({field,op,value}),limit:count=>({count}),orderBy:(field,direction)=>({field,direction}),query:(q,...filters)=>({...q,filters}),stopShiftSalesFeed(){},Swal:{fire:options=>{window.fixtureDetails=options;}}});
  window.cashierOwnerRegister=installCashierOwnerRegister(window,document,{setInterval:()=>1,clearInterval(){},subscribe(query,next){if(query.db!==db)throw Error('Wrong database');reads.push({query,next});return()=>{};}});
  for(const id of ['loginOverlay','pinOverlay','ownerAccessBtnContainer']){const n=document.getElementById(id);if(n)n.style.display='none';}
  window.switchView('sales');
@@ -27,7 +28,7 @@ try{
  table.querySelector('[data-owner-receipt]').click();if(!window.fixtureDetails?.html.includes('FICTIONAL-001'))throw Error('Details click failed');
  window.switchView('pos');if(document.querySelector('#globalShiftLockout h2').textContent!=='Owner branch view'||!document.getElementById('btnMainPlaceOrder').disabled)throw Error('Owner POS mode was not preserved');
  document.querySelector('#globalShiftLockout button').click();if(reads.length!==3)throw Error('View branch sales did not refresh the verified Owner connection');
- emit(2,[]);if(!table.textContent.includes('live register at Agdao is closed'))throw Error('Remote close failed');
+ emit(2,[]);emit(3,[{id:'past-sale',receiptId:'PAST-001',branch:'Agdao',timestamp:new Date('2026-11-14T03:00:00Z'),netTotal:80}]);if(!table.textContent.includes('No open register is synced')||!table.textContent.includes('PAST-001'))throw Error('Missing-register history failed');window.fixtureSwitches=0;window.ownerBypassLogin=()=>window.fixtureSwitches++;table.querySelector('[data-owner-switch]').click();if(window.fixtureSwitches!==1)throw Error('Branch switch control failed');table.querySelector('[data-owner-range=latest]').click();table.querySelector('[data-owner-sales-date]').value='2026-11-15';table.querySelector('[data-owner-show-date]').click();if(reads.at(-1).query.filters.find(v=>v.op==='>=').value.toISOString()!=='2026-11-14T16:00:00.000Z')throw Error('Philippine sales-date range failed');
  window.sessionUser=null;window.dispatchEvent(new Event('cashier-workspace-changed'));if(table.textContent!=='Sign in to view branch sales.')throw Error('Logout retained branch sales');
  report.textContent='PASS: actual HTML, open register, cash totals, receipt details, Owner POS lock, remote close and logout';
 }catch(error){report.textContent='FAIL: '+error.message;}

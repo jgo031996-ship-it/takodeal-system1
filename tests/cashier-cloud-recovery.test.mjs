@@ -1,3 +1,4 @@
+import {ownerAccessProof} from './helpers/owner-access-history-inverse.mjs';
 import {restoreLiveBranchDirectory} from './helpers/live-branch-directory-inverse.mjs';
 // Apply only the separately hash-verified public discovery patch before these
 // historical business/transport byte comparisons. The new source test pins it.
@@ -9,7 +10,10 @@ import {readFileSync as originalReadFileSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import vm from 'node:vm';
 import {restoreCashierCloudTransport} from './helpers/cashier-cloud-transport-inverse.mjs';
-import {CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
+import {CASHIER_RELEASE as LIVE_CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
+// Historical reads above compose the exact new inverse before checking this cohort.
+const CASHIER_RELEASE='cashier-plotted-attendance-20261116-r1';
+assert.equal(LIVE_CASHIER_RELEASE,ownerAccessProof.release);
 const read=file=>{const source=readFileSync(new URL('../Takodeal-POS/'+file,import.meta.url),'utf8');return file==='main.js'?source:restoreCashierVoidIntegration(source,'Takodeal-POS/'+file);},sha=value=>createHash('sha256').update(value).digest('hex');
 const release='cashier-cloud-recovery-20261110-r1';
 test('primary SDK transport explicitly forces long polling while retaining the exact persistent multi-tab cache manager',()=>{

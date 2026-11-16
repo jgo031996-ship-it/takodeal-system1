@@ -1,4 +1,6 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {execFileSync} from 'node:child_process';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as rawRead} from 'node:fs';import {execFileSync as rawExec} from 'node:child_process';
+import {legacyOwnerAccessRead,normalizeOwnerAccessGitResult} from './helpers/owner-access-history-inverse.mjs';
+const readFileSync=(...args)=>legacyOwnerAccessRead(rawRead(...args),args[0]);const execFileSync=(...args)=>normalizeOwnerAccessGitResult(rawExec(...args),args[0],args[1]);
 import {plottedProof as proof,plottedSha as sha,restorePlottedRelease as restore} from './helpers/plotted-release-inverse.mjs';
 const root=new URL('../',import.meta.url),read=file=>readFileSync(new URL(file,root),'utf8'),git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:8e6});
 test('the complete plotted-attendance release has an exact inverse to its deployed app base and pins every new dependency',()=>{

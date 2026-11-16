@@ -31,13 +31,13 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
   if(branches.length!==1||target.name!==selectedBranch||inactive(target))throw Error('This branch is inactive or needs review. Choose an active branch.');
   if(devices.some(row=>row.deviceId!==deviceId||inactive(row)))throw Error('This device has an inactive registration. Ask the Owner to review Device Fleet before opening this workspace.');
  }
- async function authority({db,user,branch:selectedBranch,deviceId},assertCurrent){
+ async function authority({db,user,branch:selectedBranch,deviceId},assertCurrent,{inspection=false}={}){
   const read=async(table,field,value,cap)=>{
    assertCurrent();const snap=await w.getDocsFromServer(w.query(w.collection(db,table),w.where(field,'==',value),w.limit(cap)));assertCurrent();
    if(!Array.isArray(snap?.docs)||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites||snap.docs.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites)||snap.docs.length>=cap)throw Error('Reconnect to confirm the current Owner account and selected branch.');
    return snap.docs.map(row=>({...row.data(),id:row.id}));
   };
-  const [owners,branches,devices]=await Promise.all([read('hq_managers','email',OWNER,2),read('branches','name',selectedBranch,2),read('pos_devices','deviceId',deviceId,3)]),rows={owners,branches,devices};assertCurrent();validateAuthority(rows,user,selectedBranch,deviceId);
+  const [owners,branches,devices]=await Promise.all([read('hq_managers','email',OWNER,2),read('branches','name',selectedBranch,2),inspection?Promise.resolve([]):read('pos_devices','deviceId',deviceId,3)]),rows={owners,branches,devices};assertCurrent();validateAuthority(rows,user,selectedBranch,deviceId);
   // The exact known source docs are read again inside a stock-receive TX.
   // A Web transaction cannot lock future duplicate query results; uniqueness
   // is freshly checked above rather than claimed as a Rules-level guarantee.
@@ -51,9 +51,9 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
  function current(){
   if(!state)return null;const value=state;
   const assertCurrent=()=>{
-   value.accountCurrent();if(state!==value||epoch!==value.epoch||primaryAuth?.currentUser!==value.primaryUser||w.db!==primaryDb||value.auth.currentUser!==value.user||value.user.uid!==value.session.uid||!isCashierOwnerActionUser(value.user)||value.db?.app!==value.auth.app||w.sessionUser!==value.session||w.localStorage.getItem('takodeal_device_id')!==value.deviceId||w.localStorage.getItem('takodeal_device_branch')!==value.branch)throw error();
+   value.accountCurrent();if(state!==value||epoch!==value.epoch||primaryAuth?.currentUser!==value.primaryUser||w.db!==primaryDb||value.auth.currentUser!==value.user||value.user.uid!==value.session.uid||!isCashierOwnerActionUser(value.user)||value.db?.app!==value.auth.app||w.sessionUser!==value.session||w.localStorage.getItem('takodeal_device_id')!==value.deviceId||w.localStorage.getItem('takodeal_device_branch')!==(value.portable?value.originalBranch:value.branch))throw error();
   };
-  const prepareAction=async()=>{assertCurrent();await account({auth:value.auth,db:value.db,user:value.user,assertCurrent});assertCurrent();return authority(value,assertCurrent);};
+  const prepareAction=async()=>{assertCurrent();if(!value.deviceId)throw Error('Receiving deliveries requires this device’s existing Cashier registration. Owner sales inspection is available here.');await account({auth:value.auth,db:value.db,user:value.user,assertCurrent});assertCurrent();return authority(value,assertCurrent);};
   assertCurrent();return {auth:value.auth,db:value.db,user:value.user,session:value.session,branch:value.branch,actionActor:value.actionActor,assertCurrent,prepareAction};
  }
  const isToolsMode=()=>Boolean(state||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE);
@@ -67,12 +67,15 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
    w[name]=function(...args){if(isToolsMode())return notice();return original.apply(this,args);};
   }
  }
- async function enter({auth,db,user,branch:selectedBranch}={}){
+ async function enter({auth,db,user,branch:selectedBranch,portable=false}={}){
   if(flight)throw Error('Owner Access is still checking this branch. Keep the current screen and wait for its result.');
-  if(state||w.cashierDispatchReceiving===true||cashierStartupBusy(w))throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
-  const token=++epoch,session=w.sessionUser,deviceId=w.localStorage.getItem('takodeal_device_id'),oldBranch=w.localStorage.getItem('takodeal_device_branch'),cart=w.cart,carts=w.platformCarts,entries=Object.entries(carts||{}),cartContents=contents(cart),cacheContents=contents(carts);let primaryUser=primaryAuth?.currentUser,retired=false,timer;
+  const previous=state,replacing=portable&&previous?.portable===true&&w.sessionUser===previous.session;
+  if(replacing)current().assertCurrent();
+  const busy=()=>cashierStartupBusy(w,{ownerSession:replacing?previous.session:null});
+  if(state&&!replacing||w.cashierDispatchReceiving===true||busy())throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
+  const initialEpoch=epoch,token=initialEpoch+1,session=w.sessionUser,deviceId=w.localStorage.getItem('takodeal_device_id'),oldBranch=w.localStorage.getItem('takodeal_device_branch'),cart=w.cart,carts=w.platformCarts,entries=Object.entries(carts||{}),cartContents=contents(cart),cacheContents=contents(carts);let primaryUser=primaryAuth?.currentUser,retired=false,timer;
   const assertCurrent=()=>{
-   if(retired||epoch!==token||primaryAuth?.currentUser!==primaryUser||w.db!==primaryDb||w.sessionUser!==session||w.localStorage.getItem('takodeal_device_id')!==deviceId||w.localStorage.getItem('takodeal_device_branch')!==oldBranch||w.cart!==cart||w.platformCarts!==carts||entries.some(([key,value])=>w.platformCarts?.[key]!==value)||contents(w.cart)!==cartContents||contents(w.platformCarts)!==cacheContents||w.cashierDispatchReceiving===true||cashierStartupBusy(w)||auth?.currentUser!==user||!isCashierOwnerActionUser(user))throw error();
+   if(retired||epoch!==initialEpoch||state!==previous||primaryAuth?.currentUser!==primaryUser||w.db!==primaryDb||w.sessionUser!==session||w.localStorage.getItem('takodeal_device_id')!==deviceId||w.localStorage.getItem('takodeal_device_branch')!==oldBranch||w.cart!==cart||w.platformCarts!==carts||entries.some(([key,value])=>w.platformCarts?.[key]!==value)||contents(w.cart)!==cartContents||contents(w.platformCarts)!==cacheContents||w.cashierDispatchReceiving===true||busy()||auth?.currentUser!==user||!isCashierOwnerActionUser(user))throw error();
   };
   const work=(async()=>{
    if(!branch(selectedBranch))throw Error('Choose an active branch before opening Owner Access.');
@@ -83,20 +86,20 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
    }
    assertCurrent();
    const verified=await account({auth,db,user,assertCurrent});
-   await authority({db,user,branch:selectedBranch,deviceId},assertCurrent);assertCurrent();
-   // Owner inspection/local tools do not request or create device approval.
-   // An existing revoked registration remains a hold, even for this view.
+   await authority({db,user,branch:selectedBranch,deviceId},assertCurrent,{inspection:portable});assertCurrent();
+   // Portable inspection verifies the Owner and branch without changing the
+   // physical tablet registration. Delivery writes retain their separate check.
    const displayName=typeof user.displayName==='string'&&user.displayName.trim()?user.displayName.trim().slice(0,120):OWNER;
    const operational=Object.freeze({uid:user.uid,email:OWNER,displayName,cashierName:'Owner (System Test)',branch:selectedBranch,role:'Owner',isOwner:true,workspaceKind:CASHIER_OWNER_WORKSPACE});
-   assertCurrent();beginCashierOwnerPreview(w,selectedBranch);w.localStorage.setItem('cashierName',operational.cashierName);
-   if(w.localStorage.getItem('takodeal_device_branch')!==selectedBranch||w.localStorage.getItem('cashierName')!==operational.cashierName)throw Error('Owner Access could not save the selected branch. Keep this tablet’s saved data and retry.');
-   w.sessionUser=operational;
-   state={epoch:token,auth,db,user,session:operational,primaryUser,branch:selectedBranch,deviceId,actionActor:'Owner: '+displayName,accountCurrent:verified.current};
+   assertCurrent();if(!portable){beginCashierOwnerPreview(w,selectedBranch);w.localStorage.setItem('cashierName',operational.cashierName);
+    if(w.localStorage.getItem('takodeal_device_branch')!==selectedBranch||w.localStorage.getItem('cashierName')!==operational.cashierName)throw Error('Owner Access could not save the selected branch. Keep this tablet’s saved data and retry.');}
+   epoch=token;w.sessionUser=operational;
+   state={epoch:token,auth,db,user,session:operational,primaryUser,branch:selectedBranch,deviceId,portable,originalBranch:oldBranch,actionActor:'Owner: '+displayName,accountCurrent:verified.current};
    const context=current();
    refreshCashierBranchLabel(w,d);
    const branchLabel=d.getElementById('displayBranchText')||d.getElementById('displayBranch'),cashierLabel=d.getElementById('displayCashierText')||d.getElementById('displayCashier');
    if(branchLabel)branchLabel.textContent=selectedBranch;if(cashierLabel)cashierLabel.textContent='Owner · '+displayName;
-   for(const id of ['loginOverlay','pinOverlay','ownerAccessBtnContainer']){const node=d.getElementById(id);if(node)node.style.display='none';}
+   for(const id of ['loginOverlay','pinOverlay','ownerAccessBtnContainer','deviceSetupOverlay']){const node=d.getElementById(id);if(node)node.style.display='none';}
    emit();return context;
   })();
   flight=work;try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{retired=true;reject(Error('Owner Access could not confirm this branch yet. Keep saved orders and retry when connected.'));},timeoutMs);})]);}

@@ -14,8 +14,8 @@ export function refreshCashierBranchLabel(w,d){
 // The static login shell has this exact display placeholder before a PIN login.
 // Every other retained session still requires an explicit Cashier sign-out.
 const loginPlaceholder=user=>user&&typeof user==='object'&&!Array.isArray(user)&&Reflect.ownKeys(user).length===4&&['email','branch','cashierName','isOwner'].every(name=>Object.hasOwn(user,name))&&user.email===''&&user.branch==='Loading...'&&user.cashierName==='User'&&user.isOwner===false;
-export function cashierStartupBusy(w){
- if(w.sessionUser&&!loginPlaceholder(w.sessionUser)||w.cart?.length||Object.values(w.platformCarts||{}).some(items=>Array.isArray(items)&&items.length)||w.cashierCashCountActive||w.cashierRemitSubmitting||w.isProcessingOrder||w.isSubmittingOrder||w.cashierShiftOpening)return true;
+export function cashierStartupBusy(w,{ownerSession=null}={}){
+ if(w.sessionUser&&w.sessionUser!==ownerSession&&!loginPlaceholder(w.sessionUser)||w.cart?.length||Object.values(w.platformCarts||{}).some(items=>Array.isArray(items)&&items.length)||w.cashierCashCountActive||w.cashierRemitSubmitting||w.isProcessingOrder||w.isSubmittingOrder||w.cashierShiftOpening)return true;
  try{for(let i=0;i<w.localStorage.length;i++){const name=w.localStorage.key(i);if(typeof name==='string'&&(name.startsWith('takodeal_cash_remittance_v4:')||name.startsWith('takodeal_remittance_attempt_v1:')))return true;}}catch{return true;}
  return false;
 }

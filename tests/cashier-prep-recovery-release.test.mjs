@@ -1,3 +1,4 @@
+import {ownerAccessProof} from './helpers/owner-access-history-inverse.mjs';
 import {legacyPlottedRead,normalizePlottedGitResult} from './helpers/plotted-release-inverse.mjs';
 const originalReadFileSync=(...args)=>legacyPlottedRead(_plottedRawFs(...args),args[0]);
 const execFileSync=(...args)=>normalizePlottedGitResult(_plottedRawExec(...args),args[0],args[1]);
@@ -8,7 +9,10 @@ const readFileSync=(path,...args)=>{const value=originalReadFileSync(path,...arg
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync as _plottedRawFs} from 'node:fs';import {execFileSync as _plottedRawExec} from 'node:child_process';import {createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';
 import {cashierPrepRecoveryReleaseProof as proof,restoreCashierPrepRecoveryRelease} from './helpers/cashier-prep-recovery-release-inverse.mjs';
 import {restoreCashierVoidRecovery} from './helpers/cashier-void-recovery-inverse.mjs';
-import {CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
+import {CASHIER_RELEASE as LIVE_CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
+// Historical reads above compose the exact new inverse before checking this cohort.
+const CASHIER_RELEASE='cashier-plotted-attendance-20261116-r1';
+assert.equal(LIVE_CASHIER_RELEASE,ownerAccessProof.release);
 const root=fileURLToPath(new URL('../',import.meta.url)),read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),sha=value=>createHash('sha256').update(value).digest('hex'),git=file=>execFileSync('git',['show',proof.base+':'+file],{cwd:root,windowsHide:true,maxBuffer:4*1024*1024});
 
 test('three release labels restore every prior live page, worker and presentation-helper byte',()=>{

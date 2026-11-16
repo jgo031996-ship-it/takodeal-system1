@@ -18,6 +18,9 @@ export function ownerSalesTotals(rows){
 export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w.onSnapshot(query,{includeMetadataChanges:true},next,error),setInterval:every=globalThis.setInterval,clearInterval:clear=globalThis.clearInterval}={}){
  let context=null,generation=0,salesGeneration=0,stopShift=null,stopSales=null,timer=null,savedUI=null;
  let state={phase:'signed-out',branch:'',shift:null,rows:[],message:''};
+ let range='auto',date='',pageSize=100,registerPhase='checking',registerMessage='',salesKey='';
+ const zone={timeZone:'Asia/Manila'};
+ const dayBounds=value=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value))throw Error('Choose a valid sales date.');const start=new Date(value+'T00:00:00+08:00');if(!Number.isFinite(+start)||new Date(+start+8*3600000).toISOString().slice(0,10)!==value)throw Error('Choose a valid sales date.');return [start,new Date(+start+86400000)];};
  const ownerMode=()=>w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE||w.isCashierOwnerToolsMode?.()===true;
  function capture(){
   const value=w.getCashierOwnerWorkspaceContext?.();
@@ -34,49 +37,66 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
  }
  function paintStatus(){
   if(!ownerMode())return;saveUI();
+  for(const id of ['globalUnverifiedBanner','unverifiedWarningBanner']){const banner=d.getElementById(id);if(banner)banner.style.display='none';}
   const top=d.getElementById('btnTopShift'),lock=d.getElementById('globalShiftLockout'),heading=lock?.querySelector('h2'),note=lock?.querySelector('p'),button=lock?.querySelector('button');
-  const open=!!state.shift&&['ready','sales-loading','sales-error'].includes(state.phase),closed=state.phase==='closed';
-  if(top){top.textContent=open?'🟢 Branch register open':closed?'🔴 Branch register closed':'⏳ Checking branch register';top.style.background=open?'#dcfce7':'#f1f5f9';top.style.color=open?'#15803d':'#475569';top.disabled=false;top.onclick=()=>{w.switchView?.('sales');refresh();};}
+  const open=registerPhase==='open';
+  if(top){top.textContent=open?'🟢 Branch register open':registerPhase==='none'?'⏳ No open register synced':'⏳ Checking branch register';top.style.background=open?'#dcfce7':'#f1f5f9';top.style.color=open?'#15803d':'#475569';top.disabled=false;top.onclick=()=>{w.switchView?.('sales');refresh();};}
   if(heading)heading.textContent='Owner branch view';
   const quote=d.getElementById('lockoutQuote');if(quote)quote.textContent=state.message;
-  if(note)note.textContent='View this branch’s live register and uploaded sales. Use a Staff PIN to operate the register.';
+  if(note)note.textContent='View branch sales and history from anywhere with your verified Owner account.';
   if(button){button.textContent='View branch sales';button.onclick=()=>w.switchView?.('sales');}
   const place=d.getElementById('btnMainPlaceOrder');if(place)place.disabled=true;
  }
  function render(){
   paintStatus();if(!activeSales())return;
   const table=d.getElementById('tbTransBody');if(!table)return;
-  const banner='<tr><td colspan="8" style="padding:16px;white-space:normal;" role="status">'+escape(state.message)+'</td></tr>';
+  const mode=state.range||'current';
+  const controls='<tr class="tk-sales-message"><td colspan="8" style="padding:12px;white-space:normal;"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
+   '<button type="button" data-owner-range="current" '+(!state.shift?'disabled':'')+'>Current shift</button><button type="button" data-owner-range="latest">Latest sales</button>'+
+   '<label>Sales date <input type="date" data-owner-sales-date value="'+escape(date)+'"></label><button type="button" data-owner-show-date>Show date</button>'+
+   '<button type="button" data-owner-switch>Switch branch</button><button type="button" data-owner-refresh>Refresh Sales</button></div></td></tr>';
+  const banner=controls+'<tr class="tk-sales-message"><td colspan="8" style="padding:16px;white-space:normal;" role="status">'+escape(state.message)+'</td></tr>';
   if(state.phase!=='ready'){table.innerHTML=banner;return;}
-  const totals=ownerSalesTotals(state.rows),start=new Date(millis(state.shift.startTime)).toLocaleString();
-  const summary='<tr><td colspan="8" style="padding:16px;white-space:normal;line-height:1.8;">'+
-   '<strong>'+escape(state.branch)+' · Total sales '+money(totals.total)+'</strong> · '+totals.count+' paid receipt(s)<br>'+['Cash','GCash','Grab','Foodpanda','Other'].map(key=>escape(key)+': '+money(totals[key])).join(' · ')+
-   '<br>Opened '+escape(start)+' · '+escape(state.shift.startedBy||'Cashier')+'<br><small>Live uploaded sales. Receipts awaiting upload on the branch tablet appear after it syncs.</small></td></tr>';
+  const totals=ownerSalesTotals(state.rows),start=state.shift?new Date(millis(state.shift.startTime)).toLocaleString('en-PH',zone):null;
+  const summary='<tr class="tk-sales-summary"><td colspan="8" style="padding:16px;white-space:normal;line-height:1.8;">'+
+   '<strong>'+escape(state.branch)+' · '+(state.hasMore?'Shown receipts total ':'Total sales ')+money(totals.total)+'</strong> · '+totals.count+' paid receipt(s)<br>'+['Cash','GCash','Grab','Foodpanda','Other'].map(key=>escape(key)+': '+money(totals[key])).join(' · ')+
+   '<br>'+escape(mode==='current'?'Current shift':mode==='date'?'Sales on '+date+' (Philippine time)':'Latest uploaded receipts')+(start?' · Register opened '+escape(start)+' · '+escape(state.shift.startedBy||'Cashier'):'')+
+   '<br><small>Uploaded receipts only. Pending branch-tablet uploads appear after syncing.</small>'+(state.hasMore?'<br><button type="button" data-owner-more>Show 100 more receipts</button>':'')+'</td></tr>';
   table.innerHTML=banner+summary+(state.rows.length?state.rows.map((row,index)=>{
    const time=Number.isFinite(millis(row.timestamp))?new Date(millis(row.timestamp)):null;
-   return '<tr><td style="padding:15px;">'+escape(row.receiptId||row.id)+'</td><td>'+escape(row.customerName||'Guest')+'</td><td>'+escape(row.paymentMethod||'Cash')+'</td><td>'+escape(row.status||'Paid')+'</td><td>'+escape(time?.toLocaleDateString()||'')+'</td><td>'+escape(time?.toLocaleTimeString()||'')+'</td><td>'+money(row.netTotal)+'</td><td><button type="button" data-owner-receipt="'+index+'">View details</button></td></tr>';
-  }).join(''):'<tr><td colspan="8" style="padding:20px;">No uploaded transactions for this open register yet.</td></tr>');
+   return '<tr class="tk-sale-row"><td data-label="Receipt" style="padding:15px;">'+escape(row.receiptId||row.id)+'</td><td data-label="Customer">'+ escape(row.customerName||'Guest')+'</td><td data-label="Payment">'+ escape(row.paymentMethod||'Cash')+'</td><td data-label="Status">'+ escape(row.status||'Paid')+'</td><td data-label="Date">'+ escape(time?.toLocaleDateString('en-PH',zone)||'')+'</td><td data-label="Time">'+ escape(time?.toLocaleTimeString('en-PH',zone)||'')+'</td><td data-label="Amount">'+ money(row.netTotal)+'</td><td data-label="Details"><button type="button" data-owner-receipt="'+index+'">View details</button></td></tr>';
+  }).join(''):'<tr class="tk-sales-message"><td colspan="8" style="padding:20px;">No uploaded receipts in this view. Choose Latest sales or another date.</td></tr>');
  }
  function publish(next){state=next;render();}
- function endSales(){salesGeneration++;stopSales?.();stopSales=null;}
+ function endSales(){salesGeneration++;stopSales?.();stopSales=null;salesKey='';}
  function disconnect(){generation++;stopShift?.();stopShift=null;endSales();context=null;}
  function sales(value,run,shift){
-  endSales();const salesRun=salesGeneration;
-  publish({phase:'sales-loading',branch:value.branch,shift,rows:[],message:'Register open at '+value.branch+'. Loading uploaded sales…'});
+  const mode=range==='date'?'date':range==='latest'?'latest':shift?'current':'latest';
+  const key=JSON.stringify([mode,date,pageSize,mode==='current'?shift?.shiftId:null,mode==='current'?millis(shift?.startTime):null]);
+  if(key===salesKey&&stopSales){state={...state,shift,message:registerMessage};render();return;}
+  endSales();salesKey=key;const salesRun=salesGeneration;
+  publish({phase:'sales-loading',branch:value.branch,shift,range:mode,rows:[],message:registerMessage+' Loading uploaded sales…'});
   const valid=()=>same(value,run)&&salesRun===salesGeneration;
   try{
-   const query=w.query(w.collection(value.db,'transactions'),w.where('branch','==',value.branch),w.where('timestamp','>=',new Date(millis(shift.startTime))));
+   const filters=[w.where('branch','==',value.branch)];
+   if(mode==='current')filters.push(w.where('timestamp','>=',new Date(millis(shift.startTime))));
+   else{if(mode==='date'){const [from,to]=dayBounds(date);filters.push(w.where('timestamp','>=',from),w.where('timestamp','<',to));}filters.push(w.orderBy('timestamp','desc'),w.limit(pageSize+1));}
+   const query=w.query(w.collection(value.db,'transactions'),...filters);
    const stop=subscribe(query,snapshot=>{
     if(!valid())return;
     try{
      if(!Array.isArray(snapshot?.docs))throw Error('Incomplete sales response.');
-     if(cached(snapshot)){publish({phase:'sales-loading',branch:value.branch,shift,rows:[],message:'Register open at '+value.branch+'. Reconnecting to confirm uploaded sales…'});return;}
-     const rows=snapshot.docs.map(doc=>({...doc.data(),id:doc.id})).filter(row=>row.branch===value.branch&&Number.isFinite(millis(row.timestamp))&&millis(row.timestamp)>=millis(shift.startTime)&&(!row.shiftId||row.shiftId==='UNKNOWN'||row.shiftId===shift.shiftId)).sort((a,b)=>millis(b.timestamp)-millis(a.timestamp));
-     publish({phase:'ready',branch:value.branch,shift,rows,message:'Register open at '+value.branch+' · live sales view'});
-    }catch{publish({phase:'sales-error',branch:value.branch,shift,rows:[],message:'Register open at '+value.branch+'. Sales could not be confirmed. Use Refresh Sales to retry.'});}
-   },()=>{if(valid())publish({phase:'sales-error',branch:value.branch,shift,rows:[],message:'Register open at '+value.branch+'. Sales could not be loaded. Check the connection or account, then use Refresh Sales.'});});
+     if(cached(snapshot)){publish({phase:'sales-loading',branch:value.branch,shift,rows:[],range:mode,message:registerMessage+' Reconnecting to confirm uploaded sales…'});return;}
+     const rows=snapshot.docs.map(doc=>({...doc.data(),id:doc.id})).filter(row=>{
+      if(row.branch!==value.branch||!Number.isFinite(millis(row.timestamp)))return false;
+      if(mode==='current')return millis(row.timestamp)>=millis(shift.startTime)&&(!row.shiftId||row.shiftId==='UNKNOWN'||row.shiftId===shift.shiftId);
+      if(mode==='date'){const [from,to]=dayBounds(date);return millis(row.timestamp)>=+from&&millis(row.timestamp)<+to;}return true;
+     }).sort((a,b)=>millis(b.timestamp)-millis(a.timestamp));
+     publish({phase:'ready',branch:value.branch,shift:state.shift,range:mode,rows:mode==='current'?rows:rows.slice(0,pageSize),hasMore:mode!=='current'&&rows.length>pageSize,message:registerMessage});
+    }catch{publish({phase:'sales-error',branch:value.branch,shift,rows:[],message:registerMessage+' Sales could not be loaded. Use Refresh Sales to retry.'});}
+   },()=>{if(valid())publish({phase:'sales-error',branch:value.branch,shift,rows:[],message:registerMessage+' Sales could not be loaded. Use Refresh Sales to retry.'});});
    if(typeof stop!=='function')throw Error('Sales connection unavailable.');if(valid())stopSales=stop;else stop();
-  }catch{if(valid())publish({phase:'sales-error',branch:value.branch,shift,rows:[],message:'Register open at '+value.branch+'. Sales could not be loaded. Use Refresh Sales to retry.'});}
+  }catch{if(valid())publish({phase:'sales-error',branch:value.branch,shift,rows:[],message:registerMessage+' Sales could not be loaded. Use Refresh Sales to retry.'});}
  }
  function start({force=false}={}){
   if(!ownerMode()){stop();return false;}
@@ -86,7 +106,8 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
   // Invalidate old staff renders without attaching this view to a live drawer.
   w.stopShiftSalesFeed?.();w.shiftSalesRenderGeneration=(w.shiftSalesRenderGeneration||0)+1;w.shiftStatusGeneration=(w.shiftStatusGeneration||0)+1;
   w.currentShift=null;w.activeShiftDetails=null;
-  publish({phase:'loading',branch:value.branch,shift:null,rows:[],message:'Checking the live register at '+value.branch+'…'});
+  registerPhase='checking';registerMessage='Checking the live register at '+value.branch+'…';
+  publish({phase:'loading',branch:value.branch,shift:null,rows:[],message:registerMessage});
   if(timer===null&&typeof every==='function'){timer=every(check,1000);timer?.unref?.();}
   try{
    const query=w.query(w.collection(value.db,'shifts'),w.where('branch','==',value.branch),w.where('active','==',true),w.limit(2));
@@ -94,38 +115,47 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
     if(!same(value,run))return;
     try{
      if(!Array.isArray(snapshot?.docs))throw Error('Incomplete register response.');
-     if(cached(snapshot)){endSales();publish({phase:'loading',branch:value.branch,shift:null,rows:[],message:'Waiting for a live register check at '+value.branch+'. Reconnect or use Refresh Sales.'});return;}
+     if(cached(snapshot)){registerPhase='checking';registerMessage='Waiting for a live register check at '+value.branch+'.';sales(value,run,null);return;}
      if(snapshot.docs.length>1)throw Error('More than one open register was found. Review this branch in the Owner App.');
-     if(!snapshot.docs.length){endSales();publish({phase:'closed',branch:value.branch,shift:null,rows:[],message:'The live register at '+value.branch+' is closed.'});return;}
+     if(!snapshot.docs.length){registerPhase='none';registerMessage='No open register is synced at '+value.branch+'. Sales history remains available.';sales(value,run,null);return;}
      const doc=snapshot.docs[0],row=doc.data();
      if(!doc.id||row.branch!==value.branch||row.active!==true||!Number.isFinite(millis(row.startTime)))throw Error('This branch register needs review in the Owner App.');
      const shift={shiftId:doc.id,startTime:row.startTime,startedBy:row.cashier,active:true};
-     if(state.shift?.shiftId===shift.shiftId&&millis(state.shift.startTime)===millis(shift.startTime)&&stopSales){state={...state,shift};render();return;}
+     registerPhase='open';registerMessage='Register open at '+value.branch+' · live sales view';
      sales(value,run,shift);
-    }catch(error){endSales();publish({phase:'error',branch:value.branch,shift:null,rows:[],message:error.message+' Use Refresh Sales to retry.'});}
-   },()=>{if(same(value,run)){endSales();publish({phase:'error',branch:value.branch,shift:null,rows:[],message:'The live register at '+value.branch+' could not be confirmed. Check the connection or account, then use Refresh Sales.'});}});
+    }catch(error){registerPhase='error';registerMessage=error.message+' Register status is unconfirmed.';sales(value,run,null);}
+   },()=>{if(same(value,run)){registerPhase='error';registerMessage='The live register at '+value.branch+' could not be confirmed. Sales history remains available.';sales(value,run,null);}});
    if(typeof stop!=='function')throw Error('Register connection unavailable.');if(same(value,run))stopShift=stop;else stop();
-  }catch{if(same(value,run))publish({phase:'error',branch:value.branch,shift:null,rows:[],message:'The branch register connection is unavailable. Use Refresh Sales to retry.'});}
+  }catch{if(same(value,run)){registerPhase='error';registerMessage='The branch register connection is unavailable. Sales history remains available.';sales(value,run,null);}}
   return true;
  }
  function stop(){
   const wasOwner=state.phase!=='signed-out';disconnect();if(timer!==null)clear(timer);timer=null;
   if(savedUI){for(const {node,text,click}of savedUI.nodes){node.textContent=text;node.onclick=click;}if(savedUI.top){savedUI.top.innerHTML=savedUI.topHTML;savedUI.top.onclick=savedUI.topClick;savedUI.top.disabled=savedUI.topDisabled;Object.assign(savedUI.top.style,savedUI.topStyle);}savedUI=null;}
   state={phase:'signed-out',branch:'',shift:null,rows:[],message:''};
+  if(wasOwner&&!ownerMode())w.startUnverifiedListener?.();
   if(wasOwner){w.shiftSalesRenderGeneration=(w.shiftSalesRenderGeneration||0)+1;const table=d.getElementById('tbTransBody');if(table){table.innerHTML='';table.textContent='Sign in to view branch sales.';}}
  }
  function check(){if(!ownerMode()){stop();return;}if(!context){start();return;}if(!same(context,generation))start({force:true});}
  function refresh(){return start({force:true});}
+ function setRange(next,day=''){if(!['current','latest','date'].includes(next))return false;if(next==='date')dayBounds(day);capture();range=next;date=day;pageSize=100;if(context)sales(context,generation,state.shift);return true;}
  d.getElementById('tbTransBody')?.addEventListener?.('click',event=>{
-  const button=event.target.closest?.('[data-owner-receipt]');if(!button||state.phase!=='ready')return;
+  try{capture();}catch{check();return;}
+  const rangeButton=event.target.closest?.('[data-owner-range]');if(rangeButton?.dataset?.ownerRange){setRange(rangeButton.dataset.ownerRange);return;}
+  if(event.target.closest?.('[data-owner-show-date]')?.hasAttribute?.('data-owner-show-date')){try{setRange('date',d.querySelector?.('[data-owner-sales-date]')?.value||'');}catch(error){w.Swal?.fire?.('Sales date',error.message,'info');}return;}
+  if(event.target.closest?.('[data-owner-switch]')?.hasAttribute?.('data-owner-switch')){w.ownerBypassLogin?.();return;}
+  if(event.target.closest?.('[data-owner-refresh]')?.hasAttribute?.('data-owner-refresh')){refresh();return;}
+  if(event.target.closest?.('[data-owner-more]')?.hasAttribute?.('data-owner-more')){capture();pageSize+=100;sales(context,generation,state.shift);return;}
+  const button=event.target.closest?.('[data-owner-receipt]');if(!button||state.phase!=='ready'||button.dataset?.ownerReceipt===undefined)return;
   try{capture();}catch{check();return;}
   const row=state.rows[Number(button.dataset.ownerReceipt)];if(!row)return;
   const lines=(Array.isArray(row.cart)?row.cart:[]).map(item=>escape(item.qty??1)+' × '+escape(item.name||item.item||'Item')).join('<br>');
   w.Swal?.fire?.({title:'Receipt details',html:'<strong>'+escape(row.receiptId||row.id)+'</strong><br>'+escape(state.branch)+'<br>'+escape(row.cashier||'')+'<br>'+lines+'<br><strong>'+money(row.netTotal)+'</strong>',confirmButtonText:'Close'});
  });
+ d.getElementById('tbTransBody')?.addEventListener?.('change',event=>{if(event.target.hasAttribute?.('data-owner-sales-date')){try{capture();date=event.target.value;}catch{check();}}});
  w.addEventListener?.('cashier-workspace-changed',check);
  w.addEventListener?.('storage',check);
  w.addEventListener?.('online',()=>{if(ownerMode())refresh();});
  w.addEventListener?.('offline',()=>{if(ownerMode()){disconnect();publish({phase:'loading',branch:w.sessionUser?.branch||'',shift:null,rows:[],message:'Connection unavailable. Reconnect to check the branch register and sales.'});}});
- return {start,stop,refresh,render,paintStatus,state:()=>({...state,rows:state.rows.map(row=>({...row}))})};
+ return {start,stop,refresh,setRange,render,paintStatus,state:()=>({...state,rows:state.rows.map(row=>({...row}))})};
 }

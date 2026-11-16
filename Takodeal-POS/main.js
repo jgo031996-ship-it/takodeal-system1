@@ -1,7 +1,7 @@
 import {createPlottedTimeInBatch} from './plotted-time-in.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
-import {createCashierOwnerDesktopContext} from './cashier-protected-action.js';
+import {createCashierOwnerDesktopContext,isCashierOwnerActionUser} from './cashier-protected-action.js';
 import {createCashierOwnerWorkspace} from './cashier-owner-workspace.js';
 import {installCashierOwnerRegister} from './cashier-owner-register.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
@@ -7472,6 +7472,7 @@ window.startUnverifiedListener = function() {
 
     // 🔥 onSnapshot listens in real-time. Zero repeated read costs!
     window.unverifiedTxUnsubscribe = window.onSnapshot(txQ, (snapshot) => {
+        if(window.isCashierOwnerToolsMode?.())return;
         let currentShiftId = localStorage.getItem('currentShiftId');
         let salesTab = document.getElementById('nav-sales'); 
         let existingBanner = document.getElementById('globalUnverifiedBanner');
@@ -8895,9 +8896,12 @@ document.addEventListener("DOMContentLoaded", () => {
 // 🛡️ OWNER "GOD MODE" TELEPORTER ENGINE
 // ========================================================
 window.ownerBypassLogin = async function() {
+    const setupOverlay=document.getElementById('deviceSetupOverlay'),setupDisplay=setupOverlay?.style.display;
     try {
         // 1. Trigger Google Login
-        if(cashierStartupBusy(window))throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
+        const existingOwner=cashierOwnerWorkspace.current();
+        if(cashierStartupBusy(window,{ownerSession:existingOwner?.session}))throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
+        if(setupOverlay)setupOverlay.style.display='none';
         const ownerAppName='takodeal-pos-owner-preview-v1';
         const ownerApp=getApps().find(app=>app.name===ownerAppName)||initializeApp(firebaseConfig,ownerAppName);
         if(['projectId','appId','apiKey','authDomain'].some(key=>ownerApp.options?.[key]!==firebaseConfig[key]))throw Error('Owner Access belongs to a different project. Ask HQ to review the app.');
@@ -8906,8 +8910,9 @@ window.ownerBypassLogin = async function() {
         Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, showConfirmButton: false});
         Swal.showLoading();
         
-        const result = await signInWithPopup(ownerAuth, ownerProvider);
-        const user = result.user;
+        if(typeof ownerAuth.authStateReady==='function')await ownerAuth.authStateReady();
+        let user=ownerAuth.currentUser;
+        if(!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
         
         // 2. Strict Security Check: Only YOUR email is allowed through this backdoor
         if (user.email !== 'jgo031996@gmail.com' || user.emailVerified !== true) {
@@ -8958,17 +8963,17 @@ window.ownerBypassLogin = async function() {
         // changing any local preview state. Cashier sign-in is kept separate.
         if(ownerAuth.currentUser!==user||user.email!=='jgo031996@gmail.com'||user.emailVerified!==true)throw Error('The Owner account changed. Reopen Owner Access before starting a branch preview.');
         // Boot a tools-only workspace from the actual isolated Owner account.
-        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch});
+        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch,portable:true});
         workspace.assertCurrent();
-        // Menu/branch reads keep their existing engine; no shift, staff or paid queue is adopted.
-        if (typeof window.loadPOSData === 'function') {
-            window.loadPOSData();
-        }
+        // Owner inspection starts with the selected branch’s own verified data.
+        // Physical tablet, paid queues and operational drawer stay untouched.
+        window.switchView?.('sales');
+        window.cashierOwnerRegister?.start();
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
             title: `Owner Access · ${selectedBranch}`,
-            text: 'Live branch register, sales, tools and receiving are ready. Use a Staff PIN to operate the register.',
+            text: 'Branch sales history and live register status are ready.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }
         });
@@ -8979,6 +8984,8 @@ window.ownerBypassLogin = async function() {
         if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
             Swal.fire('Authentication Failed', error.message, 'error');
         }
+    } finally {
+        if(setupOverlay&&setupDisplay&&setupDisplay!=='none'&&!cashierOwnerWorkspace.isToolsMode())setupOverlay.style.display=setupDisplay;
     }
 };
 
