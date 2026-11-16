@@ -1,0 +1,65 @@
+{
+  "parent": "bf4f959c119385e45d02909bd216beb18c863033",
+  "files": {
+    "takodeal-staff/app.js": {
+      "before": "8d6d464970654a831207511a8c44f3ac6ec12bd0",
+      "after": "9d751cc2ae4f182409c6ed5b97357ec71ec043cc"
+    },
+    "takodeal-staff/index.html": {
+      "before": "91e879e76f292a304e7c0bcb345c3b7f4f358c3d",
+      "after": "fff9af5c4825605f45e2f2bcbb115e07ad925957"
+    },
+    "takodeal-staff/private-phone-identity.js": {
+      "before": "ed6f71e7639d3dfc557bc747472a8326a913c45d",
+      "after": "0b7e50360d37f094ec6d7665bfbaf5c243eda682"
+    },
+    "takodeal-staff/staff-employee-sections.js": {
+      "before": null,
+      "after": "e28a9d2fae86c096b9aa672800fda67cb7fde67d"
+    },
+    "takodeal-staff/staff-employee.css": {
+      "before": null,
+      "after": "2999fee9151b82bd0091c705834ba9d49483f6d3"
+    },
+    "takodeal-staff/staff-pay-phone.js": {
+      "before": null,
+      "after": "8ab4fda07c4b7b7c5564b448dabac6ea7b3b9787"
+    },
+    "takodeal-staff/staff-payslip-work.js": {
+      "before": null,
+      "after": "f35fdc3db2c26a6853a41da83214c3799a2894ed"
+    },
+    "takodeal-staff/staff-private-profile-ui.js": {
+      "before": "77f911310e5785df9cfc9230694c58fc632e47c3",
+      "after": "032c40010949f385217bf9d22b422ac48e1847a2"
+    },
+    "takodeal-staff/staff-registration.js": {
+      "before": "f16481212d5da0be0c249cf8c6daad6f840df796",
+      "after": "55c9b7b6dc2af46c5d23f5f5e22e53a8af103c6c"
+    },
+    "takodeal-staff/staff-saved-payslips.js": {
+      "before": "7889efa9206280741d846de8807eee78f763df57",
+      "after": "a6e31201419d25e09f97ae579a9ce039c9f6cbdc"
+    },
+    "takodeal-staff/staff-setup-access.js": {
+      "before": "5fbffbd3a5fe8376a1d930f1c41ce41ef6cecbeb",
+      "after": "4c4c73cb1ddbe260f698ac8410269a9948063c83"
+    },
+    "takodeal-staff/staff-startup.js": {
+      "before": "d178c6d4000daa458b74a0184cd4148bd98a5719",
+      "after": "bf44fa59e86c9f924945583bddccaa26d075014d"
+    },
+    "takodeal-staff/staff-vault-recovery-ui.js": {
+      "before": "69dc86e3f0e17ff5d7f685314fb82cc2a83279f5",
+      "after": "36b363933dc5729bfeabb2d73a12798199046516"
+    },
+    "takodeal-staff/staff-vault-recovery.js": {
+      "before": "f45a815a79dff78caeca42ecf6440ca6a6e9a662",
+      "after": "501d98aa77bc9ee929829072952f379d195cd890"
+    },
+    "takodeal-staff/sw.js": {
+      "before": "1700b4c355468ea436f27543eebe45d117011e8c",
+      "after": "3369a294825150f28c12729c3286cf3e2a6060b8"
+    }
+  }
+}

@@ -18,7 +18,7 @@ export async function readStaffSavedPayslips(api,{staffId,staffName,profile={},c
     const same=()=>{guard();if(client.auth.currentUser!==user||client.auth.currentUser?.uid!==uid)throw Error('The private Staff account changed.');};privateCurrent=same;
     const sdk=client.sdk,access=await deadline(sdk.getDocFromServer(sdk.doc(client.db,'staff_document_devices',uid)));same();
     const binding=access?.exists?.()?access.data():null;
-    if(access.metadata?.fromCache||access.metadata?.hasPendingWrites||binding?.active!==true||binding.uid!==uid||binding.staffId!==staffId)throw Error('Ask HQ to approve this phone for private payslips.');
+    if(access.metadata?.fromCache||access.metadata?.hasPendingWrites||binding?.active!==true||binding.uid!==uid||binding.staffId!==staffId)throw Error('Owner-shared drafts are unavailable on this phone.');
     const result=await deadline(sdk.getDocsFromServer(sdk.query(sdk.collection(client.db,'staff_payslip_previews'),sdk.where('staffId','==',staffId),...(sdk.limit?[sdk.limit(251)]:[]))));same();sharedRows=rows(result);
   }catch(error){guard();sharedError=error.message;}
   const read=async()=>{
@@ -35,7 +35,7 @@ export async function readStaffSavedPayslips(api,{staffId,staffName,profile={},c
     privateCurrent();
   }catch(error){guard();paid=null;sharedRows=[];paymentError=error.message||'Your saved payroll could not be confirmed.';}
   const state={paid:[],shared:[],held:[],errors:[],paidComplete:paid?.complete===true};
-  if(sharedError)state.errors.push(sharedError);
+  if(sharedError)state.sharedWarning=sharedError;
   if(paymentError)state.errors.push(paymentError);
   if(paid&&!paid.complete)state.errors.push('Saved paid payroll could not be fully confirmed. Owner-shared drafts are held until payment records can be checked.');
   for(const row of paid?.held||[])state.held.push({record:{id:row.recordId||''},message:typeof row.message==='string'?row.message:'The saved Owner payslip needs HQ review.'});
@@ -66,14 +66,15 @@ export function installStaffSavedPayslipViews(w,d){
     const card=(entry,shared)=>{
       const key=(shared?'shared:':'paid:')+entry.record.id;registry.set(key,entry);const token=encodeURIComponent(key).replace(/'/g,'%27'),needsSign=!shared&&entry.record.acknowledged===false;
       if(needsSign)count++;
-      return '<article style="background:white;border:1px solid #cbded0;border-radius:12px;padding:16px;margin-bottom:14px"><h3 style="margin:0 0 8px;font-size:15px">Cutoff: '+escape(entry.data.start)+' to '+escape(entry.data.end)+'</h3><p style="font-size:12px;line-height:1.5">'+(shared?'Owner-shared payslip · Payment pending. These are the exact saved Owner figures; this is not a payment or a signature request.':needsSign?'Paid payslip · Signature required':entry.record.acknowledged===true?'Paid payslip · Acknowledged':'Paid payslip · Saved record; acknowledgment not recorded')+'</p><strong style="font-size:20px">Net: '+money(entry.data.finalNetPay)+'</strong><p style="font-size:12px">Gross: '+money(entry.data.grossPay)+' · Deductions: '+money(entry.data.totalDeductions)+'</p><button type="button" class="btn-outline" data-saved-view="'+escape(token)+'">View '+(shared?'shared payslip':'saved record')+'</button>'+(needsSign?' <button type="button" class="btn-primary" data-saved-sign="'+escape(token)+'">Review & sign</button>':'')+'</article>';
+      return '<article style="background:white;border:1px solid #cbded0;border-radius:12px;padding:16px;margin-bottom:14px"><h3 style="margin:0 0 8px;font-size:15px">Cutoff: '+escape(entry.data.start)+' to '+escape(entry.data.end)+'</h3><p style="font-size:12px;line-height:1.5">'+(shared?'Owner-shared payslip · Payment pending. These are the exact saved Owner figures; this is not a payment or a signature request.':needsSign?'Paid payslip · Signature required':entry.record.acknowledged===true?'Paid payslip · Acknowledged':'Paid payslip · Saved record; acknowledgment not recorded')+'</p><strong style="font-size:20px">Net: '+money(entry.data.finalNetPay)+'</strong><p style="font-size:12px">Gross: '+money(entry.data.grossPay)+' · Deductions: '+money(entry.data.totalDeductions)+'</p><button type="button" class="btn-outline" data-saved-view="'+escape(token)+'">View full payslip</button>'+(needsSign?' <button type="button" class="btn-primary" data-saved-sign="'+escape(token)+'">Review & sign</button>':'')+'</article>';
     };
     for(const entry of state.shared)pending+=card(entry,true);
     for(const entry of state.paid){const html=card(entry,false);if(entry.record.acknowledged===false)pending+=html;else past+=html;}
     const warning=state.errors.map(message=>'<p role="status" style="padding:12px;background:#fff8e8;border:1px solid #ead6ad;border-radius:8px">'+escape(message)+'</p>').join('');
     for(const held of state.held)pending+='<p role="status" style="padding:12px;background:#fff8e8;border:1px solid #ead6ad;border-radius:8px">Saved payslip needs HQ review. '+escape(held.message)+'</p>';
     const pendingList=d.getElementById('payslipPendingList'),history=d.getElementById('payslipHistoryList');
-    if(pendingList)pendingList.innerHTML=warning+pending||'<p>No pending payslips.</p>';
+    const sharedWarning=state.sharedWarning?'<p role="status">'+escape(state.sharedWarning)+'</p>':'';
+    if(pendingList)pendingList.innerHTML=warning+sharedWarning+pending||'<p>No pending payslips.</p>';
     if(history)history.innerHTML=warning+past||'<p>No past payslips found.</p>';
     const badge=d.getElementById('pendingPayBadge');if(badge){badge.innerText=String(count+state.shared.length+state.held.length);badge.style.display=Number(badge.innerText)>0?'inline-block':'none';}
     const live=d.getElementById('payslipLiveSection'),selected=[...state.paid,...state.shared].find(entry=>entry.data.start===start&&entry.data.end===end);

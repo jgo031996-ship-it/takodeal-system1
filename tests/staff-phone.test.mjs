@@ -73,6 +73,7 @@ function globals(values,body){
 function domHarness(){
     const nodes=new Map(),listeners=new Map(),store=new Map(),alerts=[];
     const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,style:{},textContent:'',innerHTML:'',dataset:{},classList:{contains:()=>id==='view-timeclock'}});return nodes.get(id);};
+    node('deviceBranchInput').options=['','Maa','Test New Branch'].map(value=>({value,disabled:false}));
     const document={hidden:false,getElementById:node,querySelector:()=>node('registerButton'),addEventListener:(k,fn)=>listeners.set(k,fn)};
     const window={BRANCH_ZONES:zones,ALLOWED_RADIUS_METERS:50,crypto:{randomUUID:()=> '12345678-1234-1234-1234-123456789000'},addEventListener:(k,fn)=>listeners.set(k,fn),Swal:{fire:(...args)=>alerts.push(args)},getClosestBranch:()=> 'Maa',lockPayslipVault(){},db:{},doc:()=>null};
     const localStorage={getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)};
@@ -129,11 +130,28 @@ test('manual branch registration works without GPS and failures retain a retryab
         approval({exists:()=>true,data:()=>({status:'Approved'}),metadata:{fromCache:false,hasPendingWrites:false}});assert.equal(requests,1);
     });
 });
-test('GPS failure in automatic registration never writes a default branch',async()=>{
-    const h=domHarness();h.node('deviceNameInput').value='Sample phone';h.node('deviceBranchInput').value='Auto';let writes=0;
-    await globals({...h,navigator:{geolocation:{getCurrentPosition:(_,fail)=>fail({message:'Location denied'})}}},async()=>{
-        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:async()=>{writes++;return response(200,{});}});
-        await h.window.requestDeviceAccess();assert.equal(writes,0);assert.equal(h.store.size,0);assert.equal(h.node('registerButton').disabled,false);
+test('setup suggests a branch only for a fresh accurate location with one listed match',async()=>{
+    const h=domHarness();let fix=position(300,Date.now());
+    await globals({...h,navigator:{geolocation:{getCurrentPosition:ok=>ok(fix)}}},async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:()=>assert.fail('Location must not submit')});
+        const select=h.node('deviceBranchInput'),locate=h.node('detectRegistrationBranch');
+        await locate.onclick();assert.equal(select.value,'');
+        fix=position(5,Date.now()-90000);await locate.onclick();assert.equal(select.value,'');
+        fix=position(5,Date.now());await locate.onclick();assert.equal(select.value,'Maa');
+        select.value='';h.window.BRANCH_ZONES={Maa:zones.Maa,'Test New Branch':zones.Maa};
+        await locate.onclick();assert.equal(select.value,'');assert.equal(h.store.size,0);
+    });
+});
+test('GPS failure leaves manual registration available and sends no request or approval alert',async()=>{
+    const h=domHarness();h.node('deviceNameInput').value='Sample phone';let writes=0;
+    await globals({...h,navigator:{geolocation:{getCurrentPosition:(_,fail)=>fail({code:3,message:'Timeout expired'})}}},async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:async()=>{writes++;throw Error('offline');}});
+        await h.node('detectRegistrationBranch').onclick();assert.equal(writes,0);assert.equal(h.store.size,0);
+        assert.equal(h.alerts.length,0);assert.match(h.node('deviceRegistrationStatus').textContent,/choose your branch/i);
+        h.node('deviceBranchInput').value='Test New Branch';await h.window.requestDeviceAccess();
+        assert.equal(writes,1);const draft=JSON.parse(h.store.get('takodeal_staff_registration_draft'));assert.equal(draft.branch,'Test New Branch');
+        await h.window.requestDeviceAccess();assert.equal(JSON.parse(h.store.get('takodeal_staff_registration_draft')).deviceId,draft.deviceId);
+        assert.equal(h.node('registerButton').disabled,false);
     });
 });
 test('Fleet keeps older pending requests and undated records, sorts pending first and respects branch access',()=>{

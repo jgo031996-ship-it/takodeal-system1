@@ -1,4 +1,6 @@
+import {payslipText,payslipWorkRows} from './staff-payslip-work.js';
 import {createPlottedTimeInBatch} from './plotted-time-in.js';
+import {createStaffPayPhoneClient} from './staff-pay-phone.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
@@ -42,7 +44,7 @@ import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
 import {installStaffDocuments} from './staff-documents.js';
-import {createStaffDocumentFirebase,readInitializedStaffDocumentClient} from './staff-document-firebase.js';
+import {createStaffDocumentFirebase,readInitializedStaffDocumentClient,documentSdk} from './staff-document-firebase.js';
 import {createStaffSelfRepairSDK} from './staff-self-repair-sdk.js';
 import {profileDailyRate} from './staff-rate-privacy.js';
 import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
@@ -2388,7 +2390,7 @@ window.viewPastPayslip = function(encodedData) {
     let disbursedDateStr = 'Pending';
     if (d.processedAt) {
         let pDate = d.processedAt.seconds ? new Date(d.processedAt.seconds * 1000) : new Date(d.processedAt);
-        disbursedDateStr = pDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        disbursedDateStr = pDate.toLocaleDateString('en-PH', { timeZone:'Asia/Manila',year: 'numeric', month: '2-digit', day: '2-digit' });
     } else {
         disbursedDateStr = d.recordState==='shared'?'Awaiting payment':'Not recorded';
     }
@@ -2404,7 +2406,7 @@ window.viewPastPayslip = function(encodedData) {
     let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
 
     let sigHtml = '';
-    if (d.staffSignature) {
+    if (typeof d.staffSignature==='string' && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(d.staffSignature)) {
         sigHtml = `
             <div style="margin-top: 25px; padding-top: 15px; text-align: center;">
                 <span style="font-size: 11px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Digitally Acknowledged & Signed</span>
@@ -2414,70 +2416,11 @@ window.viewPastPayslip = function(encodedData) {
     }
 
     // 🔥 THE NEW ATTENDANCE SUMMARY GENERATOR
-    let attendanceHtml = "";
-    let logsArray = d.shiftPairs || d.logs || [];
-    if (logsArray.length > 0) {
-        logsArray.forEach(log => {
-            const parseDate = (val) => {
-                if (!val) return null;
-                if (val.seconds) return new Date(val.seconds * 1000);
-                if (val.toDate) return val.toDate();
-                let parsed = new Date(val);
-                return isNaN(parsed.getTime()) ? null : parsed;
-            };
-
-            // 1. DATE COLUMN: Check for pre-formatted strings first!
-            let dateStr = log.date || log.dateString; 
-            if (!dateStr) {
-                let logDate = parseDate(log.dateObj || log.timestamp) || new Date();
-                dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            }
-
-            // 2. TIME IN COLUMN: Support both text strings and raw dates!
-            let inTime = '---';
-            if (log.in) {
-                if (typeof log.in === 'string' && !log.in.includes('T') && !log.in.includes('-')) {
-                    inTime = log.in; // Use text directly
-                } else {
-                    let inDate = parseDate(log.in);
-                    inTime = inDate ? inDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
-                }
-            }
-
-            // 3. TIME OUT COLUMN: Support both text strings and raw dates!
-            let outTime = '---';
-            if (log.out) {
-                if (typeof log.out === 'string' && !log.out.includes('T') && !log.out.includes('-')) {
-                    outTime = log.out; // Use text directly
-                } else {
-                    let outDate = parseDate(log.out);
-                    outTime = outDate ? outDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
-                }
-            }
-
-            let inColor = (log.lateMins > 0) ? '#dc2626' : '#16a34a';
-            let outColor = (outTime.includes('MISSED') || outTime === '---' || (log.remark && log.remark.includes('Short'))) ? '#dc2626' : '#16a34a';
-
-            let hrs = parseFloat(log.hrs || 0).toFixed(2) + 'h';
-            if (hrs === '0.00h' || isNaN(parseFloat(hrs))) hrs = '---';
-
-            attendanceHtml += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 10px 4px; color: #334155; text-align: center;">${dateStr}</td>
-                    <td style="padding: 10px 4px; color: ${inColor}; font-weight: bold; text-align: center;">${inTime}</td>
-                    <td style="padding: 10px 4px; color: ${outColor}; font-weight: bold; text-align: center;">${outTime}</td>
-                    <td style="padding: 10px 4px; color: #334155; font-weight: bold; text-align: center;">${hrs}</td>
-                    <td style="padding: 10px 4px; font-size: 10px; color: #64748b; text-align: right;">${log.remark || ''}</td>
-                </tr>
-            `;
-        });
-    } else {
-        attendanceHtml = `<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px; font-style: italic;">No attendance records found for this cutoff.</td></tr>`;
-    }
+    const attendanceHtml=payslipWorkRows(d);
 
     // THE FULL PDF LAYOUT
     let html = `
-        <div style="overflow-x: auto; width: 100%; background: #f1f5f9; padding: 15px; border-radius: 8px;">
+        <div class="staff-slip-view" style="overflow-x: auto; width: 100%; background: #f1f5f9; padding: 15px; border-radius: 8px;">
             <div style="text-align: right; margin-bottom: 15px; position: sticky; top: 0; left: 0; z-index: 50;">
                 <button id="btnDownloadStaffPayslip" onclick="window.downloadStaffPayslipImage('${encodedData}')" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">⬇️ Download HD Image</button>
             </div>
@@ -2497,20 +2440,20 @@ window.viewPastPayslip = function(encodedData) {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
+                        <div class="staff-slip-columns" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
                             <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
-                                <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${d.name || d.staffName}</span>
-                                <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${d.branch || 'N/A'}</span>
-                                <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${d.dateHired || '---'}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${payslipText(d.name || d.staffName)}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${payslipText(d.branch || 'Not recorded')}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${payslipText(d.dateHired || d.profile?.dateHired || 'Not recorded')}</span>
                             </div>
                             <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
-                                <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${d.start || d.startDate}</span>
-                                <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${d.end || d.endDate}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${payslipText(d.start || d.startDate)}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${payslipText(d.end || d.endDate)}</span>
                                 <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span style="border-bottom: 1px solid black;">${disbursedDateStr}</span>
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
+                        <div class="staff-slip-columns" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
                             <div style="border-right: 1px solid black;">
                                 <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">INCOME</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
@@ -2556,8 +2499,8 @@ window.viewPastPayslip = function(encodedData) {
                         <!-- 🔥 ATTENDANCE SUMMARY TABLE -->
                         <div style="margin-top: 35px;">
                             <div style="border-top: 2px dashed #0f172a; margin-bottom: 20px;"></div>
-                            <h4 style="text-align: center; color: #475569; font-size: 13px; letter-spacing: 1px; margin: 0 0 15px 0; text-transform: uppercase;">ATTENDANCE SUMMARY (CURRENT CUTOFF)</h4>
-                            <table style="width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                            <h4 style="text-align: center; color: #475569; font-size: 13px; letter-spacing: 1px; margin: 0 0 15px 0; text-transform: uppercase;">Attendance for this cutoff</h4>
+                            <table class="staff-slip-attendance" style="width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
                                 <thead style="border-bottom: 2px solid #cbd5e1; background: #f8fafc;">
                                     <tr>
                                         <th style="padding: 10px 4px; color: #0f172a; text-align: center;">Date</th>
@@ -3835,7 +3778,8 @@ window.acknowledgeMeal = async function(docId) {
 // ==========================================
 // 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
 // ==========================================
-const createPrivateStaffClient=()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
+const createDocumentClient=()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
+const createPrivateStaffClient=(options={})=>createStaffPayPhoneClient({auth:staffPrimaryAuth,db,sdk:documentSdk,authority:()=>window.staffSetupAccess,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),createPrivateClient:createDocumentClient,...options});
 window.staffPrivateProfileClient=createStaffPrivateProfileClient({identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),account:()=>staffPrimaryAuth.currentUser,onInvalidate:()=>window.staffPrivateProfileUI?.clear(),createPrivateClient:createPrivateStaffClient,fetcher:window.fetch.bind(window)});
 window.staffAccessClient=createStaffAccessClient({auth:staffPrimaryAuth,ensureUser:async()=>{if(!staffPrimaryAuth.currentUser)throw Error('Reconnect your Staff phone.');return staffPrimaryAuth.currentUser;},deviceId:()=>localStorage.getItem('takodeal_device_id'),sessionId:()=>localStorage.getItem('takodeal_staff_session_id'),fetcher:window.fetch.bind(window)});
 window.readPrivateStaffProfile=async(staffId,options={})=>{const value=await window.staffPrivateProfileClient.read(staffId,options);return{id:staffId,exists:()=>true,data:()=>value.profile,metadata:{fromCache:false,hasPendingWrites:false},expectedFingerprint:value.expectedFingerprint};};
@@ -3845,7 +3789,7 @@ window.readPrivatePayrollInputs=options=>window.staffAccessClient.payrollInputs(
 window.readMyLoanLedgerSnapshot=async options=>{const client=createStaffLoanLedgerClient({createPrivateClient:createPrivateStaffClient,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')});try{return await client.read(options);}finally{client.invalidate();}};
 window.readPrivateVaultSettings=options=>window.staffPrivateProfileClient.vaultSettings(options.staffId,{assertCurrent:options.assertCurrent});
 window.savePrivateVaultPin=(input,options)=>window.staffPrivateProfileClient.vaultSave(input,options);
-window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createPrivateStaffClient});
+window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPrivateClient:createDocumentClient});
 installStaffPortal();
 installStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});
 window.staffBranchDirectory=installLiveBranchDirectory(window,document,{kind:'staff',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});

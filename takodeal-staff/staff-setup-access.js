@@ -88,16 +88,20 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     const el=id=>d.getElementById(id),transport=createStaffSetupTransport({...config,fetcher:config.fetcher||environment.fetch?.bind(environment)});
     const authority=createStaffSetupAuthority({transport,getUid:()=>config.auth.currentUser?.uid});
     w.staffSetupAccess=authority;
-    let busy=false,startFlight=null,pollTimer,visibleEpoch=0,protectedMode=false,personalEnrollment=false,directoryEpoch=0,enteredKey='';
+    let busy=false,checkingRequest=false,choosingCode=false,startFlight=null,pollTimer,visibleEpoch=0,protectedMode=false,personalEnrollment=false,directoryEpoch=0,enteredKey='';
     const saved=()=>{try{return JSON.parse(ls.getItem(STAFF_SETUP_DRAFT)||'null');}catch{return null;}};
-    const message=text=>{if(el('deviceRegistrationStatus'))el('deviceRegistrationStatus').textContent=text;};
+    const message=text=>{
+        const status=el('deviceRegistrationStatus');if(status)status.textContent=text;
+        if(el('pendingCard')?.style.display==='block'&&el('devicePendingText'))el('devicePendingText').textContent=text;
+        if(el('loginOverlay')?.style.display==='flex'&&el('loginSetupStatus'))el('loginSetupStatus').textContent=text;
+    };
     const clearCode=()=>{if(el('staffSetupCode'))el('staffSetupCode').value='';};
     function stop(){visibleEpoch++;directoryEpoch++;clearTimeout(pollTimer);stopLegacy?.();authority.invalidate();clearCode();startFlight=null;enteredKey='';}
     function lock(){w.stopStaffLiveListeners?.();w.lockPayslipVault?.();for(const id of ['appContainer','loginOverlay','deviceBlockedOverlay'])if(el(id))el(id).style.display='none';if(el('deviceAuthOverlay'))el('deviceAuthOverlay').style.display='flex';}
     function checking(text){lock();if(el('registerCard'))el('registerCard').style.display='none';if(el('pendingCard'))el('pendingCard').style.display='block';if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Checking your device';if(el('devicePendingText'))el('devicePendingText').textContent=text;if(el('deviceRetryButton'))el('deviceRetryButton').hidden=false;}
     function deviceId(){const draft=saved(),value=(draft?.setupVersion===1?draft.deviceId:null)||ls.getItem('takodeal_device_id')||draft?.deviceId;if(deviceKey(value))return value;const id='DEV-'+freshSetupId(w.crypto).toUpperCase();ls.setItem(STAFF_SETUP_DRAFT,JSON.stringify({deviceId:id,setupVersion:1}));return id;}
     function enrollmentId(previousId){const draft=saved();if(draft?.setupVersion===1&&deviceKey(draft.deviceId))return draft.deviceId;const id='DEV-'+freshSetupId(w.crypto).toUpperCase();ls.setItem(STAFF_SETUP_DRAFT,JSON.stringify({deviceId:id,setupVersion:1,...(previousId?{previousLegacyDeviceId:previousId}:{})}));return id;}
-    function form(required){protectedMode=required;lock();if(el('pendingCard'))el('pendingCard').style.display='none';if(el('registerCard'))el('registerCard').style.display='block';if(el('staffSetupFields'))el('staffSetupFields').hidden=!required;if(el('legacyBranchFields'))el('legacyBranchFields').hidden=required;if(el('cancelPersonalSetup'))el('cancelPersonalSetup').hidden=!personalEnrollment;if(el('usePersonalSetupCode'))el('usePersonalSetupCode').hidden=required;if(el('deviceSetupIntro'))el('deviceSetupIntro').textContent=required?'Choose your staff account and enter your Owner-issued personal code. A correct code activates attendance and screenshot uploads on this phone automatically. Private documents and payroll retain their separate access checks.':'Have a personal code from the Owner? Use it to activate this phone immediately. Otherwise, give this device a name and choose your branch for the existing HQ request.';const button=d.querySelector('#registerCard .btn-primary');if(button)button.textContent=required?'Activate my Staff app':'Request access';}
+    function form(required){protectedMode=required;lock();if(el('pendingCard'))el('pendingCard').style.display='none';if(el('registerCard'))el('registerCard').style.display='block';if(el('staffSetupFields'))el('staffSetupFields').hidden=!required;if(el('legacyBranchFields'))el('legacyBranchFields').hidden=required;if(el('cancelPersonalSetup'))el('cancelPersonalSetup').hidden=!personalEnrollment;if(el('usePersonalSetupCode'))el('usePersonalSetupCode').hidden=required;if(el('deviceSetupIntro'))el('deviceSetupIntro').textContent=required?'Name this phone, choose your staff account and enter your 10-digit personal setup code.':'Have a personal setup code? Use it to activate this phone. For a shared device, enter its name and branch to request access.';const button=d.querySelector('#registerCard .btn-primary');if(button)button.textContent=required?'Activate my Staff app':'Request access';}
     async function directory(){
         const token=++directoryEpoch,select=el('setupStaffInput');if(!select)return;
         select.disabled=true;message('Loading staff accounts…');
@@ -136,19 +140,35 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     w.startStaffDeviceSetup=start;
     w.listenToDeviceStatus=()=>start();
     w.choosePersonalCodeActivation=async()=>{
-        if(busy||w.staffPunchBusy){message('Finish or cancel the current attendance action before activating this phone.');return false;}
-        const id=ls.getItem('takodeal_device_id'),uid=config.auth.currentUser?.uid,result=await authority.confirm(deviceId());
-        if(busy||w.staffPunchBusy||config.auth.currentUser?.uid!==uid||ls.getItem('takodeal_device_id')!==id){message('Your attendance or phone session changed. Finish that action before activating this phone.');return false;}
+        if(busy||w.staffDeviceRegistrationBusy||w.staffPunchBusy){message('Finish or cancel the current attendance action before activating this phone.');return false;}
+        if(choosingCode||checkingRequest)return false;
+        choosingCode=true;
+        try{
+        const id=ls.getItem('takodeal_device_id'),uid=(await transport.ready()).uid,result=await authority.confirm(deviceId());
+        if(busy||w.staffDeviceRegistrationBusy||w.staffPunchBusy||config.auth.currentUser?.uid!==uid||ls.getItem('takodeal_device_id')!==id){message('Your attendance or phone session changed. Finish that action before activating this phone.');return false;}
         if(result.mode==='protected'&&result.device){message('This phone already has a protected registration. Check its current status before continuing.');return false;}
         if(result.mode!=='legacy'||result.enabled!==false)return false;
         personalEnrollment=true;stopLegacy?.();enteredKey='';enrollmentId(id);form(true);await directory();return true;
+        }finally{choosingCode=false;}
     };
     w.cancelPersonalCodeActivation=()=>{if(busy)return false;personalEnrollment=false;clearCode();return start();};
     for(const id of ['usePersonalSetupCode','usePersonalSetupCodePending','usePersonalSetupCodeLogin'])el(id)?.addEventListener('click',()=>{void w.choosePersonalCodeActivation().catch(error=>message(error.message||'Reconnect to confirm this phone.'));});
     el('cancelPersonalSetup')?.addEventListener('click',()=>w.cancelPersonalCodeActivation());
     w.requestDeviceAccess=async()=>{
-        if(busy)return;
-        if(authority.mode()==='legacy'&&!protectedMode)return legacyRequest();
+        if(busy||checkingRequest||choosingCode)return;
+        if(!protectedMode){
+            if(authority.mode()==='legacy')return legacyRequest();
+            checkingRequest=true;
+            const token=visibleEpoch;
+            try{
+                const id=deviceId(),result=await authority.confirm(id);
+                if(token!==visibleEpoch||d.hidden||protectedMode)return;
+                if(result.mode==='legacy')return await legacyRequest();
+                await apply(result,id);
+            }catch{message('Reconnect to check this phone, then retry your request.');}
+            finally{checkingRequest=false;}
+            return;
+        }
         const deviceName=el('deviceNameInput')?.value.trim(),staffId=el('setupStaffInput')?.value;
         if(!deviceName || !key(staffId)){message('Enter a device name and choose your staff account.');return;}
         let code;try{code=normalizeSetupCode(el('staffSetupCode')?.value);}catch(error){message(error.message);return;}

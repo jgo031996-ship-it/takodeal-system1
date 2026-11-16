@@ -6,7 +6,7 @@
     <script>/* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-worked-shift-review-20261116-r1';
+    var release = 'staff-employee-access-20261116-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;
@@ -442,7 +442,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-worked-shift-review-20261116-r1">
+    <meta name="takodeal-release" content="staff-employee-access-20261116-r1">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -461,6 +461,7 @@
 <link rel="stylesheet" href="leave-ui.css">
 <link rel="stylesheet" href="onboarding.css?v=20261021">
 <link rel="stylesheet" href="staff-setup.css?v=20261025">
+    <link rel="stylesheet" href="staff-employee.css">
     <link rel="stylesheet" href="staff-loan-ledger.css">
 </head>
 <body>
@@ -476,6 +477,7 @@
                 <p id="deviceSetupIntro" style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Connect to HQ to check how to set up this phone.</p>
             </div>
             
+            <button type="button" class="setup-personal-action" id="usePersonalSetupCode">Use my personal setup code</button>
             <label class="field-label" for="deviceNameInput">Device name</label><input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
             
             <div id="staffSetupFields" hidden>
@@ -488,14 +490,15 @@
                 <button type="button" id="cancelPersonalSetup" hidden>Back to existing device access</button>
             </div>
             <div id="legacyBranchFields"><label class="field-label" for="deviceBranchInput">Your branch</label><select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
-                <option value="Auto">📍 Auto-Detect Branch via GPS</option>
+                <option value="">Choose your branch</option>
+                <option value="Agdao">Agdao Branch</option>
                 <option value="Cabantian">📍 Cabantian Branch</option>
                 <option value="Citygate">📍 Citygate Branch</option>
                 <option value="Maa">📍 Maa Branch</option>
                 <option value="Main Office">🏢 Main Office / Roving</option>
-            </select></div>
+            </select><button type="button" class="btn-outline" id="detectRegistrationBranch">Use my location</button></div>
 
-            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><button type="button" class="btn-outline" id="usePersonalSetupCode">Activate with my personal code</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
+            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
 
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
             <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-registration">Check for app updates</button><button type="button" class="btn-outline" data-staff-self-repair>Repair Staff app</button><p id="staffUpdateHelp-registration" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
@@ -524,20 +527,30 @@
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
             
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM LOGIN -->
-            <button type="button" class="btn-outline" id="usePersonalSetupCodeLogin">Activate with my personal code</button>
+            <button type="button" class="btn-outline" id="usePersonalSetupCodeLogin">Activate with my personal code</button><p id="loginSetupStatus" role="status" aria-live="polite"></p>
             <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-login">Check for app updates</button><button type="button" class="btn-outline" data-staff-self-repair>Repair Staff app</button><p id="staffUpdateHelp-login" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
 
     <!-- 👤 MY PROFILE MODAL -->
     <div id="profileModal" class="overlay" style="display: none; z-index: 10000;">
-        <div class="modal-card" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
+        <div class="modal-card" style="max-width: 840px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
             <div style="background: #0f766e; color: white; padding: 15px 20px; border-radius: 20px 20px 0 0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10;">
                 <h2 style="margin: 0; font-size: 18px;">📋 Employee Profile</h2>
-                <button onclick="window.closeStaffProfile()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
+                <button type="button" aria-label="Close employee profile" onclick="window.closeStaffProfile()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
             </div>
-            <div style="padding: 20px; overflow-y: auto; flex: 1; text-align: left;">
-                <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
+            <div class="staff-profile-navigation">
+                <div class="staff-profile-heading"><strong id="staffProfileName"></strong><span id="staffProfileAssignment"></span></div>
+                <nav class="staff-profile-tabs" aria-label="Employee information sections">
+                    <button type="button" data-profile-tab="personal" aria-controls="staffPanelPersonal" aria-pressed="true">Personal</button>
+                    <button type="button" data-profile-tab="employment" aria-controls="staffPanelEmployment" aria-pressed="false">Employment</button>
+                    <button type="button" data-profile-tab="contact" aria-controls="staffPanelContact" aria-pressed="false">Contact</button>
+                    <button type="button" data-profile-tab="pay" aria-controls="staffPanelPay" aria-pressed="false">Pay</button>
+                    <button type="button" data-profile-tab="documents" aria-controls="staffPanelDocuments" aria-pressed="false">Documents</button>
+                    <button type="button" data-profile-tab="security" aria-controls="staffPanelSecurity" aria-pressed="false">Security</button>
+                </nav>
+            </div>
+            <div class="staff-profile-body"><section id="staffPanelPersonal" data-profile-panel="personal" aria-label="Personal">                <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
                     <img id="profilePreview" src="" alt="Profile" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; margin: 0 auto 10px auto;">
                     <div id="profilePlaceholder" style="width: 100px; height: 100px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 10px auto; border: 4px solid #ccfbf1;">👤</div>
                     <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
@@ -548,9 +561,7 @@
                     </div>
                 </div>
 
-                <section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use it to unlock your rate and payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button></section>
-                <section class="staff-rate-card" aria-labelledby="profileRateTitle"><div><span class="document-eyebrow">YOUR PAY</span><h3 id="profileRateTitle">Daily rate</h3><p id="profileRateState">Private · Payslip PIN required</p></div><strong id="profileDailyRate">Locked</strong><div class="document-actions"><button id="profileRateUnlock" type="button" onclick="window.ensureStaffRateUnlocked()">Unlock rate</button><button id="profileRateLock" type="button" onclick="window.lockProfileRate()" hidden>Lock rate</button></div><p id="profileRateCongratulations" class="rate-congratulations" hidden></p></section>
-                <section id="staffDocumentsPanel" class="staff-documents-panel" aria-labelledby="staffDocumentsTitle"><div class="document-section-heading"><div><span class="document-eyebrow">EMPLOYEE RECORDS</span><h3 id="staffDocumentsTitle">Required documents</h3></div><button id="staffDocumentRefresh" type="button">Refresh</button></div><p>Upload a clear photo of your Valid ID, Health Card and either NBI or Police Clearance. HQ can download these for your employment records.</p><p id="staffDocumentsStatus" role="status" aria-live="polite">Open your profile to check required documents.</p><button id="staffDocumentDeviceRequest" type="button" hidden>Ask HQ to approve this phone for uploads</button><div id="staffDocumentCards" class="staff-document-grid"></div></section>
+
 
                 <h3 style="color: #0f766e; font-size: 14px; margin: 0 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">👤 Personal Details</h3>
                 <div class="profile-grid">
@@ -563,7 +574,19 @@
                         <input type="text" id="profNickname" placeholder="e.g. Wenna" readonly style="background: #f1f5f9; color: #64748b; cursor: not-allowed; border: 1px solid #cbd5e1; outline: none;">
                     </div>
                 </div>
-                <div class="profile-grid">
+                </section>
+<section id="staffPanelEmployment" data-profile-panel="employment" aria-label="Employment" hidden><dl class="staff-service-fields"><div><dt>Home branch</dt><dd id="staffHomeBranch"></dd></div><div><dt>Date hired</dt><dd id="staffHireDate"></dd></div><div><dt>Employee service</dt><dd id="staffService"></dd></div><div><dt>Contract status</dt><dd id="staffContractState"></dd></div></dl><h3 style="color: #0f766e; font-size: 14px; margin: 25px 0 10px 0; border-bottom: 2px solid #ccfbf1; padding-bottom: 5px;">🏢 Position & Promotion History</h3>
+                <div id="profRoleHistory" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; color: #475569; max-height: 150px; overflow-y: auto; margin-bottom: 20px;">
+                    Loading history...
+                </div>
+
+                <h3 style="color: #0284c7; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📄 My Signed Contracts</h3>
+                <div id="profContracts" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                    Loading contracts...
+                </div>
+
+                </section>
+<section id="staffPanelContact" data-profile-panel="contact" aria-label="Contact" hidden><div class="profile-grid">
                     <div class="form-group"><label>Phone Number</label><input type="text" id="profPhone" placeholder="09xxxxxxxxx"></div>
                     <div class="form-group"><label>Home Address</label><input type="text" id="profAddress" placeholder="Street, Barangay..."></div>
                 </div>
@@ -582,6 +605,8 @@
                     </div>
                 </div>
 
+                </section>
+<section id="staffPanelPay" data-profile-panel="pay" aria-label="Pay" hidden><section class="staff-rate-card" aria-labelledby="profileRateTitle"><div><span class="document-eyebrow">YOUR PAY</span><h3 id="profileRateTitle">Daily rate</h3><p id="profileRateState">Private · Payslip PIN required</p></div><strong id="profileDailyRate">Locked</strong><div class="document-actions"><button id="profileRateUnlock" type="button" onclick="window.ensureStaffRateUnlocked()">Unlock rate</button><button id="profileRateLock" type="button" onclick="window.lockProfileRate()" hidden>Lock rate</button></div><p id="profileRateCongratulations" class="rate-congratulations" hidden></p></section>
                 <h3 style="color: #0284c7; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📱 Disbursement Accounts</h3>
                 <div class="profile-grid">
                     <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
@@ -596,6 +621,13 @@
                     </div>
                 </div>
 
+                <h3 style="color: #b45309; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">💸 Loan Ledger & Agreements</h3>
+                <div id="profLoans" style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; font-size: 13px; color: #92400e; margin-bottom: 25px;">
+                    <p>Loan agreements are not shown in this section yet. Check the deductions in your Payslip Vault or ask HQ for your loan agreement and current balance.</p>
+                </div>
+
+                </section>
+<section id="staffPanelDocuments" data-profile-panel="documents" aria-label="Documents" hidden><section id="staffDocumentsPanel" class="staff-documents-panel" aria-labelledby="staffDocumentsTitle"><div class="document-section-heading"><div><span class="document-eyebrow">EMPLOYEE RECORDS</span><h3 id="staffDocumentsTitle">Required documents</h3></div><button id="staffDocumentRefresh" type="button">Refresh</button></div><p>Upload a clear photo of your Valid ID, Health Card and either NBI or Police Clearance. HQ can download these for your employment records.</p><p id="staffDocumentsStatus" role="status" aria-live="polite">Open your profile to check required documents.</p><button id="staffDocumentDeviceRequest" type="button" hidden>Ask HQ to approve this phone for uploads</button><div id="staffDocumentCards" class="staff-document-grid"></div></section>
                 <h3 style="color: #d97706; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">🏛️ Government IDs</h3>
                 <div class="profile-grid" style="grid-template-columns: 1fr 1fr 1fr;">
                     <div class="form-group">
@@ -625,21 +657,8 @@
                 </div>
 
                 <!-- 🔥 NEW: HR PROMOTION & CONTRACT VAULT -->
-                <h3 style="color: #0f766e; font-size: 14px; margin: 25px 0 10px 0; border-bottom: 2px solid #ccfbf1; padding-bottom: 5px;">🏢 Position & Promotion History</h3>
-                <div id="profRoleHistory" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; color: #475569; max-height: 150px; overflow-y: auto; margin-bottom: 20px;">
-                    Loading history...
-                </div>
-
-                <h3 style="color: #0284c7; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📄 My Signed Contracts</h3>
-                <div id="profContracts" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-                    Loading contracts...
-                </div>
-
-                <h3 style="color: #b45309; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">💸 Loan Ledger & Agreements</h3>
-                <div id="profLoans" style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; font-size: 13px; color: #92400e; margin-bottom: 25px;">
-                    <p>Loan agreements are not shown in this section yet. Check the deductions in your Payslip Vault or ask HQ for your loan agreement and current balance.</p>
-                </div>
-                
+                </section>
+<section id="staffPanelSecurity" data-profile-panel="security" aria-label="Security" hidden><section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use it to unlock your rate and payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button></section>
                 <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security & System</h3>
                 <div class="form-group">
                     <label>Change Login PIN</label>
@@ -648,6 +667,7 @@
                 </div>
 
 
+</section>
             </div>
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
                 <p id="staffProfileStatus" role="status" aria-live="polite">Contact details, daily PIN and photos save separately.</p>
@@ -1108,6 +1128,6 @@
   </div>
 
     <dialog id="staffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="staffDocumentPreviewTitle">Document photo</h3><button type="button" id="staffDocumentPreviewClose">Close</button></div><img id="staffDocumentPreviewImage" alt="Private document photo"></dialog>
-      <script type="module" src="app.js?v=staff-worked-shift-review-20261116-r1"></script>
+      <script type="module" src="app.js?v=staff-employee-access-20261116-r1"></script>
 </body>
 </html>

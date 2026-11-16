@@ -1,3 +1,4 @@
+import {payslipText,payslipWorkRows} from '../takodeal-staff/staff-payslip-work.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -50,7 +51,7 @@ test('invalid, duplicate and missing allocations cannot create a frozen receipt 
 async function actualPayslipFunction(name,endMarker){
  const app=await readFile(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),start=app.indexOf(`window.${name} = function`),end=app.indexOf(endMarker,start);
  assert.ok(start>0&&end>start);const script=app.slice(start,end);let shown;
- const sandbox={window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:()=> 'sample-staff'},document:{},payslipSavedAmounts,savedPayslipCents,payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,payrollAdjustmentDetailsHTML,Swal:{fire:options=>{shown=options;return Promise.resolve({isConfirmed:false});}},console};
+ const sandbox={payslipText,payslipWorkRows,window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:()=> 'sample-staff'},document:{},payslipSavedAmounts,savedPayslipCents,payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,payrollAdjustmentDetailsHTML,Swal:{fire:options=>{shown=options;return Promise.resolve({isConfirmed:false});}},console};
  vm.runInNewContext(script,sandbox);return {call:async data=>{await sandbox.window[name]('id',encodeURIComponent(JSON.stringify(data)));return shown;},view:async data=>{await sandbox.window[name](encodeURIComponent(JSON.stringify(data)));return shown;}};
 }
 test('the actual acknowledgment dialog presents saved custom names and preserves the paid net amount',async()=>{
