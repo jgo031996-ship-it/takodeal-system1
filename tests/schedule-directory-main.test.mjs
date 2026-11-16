@@ -9,6 +9,7 @@ import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.j
 import {leaveStatus} from '../takodeal-manager/leave-model.js';
 import {scheduleShiftHours} from '../takodeal-manager/schedule-layout.js';
 import {scheduleDateKey} from '../takodeal-manager/schedule-history.js';
+import {assertLocalScheduleChoice} from '../takodeal-manager/schedule-assignment-integrity.js';
 
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const extract=name=>{const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,name+' source exists');return source.slice(start+1,end+3);};
@@ -33,6 +34,9 @@ function fixture(options={}){
  const Swal={fire:async(...args)=>{calls.dialogs.push(args);if(args[0]?.title==='➕ Pull Staff to a Shift'&&options.pullSlot)return {isConfirmed:true,value:options.pullSlot};if(args[0]?.title==='Move staff between branches?'){await options.duringMove?.(context,w);return {isConfirmed:!!options.moveConfirm};}if(args[0]?.title==='🔄 Reassign / Swap Shift'&&options.autoConfirm)return {isConfirmed:true,value:options.autoConfirm};return {isConfirmed:false};},showValidationMessage:message=>calls.notices.push(message)};
  context=vm.createContext({...directory,scheduleShiftHours,scheduleDateKey,Date:DraftDate,activeStaffProfile,availableScheduleReliefStaff,availableScheduleTransferStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
  for(const name of ['applyScheduleMemorySnapshot','findEmployeeProfile','confirmActiveScheduleStaff','openSwapModal','executeSwap','removeStaffFromBranchPool','addStaffToBranchPool'])vm.runInContext(extract(name),context);
+ w.assertLocalScheduleChoice=assertLocalScheduleChoice;
+ for(const rules of Object.values(context.branchConfig))for(const rule of rules)Object.assign(rule,{startTime:'08:00',endTime:'16:00'});
+ w.getScheduleMemorySnapshot=()=>({currentYear:context.currentYear,currentMonth:context.currentMonth,branchConfig:context.branchConfig,currentSchedule:context.currentSchedule});
  const html=()=>calls.dialogs.filter(args=>args[0]?.title==='🔄 Reassign / Swap Shift').at(-1)?.[0].html||'';
  const optionsFor=()=>[...html().matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(row=>({value:row[1],label:row[2]}));
  return {w,ctx:context,calls,node,html,optionsFor,async open(branch='Maa',shift='m1'){await w.openSwapModal(28,branch,shift);},option(name){return optionsFor().find(row=>row.label.startsWith(name+' '));}};

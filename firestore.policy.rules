@@ -52,6 +52,7 @@ service cloud.firestore {
       let access = indexed ? get(indexPath).data : bridge;
       return {'active':eligible && (indexed ? hqIndexValid(access) : access.get('active',false) == true)
           && (!bridgeExists || bridge.get('active',false) == true),
+        'role':access.get('sourceAccess',{}).get('role',access.get('role','')),
         'permissions':access.get('permissions',[]),'allowedBranches':access.get('allowedBranches',[]),
         'bridgeRequired':indexed && bridgeExists,'bridgePermissions':bridge.get('permissions',[]),'bridgeBranches':bridge.get('allowedBranches',[])};
     }
@@ -614,7 +615,9 @@ service cloud.firestore {
         let permissions = id.matches('^(global_schedule|schedule_.+)$') ? ['all','schedule']
           : id.matches('^recipe_.+') ? ['all','inventory','menu']
           : id == 'global_delivery_schedule' ? ['all','dispatch'] : ['all','posconfig'];
-        return owner || eligible && (companyHQGrantCan(access,['all','posconfig'],'All') || companyHQGrantCan(access,permissions,'All')
+        return owner || eligible && !(id.matches('^(global_schedule|schedule_(revision_|month_|shift_amendments_).+|schedule_history_policy)$')
+          && access.get('role','') is string && access.role.lower() in ['co-owner','co owner','co_owner','coowner'])
+          && (companyHQGrantCan(access,['all','posconfig'],'All') || companyHQGrantCan(access,permissions,'All')
           || id.matches('^sop_.+') && companyHQGrantCan(access,['all','sop'],id.replace('^sop_','')));
       }
       function branchStatusWrite(id, before, after) {
@@ -921,6 +924,24 @@ service cloud.firestore {
     // and the canonical dated revision are committed in one server transaction.
     match /branch_schedule_proposals/{proposalId} {
       allow read: if protectedHROwner();
+    }
+    match /hq_schedule_drafts/{draftId} {
+      function canSubmitRoster() { return companyHQCan(['all','schedule'],'All'); }
+      allow get: if protectedHROwner() || canSubmitRoster() && (resource == null || resource.data.submittedByUid == request.auth.uid);
+      allow list: if protectedHROwner() || canSubmitRoster() && resource.data.submittedByUid == request.auth.uid;
+      allow create: if canSubmitRoster() && draftId.matches('^[a-f0-9]{64}$')
+        && request.resource.data.keys().hasOnly(['month','baseRevision','baseDigest','effectiveFrom','changes','submittedByUid','submittedByEmail','submittedAt','status'])
+        && request.resource.data.submittedByUid == request.auth.uid && request.resource.data.submittedByEmail == request.auth.token.email
+        && request.resource.data.status == 'Pending' && request.resource.data.submittedAt == request.time
+        && request.resource.data.month.matches('^[0-9]{4}-[0-9]{2}$') && request.resource.data.effectiveFrom.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.baseDigest.matches('^[a-f0-9]{64}$') && request.resource.data.changes is list
+        && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 12000;
+      allow update: if protectedHROwner() && resource.data.status == 'Pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reviewedByUid','reviewedByEmail','reviewedAt','reviewRevision'])
+        && request.resource.data.reviewedByUid == request.auth.uid && request.resource.data.reviewedByEmail == request.auth.token.email
+        && (request.resource.data.status == 'Rejected' && request.resource.data.reviewRevision == null
+          || request.resource.data.status == 'Approved' && request.resource.data.reviewRevision == 'hq-review-' + draftId
+            && getAfter(/databases/$(database)/documents/settings/$(('schedule_revision_hq-review-' + draftId))).data.source == 'owner-reviewed-roster');
     }
     // No client write grants exist for proposals or their private submission,
     // review-operation and attempt collections; all remain default-denied.

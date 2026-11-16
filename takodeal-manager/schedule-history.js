@@ -1,4 +1,6 @@
 import {normalizeShiftAmendment,shiftAmendmentFingerprint,shiftAmendmentRuleTimes,amendmentsForDate,applyShiftAmendments} from './shift-amendments.js';
+import {validateScheduleTransaction} from './schedule-assignment-integrity.js';
+import {runScheduleFirestoreTransaction} from './schedule-firestore-transaction.js';
 export {shiftAmendmentFingerprint,amendmentsForDate,applyShiftAmendments} from './shift-amendments.js';
 // Schedule history is keyed by the Philippine work date, not the month currently open in the editor.
 const SNAPSHOT_KEYS = ['branchConfig', 'employees', 'unavailability', 'currentSchedule', 'currentYear', 'currentMonth', 'holidays'];
@@ -296,7 +298,10 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
     async function commit(input, options = {}, captureOnly = false) {
         if (typeof api.runTransaction !== 'function') throw new Error('Schedule history needs an atomic save API.');
         const savedAt = now(), today = scheduleDateKey(savedAt), id = options.revisionId || makeId(), baselineId = makeId();
-        return api.runTransaction(api.db, async transaction => {
+        const transact=options.assignmentReview
+            ? callback=>api.runScheduleTransaction?api.runScheduleTransaction(callback):runScheduleFirestoreTransaction(api,callback)
+            : callback=>api.runTransaction(api.db,callback);
+        return transact(async transaction => {
             const reads = new Map();
             async function get(id) { if (!reads.has(id)) reads.set(id, transaction.get(ref(id)).then(snapData)); return reads.get(id); }
             const [current, policy] = await Promise.all([get('global_schedule'), get('schedule_history_policy')]);
@@ -326,6 +331,10 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
                     return {revision: existing, latestRevisionId: index?.latestRevisionId || existing.revisionId, publishedCurrent: current?.scheduleRevisionId === existing.revisionId, alreadySaved: true};
                 }
                 if (options.expectedRevisionId !== undefined && (index?.latestRevisionId || null) !== options.expectedRevisionId) throw new Error('This schedule changed in another session. Reload its month before saving.');
+                if(options.assignmentReview)await validateScheduleTransaction(api,transaction,{
+                    ...options.assignmentReview,snapshot:revision.snapshot,from:revision.effectiveFrom,current,today,
+                    readSettings:get,readApprovedLeaves:()=>transaction.readApprovedLeaves()
+                });
             }
             if (baseline) baseline.sequence = (currentIndex?.revisionIds?.length || 0) + 1;
             if (revision) revision.sequence = (index?.revisionIds?.length || 0) + (baseline?.month === revision.month ? 1 : 0) + 1;
@@ -341,7 +350,11 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
             else if (baseline) transaction.set(ref('global_schedule'), {...baseline.snapshot, scheduleRevisionId: baseline.revisionId, scheduleEffectiveFrom: baseline.effectiveFrom, payrollHistoryEnforcedFrom: cutover});
             else if (current && !current.payrollHistoryEnforcedFrom) transaction.set(ref('global_schedule'), {...current, payrollHistoryEnforcedFrom: cutover});
             if (options.writeExtra) await options.writeExtra(transaction, extra);
-            return {revision: revision || baseline, latestRevisionId: revision?.revisionId || baseline?.revisionId || current?.scheduleRevisionId || index?.latestRevisionId || null, publishedCurrent};
+            const writtenHead=publishedCurrent?revision:baseline;
+            const nextHead=writtenHead?{...writtenHead.snapshot,scheduleRevisionId:writtenHead.revisionId,scheduleEffectiveFrom:writtenHead.effectiveFrom,payrollHistoryEnforcedFrom:cutover}
+                :current&&!current.payrollHistoryEnforcedFrom?{...current,payrollHistoryEnforcedFrom:cutover}:current;
+            return {revision: revision || baseline, latestRevisionId: revision?.revisionId || baseline?.revisionId || current?.scheduleRevisionId || index?.latestRevisionId || null, publishedCurrent,
+                ...(options.assignmentReview?{headFingerprint:shiftAmendmentFingerprint(nextHead)}:{})};
         });
     }
     return {loadMonth, loadRange,amendShiftTimes, save: (snapshot, options) => commit(snapshot, options), captureCurrent: options => commit(null, options, true)};
