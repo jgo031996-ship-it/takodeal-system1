@@ -1,3 +1,4 @@
+import {repairApprovedStaffPhoneLabels} from './staff-phone-compatibility.js';
 import {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';
 import {installBranchInventorySetup,branchInventoryActor} from './branch-inventory-setup.js';
 import {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';
@@ -26670,3 +26671,7 @@ runManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(wind
 window.ownerBranchDirectory ||= installLiveBranchDirectory(window,document,{kind:'owner',subscribe:(next,error)=>window.onSnapshot(window.collection(window.db,'branches'),{includeMetadataChanges:true},next,error)});
 
 installDispatchDeliveryRadar(window,document);
+
+// Existing Owner-approved legacy phones retain their status and PINs.
+window.repairApprovedStaffPhones=()=>repairApprovedStaffPhoneLabels(window,{auth:window.auth});
+Promise.resolve().then(()=>window.repairApprovedStaffPhones()).then(result=>{window.staffPhoneCompatibilityResult=result;}).catch(error=>console.warn('Existing Staff phone check is awaiting Owner connection:',error.message));
