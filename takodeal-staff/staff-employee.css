@@ -4,6 +4,11 @@
 .setup-personal-action {margin:0 0 1rem;padding:.75rem;border:0;color:white;background:#174c3e}
 #detectRegistrationBranch {width:auto;margin:0 0 1rem;padding:.45rem .8rem}
 .setup-personal-action[hidden],#profileModal [data-profile-panel][hidden],#btnSaveProfileData[hidden] {display:none!important}
+#profileModal {box-sizing:border-box}
+#profileModal>.modal-card {width:min(100%,840px);min-width:0;overflow:hidden!important}
+#profileModal>.modal-card>div:first-child {flex-shrink:0}
+.staff-profile-navigation {padding:.75rem 1rem 0;flex:0 0 auto;text-align:left}
+.staff-profile-body {padding:0 1rem 1rem;min-height:0;min-width:0;overflow:auto;flex:1 1 auto;text-align:left}
 .staff-profile-heading {display:grid;gap:.25rem;color:#174235}
 .staff-profile-heading strong {font-size:1.25rem}
 .staff-profile-heading span {color:#4b655a}
@@ -37,6 +42,8 @@
     .staff-slip-view .staff-slip-attendance td[colspan]::before {content:none}
 }
 @media(max-width:520px){
+    .staff-profile-tabs {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:.5rem}
+    .staff-profile-tabs button {min-width:0}
     #profileModal .profile-grid {grid-template-columns:minmax(0,1fr)!important}
     #profileModal input,#profileModal button {max-width:100%;box-sizing:border-box}
 }

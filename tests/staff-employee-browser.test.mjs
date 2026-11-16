@@ -23,7 +23,7 @@ try {
         button.scrollIntoView({block:'center'});button.focus();
         const rect=button.getBoundingClientRect();
         const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
-        if(hit!==button||rect.height<44)throw Error('Cannot tap '+name);
+        if(hit!==button||rect.height<44)throw Error('Cannot tap '+name+' at '+Math.round(rect.x)+','+Math.round(rect.y)+'; hit '+(hit?.id||hit?.tagName||'outside viewport'));
         hit.click();
         const panel=modal.querySelector('[data-profile-panel="'+name+'"]');
         if(!panel.getClientRects().length||modal.querySelectorAll('[data-profile-panel]:not([hidden])').length!==1)throw Error('Cannot open '+name);

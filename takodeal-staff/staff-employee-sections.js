@@ -1,9 +1,19 @@
 const panels=['personal','employment','contact','pay','documents','security'];
 
-export function serviceLength(date,now=new Date()){
-    if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date))return '';
+function hireDay(value){
+    if(typeof value!=='string')return '';
+    const plain=/^\d{4}-\d{2}-\d{2}$/.test(value);
+    if(!plain&&!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value))return '';
+    const parsed=new Date(plain?value+'T00:00:00Z':value);
+    if(!Number.isFinite(+parsed))return '';
+    if(plain)return parsed.toISOString().slice(0,10)===value?value:'';
+    return new Date(+parsed+8*3600000).toISOString().slice(0,10);
+}
+
+export function serviceLength(value,now=new Date()){
+    const date=hireDay(value);
+    if(!date)return '';
     const start=new Date(date+'T00:00:00Z');
-    if(!Number.isFinite(+start)||start.toISOString().slice(0,10)!==date)return '';
     const today=new Date(+now+8*3600000);
     if(date>today.toISOString().slice(0,10))return '';
     const elapsed=(today.getUTCFullYear()-start.getUTCFullYear())*12+today.getUTCMonth()-start.getUTCMonth()-(today.getUTCDate()<start.getUTCDate()?1:0);
@@ -29,9 +39,9 @@ export function installEmployeeProfileSections(d){
     return {
         clear(){for(const id of ids)put(id,'');choose('personal');},
         show(profile){
-            put(ids[0],profile.cashierName||profile.fullName||'');
+            put(ids[0],profile.cashierName||profile.fullName||profile.name||'');
             put(ids[1],[profile.role,profile.branch].filter(Boolean).join(' · '));
-            for(const [index,value] of [[2,profile.branch],[3,profile.dateHired],[4,serviceLength(profile.dateHired)],[5,profile.contractStatus]])
+            for(const [index,value] of [[2,profile.branch],[3,hireDay(profile.dateHired)],[4,serviceLength(profile.dateHired)],[5,profile.contractStatus]])
                 put(ids[index],value||'Not recorded');
         }
     };

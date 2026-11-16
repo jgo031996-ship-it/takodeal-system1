@@ -7,7 +7,7 @@
     },
     "takodeal-staff/index.html": {
       "before": "91e879e76f292a304e7c0bcb345c3b7f4f358c3d",
-      "after": "f11b071ecdea41f61dc19c67df312dd4c22024b6"
+      "after": "edf49b25e063667e59cf3299f5659ee17fbd973a"
     },
     "takodeal-staff/private-phone-identity.js": {
       "before": "ed6f71e7639d3dfc557bc747472a8326a913c45d",
@@ -15,11 +15,11 @@
     },
     "takodeal-staff/staff-employee-sections.js": {
       "before": null,
-      "after": "e6649f8971dedd99df62508e6c790b55c0f948ea"
+      "after": "e28a9d2fae86c096b9aa672800fda67cb7fde67d"
     },
     "takodeal-staff/staff-employee.css": {
       "before": null,
-      "after": "8acd33fc3e2d075efff2c7262cf36c71cd9cb5ee"
+      "after": "74fd9d55d32b0521dbcf8b413139447234fc94ec"
     },
     "takodeal-staff/staff-pay-phone.js": {
       "before": null,
@@ -59,7 +59,7 @@
     },
     "takodeal-staff/sw.js": {
       "before": "1700b4c355468ea436f27543eebe45d117011e8c",
-      "after": "328eb1761e75df7d0816da0fe094d280bf131325"
+      "after": "f1adc5c2ab31b0bb66228ce4068e8d7998a7ef3d"
     }
   }
 }

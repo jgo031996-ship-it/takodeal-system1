@@ -6,6 +6,7 @@ import {payslipWorkRows} from '../takodeal-staff/staff-payslip-work.js';
 test('service uses completed calendar months on the Philippine date and skips unknown hire dates',()=>{
  const now=new Date('2026-11-16T16:15:00Z');
  assert.equal(serviceLength('2024-10-17',now),'2 years, 1 month');
+ assert.equal(serviceLength('2024-10-16T16:00:00.000Z',now),'2 years, 1 month');
  assert.equal(serviceLength('2026-10-18',now),'Less than a month');
  assert.equal(serviceLength('2026-02-31',now),'');assert.equal(serviceLength('2027-01-01',now),'');
 });
