@@ -1,5 +1,3 @@
-import {createHash} from 'node:crypto';
-import {execFileSync} from 'node:child_process';
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import {restoreAttendanceOvertime} from './helpers/attendance-overtime-inverse.mjs';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
@@ -157,12 +155,7 @@ test('legacy matching keeps ambiguous entries separate and filters unrelated att
     assert.deepEqual(payroll.legacyAttendanceCandidates(req,rows).map(x=>x.id),['a','b']);
     assert.throws(()=>payroll.requestLateMinutes({...req,explanationMessage:'no minutes'},{}),/no recorded/);
 });
-// Older payroll fixtures use the historical generator API. Only undo the
-// exact Owner review release before applying the existing historical inverses.
-const currentSource=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url));
-const blob=createHash('sha1').update('blob '+currentSource.length+'\0').update(currentSource).digest('hex');
-const earlier=blob==='7176d23dfbadcb6e2bea5fcf849f1915feeb90c4'?execFileSync('git',['cat-file','blob','a60c84fd990eb7b1d7f0ee6d523d695c4c4a3821'],{cwd:new URL('../',import.meta.url),maxBuffer:8e6}):currentSource;
-const source=restoreAttendanceOvertime(earlier.toString(),'takodeal-manager/main.js');
+const source=restoreAttendanceOvertime(readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),'takodeal-manager/main.js');
 function extract(name) {
     const start=source.indexOf(`
 window.${name} = `) + 1;
