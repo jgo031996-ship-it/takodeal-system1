@@ -1,6 +1,7 @@
+import {createMealScopedSaleEngine} from './cashier-meal-context.js';
 import {createCorrectionSaleEngine} from './cashier-correction-engine.js';
 import {createCashierVoidQueue} from './cashier-void-queue.js';
-import { SALE_VERSION, saleIdentity, safeId, createOutbox, createSaleEngine } from './pos-safety.js';
+import { SALE_VERSION, saleIdentity, safeId, createOutbox } from './pos-safety.js';
 import {installCheckoutControls,resetCheckoutForNextOrder} from './checkout-controls.js';
 
 // Sale uploads retry frequently. Inventory recovery has its own cadence and
@@ -49,7 +50,7 @@ export function installSaleSafety(api, environment = globalThis) {
     installCheckoutControls(w,environment.document);
     const ls = environment.localStorage;
     const outbox = createOutbox(environment.indexedDB || null);
-    const engine = createSaleEngine(api);
+    const engine = createMealScopedSaleEngine(api);
     const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid, api);
     w.cashierVoidQueue = correctionQueue;
     const owner = saleIdentity({}, environment.crypto);
