@@ -48,6 +48,7 @@ export function lateRequestSummaryHTML(request,options={}){
  if(summary.savedResolutionMinutes===0)html+='<p style="margin:6px 0;color:#166653;"><b>Saved dated letter resolution: 0 minutes late</b><br><small>'+escape(summary.savedResolutionAt)+'. This is the letter’s saved resolution. Open linked attendance for the latest review.</small></p>';
  if(summary.reviewedMinutes!==null)html+='<p style="margin:6px 0;color:#166653;"><b>'+escape(summary.reviewLabel)+': '+summary.reviewedMinutes+' minutes late</b></p>';
  else html+='<p style="margin:6px 0;color:#6a5844;font-size:12px;">'+escape(summary.reviewLabel)+(summary.reviewRequired&&summary.correctedMinutes!==null?' · corrected schedule indicates '+summary.correctedMinutes+' minutes late.':'.')+'</p>';
+ if(request.status==='Rejected'&&request.payrollReviewVersion===1&&Number.isFinite(request.lateDeductionHours))html+='<p><b>Equivalent hours deducted: '+escape(request.lateDeductionHours)+'</b></p>';
  if(summary.clockIn||summary.expectedStart)html+='<small>'+(summary.clockIn?'Time In: '+escape(summary.clockIn):'')+(summary.expectedStart?'<br>Verified dated start: '+escape(summary.expectedStart):'')+'</small>';
  html+='<p style="margin:6px 0;font-size:11px;color:#64748b;">Changing shift rules alone does not confirm past attendance. Review the correct work date; original punches and paid payslips stay on file.</p>';
  return html+scheduleDeclarationHTML(request);

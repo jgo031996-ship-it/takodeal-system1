@@ -352,6 +352,10 @@ function rememberPayrollShift(shift,log,schedule,profiles,name){
     const approved=valid&&(owner||assigned),spanHours=valid?(end-begin)/3600000:0;
     const identityValid=(log.staffId?personId&&String(log.staffId)===String(personId):names.has(nameKey(log.staffName)))&&typeof log.branch==='string'&&Boolean(log.branch.trim());
     const proof={workedShiftTimeOutAt:shift.workedShiftTimeOutAt||null,approved,owner,identityValid,sourceStaffId:log.staffId||personId||null,categoryOverride:owner&&shift.bonusCategoryVerified!==false,straightApproved:owner&&spanHours>=16,spanHours,start:begin,end,nightCategoryApproved:valid&&shift.isNightShift===true&&(approved||shift.wasScheduled===true)&&shift.bonusCategoryVerified!==false,coverageContext:{schedule,branch:log.branch,actualStart:attendanceMillis(log.timestamp)},candidateNightCoverage:null,source:owner?shift.scheduleSource:assigned?'dated-assignment':'saved-clock-in',revisionId:shift.payrollConfirmationRevisionId||shift.scheduleRevisionId||''};
+    if(Array.isArray(log.lateReviewHistory)&&log.lateDecision==='Rejected'&&log.lateReviewRequestId&&log.lateExempted===false){
+        const review=log.lateReviewHistory.findLast(row=>row?.kind==='equivalent-hours'&&row.requestId===log.lateReviewRequestId&&row.attendanceId===log.id);
+        if(review&&review.minutes===log.reviewedLateMinutes&&validEquivalentHours(review.hours,review.minutes))proof.lateHoursReview=review;
+    }
     payrollShiftProofs.set(shift,proof);return shift;
 }
 function payrollNightCoverage(proof){
@@ -527,12 +531,17 @@ export function nightRate(profile = {}) {
         : profile.eligibleNightDiff !== false ? 50 : 0;
     return Number.isFinite(amount) ? Math.max(0, amount) : 0;
 }
-export function latePay(minutesLate, profile = {}, shift, exempt = false) {
+export function validEquivalentHours(hours,minutes){
+    return Number.isFinite(hours)&&hours>=0&&hours<=Math.ceil(minutes/60)&&Number(hours.toFixed(2))===hours;
+}
+export function latePay(minutesLate, profile = {}, shift, exempt = false, previewHours) {
     if(shift?.reliefNeedsReview===true)return {hours:0,ratePerHour:0,amount:0};
     if(shift?.reliefReviewVerified===true)exempt=shift.reliefLateExempted===true;
     else if(shift?.amendmentReviewVerified===true)exempt=shift.amendmentLateExempted===true;
     const minutes = Math.max(0, Number(minutesLate) || 0);
-    const hours = Math.ceil(minutes / 60);
+    const review=payrollShiftProofs.get(shift)?.lateHoursReview;
+    const reviewed=!shift?.reliefReviewVerified&&!shift?.amendmentReviewVerified&&review?.minutes===minutes?review.hours:undefined;
+    const hours = previewHours!==undefined&&validEquivalentHours(previewHours,minutes)?previewHours:reviewed??Math.ceil(minutes/60);
     const lateReference=workedShiftLatenessReference(shift);
     const daily = Math.max(0, Number(staffRateForDate(profile,lateReference?.expectedStartAt || profile.salaryWorkDate || new Date())) || 0);
     const ratePerHour = (daily + (lateReference?.isNightShift ? nightRate(profile) : 0)) / 8;
@@ -574,7 +583,7 @@ export function legacyAttendanceCandidates(request, logs) {
         && asDate(log.timestamp).getTime() <= at + 120 * minute);
 }
 // No monetary ledger row is created: the attendance record is payroll's single deduction source.
-export async function reviewLateRequest(api, { requestId, attendanceId, action, reply, actor }) {
+export async function reviewLateRequest(api, { requestId, attendanceId, action, reply, actor, deduction }) {
     if (!['Approved', 'Rejected'].includes(action)) throw new Error('Invalid request decision.');
     if (!attendanceId) throw new Error('Select the clock-in for this letter first.');
     const reqRef = api.doc(api.db, 'staff_requests', requestId);
@@ -592,17 +601,25 @@ export async function reviewLateRequest(api, { requestId, attendanceId, action, 
         if (!req.attendanceLogId && !legacyAttendanceCandidates(req, [{ id: attendanceId, ...att }]).length) {
             throw new Error('The selected clock-in is outside this letter’s attendance window.');
         }
+        const minutes = requestLateMinutes(req, att);
+        if(deduction!==undefined&&(action!=='Rejected'||minutes!==deduction.minutes||!validEquivalentHours(deduction.hours,minutes)))throw Error('Recheck the equivalent hours and original minutes.');
+        const hours=deduction?.hours??Math.ceil(minutes/60);
         if (req.status !== 'Pending') {
-            if (req.status === action && req.payrollReviewVersion === 1 && req.attendanceLogId === attendanceId) return { repeated: true };
+            if (req.status === action && req.payrollReviewVersion === 1 && req.attendanceLogId === attendanceId && (deduction===undefined||req.lateDeductionHours===hours)) return { repeated: true };
             throw new Error('This request was already reviewed. Refresh the inbox before proceeding.');
         }
-        const minutes = requestLateMinutes(req, att), stamp = api.serverTimestamp();
-        tx.update(attRef, { lateExempted: action === 'Approved', reviewedLateMinutes: minutes,
+        const stamp = api.serverTimestamp();
+        const historyPatch={};
+        if(deduction!==undefined){
+            if(att.lateReviewHistory!=null&&!Array.isArray(att.lateReviewHistory))throw Error('Review the existing attendance decision history before saving.');
+            historyPatch.lateReviewHistory=[...(att.lateReviewHistory||[]),{kind:'equivalent-hours',requestId,attendanceId,minutes,hours,ratePerHour:deduction.ratePerHour}];
+        }
+        tx.update(attRef, { ...historyPatch, lateExempted: action === 'Approved', reviewedLateMinutes: minutes,
             lateReviewRequestId: requestId, lateDecision: action, lateReviewedAt: stamp, lateReviewedBy: actor });
         tx.update(reqRef, { status: action, managerReply: reply, processedAt: stamp, processedBy: actor,
-            attendanceLogId: attendanceId, lateMinutes: minutes, lateDeductionHours: Math.ceil(minutes / 60),
+            attendanceLogId: attendanceId, lateMinutes: minutes, lateDeductionHours: hours,
             payrollEffect: action === 'Approved' ? 'exempt' : 'attendance_deduction', payrollReviewVersion: 1,
             penaltyCharged: 0 });
-        return { minutes, hours: Math.ceil(minutes / 60), exempt: action === 'Approved' };
+        return { minutes, hours, exempt: action === 'Approved' };
     });
 }

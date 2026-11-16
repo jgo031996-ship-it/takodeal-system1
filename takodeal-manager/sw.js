@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v159-staff-phone-compatibility-20261116-r1';
+const CACHE_NAME = 'takodeal-manager-core-v160-worked-shift-review-20261116-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
