@@ -110,7 +110,7 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
         const operationId=makeId();if(!workedShiftValidId(operationId)||operationId.length>80)throw Error('The correction reference could not be prepared.');
         const proposal=freeze({operationId,choiceKey,expectedFingerprint:view.expectedFingerprint,context:copy(view.context),workDate:choice.workDate,staffId:view.staffId,branch:view.branch});proposals.set(proposal,saved);attempts.set(slot,proposal);return proposal;
     }
-    function apply(proposal){
+    function apply(proposal,stageDecision){
         const saved=proposals.get(proposal);if(!saved)return Promise.reject(Error('Use the original inspected correction before applying this worked shift.'));
         const {key,user,session,refs,plan}=saved,slot=key+'|apply|'+proposal.operationId;
         return bounded(slot,async()=>{
@@ -126,13 +126,19 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
             }
             const result=await api.runTransaction(api.db,async tx=>{
                 guard(key,user,session,proposal.branch);
+                const finish=async(result,changes=[])=>{
+                    if(stageDecision)await stageDecision(tx,changes,result);
+                    guard(key,user,session,proposal.branch);
+                    for(const change of changes)tx.set(change.ref,change.value);
+                    return result;
+                };
                 const prior=data(fresh(await tx.get(ref('settings','schedule_revision_'+revisionId))));
                 const live=new Map(await Promise.all([...refs].map(async([name,row])=>{const snapshot=fresh(await tx.get(ref(row.table,row.id)));return [name,{...row,value:project(row.table,data(snapshot),row.id)}];})));
                 const accounts=[...live].filter(([name])=>name.startsWith('hq_managers/')).map(([,row])=>row.value&&({...row.value,id:row.id})).filter(Boolean);authority(api,key,accounts,proposal.branch);
-                if(prior){if(prior.source!=='owner-worked-shift'||prior.revisionId!==revisionId||prior.intent!==intent||prior.historicalWorkedShiftReview?.reviewedByUid!==actor.uid||prior.historicalWorkedShiftReview?.timeInLogId!==plan.attendanceLogId)throw Error('This correction reference belongs to different saved details.');return {alreadySaved:true,revisionId,workDate:proposal.workDate,staffId:proposal.staffId};}
+                if(prior){if(prior.source!=='owner-worked-shift'||prior.revisionId!==revisionId||prior.intent!==intent||prior.historicalWorkedShiftReview?.reviewedByUid!==actor.uid||prior.historicalWorkedShiftReview?.timeInLogId!==plan.attendanceLogId)throw Error('This correction reference belongs to different saved details.');return finish({alreadySaved:true,revisionId,workDate:proposal.workDate,staffId:proposal.staffId});}
                 for(const [name,row]of refs)if(workedShiftCanonical(live.get(name)?.value)!==workedShiftCanonical(row.value))throw Error('The saved roster, attendance, payment or leave changed. Reopen this exact worked-shift correction.');
                 const selected=plan.choices.find(choice=>choice.key===proposal.choiceKey);
-                if(selected?.alreadyCorrected)return {alreadySaved:true,revisionId:selected.existingCorrectionId,workDate:proposal.workDate,staffId:proposal.staffId,shiftId:selected.shiftId,preservedLateness:copy(plan.preservedLateness)};
+                if(selected?.alreadyCorrected)return finish({alreadySaved:true,revisionId:selected.existingCorrectionId,workDate:proposal.workDate,staffId:proposal.staffId,shiftId:selected.shiftId,preservedLateness:copy(plan.preservedLateness)});
                 const month=proposal.workDate.slice(0,7),index=live.get('settings/schedule_month_'+month.replace('-','_'))?.value;
                 if(!index||!Array.isArray(index.revisionIds)||index.latestRevisionId&&!index.revisionIds.includes(index.latestRevisionId))throw Error('The dated schedule index is incomplete.');
                 const policy=live.get('settings/schedule_history_policy')?.value;
@@ -142,8 +148,11 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
                 if(new TextEncoder().encode(JSON.stringify(next)).length>950000)throw Error('The dated schedule index is too large to update safely.');
                 guard(key,user,session,proposal.branch);
                 mayHaveWritten=true;
-                tx.set(ref('settings','schedule_revision_'+revisionId),revision);tx.set(ref('settings','schedule_month_'+month.replace('-','_')),next);
-                return {alreadySaved:false,revisionId,workDate:proposal.workDate,staffId:proposal.staffId,shiftId:revision.historicalWorkedShiftReview.shiftId,preservedLateness:copy(plan.preservedLateness)};
+                return finish({alreadySaved:false,revisionId,workDate:proposal.workDate,staffId:proposal.staffId,
+                    shiftId:revision.historicalWorkedShiftReview.shiftId,preservedLateness:copy(plan.preservedLateness)},[
+                    {ref:ref('settings','schedule_revision_'+revisionId),value:revision},
+                    {ref:ref('settings','schedule_month_'+month.replace('-','_')),value:next}
+                ]);
             });
             guard(key,user,session,proposal.branch);
             if(attempts.get(key+'|'+plan.attendanceLogId)===proposal)attempts.delete(key+'|'+plan.attendanceLogId);

@@ -71,16 +71,16 @@ test('actual preview labels the original462 separately and selects only the veri
     assert.equal(f.node('dynamicReplyModal'),undefined);assert.equal(f.calls.inbox,1);
 });
 
-for(const mode of ['positive','held'])test('actual '+mode+' dated preview disables confirmation and never invokes the legacy decision',async()=>{
-    const f=await fixture({mode});await f.open();assert.equal(f.node('btnSubmitReply').disabled,true);assert.match(f.node('btnSubmitReply').innerText,/Review dated attendance first/);
+for(const mode of ['positive','held'])test('actual '+mode+' dated preview opens linked attendance and never invokes the legacy decision',async()=>{
+    const f=await fixture({mode});await f.open();assert.equal(f.node('btnSubmitReply').disabled,false);assert.match(f.node('btnSubmitReply').innerText,/Review dated attendance/);
     const before=structuredClone([...f.docs]);await f.submit();assert.equal(f.calls.zero.length,0);assert.equal(f.calls.legacy.length,0);assert.deepEqual([...f.docs],before);
-    assert.equal(f.node('btnSubmitReply').disabled,true);assert.ok(f.node('dynamicReplyModal'));
+    assert.equal(f.node('btnSubmitReply').disabled,false);assert.ok(f.node('dynamicReplyModal'));await f.node('btnSubmitReply').onclick();assert.equal(f.calls.recovery[0].attendanceLogId,f.attendanceId);
 });
 
 test('resolver-held assignment reconciliation with unverified correction cannot fall through to a legacy decision',async()=>{
     const f=await fixture({mode:'held',shiftOverride:shift=>({...shift,attendanceCorrectionVerified:false,amendmentNeedsReview:true,needsScheduleReview:true,assignmentReconciliationRequired:true,scheduleSource:'shift-amendment-review'})});
-    await f.open();assert.equal(f.node('btnSubmitReply').disabled,true);const before=structuredClone([...f.docs]);await f.submit();
-    assert.equal(f.calls.legacy.length,0);assert.equal(f.calls.zero.length,0);assert.deepEqual([...f.docs],before);assert.equal(f.node('btnSubmitReply').disabled,true);
+    await f.open();assert.equal(f.node('btnSubmitReply').disabled,false);const before=structuredClone([...f.docs]);await f.submit();
+    assert.equal(f.calls.legacy.length,0);assert.equal(f.calls.zero.length,0);assert.deepEqual([...f.docs],before);assert.equal(f.node('btnSubmitReply').disabled,false);
 });
 
 test('changing the selected clock-in without its matching preview prevents either service',async()=>{

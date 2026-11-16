@@ -1,0 +1,49 @@
+{
+  "parent": "6d413bbde2166277b5248f67a3ea0f4eba5d6d9c",
+  "files": {
+    "takodeal-manager/attendance-swap-declaration.js": {
+      "before": "d53da3e02f9a6731c29483375be73ca5c1f3d9dc",
+      "after": "24a1b51cba43846c18478d2f7d4b81955b912eb2"
+    },
+    "takodeal-manager/auth.js": {
+      "before": "4ff3c5b854f00458ccc99e442f3da1b09eee6fea",
+      "after": "195d8c968064efc0b8068814d69c9dc6905575ab"
+    },
+    "takodeal-manager/index.html": {
+      "before": "e0f20393393d00af6755cc28b8bd02fce58ab987",
+      "after": "d959436b35d0e454069fbf7e63f1a043875b3cec"
+    },
+    "takodeal-manager/main.js": {
+      "before": "7176d23dfbadcb6e2bea5fcf849f1915feeb90c4",
+      "after": "faf92786a6fd07cf947d31f69a9bb355f0e094a1"
+    },
+    "takodeal-manager/owner-request-actions.js": {
+      "before": null,
+      "after": "efb9f501e06b5e94e03eeead5e13df0bb5230844"
+    },
+    "takodeal-manager/owner-request-dialog.css": {
+      "before": null,
+      "after": "b8d854c9abe52d9c70789091887f0f11e2feb026"
+    },
+    "takodeal-manager/owner-request-dialog.js": {
+      "before": null,
+      "after": "4392bb168ac5bf896948eecd56b9b250c6d49eab"
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "before": "47739b2cc5a4fdeb73eca2dcfbf80495fd7540fa",
+      "after": "bd870fb5004c8cd02021122f2302d4ba8db70f3f"
+    },
+    "takodeal-manager/sw.js": {
+      "before": "56a52c3a953027299fcbf73294bed526a9ad759c",
+      "after": "1a523fa74663554139c3383c89be30bf41efb578"
+    },
+    "takodeal-manager/worked-shift-correction-model.js": {
+      "before": "32f31a6dcfd1f9bda815c936371624c3099fe66a",
+      "after": "802ebfc4a9797a05624c910c6c1f81c80b68f828"
+    },
+    "takodeal-manager/worked-shift-correction-service.js": {
+      "before": "95b4a1945361fdc41128db596e66a72db00792a8",
+      "after": "51355255ca26b38bfff5e3f64cb01fb5554721d7"
+    }
+  }
+}
