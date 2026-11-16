@@ -9,7 +9,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
  isActive=()=>true,isProtected=()=>false,confirmDiscard=async()=>false,subscribe=()=>()=>{},onStatus=()=>{},onSaved=()=>{},onLoading=()=>{},makeId=()=>crypto.randomUUID(),timeoutMs=20000,setTimeoutFn=setTimeout,clearTimeoutFn=clearTimeout,
  captureEditor=getSnapshot,applyRecoveredSnapshot,setEffectiveFrom=()=>{},draftStore=createScheduleRecoveryDraftStore(),onRecovery=()=>{},health={},now=()=>new Date(),saveTimeoutMs=timeoutMs,editorId='editor-'+crypto.randomUUID()}={}){
  let loaded=null,loadedIdentity=null,baseline=null,uiDirty=false,history=false,epoch=0,watchStop=null,watchKey='',saveFlight=null,queuedSave=null,headStamp,monthStamp,requestId=null,followUp=false;const reads=new Map();
- let baselineEffectiveFrom=null,backupQueue=Promise.resolve(),lastBackup=null,backupError='',recoveryCandidates=[],recoveryPlan=null,recoveryEpoch=0,requiresReload=false,lastError=null;
+ let baselineEffectiveFrom=null,backupQueue=Promise.resolve(),lastBackup=null,backupError='',recoveryCandidates=[],recoveryPlan=null,recoveryEpoch=0,requiresReload=false,lastError=null,lastSubmission=null;
  const scopes=new Map(),restoredSources=new Set(),calendarBackups=new Map();
  const identity=()=>fingerprint(getIdentity()),dirty=()=>uiDirty||baseline!==null&&(fingerprint(getSnapshot())!==baseline||baselineEffectiveFrom!==null&&getEffectiveFrom()!==baselineEffectiveFrom);
  const status=(message,error=false)=>onStatus(message,error);
@@ -111,6 +111,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
   finally{if(token===epoch)onLoading(false);flushFollowUp();}
  }
  function save(){
+  lastSubmission=null;
   if(!authorize())return Promise.resolve(false);
   if(requiresReload){status('The original save reached HQ, but a newer saved schedule needs review. Your local draft is kept; reload and compare before another save.',true);return Promise.resolve(false);}
   if(!loaded||loadedIdentity!==identity()||loaded.month!==getMonth()){status('Load the selected saved schedule for this signed-in account before saving edits.',true);return Promise.resolve(false);}
@@ -134,7 +135,18 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
     const record=await makeRecord({snapshot,effectiveFrom,pending,base,actor,actorValue,month});entry.record=record;if(!current(actor,month))return false;
     await storeRecord(record,actor);if(!current(actor,month))return false;
     health.assertReady?.();if(failed())throw Error('HQ connection stopped.');status('Saving the schedule to HQ…');
-    entry.cloudStarted=true;const result=await saveSnapshot(clone(pending.snapshot),{expectedRevisionId:pending.expectedRevisionId,effectiveFrom:pending.effectiveFrom,revisionId:pending.revisionId});entry.cloudConfirmed=result;
+    const assignmentReview=loaded.headFingerprint===undefined?undefined:{baseline:loaded.editorSnapshot,expectedHead:loaded.headFingerprint};
+    entry.cloudStarted=true;const result=await saveSnapshot(clone(pending.snapshot),{expectedRevisionId:pending.expectedRevisionId,effectiveFrom:pending.effectiveFrom,revisionId:pending.revisionId,
+      ...(assignmentReview?{assignmentReview}:{})});
+    if(result.pendingOwnerReview){
+      if(!current(actor,month))return false;
+      lastSubmission=result.pendingOwnerReview;requestId=null;lastError=null;
+      const latest=clone(captureEditor());
+      await storeRecord({...record,editorSnapshot:scheduleDraftSnapshot(latest),pending:null},actor);
+      status('Submitted for Owner review. Staff will see these changes after approval.');return true;
+    }
+    entry.cloudConfirmed=result;
+    if(result.headFingerprint!==undefined&&current(actor,month))loaded={...loaded,headFingerprint:result.headFingerprint};
     if(actor!==identity()||!authorize())return false;
     const latest=month===getMonth()?clone(captureEditor()):record.editorSnapshot,latestEffective=month===getMonth()?getEffectiveFrom():record.effectiveFrom;
     const acknowledged=result.revision?.snapshot||pending.snapshot,latestRevision=result.latestRevisionId??result.revision?.revisionId??pending.revisionId;
@@ -157,7 +169,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
  async function cloudFailed(){stop();saveFlight?.failUI?.();status('HQ connection stopped. Save confirmation is unavailable. Preserve or download the draft before reloading.',true);await preserveDraft();publishRecovery();}
  return {load,save,start:watch,stop,preserveCalendarBackup,markDirty(){uiDirty=true;lastBackup=null;publishRecovery();void preserveDraft();},preserveDraft,recoverDraft,checkRecovery,exportDraft,cloudFailed,recoveryState,lastError:()=>lastError,isDirty:dirty,isSaving:()=>!!saveFlight,isLoaded:()=>!!loaded,
   calendarRepairStatus(){return {pendingConfirmation:!!requestId&&!planScheduleCalendar(requestId.payload.snapshot).excluded.some(row=>row.reason==='Outside selected month')};},
-  setHistory(value){history=value===true;},baseline:()=>loaded,
+  setHistory(value){history=value===true;},baseline:()=>loaded,lastSubmission:()=>lastSubmission,
   invalidate(){++epoch;++recoveryEpoch;stop();loaded=null;loadedIdentity=null;baseline=null;baselineEffectiveFrom=null;uiDirty=false;history=false;requestId=null;lastBackup=null;recoveryCandidates=[];recoveryPlan=null;publishRecovery();}};
 }
 

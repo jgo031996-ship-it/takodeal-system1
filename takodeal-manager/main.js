@@ -100,6 +100,12 @@ import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff,resolveScheduleEmployeeReference,scheduleIdentityDirectory,createScheduleRosterView} from './schedule-staff-directory.js';
 import {availableScheduleReliefStaff,availableScheduleTransferStaff} from './schedule-relief-staff.js';
+import {assertLocalScheduleChoice} from './schedule-assignment-integrity.js';
+window.assertLocalScheduleChoice=assertLocalScheduleChoice;
+import {isScheduleCoOwner,submitRosterReview,openRosterReviews} from './schedule-owner-review.js';
+window.scheduleApprovalRequired=()=>isScheduleCoOwner(window.sessionUser);
+window.submitRosterReview=(snapshot,view,effectiveFrom)=>submitRosterReview(window,snapshot,view,effectiveFrom);
+window.openRosterReviews=()=>openRosterReviews(window,document).catch(error=>window.ManagerUI.notify(error.message));
 import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {prepareManualTimeOut} from './manual-attendance-review.js';
@@ -8382,6 +8388,10 @@ window.initScheduleMemory = async () => {
     window.scheduleProposalReviewUI?.mountAudit();
     window.scheduleWorkspace ||= installScheduleWorkspace(document);
     window.scheduleWorkspace?.refresh();
+    const reviewButton=document.getElementById('btnHqRosterReviews');
+    if(reviewButton)reviewButton.hidden=window.sessionUser?.email?.toLowerCase()!==OWNER_EMAIL;
+    const saveLabel=document.getElementById('hqScheduleSaveLabel');
+    if(saveLabel)saveLabel.textContent=window.scheduleApprovalRequired()?'Submit for Owner Review':'Save Edits';
 };
 window.selectScheduleMonth = () => scheduleMemoryUI?.selectMonth();
 window.openMonthlySchedule = function() {
@@ -8428,7 +8438,11 @@ window.getOwnerScheduleSync = function() {
             return {...projectWorkedShiftCorrections(saved.value),directory};
         },
         applyView:async view=>{window.ownerScheduleDatedView=view;window.scheduleDirectoryProfiles=view.directory;await window.applyScheduleMemorySnapshot(view.editorSnapshot);scheduleMemoryUI?.bindView(view);},
-        saveSnapshot:(snapshot,options)=>{if(window.scheduleMemoryReadOnly)throw Error('This saved schedule version is read-only.');return window.getScheduleHistoryStore().save(snapshot,{...options,actor:window.sessionUser.email});},
+        saveSnapshot:async(snapshot,options)=>{
+            if(window.scheduleMemoryReadOnly)throw Error('This saved schedule version is read-only.');
+            if(window.scheduleApprovalRequired())return {pendingOwnerReview:await window.submitRosterReview(snapshot,window.ownerScheduleSync.baseline(),options.effectiveFrom)};
+            return window.getScheduleHistoryStore().save(snapshot,{...options,actor:window.sessionUser.email});
+        },
         onSaved:async result=>{scheduleMemoryUI?.recordSaved(result);window.renderTables();}
     });
     return window.ownerScheduleSync;
@@ -8734,7 +8748,8 @@ window.saveManualSchedule = async function() {
             if(/another session/.test(sync?.lastError?.()?.message||''))throw Error('Another owner or co-owner saved a newer schedule. Your local draft is kept. Download the draft, reload the latest saved schedule, then review your changes before saving again. No separate HQ approval is required.');
             throw Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'Schedule was not saved.');
         }
-        await Swal.fire({title:'Schedule saved',text:'Your schedule is shared with the other Owner devices and staff apps. No separate HQ approval is needed.',icon:'success',customClass:{popup:'rounded-2xl'}});
+        const submitted=window.getOwnerScheduleSync?.().lastSubmission?.();
+        await Swal.fire({title:submitted?'Submitted for Owner review':'Schedule saved',text:submitted?'The shared roster will update when the Owner approves this proposal.':'Your schedule is shared with the other Owner devices and staff apps. No separate HQ approval is needed.',icon:'success',customClass:{popup:'rounded-2xl'}});
         return true;
     } catch(error) {
         await Swal.fire({title:window.managerCloudHealth?.isFailed()?'Reconnect the Owner app':'Schedule save not confirmed',text:error.message || 'HQ has not confirmed this save. Keep your edits and review the saved status before retrying.',icon:'warning'});
@@ -9287,7 +9302,13 @@ window.executeSwap = async function(target, markAsSwap) {
             const review=await Swal.fire({title:'Move staff between branches?',html:'<p><b>'+escapeHtml(targetPerson)+'</b> · '+escapeHtml(targetDate)+' (PH)</p><p>From: '+escapeHtml(source.branch)+' · '+escapeHtml(rule?.name||source.shiftId)+' · '+escapeHtml(scheduleShiftHours(rule))+'</p><p>To: '+escapeHtml(branch)+' · '+escapeHtml(destination?.name||shiftId)+' · '+escapeHtml(scheduleShiftHours(destination))+'</p><p>The source shift will become <b>Needs Staff</b>. '+(!['N/A','UNFILLED'].includes(curStaff)&&window.findEmployeeProfile(curStaff)?escapeHtml(curStaff)+' will move to Standby at '+escapeHtml(branch)+'. ':'')+'This changes only this work date. Use Save Edits to share the draft.</p>',showCancelButton:true,confirmButtonText:'Move this dated assignment'});
             if(!review.isConfirmed)return false;guard();
         }
-        await window.confirmActiveScheduleStaff(targetReference,{assertCurrent:guard});guard();if(target.startsWith('shift_')&&!["N/A","UNFILLED"].includes(curStaff)){await window.confirmActiveScheduleStaff(curStaff,{assertCurrent:guard});guard();}
+        const otherSlot=target.startsWith('shift_')?target.slice(6):null;
+        const reviewHours=()=>{
+            const snapshot=window.getScheduleMemorySnapshot(),directory=scheduleIdentityDirectory(window.scheduleDirectoryProfiles,window.employees);
+            window.assertLocalScheduleChoice(snapshot,directory,{date:targetDate,branch,slot:shiftId,name:targetPerson,source:selectedTransferStaff?.scheduledSource||(otherSlot?{branch,shiftId:otherSlot}:null)});
+            if(otherSlot&&!['N/A','UNFILLED'].includes(curStaff))window.assertLocalScheduleChoice(snapshot,directory,{date:targetDate,branch,slot:otherSlot,name:curStaff,source:{branch,shiftId}});
+        };
+        reviewHours();await window.confirmActiveScheduleStaff(targetReference,{assertCurrent:guard});guard();if(otherSlot&&!["N/A","UNFILLED"].includes(curStaff)){await window.confirmActiveScheduleStaff(curStaff,{assertCurrent:guard});guard();}reviewHours();
     }catch(error){window.ManagerUI.notify(error.message);return false;}
 
     const displacedStaffActive=!!window.findEmployeeProfile(curStaff);

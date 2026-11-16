@@ -2,7 +2,7 @@
 <html lang="en">
  
 <head>
-<meta name="takodeal-release" content="plotted-payroll-20261116-r1">
+<meta name="takodeal-release" content="reviewed-rosters-20261116-r1">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome · TAKODEÁL Owner</title>
@@ -15,7 +15,7 @@
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="security-alert-links.css?v=20261102">
-  <link rel="stylesheet" href="private-prep-reviews.css?v=plotted-payroll-20261116-r1">
+  <link rel="stylesheet" href="private-prep-reviews.css?v=reviewed-rosters-20261116-r1">
   <link rel="stylesheet" href="rider-management.css?v=20261023-buttons">
   <link rel="stylesheet" href="menu-options.css?v=20261024">
   <link rel="stylesheet" href="bundle-category.css?v=20261025">
@@ -2790,8 +2790,9 @@
                 </div>
                 <button type="button" id="btnCreateMonthlySchedule" onclick="window.openMonthlySchedule()" style="background:#145e49;color:white;border:0;padding:0 20px;border-radius:8px;font-weight:900;font-size:14px;cursor:pointer;min-height:50px;margin-top:21px;">Create Monthly Schedule</button>
                 <button onclick="window.saveManualSchedule()" style="background: #10b981; color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); display: flex; align-items: center; gap: 8px; transition: 0.2s; height: 50px; margin-top: 21px;">
-                    <span style="font-size: 18px;">💾</span> Save Edits
+                    <span style="font-size: 18px;">💾</span> <span id="hqScheduleSaveLabel">Save Edits</span>
                 </button>
+                <button hidden type="button" id="btnHqRosterReviews" onclick="window.openRosterReviews()" style="padding:12px;min-height:44px;border:1px solid #145e49;border-radius:8px;color:#145e49;background:white">Review Co-owner proposals</button>
                 <button id="btnDownloadSched" onclick="window.downloadScheduleImage()" style="background: #0ea5e9; color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); display: flex; align-items: center; gap: 8px; transition: 0.2s; height: 50px; margin-top: 21px;">
                     <span style="font-size: 18px;">📸</span> Export Image
                 </button>
@@ -6575,7 +6576,7 @@
     import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';
     installAuditModalLayout();
   </script>
-  <script type="module" src="auth.js?v=plotted-payroll-20261116-r1"></script>
+  <script type="module" src="auth.js?v=reviewed-rosters-20261116-r1"></script>
   <script type="module" src="owner-pos-settings-access.js?v=20261018"></script>
   <script type="module">
     import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';
