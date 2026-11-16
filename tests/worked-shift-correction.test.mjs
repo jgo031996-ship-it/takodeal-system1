@@ -1,3 +1,4 @@
+import {installWorkedShiftCorrectionUI} from '../takodeal-manager/worked-shift-correction-ui.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
@@ -99,23 +100,32 @@ test('a cross-branch plotted assignment and a separately completed same-day duty
 test('a fresh app session recognizes the same already-audited actual pair instead of appending a duplicate correction',async()=>{const f=fixture();await apply(f);const before=f.calls.writes.length,another=f.makeService(),view=await another.inspect(f.context),choice=view.choices.find(row=>row.shiftId==='night');assert.equal(choice.alreadyCorrected,true);const result=await another.apply(another.propose(view));assert.equal(result.alreadySaved,true);assert.equal(result.revisionId,'worked-operation-1');assert.equal(f.calls.writes.length,before);assert.equal(revisions(f).length,1);});
 const windowQueries=f=>f.calls.queries.filter(query=>query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='timestamp'));
 
-async function workedLetterIntegration(boundary=false){
- const f=fixture(),requestId='worked-letter',start=f.get('attendance_logs/'+f.start.id);start.lateMinutes=88;delete start.lateDecision;
+async function workedLetterIntegration(boundary=false,occupied=false){
+ const nightSlots=occupied?{rules:[rule('morning','09:00','17:30','morning'),rule('night','17:30','02:00','night'),rule('night2','17:30','02:00','night')],extraDay:{scheduled:{morning:'CREW',night:'Crew A',night2:'Crew B'}}}:{};
+ const f=fixture(nightSlots),requestId='worked-letter',start=f.get('attendance_logs/'+f.start.id);start.lateMinutes=88;delete start.lateDecision;
+ if(occupied)f.put('staff_requests/undated',{type:'Leave',status:'Approved',staffId,staffName:name});
  if(boundary){const snapshot=structuredClone(f.snapshot);snapshot.currentSchedule={31:snapshot.currentSchedule[17]};const revision=createScheduleRevision(snapshot,{revisionId:'original-october',effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',savedAt:at('00:00',1)});f.put('settings/schedule_revision_original-october',revision);start.timestamp=new Date('2026-11-01T00:05:00+08:00');start.scheduleSnapshot=captureAttendanceSchedule(start.timestamp,branch,name,{historyMonths:{'2026-10':{month:'2026-10',revisions:[revision]}}},{[name]:{...f.profile,staffId}});f.put('attendance_logs/'+f.out.id,{...f.out,timestamp:new Date('2026-11-01T02:06:00+08:00'),timeInAt:start.timestamp});}
  const history=await createScheduleHistoryStore(f.api).loadRange(boundary?'2026-10-31':'2026-10-16',boundary?'2026-11-02':'2026-10-18'),source={start:{...start,id:f.start.id},staffId,staffName:name},choice=proposals.savedShiftChoices(history,source).find(row=>row.shiftId==='night');
  f.put('staff_requests/'+requestId,{type:'Reason Letter',status:'Pending',staffId,staffName:name,branch,attendanceLogId:f.start.id,timestamp:start.timestamp,lateMinutes:88,explanationCause:'Tardiness / Late Arrival',explanationMessage:'Swapped and approved; please review Night.',staffShiftProposal:proposals.makeSavedShiftProposal(history,source,choice)});
- const document=new ReviewDocument();ReviewElement.prototype.remove||=function(){this.parentElement.children=this.parentElement.children.filter(node=>node!==this);};document.body.insertAdjacentHTML=(_where,html)=>{const box=document.createElement('div');box.innerHTML=html;for(const child of [...box.children])document.body.append(child);};
+ const document=new ReviewDocument();const makeElement=document.createElement.bind(document);document.createElement=tag=>Object.assign(makeElement(tag),{style:{}});ReviewElement.prototype.remove||=function(){this.parentElement.children=this.parentElement.children.filter(node=>node!==this);};document.body.insertAdjacentHTML=(_where,html)=>{const box=document.createElement('div');box.innerHTML=html;for(const child of [...box.children])document.body.append(child);};
  const alerts=[],api=f.api;Object.assign(api,{loadPayrollScheduleHistory:(from,to)=>createScheduleHistoryStore(api).loadRange(from,to),loadInbox:async()=>{},ManagerUI:{notify:message=>alerts.push(message)}});
  const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),handler=name=>{const begin=main.indexOf('\nwindow.'+name+' = '),end=main.indexOf('\n};',begin+1);return main.slice(begin+1,end+3);};
  const context=vm.createContext({...payrollFunctions,...lateSummaries,...lateResolution,...proposals,reviewLateRequestWorkedShift,reviewLateRequestDatedAttendance,resolveEmergencyShift,attendanceMillis,scheduleDateKey,OWNER_EMAIL:owner,requestEscape:value=>String(value??''),window:api,document,Date,console,tkOwnerDoc:ref=>api.getDocFromServer(ref),tkOwnerDocs:q=>api.getDocsFromServer(q),Swal:{fire:(...args)=>alerts.push(args)}});
  for(const name of ['updateLateRequestPreview','openLateRequestAttendance','handleRequest','submitCurrentRequestReply','submitRequestReply'])vm.runInContext(handler(name),context);
  await api.handleRequest(requestId,'Approved','Reason Letter',0,name);assert.equal(document.getElementById('btnSubmitReply').disabled,true);document.getElementById('replyMessage').value='Swapped and approved; exact Night hours checked.';
- api.workedShiftCorrectionUI={async open(input,options){options.assertCurrent();const view=await f.service.inspect(input),selected=view.choices.find(row=>row.shiftId==='night');const result=await f.service.apply(f.service.propose(view,selected.key));await options.onApplied(result);return result;}};
- await api.openLateRequestAttendance();assert.equal(api.lateRequestContext.proposalHoursReviewed,true,JSON.stringify(alerts));assert.equal(api.lateRequestContext.proposalReferenceError,'');assert.equal(document.getElementById('btnSubmitReply').disabled,false);assert.match(document.getElementById('replyMessage').value,/exact Night hours/);assert.match(document.getElementById('replyLateCalculation').innerHTML,/88 minutes reported/);
+ api.workedShiftCorrectionUI=installWorkedShiftCorrectionUI(api,document,{service:f.service});
+ const dialog=await api.openLateRequestAttendance();assert.ok(dialog?.querySelector,JSON.stringify(alerts));const confirm=dialog.querySelector('[data-apply]');
+ const radios=dialog.querySelectorAll('[data-choice]');
+ assert.equal(radios.length,occupied?2:1);
+ if(occupied){assert.equal(confirm.disabled,true);assert.match(dialog.textContent,/incomplete dates/);}
+ radios[0].onchange();assert.equal(confirm.disabled,false);await confirm.onclick();
+ if(occupied){const revision=f.get('settings/schedule_revision_worked-operation-1');assert.deepEqual(revision.snapshot.currentSchedule[17][branch],f.snapshot.currentSchedule[17][branch]);}
+ assert.equal(api.lateRequestContext.proposalHoursReviewed,true,JSON.stringify(alerts));assert.equal(api.lateRequestContext.proposalReferenceError,'');assert.equal(document.getElementById('btnSubmitReply').disabled,false);assert.match(document.getElementById('replyMessage').value,/exact Night hours/);assert.match(document.getElementById('replyLateCalculation').innerHTML,/88 minutes reported/);
  const before=structuredClone(f.get('attendance_logs/'+f.start.id));await api.submitCurrentRequestReply();const saved=f.get('staff_requests/'+requestId);
  assert.equal(saved.status,'Approved',JSON.stringify(alerts));assert.equal(saved.staffShiftProposalReview.decision,'Worked shift reviewed separately');assert.ok(saved.staffShiftProposalReview.workedShiftCorrectionId);assert.equal(f.get('attendance_logs/'+f.start.id).lateMinutes,88);assert.equal(f.get('attendance_logs/'+f.start.id).reviewedLateMinutes,88);assert.equal(f.get('attendance_logs/'+f.start.id).lateExempted,true);assert.deepEqual(f.get('attendance_logs/'+f.start.id).timestamp,before.timestamp);assert.equal(saved.currentReviewedLateMinutes,undefined,'no fabricated dated-zero resolution');
 }
 test('real worked-shift correction returns to a freshly enabled proposal letter and its explicit atomic approval preserves original lateness',()=>workedLetterIntegration());
+test('two occupied nights and an undated leave permit the requested Night to be confirmed and then the letter approved',()=>workedLetterIntegration(false,true));
 test('a next-month clock-in proposing the previous month overnight slot returns to a freshly approved exact-date letter',()=>workedLetterIntegration(true));
 test('proposal letter approval rejects altered saved references even after a genuine worked-shift correction',async()=>{
  for(const defect of ['fingerprint','source','hours']){
