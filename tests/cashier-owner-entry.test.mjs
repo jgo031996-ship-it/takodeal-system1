@@ -1,3 +1,5 @@
+import {ownerAccessProof,restoreOwnerAccess} from './helpers/owner-access-history-inverse.mjs';
+import {isCashierOwnerActionUser} from '../Takodeal-POS/cashier-protected-action.js';
 import {plottedProof} from './helpers/plotted-release-inverse.mjs';
 import {simpleVoidProof} from './helpers/cashier-simple-void-inverse.mjs';
 import {cashierOwnerRegisterProof} from './helpers/cashier-owner-register-inverse.mjs';
@@ -42,7 +44,7 @@ function fixture(options={}){
  vm.runInNewContext(options.handler||ownerHandler,{window:w,document:d,localStorage:storage,firebaseConfig:config,getApps:()=>[app],initializeApp:()=>assert.fail('Reuse only the isolated Owner app'),
   getAuth:value=>{assert.equal(value,app);return ownerAuth;},getFirestore:value=>{assert.equal(value,app);return ownerDb;},GoogleAuthProvider:Provider,
   signInWithPopup:async auth=>{assert.equal(auth,ownerAuth,'Never sign the Cashier Auth in as Owner');state.popups++;await options.popup?.(f);return{user:owner};},
-  cashierStartupBusy,beginCashierOwnerPreview,refreshCashierBranchLabel,cashierOwnerWorkspace:workspace,Swal,console:{error(){}}});
+  isCashierOwnerActionUser,cashierStartupBusy,beginCashierOwnerPreview,refreshCashierBranchLabel,cashierOwnerWorkspace:workspace,Swal,console:{error(){}}});
  f.enter=()=>w.ownerBypassLogin();f.retained=()=>{assert.equal(primaryAuth.currentUser,primary);assert.equal(values.get('paid-receipts-sentinel'),'kept exact');assert.equal(values.get('parked-orders-sentinel'),'kept exact');};
  return f;
 }
@@ -53,12 +55,12 @@ test('the actual live shell initializer reproduces the old false busy state; onl
  assert.equal(f.w.sessionUser,f.placeholder);assert.equal(f.writes.length,0);assert.equal(f.state.popups,0);f.retained();
 });
 
-test('actual shell plus actual Owner handler reaches isolated verified Google login and a branch preview without changing Cashier Auth',async()=>{
+test('actual shell plus actual Owner handler reuses verified Google Owner access and opens portable inspection without changing Cashier Auth',async()=>{
  const f=fixture();f.w.currentShift={status:'Closed',active:false};await f.enter();
- assert.equal(f.state.popups,1);assert.equal(f.state.reads,1);assert.equal(f.state.loads,1);assert.equal(f.nodes.get('loginOverlay').style.display,'none');
- assert.equal(f.w.sessionUser.workspaceKind,CASHIER_OWNER_WORKSPACE);assert.equal(f.w.sessionUser.branch,'Preview branch');assert.equal(f.w.sessionUser.staffId,undefined);assert.equal(f.values.get('takodeal_device_branch'),'Preview branch');
- const marker=JSON.parse(f.values.get(OWNER_PREVIEW_KEY));assert.equal(marker.originalBranch,'Registered branch');assert.equal(marker.previewBranch,'Preview branch');
- assert.equal(f.values.get('cashierName'),'Owner (System Test)');f.retained();
+ assert.equal(f.state.popups,0);assert.equal(f.state.reads,1);assert.equal(f.state.loads,0);assert.equal(f.nodes.get('loginOverlay').style.display,'none');
+ assert.equal(f.w.sessionUser.workspaceKind,CASHIER_OWNER_WORKSPACE);assert.equal(f.w.sessionUser.branch,'Preview branch');assert.equal(f.w.sessionUser.staffId,undefined);assert.equal(f.values.get('takodeal_device_branch'),'Registered branch');
+ assert.equal(f.values.has(OWNER_PREVIEW_KEY),false);assert.equal(f.writes.length,0);
+ assert.equal(f.values.has('cashierName'),false);f.retained();
 });
 
 test('fast authentication and cached branch reads cannot run an old loading callback over the branch picker',async()=>{
@@ -68,7 +70,7 @@ test('fast authentication and cached branch reads cannot run an old loading call
  assert.equal(f.state.selectLoading,false);assert.equal(f.state.selectConfirmVisible,true,'Enter POS remains available after a fast branch read');
  const loaders=f.state.messages.filter(args=>['Authenticating Master Key...','Fetching Network...'].includes(args[0]?.title));assert.equal(loaders.length,2);
  for(const [config]of loaders){assert.equal(config.showConfirmButton,false);assert.equal(Object.hasOwn(config,'didOpen'),false,'Loading belongs synchronously to its own dialog');}
- assert.equal(f.state.loads,1);f.retained();
+ assert.equal(f.state.loads,0);f.retained();
 });
 
 for(const change of ['email','branch','name','owner','extra','hidden-extra','symbol-extra','empty','array','real-cashier'])test('a non-placeholder session stays blocked even with a closed register: '+change,async()=>{
@@ -89,7 +91,7 @@ for(const kind of ['cart','Standard','Grab','Foodpanda','count','handover-submit
 
 for(const kind of ['cashier','cart','handover'])test('new work during Owner authentication/dialog still holds before any branch mutation: '+kind,async()=>{
  const f=fixture({select(f){if(kind==='cashier')f.w.sessionUser={staffId:'STAFF_OTHER'};if(kind==='cart')f.w.cart.push({name:'New order',qty:2});if(kind==='handover')f.values.set('takodeal_cash_remittance_v4:late','keep original');}});
- await f.enter();assert.equal(f.state.popups,1);assert.equal(f.state.loads,0);assert.equal(f.writes.length,0);assert.equal(f.values.get('takodeal_device_branch'),'Registered branch');assert.equal(f.nodes.get('loginOverlay').style.display,'flex');f.retained();
+ await f.enter();assert.equal(f.state.popups,0);assert.equal(f.state.loads,0);assert.equal(f.writes.length,0);assert.equal(f.values.get('takodeal_device_branch'),'Registered branch');assert.equal(f.nodes.get('loginOverlay').style.display,'flex');f.retained();
 });
 
 for(const owner of [{email:'other@fixture.invalid'},{emailVerified:false}])test('recognizing the empty shell does not weaken verified Owner authorization: '+JSON.stringify(owner),async()=>{
@@ -97,7 +99,7 @@ for(const owner of [{email:'other@fixture.invalid'},{emailVerified:false}])test(
 });
 
 test('cancelled branch choice keeps both accounts and all tablet data without a preview',async()=>{
- const f=fixture({cancel:true}),before=JSON.stringify([...f.values]);await f.enter();assert.equal(f.state.popups,1);assert.equal(f.state.reads,1);assert.equal(f.state.loads,0);assert.equal(f.writes.length,0);assert.equal(JSON.stringify([...f.values]),before);assert.equal(f.ownerAuth.currentUser,f.owner);f.retained();
+ const f=fixture({cancel:true}),before=JSON.stringify([...f.values]);await f.enter();assert.equal(f.state.popups,0);assert.equal(f.state.reads,1);assert.equal(f.state.loads,0);assert.equal(f.writes.length,0);assert.equal(JSON.stringify([...f.values]),before);assert.equal(f.ownerAuth.currentUser,f.owner);f.retained();
 });
 
 test('Owner identity changing in the branch dialog cannot hide sign-in or change a branch',async()=>{
@@ -105,7 +107,7 @@ test('Owner identity changing in the branch dialog cannot hide sign-in or change
 });
 
 test('the actual login placeholder permits only existing fresh-binding branch recovery after a previous Owner preview',async()=>{
- const f=fixture();await f.enter();const user=f.primary,rows=new Map([
+ const f=fixture();beginCashierOwnerPreview(f.w,'Preview branch');await f.enter();const user=f.primary,rows=new Map([
   ['pos_bindings/'+user.uid,{uid:user.uid,deviceId:'DEV-FICTIONAL1',branch:'Registered branch',legacyDeviceDocId:'FLEET_FIXTURE',status:'Active'}],
   ['pos_devices/FLEET_FIXTURE',{deviceId:'DEV-FICTIONAL1',branch:'Registered branch',status:'Active',appType:'POS'}]
  ]),reads=[];
@@ -119,13 +121,13 @@ test('the actual login placeholder permits only existing fresh-binding branch re
 
 test('only the two Owner loading dialogs change in main; authentication, sale and logout code has an exact inverse',()=>{
  assert.equal(restoreCashierOwnerEntry(main,'Takodeal-POS/main.js'),baseline('Takodeal-POS/main.js'),'Owner auth and ordinary financial/logout paths unchanged');
- const source=read('Takodeal-POS/cashier-startup.js'),before=baseline('Takodeal-POS/cashier-startup.js'),insertion="// The static login shell has this exact display placeholder before a PIN login.\n// Every other retained session still requires an explicit Cashier sign-out.\nconst loginPlaceholder=user=>user&&typeof user==='object'&&!Array.isArray(user)&&Reflect.ownKeys(user).length===4&&['email','branch','cashierName','isOwner'].every(name=>Object.hasOwn(user,name))&&user.email===''&&user.branch==='Loading...'&&user.cashierName==='User'&&user.isOwner===false;\n";
+ const source=restoreOwnerAccess(read('Takodeal-POS/cashier-startup.js'),'Takodeal-POS/cashier-startup.js'),before=baseline('Takodeal-POS/cashier-startup.js'),insertion="// The static login shell has this exact display placeholder before a PIN login.\n// Every other retained session still requires an explicit Cashier sign-out.\nconst loginPlaceholder=user=>user&&typeof user==='object'&&!Array.isArray(user)&&Reflect.ownKeys(user).length===4&&['email','branch','cashierName','isOwner'].every(name=>Object.hasOwn(user,name))&&user.email===''&&user.branch==='Loading...'&&user.cashierName==='User'&&user.isOwner===false;\n";
  assert.equal(source.split(insertion).length,2);const restored=source.replace(insertion,'').replace('if(w.sessionUser&&!loginPlaceholder(w.sessionUser)||','if(w.sessionUser||');assert.equal(restored,before);
  assert.equal(boot,baseline('Takodeal-POS/index.html').match(/^[ \t]*window\.sessionUser = [^\r\n]+;[ \t]*$/m)[0],'Static initializer itself remains unchanged');
 });
 
 test('the Owner entry release has five files and six exact inverse hunks to live dfa with no cache-policy or historical-proof changes',()=>{
- assert.equal(cashierOwnerEntryProof.base,BASE);assert.equal(cashierOwnerEntryProof.release,'cashier-owner-entry-20261115-r1');assert.equal(CASHIER_RELEASE,plottedProof.release);assert.equal(normalizeCashierReceivingProgress(read('Takodeal-POS/cashier-data.js'),'Takodeal-POS/cashier-data.js').match(/export const CASHIER_RELEASE = '([^']+)'/)[1],cashierOwnerRegisterProof.release);
+ assert.equal(cashierOwnerEntryProof.base,BASE);assert.equal(cashierOwnerEntryProof.release,'cashier-owner-entry-20261115-r1');assert.equal(CASHIER_RELEASE,ownerAccessProof.release);assert.equal(normalizeCashierReceivingProgress(read('Takodeal-POS/cashier-data.js'),'Takodeal-POS/cashier-data.js').match(/export const CASHIER_RELEASE = '([^']+)'/)[1],cashierOwnerRegisterProof.release);
  assert.deepEqual(Object.keys(cashierOwnerEntryProof.files).sort(),['Takodeal-POS/cashier-startup.js','Takodeal-POS/index.html','Takodeal-POS/sw.js','Takodeal-POS/cashier-data.js','Takodeal-POS/main.js'].sort());assert.equal(Object.values(cashierOwnerEntryProof.files).reduce((n,row)=>n+row.edits.length,0),6);
  for(const file of Object.keys(cashierOwnerEntryProof.files)){const source=read(file);assert.equal(restoreCashierOwnerEntry(source,file),baseline(file),file);assert.throws(()=>restoreCashierOwnerEntry(source+'\n// unreviewed change',file));}
  const sw=read('Takodeal-POS/sw.js');assert.ok(sw.includes("const CORE = 'takodeal-pos-core-"+CASHIER_RELEASE+"';"));assert.ok(page.includes('main.js?v='+CASHIER_RELEASE));assert.ok(sw.includes("'./cashier-startup.js'"));

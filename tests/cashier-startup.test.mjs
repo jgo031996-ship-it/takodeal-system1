@@ -1,6 +1,8 @@
+import {legacyOwnerAccessRead} from './helpers/owner-access-history-inverse.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync as rawOwnerAccessRead} from 'node:fs';
+const readFileSync=(...args)=>legacyOwnerAccessRead(rawOwnerAccessRead(...args),args[0]);
 import vm from 'node:vm';
 import {createCashierDeviceSetup} from '../Takodeal-POS/cashier-device-setup.js';
 import {OWNER_PREVIEW_KEY,beginCashierOwnerPreview,cashierStartupBusy,createCashierBranchRecovery,refreshCashierBranchLabel} from '../Takodeal-POS/cashier-startup.js';
