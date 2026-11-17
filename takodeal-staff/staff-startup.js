@@ -1,9 +1,24 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-profile-sync-20261117-r1';
+    var release = 'staff-phone-setup-20261117-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
+    // Consume the private fragment before any external scripts start.
+    var setupInvite = null;
+    function captureSetupInvite() {
+        if (!w.location || !/^#staff-setup=/.test(w.location.hash)) return;
+        setupInvite = null;
+        var parts = /^#staff-setup=([A-Za-z0-9_-]{1,128})\.(\d{10})$/.exec(w.location.hash);
+        try {
+            w.history.replaceState(w.history.state, '', w.location.pathname + w.location.search);
+            if (parts) setupInvite = {staffId: parts[1], code: parts[2]};
+        } catch (_) { /* Manual setup is available when the fragment cannot be removed. */ }
+        parts = null;
+    }
+    captureSetupInvite();
+    w.addEventListener('hashchange', captureSetupInvite);
+    w.addEventListener('pagehide', function () { setupInvite = null; });
     var ready = false, updating = false, run = null, banner, bannerText;
     var timers = [], earlyStatus = 'Staff app is opening. Please wait; your device registration is kept.';
     var releasedStyles = [];
@@ -197,7 +212,7 @@
     // An older optional module may assign its former update action. Keep every
     // button on this independent, data-preserving implementation on this page.
     Object.defineProperty(w, 'forceUpdateApp', {get: function () { return check; }, set: function () {}, configurable: true});
-    w.staffStartup = {ready: function () { ready = true; timers.forEach(function (timer) { w.clearTimeout(timer); }); if (banner && !updateNotice) banner.hidden = true; var node = d.getElementById && d.getElementById('deviceRegistrationStatus'); if (node && node.hasAttribute('data-staff-startup-status')) { node.textContent = ''; node.removeAttribute('data-staff-startup-status'); } Promise.resolve().then(watchUpdates); }};
+    w.staffStartup = {takeSetupInvite: function () { var value = setupInvite; setupInvite = null; return value; }, ready: function () { ready = true; timers.forEach(function (timer) { w.clearTimeout(timer); }); if (banner && !updateNotice) banner.hidden = true; var node = d.getElementById && d.getElementById('deviceRegistrationStatus'); if (node && node.hasAttribute('data-staff-startup-status')) { node.textContent = ''; node.removeAttribute('data-staff-startup-status'); } Promise.resolve().then(watchUpdates); }};
     timers.push(w.setTimeout(function () { if (!ready) { earlyStatus = 'The Staff app is still opening. Your phone has not been reset.'; show(earlyStatus + ' If it stays here, use Repair and reopen.'); } }, 15000));
     timers.push(w.setTimeout(function () { if (!ready) { earlyStatus = 'The Staff app could not finish opening. Your device registration and saved data are kept.'; show(earlyStatus + ' Use Repair and reopen while connected.'); } }, 30000));
     w.addEventListener('error', function (event) {
