@@ -61,6 +61,29 @@ class SourceAudit(unittest.TestCase):
     def test_already_applied_candidate_is_idempotent(self):
         self.bundle(replace={'index.mjs':self.after,'helper.mjs':self.helper});self.stage()
         self.assertEqual((self.root/'stage/index.mjs').read_bytes(),self.after)
+    def test_complete_inventory_blocks_extra_source_before_staging(self):
+        self.config['completeSourceInventory']=True
+        self.bundle(extra={'unexpected.mjs':b'export {}'})
+        with self.assertRaises(release.ReleaseCheckError):self.stage()
+        self.assertFalse((self.root/'stage').exists())
+    def test_complete_inventory_accepts_known_nested_files_and_ignores_dependencies(self):
+        self.config['completeSourceInventory']=True
+        content=b'unchanged'
+        (self.repo/'function/other-preserved.txt').write_bytes(content)
+        self.config['files']['other-preserved.txt']={'baseline':release.digest(content),'candidate':release.digest(content)}
+        self.bundle(prefix='source/',extra={'source/node_modules/package/helper.mjs':b'export {}'})
+        self.stage()
+        self.assertEqual((self.root/'stage/helper.mjs').read_bytes(),self.helper)
+    def test_deployed_verification_rejects_baseline_and_mixed_state_and_writes_no_stage(self):
+        for changes,success in [({},False),({'index.mjs':self.after},False),({'index.mjs':self.after,'helper.mjs':self.helper},True)]:
+            with self.subTest(changes=changes):
+                self.bundle(replace=changes)
+                def verify():
+                    release.stage_bundle('staffDeviceSetup',self.archive,self.config,self.repo,self.root/'stage',require_candidate=True)
+                if success:verify()
+                else:
+                    with self.assertRaises(release.ReleaseCheckError):verify()
+                self.assertFalse((self.root/'stage').exists())
     def test_unknown_deployed_or_locally_edited_source_blocks_before_staging(self):
         for where in ['deployed','local']:
             with self.subTest(where=where):

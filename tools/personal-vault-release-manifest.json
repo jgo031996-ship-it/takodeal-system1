@@ -1,8 +1,9 @@
 {
-  "baseline": "59281163035148857338546185224579a7e46f63",
-  "candidateSource": "8b7b378a1ba394df7a2151e877076d952466a163",
+  "baseline": "acee141f515f964d48dfdab97a2230e773fab05d",
+  "candidateSource": "e3f30bc9aa2a231f828959aca524797ab2979ec9",
   "functions": {
     "staffDeviceSetup": {
+      "completeSourceInventory": true,
       "directory": "functions/staff-device-setup",
       "packageName": "takodeal-staff-device-setup",
       "serviceAccount": "staff-device-setup@takodeal-pos.iam.gserviceaccount.com",
@@ -24,12 +25,13 @@
           "candidate": "6ab20fd38d67a76878dd4ee9295e4d0d6697ac89331f47a20d8bea4f77d9daa1"
         },
         "service.mjs": {
-          "baseline": "9edb2a5f148e60c6aa162bc257c509d4deb55bf64b3d6e51e5e9332eec069d76",
-          "candidate": "7d61850296dc2fb3ae3f5d37b43cfec2fcc0a756d26dc92033605c47f184019d"
+          "baseline": "2e6945441c3dbb4577a450660fe7634329500167a6e6cc102f0d40acfeb1ab7c",
+          "candidate": "d735784758e8550179f4f24f61900c34a44a041ed0260bd914b829a69e0adb66"
         }
       }
     },
     "cashRemittanceReview": {
+      "completeSourceInventory": true,
       "directory": "functions/cash-remittance-review",
       "packageName": "takodeal-cash-remittance-review",
       "serviceAccount": "cash-remittance-review@takodeal-pos.iam.gserviceaccount.com",
@@ -39,12 +41,12 @@
           "candidate": "882235c6d336d45096c4b6e3a6e9f51d9a9e4f4d66a3ba297f35b06ba9564f13"
         },
         "access-handler.mjs": {
-          "baseline": "cec617aceea1809707129e768f820692877386bf879d13c145dd5c5c401893a6",
-          "candidate": "cec617aceea1809707129e768f820692877386bf879d13c145dd5c5c401893a6"
+          "baseline": "e91a4946a7fd17b01d2a10aa0fc169a782edf2d1e501dfe7de9ae1632dffd92d",
+          "candidate": "e91a4946a7fd17b01d2a10aa0fc169a782edf2d1e501dfe7de9ae1632dffd92d"
         },
         "access-model.mjs": {
-          "baseline": "23a388dc467011ba7b25c351e70a4887689ec8edcbaf9ab6bb3cd79a8e6b9d84",
-          "candidate": "23a388dc467011ba7b25c351e70a4887689ec8edcbaf9ab6bb3cd79a8e6b9d84"
+          "baseline": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5",
+          "candidate": "ad2df4d665549c623f78ac32257dd96f6731883192ca3db81218c955db35a1f5"
         },
         "access-operational-store.mjs": {
           "baseline": "77d58fa546bb1e36efa89b061cc016fe6458f0710a488cd51be72ced8b228c08",
@@ -59,8 +61,8 @@
           "candidate": "39e7d0009ea551033ebf44bd2e997516f2583b7ca06a778b84ae39e2804b521a"
         },
         "access-store.mjs": {
-          "baseline": "34c47e01f9c047716e0be967d027bcb8730027e885c538113c866b148fa2de9d",
-          "candidate": "59604329649ef4f84dca607bfb376db404378eb0d5c15e50eed650ae4f86f39c"
+          "baseline": "2083cdf86141f42beee8695b1532a751788e4e0bb1485a8777ab0fb4e3242159",
+          "candidate": "457a4fc50ee80c1f4f8141912f787e6382b740baec30802b3a758c4fd3ad45dc"
         },
         "cash-remittance-model.js": {
           "baseline": "8b08ec5e224d5ce7f321dcbe5e5512aa171b540993096b0a760127cf3a980257",
@@ -69,6 +71,22 @@
         "cashier-shift-close-store.mjs": {
           "baseline": "f04df48881ab8e794f9202cd6184b4607e9464ca2a8900faedf0623d09cb6b1d",
           "candidate": "f04df48881ab8e794f9202cd6184b4607e9464ca2a8900faedf0623d09cb6b1d"
+        },
+        "cashier-void-handler.mjs": {
+          "baseline": "6c36b369f696af5a0c6b3cf0f53daab2584bc9e83eb409e6bba373adafbfbf5a",
+          "candidate": "6c36b369f696af5a0c6b3cf0f53daab2584bc9e83eb409e6bba373adafbfbf5a"
+        },
+        "cashier-void-history.mjs": {
+          "baseline": "82420a726ab66645d47f53b605ad7c4885dc173ae09ff34d986bfca615f780fe",
+          "candidate": "82420a726ab66645d47f53b605ad7c4885dc173ae09ff34d986bfca615f780fe"
+        },
+        "cashier-void-model.mjs": {
+          "baseline": "0283156732db5c994a11c881f915b27958c936020229d5b701641e21840961d7",
+          "candidate": "0283156732db5c994a11c881f915b27958c936020229d5b701641e21840961d7"
+        },
+        "cashier-void-store.mjs": {
+          "baseline": "9984fb961cf9f7c2d438b38f322df4f5278f358ad9479cd70c42c61c4bdea961",
+          "candidate": "9984fb961cf9f7c2d438b38f322df4f5278f358ad9479cd70c42c61c4bdea961"
         },
         "company-access-index.mjs": {
           "baseline": "974ae23b5a4567e555a0cf63cc372fd53e5efb9c90e715152e774dc6747ec4bf",
@@ -115,16 +133,20 @@
           "candidate": "219222fcff629f8a29331014e2e4f3588a518a851b512c2bafc4a2206bfee565"
         },
         "index.mjs": {
-          "baseline": "acc62ab5dc1977cd913a0b8c9bacabaa21294bf76e0f5cff3333725348a0f434",
-          "candidate": "acc62ab5dc1977cd913a0b8c9bacabaa21294bf76e0f5cff3333725348a0f434"
+          "baseline": "15e215934cef25d405fa061ab4eefdb416c27a3633521fe99c50b85a85df003c",
+          "candidate": "15e215934cef25d405fa061ab4eefdb416c27a3633521fe99c50b85a85df003c"
+        },
+        "owner-desktop-authority.mjs": {
+          "baseline": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855",
+          "candidate": "a0cc2a42b2700f56134098dd01d2e219ecb92f89257140f46957285b9b00a855"
         },
         "owner-time-out-handler.mjs": {
-          "baseline": "05b58ac8491dc1b81de76045463e7fc16848f919d68e4d8a57293e2cfcc5f8c5",
-          "candidate": "05b58ac8491dc1b81de76045463e7fc16848f919d68e4d8a57293e2cfcc5f8c5"
+          "baseline": "abf3de725925024eb155d75af21067e9cd8d75657efa356026b273a5752264b2",
+          "candidate": "abf3de725925024eb155d75af21067e9cd8d75657efa356026b273a5752264b2"
         },
         "owner-time-out-service.mjs": {
-          "baseline": "eb84c788b7eaa6ca8b9a7402c9902a43a03a52c88a03d4b77be1310cdaa62019",
-          "candidate": "eb84c788b7eaa6ca8b9a7402c9902a43a03a52c88a03d4b77be1310cdaa62019"
+          "baseline": "56581703a9e120ca6f3eab87cb78817cd2c95abdf2bef4fcb6f96dc7a897b5ce",
+          "candidate": "56581703a9e120ca6f3eab87cb78817cd2c95abdf2bef4fcb6f96dc7a897b5ce"
         },
         "owner-time-out-store.mjs": {
           "baseline": "b09bf4e472afe89d557f21a70502d745abfe49966dad4ee2bf256aaad812216e",
@@ -158,17 +180,29 @@
           "baseline": null,
           "candidate": "1500b72096214f7a892b124579c2926493a3b4babd6f1dd825b37ffc89963c0b"
         },
+        "prep-actual-model.mjs": {
+          "baseline": "5bd33935bc0f78bb62161c06c1ac60256d20111c5fe1c6e1733fe606ddee87fa",
+          "candidate": "5bd33935bc0f78bb62161c06c1ac60256d20111c5fe1c6e1733fe606ddee87fa"
+        },
         "prep-handler.mjs": {
-          "baseline": "cfcbe457c636c94c0f80e4ffa0404c8c2c35a44e40044f8a2dc676714b2130d6",
-          "candidate": "cfcbe457c636c94c0f80e4ffa0404c8c2c35a44e40044f8a2dc676714b2130d6"
+          "baseline": "c954d24a7b8cf48e22dd8e738f99767af80ff152ad56a0991175645e3faa7ce3",
+          "candidate": "c954d24a7b8cf48e22dd8e738f99767af80ff152ad56a0991175645e3faa7ce3"
+        },
+        "prep-measured-model.mjs": {
+          "baseline": "b80b8a6cb6d18042a4d34dea92ca9952d1591cd8bbc9da5c844b375a38d2ebe9",
+          "candidate": "b80b8a6cb6d18042a4d34dea92ca9952d1591cd8bbc9da5c844b375a38d2ebe9"
         },
         "prep-model.mjs": {
-          "baseline": "0e01768a0fdda7f20443e3684aa0230624f5484bb33600b797946d0b3aeb77d1",
-          "candidate": "0e01768a0fdda7f20443e3684aa0230624f5484bb33600b797946d0b3aeb77d1"
+          "baseline": "5a27fbe15a5bcfad5ed18218ecdbd554142af32dc07b44bfe1f46e27fcf54bd5",
+          "candidate": "5a27fbe15a5bcfad5ed18218ecdbd554142af32dc07b44bfe1f46e27fcf54bd5"
+        },
+        "prep-review-model.mjs": {
+          "baseline": "4df0a79902296fa2e3f1eb33ee86d287bb1204332a0db7b9ebab357b6566c855",
+          "candidate": "4df0a79902296fa2e3f1eb33ee86d287bb1204332a0db7b9ebab357b6566c855"
         },
         "prep-store.mjs": {
-          "baseline": "9962e55c5e484cc4d96db58efb0b6a155af4c351ba46dffb635a9f9e36620a8b",
-          "candidate": "9962e55c5e484cc4d96db58efb0b6a155af4c351ba46dffb635a9f9e36620a8b"
+          "baseline": "473061e5c56d513acd8e1fd61eda2aa2f1eaf232e14230b0a4333e336193d4e6",
+          "candidate": "473061e5c56d513acd8e1fd61eda2aa2f1eaf232e14230b0a4333e336193d4e6"
         },
         "relief-core/attendance-metadata-reader.js": {
           "baseline": "98b112b4772108daa9778eb036de7202d11e6a09b52a432672449f5ab484808a",
