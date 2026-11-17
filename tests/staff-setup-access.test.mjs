@@ -98,12 +98,12 @@ test('directory requests only minimal fields, traverses pages, excludes inactive
     const rows=await readSetupStaffDirectory({projectId:'test',apiKey:'public',getToken:async()=>'token',fetcher:async url=>{urls.push(url);return response(200,urls.length===1?{documents:[row('staff-b','Bee'),row('staff-x','Inactive','Revoked')],nextPageToken:'next'}:{documents:[row('staff-a','Aye')]});}});
     assert.deepEqual(rows.map(r=>r.staffId),['staff-a','staff-b']);assert.equal(urls.length,2);assert.match(urls[1],/pageToken=next/);assert.ok(urls.every(url=>new URL(url).searchParams.getAll('mask.fieldPaths').join(',')==='cashierName,branch,status,active,archived,blocked'));assert.equal(JSON.stringify(rows).includes('NOT-RETURNED'),false);
 });
-function uiHarness(){
+function uiHarness(invite=null){
     const nodes=new Map(),store=new Map(),timers=new Map(),events=new Map();let timerId=0,uuid=0,loginCalls=0,legacyCalls=0;
     const node=id=>{if(!nodes.has(id))nodes.set(id,{id,value:'',hidden:false,disabled:false,textContent:'',style:{},children:[],addEventListener:(name,fn)=>events.set(id+':'+name,fn),replaceChildren(){this.children=[];this.value='';},append(child){this.children.push(child);}});return nodes.get(id);};
     const document={hidden:false,getElementById:node,querySelector:()=>node('button'),createElement:()=>({value:'',textContent:''}),addEventListener:(name,fn)=>events.set('doc:'+name,fn)};
     const localStorage={getItem:key=>store.get(key)||null,setItem:(key,value)=>store.set(key,value),removeItem:key=>store.delete(key)};
-    const window={crypto:{randomUUID:()=>`12345678-1234-4123-8123-${String(++uuid).padStart(12,'0')}`},stopStaffLiveListeners(){},lockPayslipVault(){},checkNormalLogin(){loginCalls++;},addEventListener:(name,fn)=>events.set('win:'+name,fn)};
+    const window={staffStartup:{takeSetupInvite:()=>invite},crypto:{randomUUID:()=>`12345678-1234-4123-8123-${String(++uuid).padStart(12,'0')}`},stopStaffLiveListeners(){},lockPayslipVault(){},checkNormalLogin(){loginCalls++;},addEventListener:(name,fn)=>events.set('win:'+name,fn)};
     const env={window,document,localStorage,navigator:{onLine:true},setTimeout:fn=>(timers.set(++timerId,fn),timerId),clearTimeout:id=>timers.delete(id)};
     const auth=authHarness(),requests=[];let result={enabled:true,mode:'protected',device:null},activateWait=null,activateFailure=null;
     const fetcher=async(url,options)=>{const body=JSON.parse(options.body);requests.push({url,body});if(url.endsWith('/activate')){if(activateWait)await activateWait;if(activateFailure)return response(activateFailure.status,{error:{code:activateFailure.code,message:activateFailure.message}});result={...protectedState(),enabled:result.enabled,device:{...protectedState().device,deviceId:body.deviceId,staffId:body.staffId}};return response(200,result);}return response(200,result);};
@@ -200,4 +200,20 @@ test('actual PIN login refuses a late staff profile after device authentication 
 });
 test('actual protected PIN login opens only its bound staff and delayed render cannot survive later revocation',async()=>{
     const h=actualLoginHarness();h.node('loginPin').value='1111';await h.window.loginStaff();assert.equal(h.store.get('takodeal_staff_id'),'staff-a');assert.equal(h.store.get('takodeal_staff_name'),'Sample Staff');assert.equal(h.timers.length,1);h.changeUid('uid-b');h.timers[0]();assert.equal(h.node('appContainer').style.display,undefined);assert.equal(h.calls.includes('check-setup'),true);
+});
+
+test('a private invite needs one tap and no typed code, name or phone label',async()=>{
+ const h=uiHarness({staffId:'staff-a',code:'0123456789'});
+ h.setResult({mode:'legacy',device:null,enabled:false});
+ try{await h.gate.start();assert.equal(h.node('staffSetupFields').hidden,true);
+  assert.equal(h.requests.filter(x=>x.url.endsWith('/activate')).length,0);
+  await h.window.requestDeviceAccess();const req=h.requests.filter(x=>x.url.endsWith('/activate'));
+  assert.equal(req.length,1);assert.equal(req[0].body.code,'0123456789');assert.equal(req[0].body.staffId,'staff-a');assert.equal(req[0].body.deviceName,'Personal phone');
+  assert.equal(h.loginCalls,1);assert.ok([...h.store.values()].every(v=>!String(v).includes('0123456789')));
+ }finally{h.gate.stop();}
+});
+test('manual activation with a blank phone label submits the selected employee and code',async()=>{
+ const h=uiHarness();try{await h.gate.start();await new Promise(setImmediate);h.node('setupStaffInput').value='staff-a';h.node('staffSetupCode').value='01234 56789';
+  await h.window.requestDeviceAccess();assert.equal(h.loginCalls,1);
+ }finally{h.gate.stop();}
 });

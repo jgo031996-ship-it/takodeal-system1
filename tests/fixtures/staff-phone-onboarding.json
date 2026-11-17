@@ -1,0 +1,21 @@
+{
+  "parent": "2850fba2c9b33ba14db8c2c6d145718d66bb483f",
+  "files": {
+    "takodeal-staff/index.html": {
+      "before": "5fe4fa4b33ad7203a9c7e62d5c62f99bbd9df0e2",
+      "after": "5687e084598b044bfc8b889e8a19ecd825ee828c"
+    },
+    "takodeal-staff/staff-setup-access.js": {
+      "before": "fcea1eb5438943531e5d1a8d8e6cdde2f9859551",
+      "after": "a1d7c5d4d75d2fd4daf396c01d04cdda4af38930"
+    },
+    "takodeal-staff/staff-startup.js": {
+      "before": "f5af61c0ce087479407790e8934f0311a0265b9a",
+      "after": "a6eb70fe0fcdae71de12203b3c506b80b4bac020"
+    },
+    "takodeal-staff/sw.js": {
+      "before": "2fb2f6e0192a246ed92e4ae4c70deb4423597dec",
+      "after": "fa62e4a800c7313ffdb8b9c4d137559c9a814559"
+    }
+  }
+}

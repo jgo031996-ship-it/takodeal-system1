@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
 import {installStaffAppUpdate} from '../takodeal-staff/staff-phone.js';
 import {execFileSync} from 'node:child_process';
-const source=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),release='staff-profile-sync-20261117-r1',hash='a'.repeat(64),flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
+const source=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),release='staff-phone-setup-20261117-r1',hash='a'.repeat(64),flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};};
 function fixture(options={}){
  const timers=new Map(),events=new Map(),domEvents=new Map(),elements=new Map(),buttons=[],statuses=[],styles=[],calls={reload:0,lookup:0,register:0,update:0,messages:[],payloads:[],forbidden:0};let sequence=0;
@@ -15,6 +15,10 @@ function fixture(options={}){
  const active=worker(),registration={scope:'https://takodeal-staff.vercel.app/',active,waiting:null,installing:null,update:async()=>{calls.update++;if(options.update)return options.update();}};
  const nav={onLine:true,serviceWorker:{controller:active,addEventListener:(type,fn)=>events.set('sw:'+type,fn),getRegistration:async()=>{calls.lookup++;return options.lookup?options.lookup():registration;},register:async()=>{calls.register++;return registration;}}};
  const w={location:{href:'https://takodeal-staff.vercel.app/index.html',origin:'https://takodeal-staff.vercel.app',reload:()=>calls.reload++},MessageChannel:Channel,setTimeout:(fn,ms)=>{const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),addEventListener:(type,fn)=>events.set(type,fn),localStorage:{getItem:forbidden,setItem:forbidden,removeItem:forbidden,clear:forbidden},indexedDB:{deleteDatabase:forbidden},caches:{delete:forbidden,keys:forbidden},auth:{signOut:forbidden}};
+ if(options.inviteHash){
+  w.location.pathname='/index.html';w.location.search='?view=staff';w.location.hash=options.inviteHash;
+  w.history={state:null,replaceState(_state,_title,url){calls.replaced=url;w.location.hash='';}};
+ }
  vm.runInNewContext(options.source||source,{window:w,document,navigator:nav,Symbol,URL,Promise,Error,Array,Object,String,console});
  return {w,d:document,nav,styles,addStyle({href='/held.css',media=null,loaded=false,disabled=false}={}){const link=node('link');link.setAttribute('href',href);if(media!==null)link.setAttribute('media',media);link.sheet=loaded?{}:null;link.disabled=disabled;styles.push(link);return link;},calls,timers,events,domEvents,elements,buttons,statuses,registration,worker,node,check:()=>w.forceUpdateApp(),expire(ms){for(const[id,row]of [...timers])if(row.ms===ms){timers.delete(id);row.fn();}},banner:()=>elements.get('staffStartupRecovery'),text:()=>elements.get('staffStartupRecovery')?.children[1].textContent||'',canUpdate(extra={}){let answer;events.get('sw:message')({data:{type:'TAKODEAL_STAFF_CAN_UPDATE'},origin:w.location.origin,source:active,ports:[{postMessage:value=>answer=value}],...extra});return JSON.parse(JSON.stringify(answer));},intact(){assert.equal(calls.forbidden,0);assert.equal(w.localStorage.getItem,forbidden);}};
 }
@@ -77,4 +81,14 @@ test('pending-style ownership restores exact original media on load/error only, 
 test('style restoration does not overwrite changed ownership/media and a ready page never changes pending styles',()=>{
  for(const change of ['media','owner']){const h=fixture(),link=h.addStyle({media:'screen'});h.expire(15000);const done=link.listeners.get('load');if(change==='media')link.setAttribute('media','print');else link.setAttribute('data-staff-startup-style-release','ANOTHER OWNER');done();assert.equal(link.getAttribute('media'),change==='media'?'print':'not all');if(change==='owner')assert.equal(link.getAttribute('data-staff-startup-style-release'),'ANOTHER OWNER');assert.equal(link.listeners.size,0);}
  const ready=fixture();ready.w.staffStartup.ready();const link=ready.addStyle();ready.w.requestDeviceAccess();assert.equal(link.getAttribute('media'),null);assert.equal(link.getAttribute('data-staff-startup-style-release'),null);ready.intact();
+});
+
+test('private setup link is removed from the address before startup, can be used once and is forgotten on exit',()=>{
+ const h=fixture({inviteHash:'#staff-setup=staff-a.0123456789'});
+ assert.equal(h.calls.replaced,'/index.html?view=staff');assert.equal(h.w.location.hash,'');
+ assert.equal(h.w.staffStartup.takeSetupInvite().staffId,'staff-a');assert.equal(h.w.staffStartup.takeSetupInvite(),null);
+ h.w.location.hash='#staff-setup=staff-b.9876543210';h.events.get('hashchange')();h.events.get('pagehide')();
+ assert.equal(h.w.staffStartup.takeSetupInvite(),null);h.intact();
+ const malformed=fixture({inviteHash:'#staff-setup=staff-a.short'});assert.equal(malformed.w.location.hash,'');
+ assert.equal(malformed.w.staffStartup.takeSetupInvite(),null);malformed.intact();
 });
