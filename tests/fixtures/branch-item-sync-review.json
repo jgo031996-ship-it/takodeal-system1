@@ -1,0 +1,21 @@
+{
+  "parent": "9f460e07ea3b977c562df812992e6ad24edcbc32",
+  "files": {
+    "takodeal-manager/branch-inventory-setup.js": {
+      "before": "6610ac4d31e854e6163f938154057a7cae2dcf76",
+      "after": "4f47b3b21cc10580f201e583c2a932996261ef0d"
+    },
+    "takodeal-manager/index.html": {
+      "before": "8c4feadbb4aa6b66f3db53c3b055ebef4891f68c",
+      "after": "47a2f5978b39c9363f1fd1a362c50a6c4a4453cf"
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "before": "29a2cb8c3ca2d0f023c095e09ef0d72d6764b7e8",
+      "after": "9f3907c73fca496263c1a1201d7ccd4462ad37f9"
+    },
+    "takodeal-manager/sw.js": {
+      "before": "ae25e82678da94eb7ffafe87bc01739d5940ac05",
+      "after": "7ea2e33aa85eeb6f704084e9d9adb33a53ae9753"
+    }
+  }
+}

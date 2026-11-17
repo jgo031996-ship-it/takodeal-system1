@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {planBranchInventorySetup,branchInventoryId,inventoryTemplatePayload} from '../takodeal-manager/branch-inventory-model.js';
-import {branchInventoryActor,createBranchInventorySetup,installBranchInventorySetup} from '../takodeal-manager/branch-inventory-setup.js';
+import {branchSyncSummary,branchInventoryActor,createBranchInventorySetup,installBranchInventorySetup} from '../takodeal-manager/branch-inventory-setup.js';
 import {planPrepBatch} from '../functions/cash-remittance-review/prep-model.mjs';
 import {canOpenInventoryTab} from '../takodeal-manager/workspace-access-model.js';
 const email='jgo031996@gmail.com',branch='Fictional New Store';
@@ -102,4 +102,19 @@ test('a catalog record appearing after the manual duplicate check is never overw
  const f=fixture(),id=await branchInventoryId(branch,'Fictional Sauce'),read=f.api.getDocsFromServer;inventoryForm(f);let first=true;
  f.api.getDocsFromServer=async query=>{const result=await read(query);if(first&&query.table==='inventory'){first=false;f.h.put('inventory/'+id,{...inventoryTemplatePayload(item('Fictional Sauce'),branch),currentStock:321});}return result;};
  await f.api.saveAdvancedInventoryItem();assert.equal(f.h.get('inventory/'+id).currentStock,321);assert.equal(f.inventory().filter(row=>row.branch===branch&&row.name==='Fictional Sauce').length,1);
+});
+
+test('catalog preview shows the Main Office coverage and the full write scope without editing the destination',async()=>{
+ const f=fixture({items:[item('HQ only','Main Office'),item('Existing','Main Office'),item('Existing',branch,{currentStock:17}),item('Other store','Maa')]});
+ const before=[...f.h.docs];const data=await f.service.directory(()=>{}),summary=branchSyncSummary(data,branch);
+ assert.equal(summary.hqTotal,2);assert.deepEqual(summary.listed,['Existing']);assert.deepEqual(summary.hqMissing.map(r=>r.name),['HQ only']);assert.deepEqual(summary.otherMissing.map(r=>r.name),['Other store']);assert.deepEqual([...f.h.docs],before);
+ f.h.put('inventory/new-item',item('Added meanwhile','Main Office'));
+ await assert.rejects(f.service.ensure(branch,{reviewedCreates:summary.plan.creates}),/catalog has changed/);assert.equal(f.inventory().filter(r=>r.branch===branch).length,1);
+});
+test('Live Stocks shows the preview before any sync and closing it keeps stock untouched',async()=>{
+ const f=fixture(),before=[...f.h.docs],dialogs=[];const element=()=>({style:{},children:[],append(child){this.children.push(child);}});
+ f.api.document={getElementById:()=>({value:branch}),createElement:element};f.api.Swal.fire=async opts=>{dialogs.push(opts);return {isConfirmed:false};};
+ await f.api.reviewBranchItemSync();assert.equal(dialogs.at(-1).titleText,'Item sync · '+branch);assert.match(dialogs.at(-1).confirmButtonText,/Add 2 missing items/);assert.deepEqual([...f.h.docs],before);
+ const page=readFileSync(new URL('../takodeal-manager/index.html',import.meta.url),'utf8');
+ assert.match(page,/reviewBranchItemSync\(\)[^\n]*Branch item sync[\s\S]{0,850}csvInvUpload/);
 });
