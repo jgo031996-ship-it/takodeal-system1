@@ -12,11 +12,13 @@ const hash=bytes=>createHash('sha1').update('blob '+bytes.length+'\0').update(by
 const sync=JSON.parse(readFileSync(new URL('../fixtures/employee-live-sync.json',import.meta.url),'utf8'));
 const onboarding=JSON.parse(readFileSync(new URL('../fixtures/staff-phone-onboarding.json',import.meta.url),'utf8'));
 const stockReview=JSON.parse(readFileSync(new URL('../fixtures/branch-item-sync-review.json',import.meta.url),'utf8'));
+const staffPin=JSON.parse(readFileSync(new URL('../fixtures/staff-pin-release.json',import.meta.url),'utf8'));
 const originals=new Map();
 
 // Historical checks can remove only a complete byte-identical release change.
 // The current release scope test reads the working tree directly.
 export function beforeWorkedReview(value,path){
+ value=historicalBlob(value,staffPin.files[pathKey(path)]);
  value=historicalBlob(value,stockReview.files[pathKey(path)]);
  value=historicalBlob(value,onboarding.files[pathKey(path)]);
  value=historicalBlob(value,sync.files[pathKey(path)]);
@@ -42,7 +44,9 @@ export function beforeWorkedReviewPaths(output,command,args){
  if(!base)return output;
  const kept=output.toString().split(/\r?\n/).filter(Boolean).filter(file=>{
   const bytes=readFileSync(new URL(file,root));
-  const repair=stockReview.files[file],candidate=hash(bytes);
+  const pinFile=staffPin.files[file],working=hash(bytes);
+  if(pinFile&&pinFile.after!==working)return true;
+  const repair=stockReview.files[file],candidate=pinFile?pinFile.before:working;
   if(repair&&repair.after!==candidate)return true;
   const onboardingFile=onboarding.files[file],digest=repair?repair.before:candidate;
   if(onboardingFile&&onboardingFile.after!==digest)return true;
@@ -52,7 +56,7 @@ export function beforeWorkedReviewPaths(output,command,args){
   if(revision&&key!==revision.after)return true;
   const previous=revision?revision.before:key;
   const row=proof.files[file];
-  if(!repair&&!onboardingFile&&!live&&!revision&&(!row||previous!==row.after))return true;
+  if(!pinFile&&!repair&&!onboardingFile&&!live&&!revision&&(!row||previous!==row.after))return true;
   const original=row&&previous===row.after?row.before:previous;
   const listing=execFileSync('git',['ls-tree',base,'--',file],{cwd:root,encoding:'utf8'}).trim();
   return (listing.split(/\s+/)[2]||null)!==original;
