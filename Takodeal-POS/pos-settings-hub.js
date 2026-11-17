@@ -35,7 +35,11 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
     }
     function refresh(){try{checkSession();paint();notice('Settings ready for '+w.sessionUser.cashierName+' · '+branch()+'.');return true;}catch(error){paint();notice(error.message);return false;}}
     function paint(){const view=d.getElementById('view-settings');if(!view)return;let ready=false;try{checkSession();ready=true;}catch{}
-        for(const button of view.querySelectorAll('[data-pos-action]'))button.disabled=!ready||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&!['printerTools','manualDrawer','autoDrawer','kds'].includes(button.dataset.posAction);
+        let ownerOrders=false;
+        if(w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&w.cashierOwnerPOS?.parked){
+            try{const c=w.getCashierOwnerWorkspaceContext();c.assertCurrent();ownerOrders=c.session===w.sessionUser;}catch{}
+        }
+        for(const button of view.querySelectorAll('[data-pos-action]'))button.disabled=button.dataset.posAction==='parkedOrders'&&ownerOrders?false:!ready||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&!['printerTools','manualDrawer','autoDrawer','kds'].includes(button.dataset.posAction);
         const printer=d.getElementById('view-printer');if(printer)for(const control of printer.querySelectorAll('button,input,select,textarea'))control.disabled=!ready;
         const info=d.getElementById('posSettingsDevice');if(info)info.textContent=(w.localStorage.getItem('takodeal_device_name')||'This device')+' · '+(branch()||'Branch not selected');
         const audit=d.getElementById('posAuditState');if(audit)audit.textContent=w.isAuditModeActive?'Inventory deductions paused':'Inventory deductions active';
@@ -50,6 +54,20 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
             continue;
         }
         w[name]=async function(...args){
+            if(action==='parkedOrders'&&w.cashierOwnerPOS?.parked&&w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE){
+                let owner;try{owner=w.getCashierOwnerWorkspaceContext();if(!owner)throw Error('Reopen Owner Access.');}catch(error){message(error);return false;}
+                owner.assertCurrent();
+                if(['parkOrder','resumeOrder','deleteParkedOrderManually'].includes(name))return w.cashierOwnerPOS.parked[name](...args);
+                if(name==='showParkedOrders')return original.call(this,owner);
+                if(name==='printParkedReceipt'){
+                    try{
+                        const snap=await w.getDocFromServer(w.doc(owner.db,'parked_orders',args[0]));owner.assertCurrent();
+                        if(!snap.exists()||snap.data().branch!==owner.branch)throw Error('This ticket is no longer parked at this branch.');
+                        return original.call(this,args[0],{...owner,parkedOrder:{...snap.data(),id:snap.id}});
+                    }catch(error){message(error);return false;}
+                }
+            }
+
             const preference=['setAutoDrawer','setPrinterMode','setReceiptLogoMode','toggleKDS'].includes(name),run=(runs.get(name)||0)+1;runs.set(name,run);
             if(!preference&&lockedActions.has(name))return false;
             if(!preference)lockedActions.add(name);

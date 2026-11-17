@@ -7,7 +7,7 @@ const el = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value)||0);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateTime = value => { const date = value?.toDate?.() || new Date(value); return Number.isFinite(+date) ? date.toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'}) : 'Awaiting sync'; };
-const titles = {pos:'Point of Sale',sales:'Shift Sales',mobilehub:'Mobile Hub',stockreq:'Stock Reports',prep:'Kitchen Prep',consumables:'Consumables',waste:'Log Waste',schedule:'Branch Schedule',bulletin:'Bulletin Board',remit:'Cash Remittance',printer:'Printer Hub',settings:'POS Settings',timeclock:'Time Clock',sop:'Daily SOPs'};
+const titles = {pos:'Point of Sale',sales:'Shift Sales',mobilehub:'Orders',stockreq:'Stock Reports',prep:'Kitchen Prep',consumables:'Consumables',waste:'Log Waste',schedule:'Branch Schedule',bulletin:'Bulletin Board',remit:'Cash Remittance',printer:'Printer Hub',settings:'POS Settings',timeclock:'Time Clock',sop:'Daily SOPs'};
 let attendanceStop = null, attendanceLogs = [], attendanceGeneration = 0, remitCursor = null, remitBranch = '', remitBusy = false;
 
 function page(id,title,description) {
@@ -338,9 +338,10 @@ function installParkedOrders(){
   const root=el('parkedModal'),list=el('parkedListContainer');let generation=0;
   root.firstElementChild.firstElementChild.firstElementChild.textContent='Parked orders';
   window.showParkedOrders=async function(){
-    const run=++generation,branch=localStorage.getItem('takodeal_device_branch')||'Unknown';root.style.display='flex';list.textContent='Loading parked orders…';
+    const owner=window.getCashierOwnerWorkspaceContext?.();owner?.assertCurrent();
+    const run=++generation,branch=owner?.branch||localStorage.getItem('takodeal_device_branch')||'Unknown';root.style.display='flex';list.textContent='Loading parked orders…';
     try{
-      const orders=await window.getParkedOrders(branch);if(run!==generation)return;window.currentParkedOrdersList=orders;list.replaceChildren();
+      const orders=await window.getParkedOrders(branch);owner?.assertCurrent();if(run!==generation)return;window.currentParkedOrdersList=orders;list.replaceChildren();
       const summary=document.createElement('p');summary.className='cashier-park-summary';summary.textContent=`${orders.length} unpaid orders · ${branch}`;list.append(summary);
       if(!orders.length){summary.textContent='No parked orders for this branch.';return;}
       orders.forEach(order=>{const d=parkedOrderDetails(order),card=document.createElement('article');card.className='cashier-park-card';card.dataset.platform=order.platform||'Standard';

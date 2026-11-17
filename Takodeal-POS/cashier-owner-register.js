@@ -41,8 +41,11 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
   const open=!!context&&!!state.shift&&registerPhase==='open';
   if(top){top.textContent=open?'🟢 Branch register open':registerPhase==='none'?'⏳ No open register synced':'⏳ Checking branch register';top.style.background=open?'#dcfce7':'#f1f5f9';top.style.color=open?'#15803d':'#475569';top.disabled=false;top.onclick=()=>{if(activeSales())refresh();else w.switchView?.('sales');};}
   const ready=open&&w.cashierOwnerPOS?.isReady()===true;
-  if(lock&&d.getElementById('view-pos')?.classList?.contains('active'))lock.style.display=ready?'none':'flex';
-  if(heading)heading.textContent=open?'Loading branch menu':'Branch register';
+  const posVisible=d.getElementById('view-pos')?.classList?.contains('active');
+  const ordersVisible=d.getElementById('view-mobilehub')?.classList?.contains('active');
+  if(lock&&posVisible)lock.style.display=ready?'none':'flex';
+  if(lock&&ordersVisible)lock.style.display=open?'none':'flex';
+  if(heading)heading.textContent=open&&!ready?'Loading branch menu':'Branch register';
   const quote=d.getElementById('lockoutQuote');if(quote)quote.textContent=state.message;
   if(note)note.textContent='The selected branch needs an open register and a live menu before checkout.';
   if(button){
@@ -129,7 +132,7 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
      const doc=snapshot.docs[0],row=doc.data();
      if(!doc.id||row.branch!==value.branch||row.active!==true||!Number.isFinite(millis(row.startTime)))throw Error('This branch register needs review in the Owner App.');
      const shift={shiftId:doc.id,startTime:row.startTime,startedBy:row.cashier,active:true};
-     registerPhase='open';registerMessage='Register open at '+value.branch+' · live sales view';
+     registerPhase='open';registerMessage='Register open at '+value.branch;
      sales(value,run,shift);
     }catch(error){registerPhase='error';registerMessage=error.message+' Register status is unconfirmed.';sales(value,run,null);}
    },()=>{if(same(value,run)){registerPhase='error';registerMessage='The live register at '+value.branch+' could not be confirmed. Sales history remains available.';sales(value,run,null);}});

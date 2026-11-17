@@ -9,6 +9,9 @@ import assert from 'node:assert/strict';
 const root=new URL('../Takodeal-POS/',import.meta.url),page=readFileSync(new URL('index.html',root),'utf8');
 const extract=(from,to)=>page.slice(page.indexOf(from),page.indexOf(to));
 const ui=extract('    function switchView(viewName)','    function closeModal(id)')+extract('    async function checkCurrentShift()','    function updateShiftUI(status)')+extract('window.loadSalesDashboard = async function','    function toggleTxMenu(id)');
+const main=readFileSync(new URL('main.js',root),'utf8');
+const mobileTabs=main.slice(main.indexOf('window.switchMobileTab = function'),main.indexOf('window.loadMobileHistory = async'));
+const menu=extract('    window.renderMenuItems = function()', '    // --- 4. SHIFT & EXPENSE SYSTEM');
 const script=`
 import {installCashierOwnerRegister} from './cashier-owner-register.js';
 const report=document.getElementById('owner-register-proof');
@@ -28,14 +31,31 @@ try{
  table.querySelector('[data-owner-receipt]').click();if(!window.fixtureDetails?.html.includes('FICTIONAL-001'))throw Error('Details click failed');
  let requested=null;window.cashierOwnerPOS={isReady:()=>true,hasPending:()=>false,changeReceipt:(id,receipt)=>{requested=[id,receipt];}};
  table.querySelector('[data-owner-void]').click();if(requested?.join('/')!=='fictional-sale/FICTIONAL-001')throw Error('Receipt action did not identify the displayed branch sale');
- window.switchView('pos');if(document.getElementById('globalShiftLockout').style.display!=='none'||document.getElementById('btnMainPlaceOrder').disabled)throw Error('Verified Owner cannot use the actual POS');
+ window.loadMenuManager=async()=>{};
+ const ticket={id:'customer-order',data:()=>({orderCode:'TEST-QUEUE',branch:'Agdao',status:'preparing',items:[],timestamp:new Date()})};
+ window.getDocs=async()=>({docs:[]});window.getDocsFromServer=async q=>{if(q.db!==db)throw Error('Wrong order history account');return {docs:[ticket]};};
+ window.onSnapshot=(query,next)=>{if(query.db!==db||query.table!=='incoming_orders'||!query.filters.some(f=>f.field==='branch'&&f.value==='Agdao'))throw Error('Wrong order queue');next({docs:[ticket]});return ()=>{};};
+ const {installMobileHubUpgrade}=await import('./mobile-hub-upgrade.js');installMobileHubUpgrade(window,document);
+ window.filterMenu=()=>{};window.renderCart=()=>{};window.cart=[];window.masterPOSData={items:[{id:'food',name:'Fictional takoyaki',category:'Food',price:65}],categories:['Food']};
+ window.systemReady=false;window.posPlatform='Standard';window.currentGrandTotal=0;
+ window.openAddOrderModal=(name,price)=>{window.cart.push({name,price});};
+ await new Promise((ok,fail)=>{const script=document.createElement('script');script.onload=ok;script.onerror=fail;script.src='./cashier-pos-ui.js';document.body.append(script);});
+ if(!document.getElementById('tkMobileDock'))window.dispatchEvent(new Event('load'));
+ const dockClick=target=>{document.body.classList.add('tk-dock-visible');const button=document.querySelector('#tkMobileDock [data-target="'+target+'"]');if(!button)throw Error('Missing dock '+target);button.click();};
+ dockClick('mobilehub');
+ if(!document.getElementById('mobileHubListContainer').textContent.includes('TEST-QUEUE')||!document.getElementById('view-mobilehub').classList.contains('active')||document.getElementById('globalShiftLockout').style.display!=='none'||document.getElementById('topBarTitle').textContent!=='Orders')throw Error('Orders dock could not open the live branch');
+ document.getElementById('btnMobHist').click();await new Promise(ok=>setTimeout(ok,0));
+ if(!document.getElementById('mobileHubHistoryContainer').textContent.includes('TEST-QUEUE'))throw Error('Owner cannot open the selected branch order history');
+ dockClick('pos');document.querySelector('#menuGrid .item-card')?.click();
+ if(window.cart[0]?.name!=='Fictional takoyaki')throw Error('Owner cannot punch actual menu card without staff sign-in');
+ if(document.getElementById('globalShiftLockout').style.display!=='none'||document.getElementById('btnMainPlaceOrder').disabled)throw Error('Verified Owner cannot use the actual POS');
  document.getElementById('btnTopShift').click();if(reads.length!==3)throw Error('View branch sales did not refresh the verified Owner connection');
  emit(2,[]);emit(3,[{id:'past-sale',receiptId:'PAST-001',branch:'Agdao',timestamp:new Date('2026-11-14T03:00:00Z'),netTotal:80}]);if(!table.textContent.includes('No open register is synced')||!table.textContent.includes('PAST-001'))throw Error('Missing-register history failed');window.fixtureSwitches=0;window.ownerBypassLogin=()=>window.fixtureSwitches++;table.querySelector('[data-owner-switch]').click();if(window.fixtureSwitches!==1)throw Error('Branch switch control failed');table.querySelector('[data-owner-range=latest]').click();table.querySelector('[data-owner-sales-date]').value='2026-11-15';table.querySelector('[data-owner-show-date]').click();if(reads.at(-1).query.filters.find(v=>v.op==='>=').value.toISOString()!=='2026-11-14T16:00:00.000Z')throw Error('Philippine sales-date range failed');
  window.sessionUser=null;window.dispatchEvent(new Event('cashier-workspace-changed'));if(table.textContent!=='Sign in to view branch sales.')throw Error('Logout retained branch sales');
  report.textContent='PASS: actual HTML, open register, cash totals, receipt details, Owner checkout and receipt action, remote close and logout';
 }catch(error){report.textContent='FAIL: '+error.message;}
 `;
-const html=page.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace('</body>','<output id="owner-register-proof">PENDING</output><script>'+ui+'</script><script type="module">'+script+'</script></body>');
+const html=page.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace('</body>','<output id="owner-register-proof">PENDING</output><script>const hiddenCategories=[];'+menu+mobileTabs+ui+'</script><script type="module">'+script+'</script></body>');
 const server=createServer((request,response)=>{
  const path=new URL(request.url,'http://127.0.0.1').pathname;
  response.setHeader('Content-Security-Policy',"default-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
