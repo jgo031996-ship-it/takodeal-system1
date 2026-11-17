@@ -2,7 +2,7 @@ import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {activeAccessStaff} from './access-model.mjs';
 import {randomBytes,pbkdf2 as pbkdf2Callback,timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
-import {profileError,profileId,profileHash,profileIntent,privateProfileFingerprint,projectPrivateProfile} from './staff-private-profile-model.mjs';
+import {CONTACT_FIELDS,profileError,profileId,profileHash,profileIntent,privateProfileFingerprint,projectPrivateProfile} from './staff-private-profile-model.mjs';
 const denied=()=>{throw profileError(403,'approval','Use your personally approved private Staff phone. Ask HQ to check private access.');};
 const changed=()=>{throw profileError(409,'changed','Your profile changed. Refresh it before saving; your entered fields have been kept.');};
 const pbkdf2=promisify(pbkdf2Callback),validVerifier=value=>value?.version===1&&value.iterations===300000&&/^[a-f0-9]{32}$/.test(value.salt||'')&&/^[a-f0-9]{64}$/.test(value.hash||'')&&Object.keys(value).sort().join(',')==='hash,iterations,salt,version';
@@ -18,15 +18,35 @@ export function createStaffPrivateProfileStore(db,{now=Date.now,serverTimestamp}
  }
  async function read(body,actor){const input=profileIntent('read',body);return db.runTransaction(async tx=>{
   const snapshot=await authority(tx,input,actor),source=snapshot.data();let timeline;
-  if(source.salaryRateVersion===1){const saved=await tx.get(db.doc('staff_salary_rates/'+input.staffId));if(!saved.exists||saved.data().staffId!==input.staffId||saved.data().branch!==source.branch||saved.data().revision!==source.salaryRateRevision)throw profileError(409,'review','Your dated salary history needs HQ review.');timeline=saved.data();}
-  return{schemaVersion:1,staffId:input.staffId,expectedFingerprint:privateProfileFingerprint(snapshot),profile:projectPrivateProfile(input.staffId,source,timeline),legacyDocumentPresent:{sss:typeof source.sssIdUrl==='string'&&!!source.sssIdUrl,philhealth:typeof source.philhealthIdUrl==='string'&&!!source.philhealthIdUrl,pagibig:typeof source.pagibigIdUrl==='string'&&!!source.pagibigIdUrl}};
+  if(source.salaryRateVersion===1){
+   const saved=await tx.get(db.doc('staff_salary_rates/'+input.staffId));
+   const history=saved.exists?saved.data():null,revision=source.salaryRateRevision;
+   // Owner saves a revision ID. Earlier records used the numeric sequence.
+   const matches=typeof revision==='string'?profileId(revision)&&history?.revisionId===revision:
+    Number.isSafeInteger(revision)&&revision>0&&history?.revision===revision;
+   if(!history||history.staffId!==input.staffId||history.branch!==source.branch||!matches)
+    throw profileError(409,'review','Your dated salary history needs HQ review.');
+   timeline=history;
+  }
+  // The Owner form edits gcashNum. Expose it through the existing Staff response field.
+  const contactSource=Object.hasOwn(source,'gcashNum')?{...source,gcashNumber:source.gcashNum}:source;
+  return{schemaVersion:1,staffId:input.staffId,expectedFingerprint:privateProfileFingerprint(snapshot),profile:projectPrivateProfile(input.staffId,contactSource,timeline),legacyDocumentPresent:{sss:typeof source.sssIdUrl==='string'&&!!source.sssIdUrl,philhealth:typeof source.philhealthIdUrl==='string'&&!!source.philhealthIdUrl,pagibig:typeof source.pagibigIdUrl==='string'&&!!source.pagibigIdUrl}};
  });}
  async function update(body,actor){const input=profileIntent('update',body),requestHash=profileHash(input),operationPath='staff_access_operations/profile-'+profileHash({uid:actor.uid,operationId:input.operationId});return db.runTransaction(async tx=>{
   const snapshot=await authority(tx,input,actor),operation=await tx.get(db.doc(operationPath));
   if(operation.exists){const row=operation.data();if(row.schemaVersion!==1||row.uid!==actor.uid||row.staffId!==input.staffId||row.deviceId!==input.deviceId||row.requestHash!==requestHash)changed();return{schemaVersion:1,staffId:input.staffId,operationId:input.operationId,saved:true,alreadySaved:true};}
   if(privateProfileFingerprint(snapshot)!==input.expectedFingerprint)changed();
-  tx.update(db.doc('cashiers/'+input.staffId),input.patch);
-  tx.create(db.doc(operationPath),{schemaVersion:1,uid:actor.uid,staffId:input.staffId,deviceId:input.deviceId,operationId:input.operationId,requestHash,expectedFingerprint:input.expectedFingerprint,fields:Object.keys(input.patch).sort(),recordedAt:serverTimestamp()});
+  const patch={...input.patch};
+  if(Object.hasOwn(patch,'gcashNumber')){
+   const old=snapshot.data();
+   // Old clients submitted their entire form, including an uninitialized number.
+   // Request a fresh read before mirroring that ambiguous value over the Owner record.
+   if(Object.hasOwn(old,'gcashNum')&&Object.keys(patch).length===CONTACT_FIELDS.length&&
+      String(old.gcashNum??'')!==patch.gcashNumber&&String(old.gcashNumber??'')===patch.gcashNumber)changed();
+   patch.gcashNum=patch.gcashNumber;
+  }
+  tx.update(db.doc('cashiers/'+input.staffId),patch);
+  tx.create(db.doc(operationPath),{schemaVersion:1,uid:actor.uid,staffId:input.staffId,deviceId:input.deviceId,operationId:input.operationId,requestHash,expectedFingerprint:input.expectedFingerprint,fields:Object.keys(patch).sort(),recordedAt:serverTimestamp()});
   return{schemaVersion:1,staffId:input.staffId,operationId:input.operationId,saved:true,alreadySaved:false};
  });}
  async function rate(uid){const slot=Math.floor(now()/60000),ref=db.doc('cash_remittance_attempts/profile-'+profileHash({uid,slot}));return db.runTransaction(async tx=>{const snap=await tx.get(ref),count=snap.exists?snap.data().count:0;if(!Number.isSafeInteger(count)||count<0||count>=30)throw profileError(429,'rate','Too many profile checks. Wait a minute and retry.');tx.set(ref,{count:count+1,expiresAt:new Date((slot+2)*60000)});});}
