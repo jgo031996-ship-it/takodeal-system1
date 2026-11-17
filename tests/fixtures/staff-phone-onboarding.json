@@ -1,0 +1,25 @@
+{
+  "parent": "b52d60f1c6684de21b2dde01cbb93f861b2628f2",
+  "files": {
+    "takodeal-manager/index.html": {
+      "before": "d959436b35d0e454069fbf7e63f1a043875b3cec",
+      "after": "8c4feadbb4aa6b66f3db53c3b055ebef4891f68c"
+    },
+    "takodeal-manager/main.js": {
+      "before": "588046f65988cae9a12c20c5666b713d96213d7e",
+      "after": "035250fb57ffae8a683f891e309d1581363067cc"
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "before": "5b6c37f4064d4acd7ea6a8d34e050ea2233c492d",
+      "after": "29a2cb8c3ca2d0f023c095e09ef0d72d6764b7e8"
+    },
+    "takodeal-manager/staff-setup-codes.js": {
+      "before": "954cf64919ce701dc2e850cae01aa57bcf064d5b",
+      "after": "2188ff9ab659abbb3b64ed72d390f14aa802ac46"
+    },
+    "takodeal-manager/sw.js": {
+      "before": "15bd5b11e136add40d0e775b7bcafeda8b75b25f",
+      "after": "ae25e82678da94eb7ffafe87bc01739d5940ac05"
+    }
+  }
+}

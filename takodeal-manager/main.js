@@ -24210,19 +24210,25 @@ window.saveEmployeeProfile = async function() {
     if(!sameActor())throw Error('The Google account changed before this staff save. Reopen the profile.');
     const operationId=staffProfileOperation(window,payload,reference.id,{effectiveDate});
         const saved=await saveStaffProfileAtomic(window,reference.id,payload,{operationId,expectedExists:baseline.exists,expectedRate:baseline.rate,expectedRateRevision:baseline.rateRevision,expectedShared:baseline.shared,expectedPinVersion:baseline.pinVersion,effectiveDate});
+        let setupResult=null;
+        if(sameActor()){
+            try{setupResult=await window.staffSetupCodes?.profileSaved?.(reference.id,wasNew);}
+            catch{setupResult={ready:false,message:'Employee profile saved. Reopen phone setup and generate a code.'};}
+        }
         docId=reference.id;
         if(ownsForm()){
             document.getElementById('empProfileId').value=docId;formSelection=docId;
             if(window.pendingEmployeeProfileRef===reference)window.pendingEmployeeProfileRef=null;
             window.staffProfileBaseline={id:docId,exists:true,rate:saved.profile.salaryRateVersion===1?staffRateForDate(saved.profile):dailyStaffRate(saved.profile),rateRevision:saved.profile.salaryRateRevision??null};
             document.getElementById('employeeProfileModal').style.display='none';
-            Swal.fire({toast:true,position:'top',icon:'success',title:saved.scheduled?'Salary change scheduled for '+saved.effectiveDate:wasNew?'Staff profile added':'Staff profile updated',showConfirmButton:false,timer:3000});
+            Swal.fire({toast:true,position:'top',icon:setupResult?.ready===false?'warning':'success',title:setupResult?.message || (saved.scheduled?'Salary change scheduled for '+saved.effectiveDate:wasNew?'Staff profile added':'Staff profile updated'),showConfirmButton:false,timer:3000});
         }
         if(!sameActor())return;
         // Retire only this confirmed attempt; another form's pending save and retry stay intact.
         for(const [key,pending] of window.staffProfilePending || [])if(pending===operationId)window.staffProfilePending.delete(key);
 
         window.globalStaffData[docId] = saved.profile;
+        if(setupResult&&ownsForm())window.openEmployeeProfile(docId);
         window.loadHRModule(); 
 
         // 🔥 THE MEMORY BRIDGE: Instantly sync the profile changes to the Schedule Calendar!

@@ -47,13 +47,17 @@ test('deadline bounds token verification and a late token cannot send a setup co
 function harness(request){
  const nodes=new Map(),events=new Map(),docEvents=new Map();let mutation,authChange,n=0;
  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',style:{display:'flex'},hidden:false,disabled:false,textContent:'',addEventListener:(type,fn)=>events.set(id+':'+type,fn)});return nodes.get(id);};
- for(const id of ['empProfileId','employeeProfileModal','staffSetupCodeStatus','staffSetupCodeGenerate','staffSetupCodeDisable','staffSetupCodeRefresh','staffSetupCodeCopy','staffSetupCodeValue','staffSetupCodeResult','staffSetupPolicyStatus','staffSetupPolicyEnable','staffSetupPolicyPause','staffSetupPolicyRefresh','staffSetupDeviceUsage','staffSetupDeviceUsageNote','staffSetupUsageRefresh'])node(id);
+ for(const id of ['empProfileId','employeeProfileModal','staffSetupCodeStatus','staffSetupCodeGenerate','staffSetupCodeDisable','staffSetupCodeRefresh','staffSetupCodeCopy','staffSetupLinkCopy','staffSetupCodeValue','staffSetupCodeResult','staffSetupPolicyStatus','staffSetupPolicyEnable','staffSetupPolicyPause','staffSetupPolicyRefresh','staffSetupDeviceUsage','staffSetupDeviceUsageNote','staffSetupUsageRefresh'])node(id);
  node('empProfileId').value='employee-a';
  const d={hidden:false,getElementById:id=>nodes.get(id)||null,addEventListener:(event,fn)=>docEvents.set(event,fn)};
  const api={auth:{currentUser:owner(),onAuthStateChanged(fn){authChange=fn;}},navigator:{clipboard:{writeText:async value=>{api.copied=value;}}},Swal:{fire:async()=>({isConfirmed:true})},openEmployeeProfile(){},addNewStaff(){node('empProfileId').value='';},switchView(){},addEventListener:(event,fn)=>docEvents.set(event,fn)};
  const cryptoAPI={getRandomValues(bytes){bytes.set(Array.from({length:bytes.length},(_,i)=>i%10));return bytes;},randomUUID:()=> 'qa-operation-'+(++n)};
  const controller=installStaffSetupCodes(api,d,{request,cryptoAPI,observe:class{constructor(fn){mutation=fn;}observe(){}}});
- return{api,d,node,controller,docEvents,events,mutation:()=>mutation(),authChange:()=>authChange(),click:id=>events.get(id+':click')?.()};
+ return{api,d,node,controller,docEvents,events,mutation:()=>mutation(),authChange:()=>authChange(),click:async id=>{
+  const wasPending=node('staffSetupCodeGenerate').textContent==='Retry same code';
+  await events.get(id+':click')?.();
+  if(id==='staffSetupCodeGenerate'&&!wasPending&&node(id).textContent==='Save Data to apply')return controller.profileSaved(node('empProfileId').value);
+ }};
 }
 const metadata={staffId:'employee-a',enabled:false,version:0};
 test('only server confirmation reveals code, retry retains exact code and operation after lost acknowledgement',async()=>{
@@ -64,7 +68,7 @@ test('only server confirmation reveals code, retry retains exact code and operat
 });
 test('stale profile reply never exposes another employee’s generated code',async()=>{
  let finish;const h=harness(async(route,body)=>route==='code-status'?metadata:new Promise(resolve=>{finish=()=>resolve({staffId:body.staffId,enabled:true,version:1});}));
- await h.controller.loadProfile();const pending=h.click('staffSetupCodeGenerate');h.node('empProfileId').value='employee-b';finish();await pending;assert.equal(h.node('staffSetupCodeValue').textContent,'');assert.equal(h.node('staffSetupCodeResult').hidden,true);
+ await h.controller.loadProfile();const pending=h.click('staffSetupCodeGenerate');await new Promise(setImmediate);h.node('empProfileId').value='employee-b';finish();await pending;assert.equal(h.node('staffSetupCodeValue').textContent,'');assert.equal(h.node('staffSetupCodeResult').hidden,true);
 });
 test('invalid successful response cannot reveal an unconfirmed code',async()=>{
  const h=harness(async route=>route==='code-status'?metadata:{staffId:'employee-a',enabled:true,version:999});await h.controller.loadProfile();await h.click('staffSetupCodeGenerate');assert.equal(h.node('staffSetupCodeResult').hidden,true);assert.match(h.node('staffSetupCodeStatus').textContent,/not confirmed/);
@@ -147,3 +151,24 @@ test('source integration precaches private UI and routes both single and bulk fl
 test('protected phone confirmation can cancel before any server operation is created',async()=>{const calls=[];const h=harness(async(route,body)=>{calls.push({route,body});return{ok:true};});h.api.db={};h.api.doc=()=>'';h.api.getDocFromServer=async()=>({exists:()=>true,data:()=>({appType:'Staff',setupVersion:1}),metadata:{}});let confirms=0;assert.deepEqual(await h.controller.routeDeviceChange('DEV-QA','block',()=>assert.fail('Unexpected legacy path'),async()=>{confirms++;return false;}),{cancelled:true});assert.equal(confirms,1);assert.equal(calls.length,0);});
 test('protected lost-delete retry keeps the already confirmed operation without rereading or reconfirming a missing mirror',async()=>{const calls=[];let reads=0,confirms=0;const h=harness(async(route,body)=>{calls.push({...body});if(calls.length===1)throw Error('Delete acknowledgement lost');return{deviceId:body.deviceId,status:'Deleted'};});h.api.db={};h.api.doc=()=>'';h.api.getDocFromServer=async()=>{reads++;return{exists:()=>reads===1,data:()=>({appType:'Staff',setupVersion:1}),metadata:{}};};const confirm=async()=>{confirms++;return true;};await assert.rejects(h.controller.routeDeviceChange('DEV-QA','delete',()=>assert.fail('Unexpected legacy delete'),confirm),/acknowledgement lost/);await h.controller.routeDeviceChange('DEV-QA','delete',()=>assert.fail('Unexpected legacy delete'),confirm);assert.equal(reads,1);assert.equal(confirms,1);assert.deepEqual(calls[0],calls[1]);});
 test('changing Owner during protected phone confirmation aborts before the server operation',async()=>{const calls=[];const h=harness(async(route,body)=>{calls.push({route,body});return{ok:true};});h.api.db={};h.api.doc=()=>'';h.api.getDocFromServer=async()=>({exists:()=>true,data:()=>({appType:'Staff',setupVersion:1}),metadata:{}});await assert.rejects(h.controller.routeDeviceChange('DEV-QA','block',()=>assert.fail('Unexpected legacy path'),async()=>{h.api.auth.currentUser=null;return true;}),/account changed/);assert.equal(calls.length,0);});
+
+test('replacement takes effect after profile save; switching tabs restores only the confirmed employee version',async()=>{
+ let state={...metadata,enabled:true,version:4},writes=0;
+ const h=harness(async(route,body)=>{if(route==='code-status')return {...state,staffId:body.staffId};
+  writes++;return state={...state,version:state.version+1};});
+ await h.controller.loadProfile();await h.events.get('staffSetupCodeGenerate:click')();
+ assert.equal(writes,0);assert.equal(h.node('staffSetupCodeResult').hidden,true);
+ await h.controller.profileSaved('employee-a');assert.equal(writes,1);
+ h.d.hidden=true;h.docEvents.get('visibilitychange')();assert.equal(h.node('staffSetupCodeValue').textContent,'');
+ h.d.hidden=false;h.docEvents.get('visibilitychange')();await new Promise(setImmediate);
+ await h.click('staffSetupLinkCopy');assert.equal(h.api.copied,'https://takodeal-staff.vercel.app/#staff-setup=employee-a.0123456789');
+ h.node('empProfileId').value='employee-b';await h.controller.loadProfile();assert.equal(h.node('staffSetupCodeResult').hidden,true);
+ h.node('empProfileId').value='employee-a';await h.controller.loadProfile();assert.equal(h.node('staffSetupCodeResult').hidden,false);
+ state={...state,version:6};await h.controller.loadProfile();assert.equal(h.node('staffSetupCodeResult').hidden,true);
+});
+test('new saved employee receives exactly one code and an auth change clears its copy',async()=>{
+ let writes=0;const h=harness(async(route,body)=>{if(route==='issue-code')writes++;return {staffId:body.staffId,version:1,enabled:true};});
+ await Promise.all([h.controller.profileSaved('employee-a',true),h.controller.profileSaved('employee-a',true)]);
+ assert.equal(writes,1);await h.controller.loadProfile();assert.equal(h.node('staffSetupCodeResult').hidden,false);
+ h.authChange();await h.controller.loadProfile();assert.equal(h.node('staffSetupCodeResult').hidden,true);
+});
