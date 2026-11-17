@@ -266,13 +266,15 @@ export function createSaleEngine(api) {
         return stock;
     }
     async function readMovements(tx, movements, branch, { reviewUnits = false } = {}) {
-        return Promise.all(movements.map(async movement=>{
+        const rows = [];
+        for (const movement of movements) {
             const inventoryRef = ref('inventory', movement.inventoryId);
             const snapshot = await tx.get(inventoryRef);
             const stock = validateMovement(movement, branch, snapshot), unitIssue = movementUnitIssue(movement, snapshot.data());
             if (unitIssue && !reviewUnits) throw new Error('The captured inventory unit changed or is missing. Ask the Owner to review its original deduction before reversal.');
-            return {movement,inventoryRef,snapshot,stock,unitIssue};
-        }));
+            rows.push({ movement, inventoryRef, snapshot, stock, unitIssue });
+        }
+        return rows;
     }
     function stats(tx, payload, direction) {
         const balls = payload.ballsCounted ?? countBalls(payload.cart);
@@ -299,9 +301,9 @@ export function createSaleEngine(api) {
             const recipeIssues = payload.recipeSnapshotStatus === 'unavailable'
                 ? payload.cart.map(item=>({menuItem:item.name||item.itemName||'Unknown item',quantity:Number(item.qty??1),reason:'original-recipe-unavailable'})) : [];
             const normalizedName = name => String(name ?? '').trim().replace(/\s+/g, ' ');
-            let branchInventory=api.loadInventory&&movements.length?await api.loadInventory(payload.branch):null;
+            let branchInventory;
             async function findIngredient(name) {
-                const exact = branchInventory?{docs:branchInventory.docs.filter(row=>row.data().name===name)}:await queryDocs('inventory', [['branch', payload.branch], ['name', name]]);
+                const exact = await queryDocs('inventory', [['branch', payload.branch], ['name', name]]);
                 if (exact.docs.length) return exact.docs;
                 // Firestore compares spaces exactly. Only a unique whitespace
                 // match in this branch is safe; never guess another ingredient.

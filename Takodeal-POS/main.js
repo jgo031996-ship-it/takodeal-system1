@@ -1695,6 +1695,7 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
     if(!current())return;
     if (!tx) { alert("Receipt not found!"); return; }
 
+    const escape=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
     let displayTotal = isCashTx ? '***' : (tx.netTotal || 0).toFixed(2);
 
@@ -1707,7 +1708,7 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
                 for(let key in cartItem.addons) {
                     if(cartItem.addons[key].qty > 0) {
                         let addonName = cartItem.addons[key].name || key; 
-                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px; font-weight:bold;">+ ${cartItem.addons[key].qty}x ${addonName}</span>`;
+                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px; font-weight:bold;">+ ${escape(cartItem.addons[key].qty)}x ${escape(addonName)}</span>`;
                     }
                 }
             }
@@ -1720,14 +1721,14 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
             if (variantName && (safeItemName.toLowerCase().includes(variantName.toLowerCase()) || (safeItemName.endsWith("(L)") && variantName === "L"))) {
                 variantName = ''; 
             }
-            let varHtml = variantName ? `<br><span style="font-size:11px; color:#64748b; font-style:italic; margin-left:10px;">Size: ${variantName}</span>` : '';
+            let varHtml = variantName ? `<br><span style="font-size:11px; color:#64748b; font-style:italic; margin-left:10px;">Size: ${escape(variantName)}</span>` : '';
 
-            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${cartItem.orderType}</span>` : '';
+            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${escape(cartItem.orderType)}</span>` : '';
 
             itemsHtml += `
                 <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 10px 0;">
                     <div>
-                        <strong style="color: #334155; font-size: 13px;">${cartItem.qty}x ${safeItemName}</strong>${itemTypeBadge}
+                        <strong style="color: #334155; font-size: 13px;">${escape(cartItem.qty)}x ${escape(safeItemName)}</strong>${itemTypeBadge}
                         ${varHtml}
                         ${addonsText}
                     </div>
@@ -1743,7 +1744,7 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
         let discAmountDisplay = isCashTx ? '***' : tx.globalDiscountAmount.toFixed(2);
         let rawType = tx.globalDiscountType || 'Discount';
         let discTypeStr = String(tx.mealLevelName || (rawType === 'staff_meal' ? 'Staff Meal' : (rawType === 'manager_meal' ? 'Manager Meal' : rawType.toUpperCase()))).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-        let discReasonStr = tx.globalDiscountReason ? `<br><span style="font-size: 11px; color: #fca5a5; font-style: italic;">Note: ${tx.globalDiscountReason}</span>` : '';
+        let discReasonStr = tx.globalDiscountReason ? `<br><span style="font-size: 11px; color: #fca5a5; font-style: italic;">Note: ${escape(tx.globalDiscountReason)}</span>` : '';
         
         discountHtml = `
             <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 10px; background: #fff1f2; border-radius: 6px; margin-top: 5px;">
@@ -1757,8 +1758,8 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
     }
 
     let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-    let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
-    let statusBadge = tx.preparedCancellation ? '<span style="color:#b45309;font-weight:bold">Cancelled · prepared</span>' : tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
+    const safeCustomer=escape(tx.customerName||'Guest');
+    let statusBadge = tx.isPendingSync ? 'Awaiting upload' : tx.status==='Parked' ? 'Parked' : tx.preparedCancellation ? '<span style="color:#b45309;font-weight:bold">Cancelled · prepared</span>' : tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
 
     let oldModal = document.getElementById('dynamicReceiptModal');
     if (oldModal) oldModal.remove();
@@ -1770,7 +1771,7 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 15px;">
                     <div>
                         <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900;">🧾 Receipt Details</h3>
-                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; font-weight: bold;">${tx.receiptId}</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; font-weight: bold;">${escape(tx.receiptId)}</div>
                     </div>
                     <button onclick="document.getElementById('dynamicReceiptModal').remove()" style="background: #f1f5f9; border: none; font-size: 18px; font-weight: bold; color: #475569; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✖</button>
                 </div>
@@ -1784,7 +1785,7 @@ window.viewReceiptDetails = async function (receiptId,selected,current=()=>true)
                     <div>
                         <div style="font-size: 10px; color: #64748b; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">Time & Payment</div>
                         <div style="font-size: 13px; font-weight: bold; color: #334155; margin-top: 4px;">${timeStr}</div>
-                        <div style="font-size: 13px; font-weight: 900; color: #d97706; margin-top: 4px;">${tx.paymentMethod || 'Cash'}</div>
+                        <div style="font-size: 13px; font-weight: 900; color: #d97706; margin-top: 4px;">${escape(tx.paymentMethod || 'Cash')}</div>
                     </div>
                 </div>
 
@@ -8973,7 +8974,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 🛡️ OWNER "GOD MODE" TELEPORTER ENGINE
 // ========================================================
 window.ownerBypassLogin = async function() {
-    if(workstation){window.cashierWorkstation.original();return;}
+    if(window.cashierWorkstation?.current){window.cashierWorkstation.original();return;}
     const setupOverlay=document.getElementById('deviceSetupOverlay'),setupDisplay=setupOverlay?.style.display;
     try {
         // 1. Trigger Google Login
@@ -8990,7 +8991,7 @@ window.ownerBypassLogin = async function() {
         
         if(typeof ownerAuth.authStateReady==='function')await ownerAuth.authStateReady();
         let user=ownerAuth.currentUser;
-        if(new URL(window.location.href).searchParams.get('reauth')==='1'||!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
+        if((window.cashierWorkstation?.requireOwnerLogin&&!existingOwner)||!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
         
         // 2. Strict Security Check: Only YOUR email is allowed through this backdoor
         if (user.email !== 'jgo031996@gmail.com' || user.emailVerified !== true) {
@@ -9012,10 +9013,11 @@ window.ownerBypassLogin = async function() {
         });
 
         // 4. Show the Teleporter Dropdown
+        let rememberStation=false;
         const { value: selectedBranch } = await Swal.fire({
             title: 'Owner Access',
-            html:'<label><input type="checkbox" id="rememberCashierStation" '+(!localStorage.getItem('takodeal_device_id')||hasCashierOwnerPreview(window)?'checked':'')+'> Remember this branch for staff PIN sign-in on this browser</label>',
-            preConfirm:value=>({branch:value,remember:document.getElementById('rememberCashierStation').checked}),
+            html:'<label><input type="checkbox" id="rememberCashierStation" '+(window.cashierWorkstation?.suggestRemember?'checked':'')+'> Remember this branch for staff PIN sign-in on this browser</label>',
+            preConfirm:value=>{rememberStation=document.getElementById('rememberCashierStation').checked;return value;},
             input: 'select',
             inputOptions: branchOptions,
             inputPlaceholder: '-- Choose Branch --',
@@ -9042,9 +9044,9 @@ window.ownerBypassLogin = async function() {
         // changing any local preview state. Cashier sign-in is kept separate.
         if(ownerAuth.currentUser!==user||user.email!=='jgo031996@gmail.com'||user.emailVerified!==true)throw Error('The Owner account changed. Reopen Owner Access before starting a branch preview.');
         // Keep Owner sales on the selected branch's isolated account.
-        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch.branch,portable:true});
+        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch,portable:true});
         workspace.assertCurrent();
-        if(selectedBranch.remember){
+        if(rememberStation){
             try{
                 await enrollOwnerWorkstation(window,workspace,{signInAnonymously,stationAuth:id=>{
                     const name=window.cashierWorkstation.appName(id);return getAuth(getApps().find(a=>a.name===name)||initializeApp(firebaseConfig,name));
@@ -9060,7 +9062,7 @@ window.ownerBypassLogin = async function() {
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
-            title: `Owner Access · ${selectedBranch.branch}`,
+            title: `Owner Access · ${selectedBranch}`,
             text: 'Point of Sale is ready for the selected branch.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }

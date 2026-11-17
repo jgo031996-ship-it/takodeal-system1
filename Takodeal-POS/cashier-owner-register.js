@@ -159,7 +159,7 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
   const button=event.target.closest?.('[data-owner-receipt]');if(!button||state.phase!=='ready'||button.dataset?.ownerReceipt===undefined)return;
   try{capture();}catch{check();return;}
   const c=capture(),row=state.rows.find(r=>r.id===button.dataset.ownerReceipt);if(!row)return;
-  const current=()=>{c.assertCurrent();return activeSales()&&state.branch===c.branch&&state.rows.some(r=>r.id===row.id&&r.receiptId===row.receiptId);};
+  const current=()=>{try{c.assertCurrent();}catch{return false;}return activeSales()&&state.branch===c.branch&&state.rows.some(r=>r.id===row.id&&r.receiptId===row.receiptId);};
   const lines=(Array.isArray(row.cart)?row.cart:[]).map(item=>escape(item.qty??1)+' × '+escape(item.name||item.item||'Item')).join('<br>');
   const resume=row.status==='Voided'&&row.voidReason==='WrongPunched'&&row.voidOwnerUid===c.user.uid;
   let replacement=null,lookupFailed=false;

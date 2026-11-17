@@ -117,7 +117,6 @@ export function installOwnerPOS(w,d){
             return snap;
         }
         return createSaleEngine({db:c.db,doc:w.doc,collection:w.collection,query:w.query,where:w.where,getDocsFromServer:queryRows,
-            loadInventory:branch=>w.getDocsFromServer(w.query(w.collection(c.db,'inventory'),w.where('branch','==',branch))),
             increment:w.increment,serverTimestamp:w.serverTimestamp,runTransaction:(db,fn)=>w.runTransaction(db,async tx=>{
             await guard.checkTransaction(tx);
             let shiftRef,revision;
@@ -147,6 +146,26 @@ export function installOwnerPOS(w,d){
             if(markSale&&result==='committed'||voidAction&&result===true)tx.update(shiftRef,{salesRevision:revision+1});
             return result;
         })});
+    }
+    // Price each ingredient against one server snapshot of the selected branch.
+    // The sale engine rechecks the actual inventory documents in the commit.
+    async function prepareBranchSale(c,sale,bom){
+        let inventory;
+        const reader={
+            db:c.db,
+            collection:(_db,table)=>table,
+            where:(field,operator,value)=>({field,operator,value}),
+            query:(table,...filters)=>({table,filters}),
+            async getDocsFromServer({table,filters}){
+                if(table!=='inventory'||!filters.some(f=>f.field==='branch'&&f.value===c.branch)||
+                    filters.some(f=>f.operator!=='=='||!['branch','name'].includes(f.field)))throw Error('Invalid branch inventory request.');
+                inventory??=w.getDocsFromServer(w.query(w.collection(c.db,'inventory'),w.where('branch','==',c.branch)));
+                const snapshot=await inventory;
+                c.assertCurrent();
+                return {docs:snapshot.docs.filter(row=>filters.every(f=>row.data()[f.field]===f.value))};
+            }
+        };
+        return createSaleEngine(reader).prepare(sale,bom);
     }
     async function finish(c,p,{fresh=false,authority=null}={}){
         if(p.ownerUid!==c.user.uid||p.branch!==c.branch||!p.shiftId)throw Error('The saved checkout belongs to a different session.');
@@ -242,7 +261,7 @@ export function installOwnerPOS(w,d){
                         ...(fix?{voidCorrection:{sourceSaleId:fix.sourceId,sourceReceiptId:fix.receiptId,operationId:fix.operationId}}:{})};
                     const engine=await scoped(c,p.shiftId,{authority,mobile:p.isMobileOrder?p:null,parkedOrder:p.ownerParkedTicket||null});
                     if((p.isMobileOrder||p.ownerParkedTicket||fix)&&await engine.alreadyCommitted(p))throw Error('This receipt was already saved. Check Shift Sales.');
-                    p=await engine.prepare(p,bom);c.assertCurrent();
+                    p=await prepareBranchSale(c,p,bom);c.assertCurrent();
                     attempt.check();w.localStorage.setItem(key(c),JSON.stringify(p));persisted=true;attempt.saved();
                 }
                 awaitingCart={saleId:p.saleId,cart:w.cart};

@@ -2711,7 +2711,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
       if (tx.preparedCancellation) statusBadge = '<span class="status-badge status-out">Cancelled · prepared</span>';
       else if (tx.status === 'Voided') statusBadge = '<span class="status-badge status-out">Voided</span>';
       else if (tx.status === 'Parked') statusBadge = '<span class="status-badge" style="background:#fef3c7; color:#d97706; border:1px solid #fcd34d;">Parked</span>';
-      else if (tx.isPendingSync) statusBadge = '<span class="status-badge" style="background:#fef9c3; color:#ca8a04; border:1px solid #fde047; animation: pulse 2s infinite;">⏳ Pending Sync</span>';
+      else if (tx.isPendingSync) statusBadge = '<span class="status-badge" style="background:#fef9c3; color:#ca8a04; border:1px solid #fde047; animation: pulse 2s infinite;">⏳ Awaiting upload</span>';
       else statusBadge = '<span class="status-badge status-good">Paid</span>';
       if (tx.needsReconciliation) statusBadge = '<span class="status-badge" style="background:#fff1f2;color:#be123c;">Review Required</span>';
       const escapeSyncText = value => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2767,13 +2767,13 @@ window.loadSalesDashboard = async function (liveTransactions) {
       let mobileBadge = isMobile ? `<br><span style="background:#0ea5e9; color:white; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; display:inline-block; margin-top:4px;">📱 APP ORDER</span>` : '';
 
       tBody += `<tr class="tk-sale-row" tabindex="0" data-staff-receipt="${idx}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s; ${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-        <td style="padding: 15px 25px; font-weight: 900; color: #334155; font-family: monospace; font-size: 13px; white-space: nowrap;">${tx.receiptId || 'N/A'} ${kdsBadge} ${mobileBadge}</td>
-        <td style="padding: 15px 25px; font-weight: bold; color: #475569; white-space: nowrap;">${tx.customerName || '-'}</td>
-        <td style="padding: 15px 25px; color: #0ea5e9; font-weight: bold; white-space: nowrap;">${tx.paymentMethod || 'Unknown'} ${verifyLabel}</td>
-        <td style="padding: 15px 25px; white-space: nowrap;">${statusBadge}</td>
-        <td style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txDate}</td>
-        <td style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txTime}</td>
-        <td style="padding: 15px 25px; font-weight: 900; color: var(--primary); font-size: 15px; white-space: nowrap;">${displayAmount}</td>
+        <td data-label="Receipt" style="padding: 15px 25px; font-weight: 900; color: #334155; font-family: monospace; font-size: 13px; white-space: nowrap;">${escapeSyncText(tx.receiptId || 'N/A')} ${kdsBadge} ${mobileBadge}</td>
+        <td data-label="Customer" style="padding: 15px 25px; font-weight: bold; color: #475569; white-space: nowrap;">${escapeSyncText(tx.customerName || '-')}</td>
+        <td data-label="Payment method" style="padding: 15px 25px; color: #0ea5e9; font-weight: bold; white-space: nowrap;">${escapeSyncText(tx.paymentMethod || 'Unknown')} ${verifyLabel}</td>
+        <td data-label="Status" style="padding: 15px 25px; white-space: nowrap;">${statusBadge}</td>
+        <td data-label="Date" style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txDate}</td>
+        <td data-label="Time" style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txTime}</td>
+        <td data-label="Sales amount" style="padding: 15px 25px; font-weight: 900; color: var(--primary); font-size: 15px; white-space: nowrap;">${displayAmount}</td>
       </tr>`;
     });
   }
@@ -3676,10 +3676,10 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       };
 
       let checkout;
-      const feedback=setTimeout(()=>{if(btn.disabled)btn.innerText='Confirming receipt…';},2500);
+      const feedback=window.setTimeout?.(()=>{if(btn.disabled)btn.innerText='Confirming receipt…';},2500);
       try{checkout=await window.processCheckout(payload);}
       catch(error){checkout={status:'failed',error:error.message||'Check this receipt in Shift Sales.'};}
-      finally{clearTimeout(feedback);}
+      finally{window.clearTimeout?.(feedback);}
 
       const receiptId = checkout.receiptId;
 

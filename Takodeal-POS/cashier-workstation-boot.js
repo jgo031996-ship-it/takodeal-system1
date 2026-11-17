@@ -15,7 +15,9 @@
     }
     const url=new URL(w.location.href),current=url.searchParams.get('owner')==='1'?null:record(url.searchParams.get('station')||storage.getItem(selectedKey));
     w.cashierWorkstation={
-        current,appName:id=>'takodeal-cashier-station-'+id,
+        current,requireOwnerLogin:!!record(storage.getItem(selectedKey))||url.searchParams.get('reauth')==='1',
+        suggestRemember:!storage.getItem('takodeal_device_id')||storage.getItem('takodeal_cashier_owner_preview_v1')!==null,
+        appName:id=>'takodeal-cashier-station-'+id,
         find(ownerUid,branch){return Object.keys(storage).filter(k=>k.startsWith(recordPrefix)).map(k=>record(k.slice(recordPrefix.length))).find(r=>r?.ownerUid===ownerUid&&r.branch===branch);},
         remember(r){
             if(!valid(r.id)||!r.ownerUid||!r.branch)throw Error('Invalid cashier workstation.');
@@ -32,8 +34,9 @@
         // Firebase may use its local-storage fallback on browsers without IDB. Keep the
         // same named-app credential visible in both the enrolling and operating pages.
         const get=scoped.getItem,set=scoped.setItem,remove=scoped.removeItem;
-        scoped.getItem=k=>String(k).startsWith('firebase:')?storage.getItem(k):get(k);
-        scoped.setItem=(k,v)=>String(k).startsWith('firebase:')?storage.setItem(k,v):set(k,v);
-        scoped.removeItem=k=>String(k).startsWith('firebase:')?storage.removeItem(k):remove(k);
+        const namedAuth=k=>String(k).startsWith('firebase:')&&String(k).endsWith(':'+w.cashierWorkstation.appName(current.id));
+        scoped.getItem=k=>namedAuth(k)?storage.getItem(k):get(k);
+        scoped.setItem=(k,v)=>namedAuth(k)?storage.setItem(k,v):set(k,v);
+        scoped.removeItem=k=>namedAuth(k)?storage.removeItem(k):remove(k);
     }
 })(window);

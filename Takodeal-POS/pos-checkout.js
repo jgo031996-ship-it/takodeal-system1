@@ -204,7 +204,7 @@ export function installSaleSafety(api, environment = globalThis) {
             resetCheckoutForNextOrder(w,environment.document);
             const split = environment.document.getElementById('splitPaymentContainer');
             if (split) split.style.display = 'none';
-            await refreshQueue();
+            w.offlineQueue=[...(w.offlineQueue||[]).filter(row=>row.saleId!==saved.saleId),saved];
             updateBadge();
         } catch (error) { console.warn('Sale is saved; queue display could not refresh:', error); }
         w.syncOfflineQueue().catch(error => console.warn('Sale is saved; sync will retry:', error));
