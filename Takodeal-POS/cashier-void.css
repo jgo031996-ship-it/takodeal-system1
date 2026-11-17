@@ -16,3 +16,9 @@
 .cashier-void-recovery button{max-width:100%;min-height:44px;padding:10px 16px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;color:#334155;font-weight:700;white-space:normal;overflow-wrap:anywhere;text-align:left;cursor:pointer}
 @media(max-width:420px){.cashier-void-recovery{padding:12px}.cashier-void-recovery button{width:100%}}
 @media(max-width:420px){.swal2-popup.cashier-void-modal{padding:18px;width:calc(100vw - 20px)}.cashier-void-modal .swal2-title{font-size:21px}.cashier-void-modal .swal2-actions{display:flex;flex-direction:column}.cashier-void-modal .swal2-styled{width:100%}.cashier-void-modal .swal2-html-container{font-size:14px}.cashier-void-movements{max-height:27vh}}
+#tbTransBody button[data-owner-range],#tbTransBody button[data-owner-show-date],#tbTransBody button[data-owner-switch],#tbTransBody button[data-owner-refresh],#tbTransBody button[data-owner-receipt],#tbTransBody button[data-owner-pending],#tbTransBody button[data-owner-more],#tbTransBody .owner-receipt-action,#tbTransBody input[data-owner-sales-date]{
+ font:inherit;font-size:inherit;font-weight:650;border:1px solid #d6ddd9;border-radius:.5rem;padding:.45rem .75rem;background:white;color:#254539;cursor:pointer;
+}
+#tbTransBody button[data-owner-range]:disabled{opacity:.55;cursor:default}
+#tbTransBody .owner-receipt-action{color:#a53429;border-color:#e9c8c0;margin:.2rem}
+#tbTransBody .tk-sale-row td{padding:.7rem .8rem;border-bottom:1px solid #e8eeea}

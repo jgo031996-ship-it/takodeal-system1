@@ -3,6 +3,30 @@ import {simpleVoidFixture} from './helpers/simple-void-service-fixture.mjs';
 import {voidUI} from './helpers/cashier-void-fixture.mjs';
 import {voidCanonical} from '../Takodeal-POS/cashier-void-model.js';
 const open=f=>f.controller.journal.list(f.backend.uid).filter(row=>!['closed','cancelled'].includes(row.state));
+test('refreshing the same open shift while entering a receipt PIN preserves the action',async()=>{
+ for(const changed of [false,true]){
+  const f=await simpleVoidFixture();
+  f.dialogHook=async options=>{
+   if(options.input==='password'){
+    f.w.currentShift={...f.w.currentShift,...(changed?{shiftId:'NEXT_SHIFT'}:{})};
+    return {isConfirmed:true,value:'1234'};
+   }
+   return {isConfirmed:true};
+  };
+  const result=await f.go();
+  if(changed){assert.ok(result.error);assert.equal(f.alerts().length,0);}
+  else{assert.equal(result.saved,true,JSON.stringify(result));assert.equal(f.alerts().length,1);}
+ }
+});
+test('a mismatched cashier sees the original operator before entering a PIN; switching preserves all open carts',async()=>{
+ for(const busy of [true,false]){
+  const f=await simpleVoidFixture('WrongPunched');let switched=0;f.w.logoutCashier=()=>{switched++;};
+  f.w.platformCarts={Standard:[],Grab:busy?[{name:'Unpaid order'}]:[]};
+  f.dialogHook=async prompt=>{assert.match(prompt.text,/Original Staff/);assert.match(prompt.text,/Sample Cashier/);return {isConfirmed:true};};
+  const r=await f.controller.start(f.server.body.saleId,f.server.body.receiptId,'Original Staff');
+  assert.equal(r.cancelled,true,JSON.stringify(r));assert.equal(switched,busy?0:1);assert.equal(f.calls.length,0);assert.equal(f.alerts().length,0);
+ }
+});
 test('cancelled order goes directly from its reason and cashier PIN to one atomic void, ingredient return and security alert',async()=>{
  const f=await simpleVoidFixture(),cart=f.w.cart=[{name:'ANOTHER UNPAID ORDER'}];const result=await f.go();assert.equal(result.saved,true,JSON.stringify(result));
  assert.equal(f.h.get('transactions/'+f.server.body.saleId).status,'Voided');assert.equal(f.h.get('inventory/sample-ingredient').currentStock,100);assert.equal(f.h.get('settings/global_stats').totalTakoyakiBalls,0);

@@ -54,17 +54,30 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
    value.accountCurrent();if(state!==value||epoch!==value.epoch||primaryAuth?.currentUser!==value.primaryUser||w.db!==primaryDb||value.auth.currentUser!==value.user||value.user.uid!==value.session.uid||!isCashierOwnerActionUser(value.user)||value.db?.app!==value.auth.app||w.sessionUser!==value.session||w.localStorage.getItem('takodeal_device_id')!==value.deviceId||w.localStorage.getItem('takodeal_device_branch')!==(value.portable?value.originalBranch:value.branch))throw error();
   };
   const prepareAction=async()=>{assertCurrent();if(!value.deviceId)throw Error('Receiving deliveries requires this device’s existing Cashier registration. Owner sales inspection is available here.');await account({auth:value.auth,db:value.db,user:value.user,assertCurrent});assertCurrent();return authority(value,assertCurrent);};
-  assertCurrent();return {auth:value.auth,db:value.db,user:value.user,session:value.session,branch:value.branch,actionActor:value.actionActor,assertCurrent,prepareAction};
+  const prepareSale=async()=>{assertCurrent();await account({auth:value.auth,db:value.db,user:value.user,assertCurrent});return authority(value,assertCurrent,{inspection:true});};
+  assertCurrent();return {auth:value.auth,db:value.db,user:value.user,session:value.session,branch:value.branch,actionActor:value.actionActor,assertCurrent,prepareAction,prepareSale};
  }
  const isToolsMode=()=>Boolean(state||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE);
- const notice=()=>{w.Swal?.fire?.('Staff sign-in needed','Owner Access is for branch inspection, printer settings and receiving deliveries. Sign out and use a Staff PIN before sales, register or staff actions.','info');return false;};
- function clear(){if(w.cashierDispatchReceiving===true){w.Swal?.fire?.('Delivery still being checked','Wait for this delivery receipt to finish before signing out. Keep its saved reference if the connection is interrupted.','info');return false;}epoch++;state=null;if(w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE)w.sessionUser=null;emit();return true;}
+ const notice=()=>{w.Swal?.fire?.('Staff sign-in needed','This staff action requires a Staff PIN. Owner sales and receipt actions are in Point of Sale and Shift Sales.','info');return false;};
+ function clear(){if(w.cashierOwnerPOS?.isBusy()||w.isSubmittingOrder||w.isProcessingOrder){w.Swal?.fire?.("Payment in progress","Wait for the current receipt action to finish.","info");return false;}if(w.cashierDispatchReceiving===true){w.Swal?.fire?.('Delivery still being checked','Wait for this delivery receipt to finish before signing out. Keep its saved reference if the connection is interrupted.','info');return false;}epoch++;state=null;if(w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE)w.sessionUser=null;emit();return true;}
  function installStaffActionGuards(){
   // New/unpaid UI actions only. Existing paid queues retain their captured
   // engine/database and may finish uploading under the original identity.
   for(const name of ['openCheckoutModal','submitFinalOrder','processCheckout','openShiftModal','submitOpenShift','openNewShift','MASTER_CloseShift','submitComprehensiveCloseShift','safeSubmitComprehensiveCloseShift','closeShift','openTimeClockModal','confirmPrepCart','voidTransaction','authorizeMealPin','toggleAuditMode','parkOrder','parkOrderToDB','resumeOrder','discardParkedOrder','deleteParkedOrder','deleteParkedOrderManually','submitInventoryCheck','submitBranchExpense']){
    const original=w[name];if(typeof original!=='function')continue;
-   w[name]=function(...args){if(isToolsMode())return notice();return original.apply(this,args);};
+   w[name]=function(...args){if(isToolsMode()){
+    if(['openCheckoutModal','submitFinalOrder','processCheckout'].includes(name)){
+     let verified;try{verified=current();verified.assertCurrent();}catch{return notice();}
+     if(!w.cashierOwnerPOS?.isReady()||!w.cashierOwnerRegister?.openShift()){
+      w.Swal?.fire?.('Register unavailable','Wait for the selected branch menu and an open register.','info');
+      return name==='processCheckout'?{status:'failed',error:'Reopen the branch register.'}:false;
+     }
+     if(name==='processCheckout')return w.cashierOwnerPOS.checkout(...args);
+     return original.apply(this,args);
+    }
+    return notice();
+   }
+   return original.apply(this,args);};
   }
  }
  async function enter({auth,db,user,branch:selectedBranch,portable=false}={}){
@@ -72,7 +85,7 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
   const previous=state,replacing=portable&&previous?.portable===true&&w.sessionUser===previous.session;
   if(replacing)current().assertCurrent();
   const busy=()=>cashierStartupBusy(w,{ownerSession:replacing?previous.session:null});
-  if(state&&!replacing||w.cashierDispatchReceiving===true||busy())throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
+  if(w.cashierOwnerPOS?.isBusy()||state&&!replacing||w.cashierDispatchReceiving===true||busy())throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
   const initialEpoch=epoch,token=initialEpoch+1,session=w.sessionUser,deviceId=w.localStorage.getItem('takodeal_device_id'),oldBranch=w.localStorage.getItem('takodeal_device_branch'),cart=w.cart,carts=w.platformCarts,entries=Object.entries(carts||{}),cartContents=contents(cart),cacheContents=contents(carts);let primaryUser=primaryAuth?.currentUser,retired=false,timer;
   const assertCurrent=()=>{
    if(retired||epoch!==initialEpoch||state!==previous||primaryAuth?.currentUser!==primaryUser||w.db!==primaryDb||w.sessionUser!==session||w.localStorage.getItem('takodeal_device_id')!==deviceId||w.localStorage.getItem('takodeal_device_branch')!==oldBranch||w.cart!==cart||w.platformCarts!==carts||entries.some(([key,value])=>w.platformCarts?.[key]!==value)||contents(w.cart)!==cartContents||contents(w.platformCarts)!==cacheContents||w.cashierDispatchReceiving===true||busy()||auth?.currentUser!==user||!isCashierOwnerActionUser(user))throw error();
@@ -90,7 +103,7 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
    // Portable inspection verifies the Owner and branch without changing the
    // physical tablet registration. Delivery writes retain their separate check.
    const displayName=typeof user.displayName==='string'&&user.displayName.trim()?user.displayName.trim().slice(0,120):OWNER;
-   const operational=Object.freeze({uid:user.uid,email:OWNER,displayName,cashierName:'Owner (System Test)',branch:selectedBranch,role:'Owner',isOwner:true,workspaceKind:CASHIER_OWNER_WORKSPACE});
+   const operational=Object.freeze({uid:user.uid,email:OWNER,displayName,cashierName:'Owner: '+displayName,branch:selectedBranch,role:'Owner',isOwner:true,workspaceKind:CASHIER_OWNER_WORKSPACE});
    assertCurrent();if(!portable){beginCashierOwnerPreview(w,selectedBranch);w.localStorage.setItem('cashierName',operational.cashierName);
     if(w.localStorage.getItem('takodeal_device_branch')!==selectedBranch||w.localStorage.getItem('cashierName')!==operational.cashierName)throw Error('Owner Access could not save the selected branch. Keep this tablet’s saved data and retry.');}
    epoch=token;w.sessionUser=operational;

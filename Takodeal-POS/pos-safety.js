@@ -501,7 +501,7 @@ export function createSaleEngine(api) {
             }
             return { paused, applied };
         },
-        async voidSale(receiptId, cashier, branch) {
+        async voidSale(receiptId, cashier, branch, ownerAction = null) {
             const snap = await queryDocs('transactions', [['receiptId', receiptId], ['branch', branch]]);
             if (snap.docs.length !== 1) throw new Error('Receipt is missing or duplicated. Reconcile it before voiding.');
             const saleRef = snap.docs[0].ref;
@@ -510,13 +510,37 @@ export function createSaleEngine(api) {
                 if (!sale.exists()) throw new Error('Receipt not found.');
                 const data = sale.data();
                 if (data.branch !== branch) throw new Error('Receipt belongs to another branch.');
+                if (ownerAction && (saleRef.id !== ownerAction.id || data.saleId !== ownerAction.id || data.receiptId !== receiptId || data.shiftId !== ownerAction.shiftId ||
+                    saleFingerprint(data) !== ownerAction.fingerprint || data.preparedCancellation || data.status === 'Parked' ||
+                    !['OrderCancelled','WrongPunched'].includes(ownerAction.reason))) throw Error('This receipt changed. Reopen it in Shift Sales.');
                 if (data.cancelledFoodSourceId) throw new Error('This staff purchase has a Foods deduction. Ask HQ to reconcile the linked deduction before any reversal.');
                 if (data.status === 'Voided') return false;
                 if (data.saleVersion !== SALE_VERSION || !Array.isArray(data.inventoryMovements) ||
                     !['applied', 'deferred'].includes(data.inventoryState)) {
                     throw new Error('This older receipt has no verified deduction record. Reconcile its inventory before voiding.');
                 }
+                let shiftRef,revision;
+                if(ownerAction){
+                    const method=String(data.paymentMethod||'').toLowerCase();
+                    const linked=['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile','manualVerification','refundId','refund','refundAmount','refundedAt','refundedBy','returnId','returnedAt','splitDetails','preparedCancellation','cancelledFoodPurchaseId','cancelledFoodAllocationVersion'];
+                    if(![undefined,'Paid','Completed','Complete','Settled','Received'].includes(data.status)||!method||data.paymentVerified===true&&method!=='cash'||
+                        /salary|split|return|refund/.test(method)||linked.some(field=>own(data,field))||data.isMobileOrder||data.mobileOrderId||data.orderType==='Delivery'||data.mealStaffName||data.mealIdentityId)
+                        throw Error('This receipt is linked to a payment, delivery, or payroll record. Review it in the Owner App before reversing it.');
+                    const marker=await tx.get(markerRef(data.saleId));
+                    if(!marker.exists()||marker.data().fingerprint!==saleFingerprint(data)||marker.data().branch!==branch||marker.data().receiptId!==receiptId||marker.data().saleId!==data.saleId)
+                        throw Error('This receipt no longer matches its original sale record. Review it in the Owner App.');
+                    if(data.inventoryState==='applied'){
+                        const audit=await tx.get(ref('settings','audit_'+safeId(branch)));
+                        if(audit.exists()&&audit.data().active)throw Error('Finish the branch stock count before returning ingredients.');
+                        if(data.inventoryMovements.some(movement=>!validUnitSnapshot(movement.unitSnapshot)))throw Error('This older receipt needs its original stock units checked. Use the existing stock-unit review in the original cashier’s void workflow.');
+                    }
+                    shiftRef=ref('shifts',ownerAction.shiftId);
+                    const shift=await tx.get(shiftRef),drawer=shift.exists()?shift.data():null;
+                    revision=drawer?.salesRevision??0;
+                    if(drawer?.branch!==branch||!drawer.active||String(drawer.status||'').toLowerCase()==='closed'||!Number.isSafeInteger(revision)||revision<0||revision>=Number.MAX_SAFE_INTEGER)throw Error('This register has closed or changed.');
+                }
                 const rows = data.inventoryState === 'applied' ? await readMovements(tx, data.inventoryMovements, branch) : [];
+                if(shiftRef)tx.update(shiftRef,{salesRevision:revision+1});
                 for (const row of rows) {
                     tx.update(row.inventoryRef, { currentStock: increment(row.movement.quantity) });
                     tx.set(ref('stock_logs', safeId(saleRef.id + '-void-' + row.movement.inventoryId)), {
@@ -527,6 +551,7 @@ export function createSaleEngine(api) {
                     });
                 }
                 tx.update(saleRef, { status: 'Voided', voidedBy: cashier, voidTime: serverTimestamp(),
+                    ...(ownerAction?{voidReason:ownerAction.reason,voidOperationId:ownerAction.operationId,voidOwnerUid:ownerAction.uid}:{}),
                     inventoryState: data.inventoryState === 'applied' ? 'reversed' : 'cancelled' });
                 if (data.statsApplied) stats(tx, data, -1);
                 if (data.inventoryIssues?.length) tx.set(ref('manager_alerts', 'inventory-review-' + data.saleId), {
@@ -535,6 +560,7 @@ export function createSaleEngine(api) {
                 }, { merge: true });
                 tx.set(ref('manager_alerts', 'void-' + saleRef.id), {
                     type: 'VOID_ALERT', branch, cashier, receiptId,
+                    ...(ownerAction?{voidReason:ownerAction.reason,ownerUid:ownerAction.uid,sourceSaleId:saleRef.id,originalCashier:data.cashier||''}:{}),
                     message: `Cashier ${cashier} voided Receipt ${receiptId}. ${rows.length ? 'Recorded inventory deductions were returned.' : 'Paused inventory deductions were cancelled.'}`,
                     timestamp: serverTimestamp(), isRead: false
                 });

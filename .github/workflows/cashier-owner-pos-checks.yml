@@ -1,0 +1,24 @@
+name: Cashier Owner POS and receipt controls
+on:
+  push:
+    branches: [fix/cashier-owner-store-pos-20261117]
+permissions:
+  contents: read
+jobs:
+  cashier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify checkout, PIN handoff, register and stock reversal
+        run: node --test tests/owner-pos-release.test.mjs tests/cashier-owner-pos.test.mjs tests/cashier-owner-register.test.mjs tests/cashier-owner-workspace.test.mjs tests/cashier-simple-void.test.mjs tests/cashier-void-ui.test.mjs tests/cashier-void-correction-engine.test.mjs tests/pos-config.test.mjs
+      - name: Exercise the Cashier interface on desktop and mobile
+        run: |
+          node tests/cashier-owner-register.browser.mjs
+          node tests/cashier-simple-void.browser.mjs

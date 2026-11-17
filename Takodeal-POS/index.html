@@ -2781,7 +2781,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
                     <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🔍 View Details</div>
                     <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🖨️ Print Receipt</div>
                     ${window.preparedCancellationActions?.(tx) || ''}
-                    ${tx.preparedCancellation || tx.cancelledFoodSourceId || tx.status === 'Voided' ? '' : `<div class="action-item danger" data-void-sale="${escapeSyncText(tx.id)}" data-void-receipt="${escapeSyncText(tx.receiptId)}" onclick="voidTx(this.dataset.voidSale,this.dataset.voidReceipt)" style="color: #dc2626; padding: 10px 15px;">Void / correct order</div>`}
+                    ${tx.preparedCancellation || tx.cancelledFoodSourceId || tx.status === 'Voided' ? '' : `<div class="action-item danger" data-void-sale="${escapeSyncText(tx.id)}" data-void-receipt="${escapeSyncText(tx.receiptId)}" data-void-cashier="${escapeSyncText(tx.cashier)}" onclick="voidTx(this.dataset.voidSale,this.dataset.voidReceipt,this.dataset.voidCashier)" style="color: #dc2626; padding: 10px 15px;">Void / correct order</div>`}
                 </div>
             </div>`}
         </td>
@@ -2806,8 +2806,10 @@ window.loadSalesDashboard = async function (liveTransactions) {
 
     function toggleTxMenu(id) { window.cashierSalesActions?.toggle(id); }
 
-    async function voidTx(saleId, receiptId) {
-      return window.cashierVoid?.start(saleId, receiptId);
+    async function voidTx(saleId, receiptId, originalCashier) {
+      if(window.isCashierOwnerToolsMode?.())return window.cashierOwnerPOS.changeReceipt(saleId,receiptId);
+      if (!window.cashierVoid) return Swal.fire('Receipt actions are loading', 'Reopen Shift Sales after the Cashier App finishes loading.', 'info');
+      return window.cashierVoid.start(saleId, receiptId, originalCashier);
     }
 
     async function reprintDashboardReceipt(receiptId) {
@@ -3642,7 +3644,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       const payload = {
         branch: window.sessionUser.branch,
         cashier: window.sessionUser.cashierName,
-        shiftId: exactShiftId,
+        shiftId: window.isCashierOwnerToolsMode?.() ? window.cashierOwnerRegister?.openShift()?.shiftId : exactShiftId,
         orderType: mainOrderType,
         paymentMethod: window.selectedPaymentMethod,
         subTotalBeforeDiscount: window.currentGrandTotal,
@@ -3712,7 +3714,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         document.getElementById('receiptModal').style.display = 'flex';
       } else {
-        if (checkout.status === 'correction-pending') await Swal.fire({title:'Check this receipt correction',text:(checkout.error || 'The replacement save is not confirmed.')+' Keep its original recovery reference. Do not collect another payment or enter the same order under a new receipt.',icon:'warning',customClass:{popup:'cashier-void-modal'}});
+        if(checkout.status==='owner-pending') await Swal.fire({title:'Check saved Owner payment',text:checkout.error+' Use Check saved payment in Shift Sales before entering another payment.',icon:'warning'});
+        else if (checkout.status === 'correction-pending') await Swal.fire({title:'Check this receipt correction',text:(checkout.error || 'The replacement save is not confirmed.')+' Keep its original recovery reference. Do not collect another payment or enter the same order under a new receipt.',icon:'warning',customClass:{popup:'cashier-void-modal'}});
         else alert("Checkout was not saved. Your cart is unchanged.\n\n" + (checkout.error || "Please try again."));
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
@@ -4566,7 +4569,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cross-branch-meals-20261116-r1"></script>
+    <script type="module" src="main.js?v=owner-store-pos-20261117-r1"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

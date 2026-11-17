@@ -5,6 +5,7 @@ import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {refreshSavedVoidSales} from './cashier-void-sales.js';
 import {createCashierOwnerDesktopContext,isCashierOwnerActionUser} from './cashier-protected-action.js';
 import {createCashierOwnerWorkspace} from './cashier-owner-workspace.js';
+import {installOwnerPOS} from './cashier-owner-pos.js';
 import {installCashierOwnerRegister} from './cashier-owner-register.js';
 import {createCashierPrepAccess} from './cashier-prep-access.js';
 import {installCashierPrep} from './cashier-prep.js';
@@ -510,6 +511,7 @@ window.processRawItemsIntoMenu = function(rawItems) {
 window.menuListenerUnsubscribe = null;
 
 window.loadPOSData = async function() {
+    if(window.isCashierOwnerToolsMode?.())return;
     window.applySidebarLayout(); 
     window.recipeFeed?.start();
     window.incomingDeliveriesFeed?.start();
@@ -555,13 +557,15 @@ window.loadPOSData = async function() {
         try {
             if (currentBranch) {
                 const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch)));
-                if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
+                if(window.isCashierOwnerToolsMode?.())return;
+            if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
                     window.branchAllowedCategories = bSnap.docs[0].data().allowedCategories;
                     localStorage.setItem('takodeal_cached_allowed_cats', JSON.stringify(window.branchAllowedCategories));
                 }
             }
 
             const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+            if(window.isCashierOwnerToolsMode?.())return;
             if (configSnap.exists()) {
                 let configData = configSnap.data();
                 window.masterPOSData.settings = {
@@ -580,18 +584,21 @@ window.loadPOSData = async function() {
             }
             
             const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
+            if(window.isCashierOwnerToolsMode?.())return;
             if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
                 window.masterPOSData.categories = catLayoutSnap.data().categories;
                 localStorage.setItem('takodeal_cached_categories', JSON.stringify(window.masterPOSData.categories));
             }
 
             const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
+            if(window.isCashierOwnerToolsMode?.())return;
             if (itemLayoutSnap.exists()) {
                 window.globalItemLayout = itemLayoutSnap.data().items || [];
                 localStorage.setItem('takodeal_cached_item_layout', JSON.stringify(window.globalItemLayout));
             }
             
             const addonLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
+            if(window.isCashierOwnerToolsMode?.())return;
             if (addonLayoutSnap.exists() && addonLayoutSnap.data().itemNames) {
                 window.masterPOSData.addonLayoutNames = addonLayoutSnap.data().itemNames;
                 localStorage.setItem('takodeal_cached_addon_layout', JSON.stringify(window.masterPOSData.addonLayoutNames));
@@ -599,10 +606,12 @@ window.loadPOSData = async function() {
             
             window.masterPOSData.addons = [];
             const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
+            if(window.isCashierOwnerToolsMode?.())return;
             addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
             localStorage.setItem('takodeal_cached_addons', JSON.stringify(window.masterPOSData.addons));
             
             const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
+            if(window.isCashierOwnerToolsMode?.())return;
             if (mmSnap.exists()) {
                 window.masterPOSData.globalMixMatch = mmSnap.data();
                 localStorage.setItem('takodeal_cached_mixmatch', JSON.stringify(window.masterPOSData.globalMixMatch));
@@ -621,7 +630,8 @@ window.loadPOSData = async function() {
     const menuQ = window.query(window.collection(window.db, "menu"));
     
     window.menuListenerUnsubscribe = window.onSnapshot(menuQ, async (snapshot) => {
-        let rawItems = [];
+        if(window.isCashierOwnerToolsMode?.())return;
+            let rawItems = [];
         snapshot.forEach(doc => rawItems.push({ id: doc.id, ...doc.data() }));
         
         // 🔥 BACKUP TO TABLET HARD DRIVE INSTANTLY
@@ -822,8 +832,10 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     }
 
     try {
-        const q = window.query(window.collection(window.db, "menu"), window.where("name", "==", window.pendingItem.realName));
-        const snap = await window.getDocs(q);
+        const owner = window.isCashierOwnerToolsMode?.() ? window.getCashierOwnerWorkspaceContext() : null;
+        const q = window.query(window.collection(owner ? owner.db : window.db, "menu"), window.where("name", "==", window.pendingItem.realName));
+        const snap = owner ? await window.getDocsFromServer(q) : await window.getDocs(q);
+        owner?.assertCurrent();
 
         if (!snap.empty) {
             let itemData = snap.docs[0].data();
@@ -8976,18 +8988,19 @@ window.ownerBypassLogin = async function() {
         // Recheck the exact Owner identity after the branch dialog before
         // changing any local preview state. Cashier sign-in is kept separate.
         if(ownerAuth.currentUser!==user||user.email!=='jgo031996@gmail.com'||user.emailVerified!==true)throw Error('The Owner account changed. Reopen Owner Access before starting a branch preview.');
-        // Boot a tools-only workspace from the actual isolated Owner account.
+        // Keep Owner sales on the selected branch's isolated account.
         const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch,portable:true});
         workspace.assertCurrent();
-        // Owner inspection starts with the selected branch’s own verified data.
         // Physical tablet, paid queues and operational drawer stay untouched.
-        window.switchView?.('sales');
-        window.cashierOwnerRegister?.start();
+        window.switchView?.('pos');
+        window.cashierOwnerRegister.start();
+        await window.cashierOwnerPOS.loadMenu(workspace);
+        workspace.assertCurrent();
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
             title: `Owner Access · ${selectedBranch}`,
-            text: 'Branch sales history and live register status are ready.',
+            text: 'Point of Sale is ready for the selected branch.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }
         });
@@ -9613,6 +9626,7 @@ window.confirmPrepCart=()=>installCashierPrep(window,document,{access:window.cas
 
 // Only explicit Owner tools mode is held at UI callers; ordinary engines and paid uploads keep their captured identity.
 cashierOwnerWorkspace.installStaffActionGuards();
+window.cashierOwnerPOS=installOwnerPOS(window,document);
 window.cashierOwnerRegister=installCashierOwnerRegister(window,document);
 
 window.cashierBranchDirectory=installLiveBranchDirectory(window,document,{kind:'cashier',subscribe:(next,error)=>firebaseOnSnapshot(firebaseCollection(primaryDb,'branches'),{includeMetadataChanges:true},next,error)});

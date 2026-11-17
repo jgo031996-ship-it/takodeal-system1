@@ -1,5 +1,4 @@
-// Read-only branch monitoring uses the verified, isolated Owner connection.
-// It never adopts a remote drawer as this device's operational currentShift.
+// The Owner register and its receipts use the selected branch's verified connection.
 import {CASHIER_OWNER_WORKSPACE} from './cashier-owner-workspace.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const millis=value=>value==null?NaN:+(value.toDate?.()||new Date(value));
@@ -39,13 +38,18 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
   if(!ownerMode())return;saveUI();
   for(const id of ['globalUnverifiedBanner','unverifiedWarningBanner']){const banner=d.getElementById(id);if(banner)banner.style.display='none';}
   const top=d.getElementById('btnTopShift'),lock=d.getElementById('globalShiftLockout'),heading=lock?.querySelector('h2'),note=lock?.querySelector('p'),button=lock?.querySelector('button');
-  const open=registerPhase==='open';
-  if(top){top.textContent=open?'🟢 Branch register open':registerPhase==='none'?'⏳ No open register synced':'⏳ Checking branch register';top.style.background=open?'#dcfce7':'#f1f5f9';top.style.color=open?'#15803d':'#475569';top.disabled=false;top.onclick=()=>{w.switchView?.('sales');refresh();};}
-  if(heading)heading.textContent='Owner branch view';
+  const open=!!context&&!!state.shift&&registerPhase==='open';
+  if(top){top.textContent=open?'🟢 Branch register open':registerPhase==='none'?'⏳ No open register synced':'⏳ Checking branch register';top.style.background=open?'#dcfce7':'#f1f5f9';top.style.color=open?'#15803d':'#475569';top.disabled=false;top.onclick=()=>{if(activeSales())refresh();else w.switchView?.('sales');};}
+  const ready=open&&w.cashierOwnerPOS?.isReady()===true;
+  if(lock&&d.getElementById('view-pos')?.classList?.contains('active'))lock.style.display=ready?'none':'flex';
+  if(heading)heading.textContent=open?'Loading branch menu':'Branch register';
   const quote=d.getElementById('lockoutQuote');if(quote)quote.textContent=state.message;
-  if(note)note.textContent='View branch sales and history from anywhere with your verified Owner account.';
-  if(button){button.textContent='View branch sales';button.onclick=()=>w.switchView?.('sales');}
-  const place=d.getElementById('btnMainPlaceOrder');if(place)place.disabled=true;
+  if(note)note.textContent='The selected branch needs an open register and a live menu before checkout.';
+  if(button){
+   button.textContent=open&&!ready?'Reload branch menu':'View branch sales';
+   button.onclick=open&&!ready?()=>w.cashierOwnerPOS.loadMenu(capture()).catch(error=>w.Swal.fire('Branch menu',error.message,'info')):()=>w.switchView?.('sales');
+  }
+  const place=d.getElementById('btnMainPlaceOrder');if(place)place.disabled=!ready;
  }
  function render(){
   paintStatus();if(!activeSales())return;
@@ -55,7 +59,8 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
    '<button type="button" data-owner-range="current" '+(!state.shift?'disabled':'')+'>Current shift</button><button type="button" data-owner-range="latest">Latest sales</button>'+
    '<label>Sales date <input type="date" data-owner-sales-date value="'+escape(date)+'"></label><button type="button" data-owner-show-date>Show date</button>'+
    '<button type="button" data-owner-switch>Switch branch</button><button type="button" data-owner-refresh>Refresh Sales</button></div></td></tr>';
-  const banner=controls+'<tr class="tk-sales-message"><td colspan="8" style="padding:16px;white-space:normal;" role="status">'+escape(state.message)+'</td></tr>';
+  const savedPayment=w.cashierOwnerPOS?.hasPending()?'<tr><td colspan="8"><button class="btn" type="button" data-owner-pending>Check saved payment</button></td></tr>':'';
+  const banner=controls+savedPayment+'<tr class="tk-sales-message"><td colspan="8" style="padding:16px;white-space:normal;" role="status">'+escape(state.message)+'</td></tr>';
   if(state.phase!=='ready'){table.innerHTML=banner;return;}
   const totals=ownerSalesTotals(state.rows),start=state.shift?new Date(millis(state.shift.startTime)).toLocaleString('en-PH',zone):null;
   const summary='<tr class="tk-sales-summary"><td colspan="8" style="padding:16px;white-space:normal;line-height:1.8;">'+
@@ -64,7 +69,10 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
    '<br><small>Uploaded receipts only. Pending branch-tablet uploads appear after syncing.</small>'+(state.hasMore?'<br><button type="button" data-owner-more>Show 100 more receipts</button>':'')+'</td></tr>';
   table.innerHTML=banner+summary+(state.rows.length?state.rows.map((row,index)=>{
    const time=Number.isFinite(millis(row.timestamp))?new Date(millis(row.timestamp)):null;
-   return '<tr class="tk-sale-row"><td data-label="Receipt" style="padding:15px;">'+escape(row.receiptId||row.id)+'</td><td data-label="Customer">'+ escape(row.customerName||'Guest')+'</td><td data-label="Payment">'+ escape(row.paymentMethod||'Cash')+'</td><td data-label="Status">'+ escape(row.status||'Paid')+'</td><td data-label="Date">'+ escape(time?.toLocaleDateString('en-PH',zone)||'')+'</td><td data-label="Time">'+ escape(time?.toLocaleTimeString('en-PH',zone)||'')+'</td><td data-label="Amount">'+ money(row.netTotal)+'</td><td data-label="Details"><button type="button" data-owner-receipt="'+index+'">View details</button></td></tr>';
+   return '<tr class="tk-sale-row"><td data-label="Receipt" style="padding:15px;">'+escape(row.receiptId||row.id)+'</td><td data-label="Customer">'+ escape(row.customerName||'Guest')+'</td><td data-label="Payment">'+ escape(row.paymentMethod||'Cash')+'</td><td data-label="Status">'+ escape(row.status||'Paid')+'</td><td data-label="Date">'+ escape(time?.toLocaleDateString('en-PH',zone)||'')+'</td><td data-label="Time">'+ escape(time?.toLocaleTimeString('en-PH',zone)||'')+'</td><td data-label="Amount">'+ money(row.netTotal)+'</td><td data-label="Details"><button type="button" data-owner-receipt="'+index+'">View details</button>'+(
+    registerPhase==='open'&&row.shiftId===state.shift?.shiftId&&!row.preparedCancellation&&!row.cancelledFoodSourceId&&row.status!=='Parked'&&
+    (row.status!=='Voided'||row.voidReason==='WrongPunched'&&row.voidOwnerUid===context.user.uid)?
+    '<button type="button" class="owner-receipt-action" data-owner-void="'+index+'">'+(row.status==='Voided'?'Continue correction':'Void / correct order')+'</button>':'')+'</td></tr>';
   }).join(''):'<tr class="tk-sales-message"><td colspan="8" style="padding:20px;">No uploaded receipts in this view. Choose Latest sales or another date.</td></tr>');
  }
  function publish(next){state=next;render();}
@@ -141,6 +149,8 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
  function setRange(next,day=''){if(!['current','latest','date'].includes(next))return false;if(next==='date')dayBounds(day);capture();range=next;date=day;pageSize=100;if(context)sales(context,generation,state.shift);return true;}
  d.getElementById('tbTransBody')?.addEventListener?.('click',event=>{
   try{capture();}catch{check();return;}
+  if(event.target.closest?.('[data-owner-pending]')?.hasAttribute?.('data-owner-pending')){w.cashierOwnerPOS?.reviewPending().catch(error=>w.Swal.fire('Saved payment',error.message,'info'));return;}
+  const action=event.target.closest?.('[data-owner-void]');if(action?.dataset?.ownerVoid!==undefined){const row=state.rows[Number(action.dataset.ownerVoid)];if(row)w.cashierOwnerPOS?.changeReceipt(row.id,row.receiptId);return;}
   const rangeButton=event.target.closest?.('[data-owner-range]');if(rangeButton?.dataset?.ownerRange){setRange(rangeButton.dataset.ownerRange);return;}
   if(event.target.closest?.('[data-owner-show-date]')?.hasAttribute?.('data-owner-show-date')){try{setRange('date',d.querySelector?.('[data-owner-sales-date]')?.value||'');}catch(error){w.Swal?.fire?.('Sales date',error.message,'info');}return;}
   if(event.target.closest?.('[data-owner-switch]')?.hasAttribute?.('data-owner-switch')){w.ownerBypassLogin?.();return;}
@@ -157,5 +167,5 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
  w.addEventListener?.('storage',check);
  w.addEventListener?.('online',()=>{if(ownerMode())refresh();});
  w.addEventListener?.('offline',()=>{if(ownerMode()){disconnect();publish({phase:'loading',branch:w.sessionUser?.branch||'',shift:null,rows:[],message:'Connection unavailable. Reconnect to check the branch register and sales.'});}});
- return {start,stop,refresh,setRange,render,paintStatus,state:()=>({...state,rows:state.rows.map(row=>({...row}))})};
+ return {start,stop,refresh,setRange,render,paintStatus,openShift:()=>context&&same(context,generation)&&registerPhase==='open'?state.shift:null,state:()=>({...state,rows:state.rows.map(row=>({...row}))})};
 }
