@@ -18,6 +18,32 @@ before(async()=>{if(await reachable())throw Error('Refusing occupied fictional e
 after(async()=>{await env?.cleanup();if(child&&child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),pause(3000)]);}});
 
 const ownerUid='fictional-workspace-owner',primaryUid='fictional-existing-cashier',deviceId='DEV-FICTIONAL-PC-0001',selectedBranch='Agdao';
+import {installOwnerPOS} from '../Takodeal-POS/cashier-owner-pos.js';
+test('portable Owner punches and cancels a sale using the real Firestore SDK and selected branch',async()=>{
+ const f=fixture();
+ const item={name:'Fictional takoyaki',qty:1,basePrice:65,variantPrice:65,addons:{}};
+ await seed('menu','fictional-menu',{name:item.name,category:'Food'});
+ await seed('bom','fictional-recipe',{menuItem:item.name,ingredientName:'Flour',qty:2});
+ await seed('inventory','fictional-flour',{name:'Flour',branch:selectedBranch,currentStock:20,baseUom:'g'});
+ await seed('shifts','fictional-open',{branch:selectedBranch,active:true,startTime:new Date()});
+ const c=await f.workspace.enter({auth:f.ownerAuth,db:f.ownerDb,user:f.ownerUser,branch:selectedBranch,portable:true});
+ Object.assign(f.w,{crypto:globalThis.crypto,increment:sdk.increment,processRawItemsIntoMenu:items=>items,
+  buildCategories(){},renderOrderAndPaymentUI(){},renderCart(){},cashierOwnerRegister:{openShift:()=>({shiftId:'fictional-open'}),paintStatus(){}}});
+ f.w.navigator.locks={request:(_key,_options,cb)=>cb({})};
+ const dialogs=[];
+ f.w.Swal.fire=async value=>{dialogs.push(value);return {isConfirmed:true};};
+ const pos=installOwnerPOS(f.w,{getElementById:()=>null});
+ await pos.loadMenu(c);f.w.cart=[item];
+ const receipt=await pos.checkout({cart:f.w.cart,branch:selectedBranch,shiftId:'fictional-open',orderType:'Take-Out',paymentMethod:'Cash',netTotal:65});
+ assert.equal(receipt.status,'committed',receipt.error);
+ assert.equal((await read(f.ownerDb,'inventory','fictional-flour')).currentStock,18);
+ await pos.changeReceipt(receipt.saleId,receipt.receiptId);
+ assert.equal((await read(f.ownerDb,'transactions',receipt.saleId)).status,'Voided',JSON.stringify(dialogs));
+ assert.equal((await read(f.ownerDb,'inventory','fictional-flour')).currentStock,20);
+ assert.equal((await read(f.ownerDb,'shifts','fictional-open')).salesRevision,2);
+ assert.equal((await read(f.ownerDb,'manager_alerts','void-'+receipt.saleId)).ownerUid,ownerUid);
+ assert.equal(f.values.get('takodeal_device_branch'),'Main Office');f.preserved();
+});
 const ownerRow={email:owner,role:'Owner',active:true,pin:'fictional-nonsecret-fixture-only'},branchRow={name:selectedBranch,active:true};
 const stops=new Set();
 async function seed(table,id,data){await env.withSecurityRulesDisabled(context=>sdk.setDoc(sdk.doc(context.firestore(),table,id),data));}
@@ -58,7 +84,7 @@ function receiveInput(permit,rows){return{branch:permit.branch,actor:permit.acto
 async function receivePermit(f,feed,state){const permit=feed.receiveContext(state.rows.map(row=>row.id),{expectedRows:state.rows});if(typeof permit.prepareAction==='function')await permit.prepareAction();return permit;}
 async function noStockChanged(f){assert.equal((await read(f.ownerDb,'inventory','fictional-stock-0')).currentStock,7);assert.equal((await read(f.ownerDb,'dispatch_logs','fictional-delivery-0')).status,'Arrived');assert.equal(await count(f.ownerDb,'stock_logs'),0);f.preserved();}
 
-test('real named Owner Firestore context reads active branch without replacing primary Auth/db or creating Staff authority',async()=>{const f=fixture(),context=await f.enter();assert.equal(context.db,f.ownerDb);assert.equal(context.auth,f.ownerAuth);assert.equal(context.branch,selectedBranch);assert.equal(context.session.cashierName,'Owner (System Test)');assert.equal(context.session.staffId,undefined);assert.equal(context.session.staffLoginSessionId,undefined);assert.equal((await sdk.getDocsFromServer(sdk.query(sdk.collection(context.db,'branches'),sdk.where('name','==',selectedBranch)))).size,1);assert.equal(await privateCount('staff_login_sessions'),0);assert.equal(await count(f.ownerDb,'pos_bindings'),0);assert.equal(f.refreshes(),1);f.preserved();});
+test('real named Owner Firestore context reads active branch without replacing primary Auth/db or creating Staff authority',async()=>{const f=fixture(),context=await f.enter();assert.equal(context.db,f.ownerDb);assert.equal(context.auth,f.ownerAuth);assert.equal(context.branch,selectedBranch);assert.equal(context.session.cashierName,'Owner: Fictional Owner');assert.equal(context.session.staffId,undefined);assert.equal(context.session.staffLoginSessionId,undefined);assert.equal((await sdk.getDocsFromServer(sdk.query(sdk.collection(context.db,'branches'),sdk.where('name','==',selectedBranch)))).size,1);assert.equal(await privateCount('staff_login_sessions'),0);assert.equal(await count(f.ownerDb,'pos_bindings'),0);assert.equal(f.refreshes(),1);f.preserved();});
 test('real 84-line shipment receives once under named Owner context and exact same lost-ACK replay adds nothing',{timeout:60000},async()=>{await shipment(84);const f=fixture();await f.enter();const feed=f.feed(),state=await ready(feed,{rows:84}),permit=await receivePermit(f,feed,state),input=receiveInput(permit,state.rows),run=f.w.runTransaction;let lost=true;f.w.runTransaction=async(...args)=>{const result=await run(...args);if(lost){lost=false;throw Error('Fictional lost receipt ACK after real commit');}return result;};await assert.rejects(receiveDispatch(permit.api,input),/lost receipt ACK/);assert.equal(await receiveDispatch(permit.api,input),0);for(let i=0;i<84;i++){assert.equal((await read(f.ownerDb,'inventory','fictional-stock-'+i)).currentStock,27);const row=await read(f.ownerDb,'dispatch_logs','fictional-delivery-'+i);assert.equal(row.status,'Received');assert.equal(row.receivedQty,20);assert.equal(row.receivedBy,'Owner: Fictional Owner');}assert.equal(await count(f.ownerDb,'stock_logs'),84);assert.equal(await count(f.ownerDb,'shifts'),0);assert.equal(await count(f.ownerDb,'transactions'),0);assert.equal(await privateCount('staff_login_sessions'),0);f.preserved();});
 test('real normal Cashier primary database listener remains readable and never selects retained Owner workspace',async()=>{await shipment();const f=fixture();f.values.set('takodeal_device_branch',selectedBranch);f.w.sessionUser={staffId:'fictional-staff',cashierName:'Fictional Cashier',branch:selectedBranch,isOwner:false};const feed=f.feed(),state=await ready(feed,{rows:1});assert.equal(f.workspace.current(),null);const permit=feed.receiveContext(state.rows.map(row=>row.id));assert.equal(permit.api.db,f.primaryDb);assert.equal(permit.api.auth,f.primaryAuth);assert.equal(permit.actor,'Fictional Cashier');assert.equal(f.refreshes(),0);feed.refresh();const refreshed=await ready(feed,{rows:1});assert.equal(refreshed.phase,'ready');assert.equal(refreshed.rows[0].id,state.rows[0].id);assert.equal(await count(f.primaryDb,'stock_logs'),0);f.preserved();});
 for(const patch of[{email_verified:false},{firebase:{sign_in_provider:'password'}},{sub:'fictional-foreign'},{email:'not-owner@example.invalid'}])test('wrong fresh mocked Owner claims are rejected before any workspace/database action: '+JSON.stringify(patch),async()=>{const f=fixture({claims:patch}),before=[...f.values];await assert.rejects(f.enter(),/claims denied/);assert.deepEqual([...f.values],before);assert.equal(await count(f.ownerDb,'stock_logs'),0);f.preserved();});
@@ -82,7 +108,7 @@ test('real Owner register monitor follows remote open, paid sales, offline metad
  const monitor=installCashierOwnerRegister(f.w,document,{setInterval:()=>1,clearInterval:()=>{}});stops.add(()=>monitor.stop());
  async function phase(expected){const end=Date.now()+10000;while(Date.now()<end){const state=monitor.state();if(state.phase===expected)return state;if(state.phase==='error'||state.phase==='sales-error')throw Error(state.message);await pause(15);}throw Error('Owner register did not reach '+expected+': '+JSON.stringify(monitor.state()));}
  monitor.start();await phase('ready');assert.equal(monitor.state().shift,null);
- await seed('shifts','fictional-live-drawer',{branch:selectedBranch,active:true,startTime:stamp,cashier:'Fictional Real Crew'});
+ await seed('shifts','fictional-live-drawer',{branch:selectedBranch,active:true,startTime:new Date(),cashier:'Fictional Real Crew'});
  await phase('ready');
  await seed('transactions','fictional-live-sale',{branch:selectedBranch,shiftId:'fictional-live-drawer',timestamp:sdk.Timestamp.fromMillis(stamp.toMillis()+1000),status:'Paid',paymentMethod:'Cash',netTotal:240,receiptId:'FICTIONAL-REAL-SALE'});
  const until=Date.now()+10000;while(monitor.state().rows.length!==1&&Date.now()<until)await pause(15);assert.equal(ownerSalesTotals(monitor.state().rows).total,240);f.preserved();

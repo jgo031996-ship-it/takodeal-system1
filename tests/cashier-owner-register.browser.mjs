@@ -26,7 +26,7 @@ try{
  const table=document.getElementById('tbTransBody');
  if(!table.textContent.includes('Total sales ₱240.00')||!document.getElementById('btnTopShift').textContent.includes('register open'))throw Error('Missing actual open status or sales totals');
  table.querySelector('[data-owner-receipt]').click();if(!window.fixtureDetails?.html.includes('FICTIONAL-001'))throw Error('Details click failed');
- let requested=null;window.cashierOwnerPOS={isReady:()=>true,changeReceipt:(id,receipt)=>{requested=[id,receipt];}};
+ let requested=null;window.cashierOwnerPOS={isReady:()=>true,hasPending:()=>false,changeReceipt:(id,receipt)=>{requested=[id,receipt];}};
  table.querySelector('[data-owner-void]').click();if(requested?.join('/')!=='fictional-sale/FICTIONAL-001')throw Error('Receipt action did not identify the displayed branch sale');
  window.switchView('pos');if(document.getElementById('globalShiftLockout').style.display!=='none'||document.getElementById('btnMainPlaceOrder').disabled)throw Error('Verified Owner cannot use the actual POS');
  document.getElementById('btnTopShift').click();if(reads.length!==3)throw Error('View branch sales did not refresh the verified Owner connection');
@@ -49,6 +49,6 @@ try{for(const size of ['1280,900','412,915']){
  try{
   const child=spawn(executable,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-background-networking','--no-first-run','--user-data-dir='+profile,'--window-size='+size,'--virtual-time-budget=5000','--dump-dom','http://127.0.0.1:'+server.address().port]);
   child.stdout.on('data',data=>out+=data);child.stderr.on('data',data=>errors=(errors+data).slice(-4000));
-  const timer=setTimeout(()=>child.kill(),20000);const code=await new Promise(resolve=>child.on('close',resolve));clearTimeout(timer);assert.equal(code,0,errors);assert.match(out,/<output id="owner-register-proof">PASS:/);console.log(size+': passed actual Cashier DOM and Owner entry/actions');
+  const timer=setTimeout(()=>child.kill(),20000);const code=await new Promise(resolve=>child.on('close',resolve));clearTimeout(timer);assert.equal(code,0,errors);assert.match(out.match(/<output id="owner-register-proof">[^<]*/)?.[0]||errors,/<output id="owner-register-proof">PASS:/);console.log(size+': passed actual Cashier DOM and Owner entry/actions');
  }finally{rmSync(profile,{recursive:true,force:true});}
 }}finally{await new Promise(resolve=>server.close(resolve));}
