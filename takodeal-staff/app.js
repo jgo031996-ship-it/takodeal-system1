@@ -236,7 +236,7 @@ window.checkNormalLogin = function() {
     if(savedId){window.staffSetupAccess.assertStaff(savedId);if(setupBinding){savedName=setupBinding.staffName;localStorage.setItem('takodeal_staff_name',savedName);}}
     
     // 🚀 AUTO-LOGIN ENGINE
-    if (savedName && savedId) {
+    if (savedName && savedId && !window.staffSelfRepair?.needsPin?.()) {
         document.getElementById('loggedInName').innerText = savedName;
         let pic = localStorage.getItem('takodeal_staff_pic');
         if (pic && pic.length > 5) {
@@ -310,6 +310,7 @@ window.loginStaff = async function() {
         if (staffData) {
             window.staffSetupAccess.assert(setupSession,docId);
             if (localStorage.getItem('takodeal_staff_id') !== docId) window.stopStaffLiveListeners();
+            window.staffSelfRepair?.pinAccepted?.();
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);

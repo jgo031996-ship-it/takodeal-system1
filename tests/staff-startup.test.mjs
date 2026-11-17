@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
 import {installStaffAppUpdate} from '../takodeal-staff/staff-phone.js';
 import {execFileSync} from 'node:child_process';
-const source=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),release='staff-phone-setup-20261117-r1',hash='a'.repeat(64),flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
+const source=readFileSync(new URL('../takodeal-staff/staff-startup.js',import.meta.url),'utf8'),release='staff-repair-pin-20261117-r1',hash='a'.repeat(64),flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
 const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};};
 function fixture(options={}){
  const timers=new Map(),events=new Map(),domEvents=new Map(),elements=new Map(),buttons=[],statuses=[],styles=[],calls={reload:0,lookup:0,register:0,update:0,messages:[],payloads:[],forbidden:0};let sequence=0;
@@ -91,4 +91,15 @@ test('private setup link is removed from the address before startup, can be used
  assert.equal(h.w.staffStartup.takeSetupInvite(),null);h.intact();
  const malformed=fixture({inviteHash:'#staff-setup=staff-a.short'});assert.equal(malformed.w.location.hash,'');
  assert.equal(malformed.w.staffStartup.takeSetupInvite(),null);malformed.intact();
+});
+
+test('repair locks the daily login immediately before a verified reload; offline repair and regular updates retain it',async()=>{
+ const good=fixture(),order=[];
+ good.w.location.reload=()=>order.push('reload');
+ assert.equal(await good.w.forceUpdateApp({beforeReload:()=>order.push('lock')}),true);
+ assert.deepEqual(order,['lock','reload']);
+ assert.equal(await good.check(),true);assert.deepEqual(order,['lock','reload','reload']);
+ const offline=fixture();offline.nav.onLine=false;
+ assert.equal(await offline.w.forceUpdateApp({beforeReload:()=>assert.fail('unconfirmed repair locked the user')}),false);
+ assert.equal(offline.calls.reload,0);offline.intact();good.intact();
 });

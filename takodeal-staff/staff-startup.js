@@ -1,7 +1,7 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-phone-setup-20261117-r1';
+    var release = 'staff-repair-pin-20261117-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     // Consume the private fragment before any external scripts start.
@@ -60,7 +60,7 @@
             bannerText = d.createElement('p'); bannerText.style.margin = '8px 0';
             var button = d.createElement('button'); button.type = 'button'; button.textContent = 'Repair and reopen';
             button.setAttribute('data-staff-repair', ''); button.style.cssText = 'padding:10px 16px;border:0;border-radius:8px;background:#173f35;color:white;font:600 15px system-ui,sans-serif';
-            button.addEventListener('click', function () { check(); });
+            button.addEventListener('click', function () { if (w.staffSelfRepair) w.staffSelfRepair.refreshFiles(); else check(); });
             banner.appendChild(heading); banner.appendChild(bannerText); banner.appendChild(button); d.body.appendChild(banner);
         }
         if (banner) { banner.hidden = false; bannerText.textContent = text; }
@@ -146,7 +146,7 @@
         var worker=registration && registration.waiting, base=new URL('./',w.location.href);
         if(!ready || updating || !worker || worker.state!=='installed' || !validWorker(worker,base))return;
         updateNotice=true;
-        show('New Staff app files are ready. Tap Repair and reopen to use the latest branch pins and phone checks. Your sign-in and saved records are kept.');
+        show('New Staff app files are ready. Tap Repair and reopen to use the latest branch pins and phone checks. Your saved records stay on this phone. Enter your Staff PIN after repair.');
     }
     function watchUpdates() {
         if(!ready || updating || protectedWork() || nav.onLine===false || !nav.serviceWorker || typeof nav.serviceWorker.getRegistration!=='function')return;
@@ -193,15 +193,16 @@
         var work = protectedWork(); if (work) throw Error(work);
         if (nav.onLine === false) throw Error('The connection was lost. Reconnect and try the repair again.');
         status('Reopening the Staff app. Your device registration and saved data stay here.');
+        if (typeof operation.beforeReload === 'function') operation.beforeReload();
         w.location.reload(); return true;
     }
-    async function check() {
+    async function check(options) {
         if (updating) return false;
         var blocked = protectedWork(); if (blocked) { show(blocked); return false; }
         if (nav.onLine === false) { show('Connect to the internet to repair the Staff app. Your saved device data is kept.'); return false; }
         if (!nav.serviceWorker || typeof nav.serviceWorker.getRegistration !== 'function') { show('This browser cannot check app updates. Reopen the Staff app online; do not clear its saved data.'); return false; }
-        updating = true; var operation = {cancelled: false, cleanup: []}; run = operation;
-        var buttons = nodes('[data-staff-update], [data-staff-repair]'), previous = buttons.map(function (button) { return {button: button, disabled: button.disabled, text: button.textContent}; });
+        updating = true; var operation = {cancelled: false, cleanup: [], beforeReload: options && options.beforeReload}; run = operation;
+        var buttons = nodes('[data-staff-update], [data-staff-repair], [data-staff-self-repair]'), previous = buttons.map(function (button) { return {button: button, disabled: button.disabled, text: button.textContent}; });
         previous.forEach(function (row) { row.button.disabled = true; row.button.textContent = 'Checking app files…'; row.button.setAttribute('aria-busy', 'true'); });
         status('Checking app files. No device approval, attendance or saved data will be reset.');
         try { return await deadline(update(operation), 180000, 'The repair check took too long. Keep this page open, close other Staff windows and retry.', operation); }
@@ -212,7 +213,7 @@
     // An older optional module may assign its former update action. Keep every
     // button on this independent, data-preserving implementation on this page.
     Object.defineProperty(w, 'forceUpdateApp', {get: function () { return check; }, set: function () {}, configurable: true});
-    w.staffStartup = {takeSetupInvite: function () { var value = setupInvite; setupInvite = null; return value; }, ready: function () { ready = true; timers.forEach(function (timer) { w.clearTimeout(timer); }); if (banner && !updateNotice) banner.hidden = true; var node = d.getElementById && d.getElementById('deviceRegistrationStatus'); if (node && node.hasAttribute('data-staff-startup-status')) { node.textContent = ''; node.removeAttribute('data-staff-startup-status'); } Promise.resolve().then(watchUpdates); }};
+    w.staffStartup = {showStatus: show, takeSetupInvite: function () { var value = setupInvite; setupInvite = null; return value; }, ready: function () { ready = true; timers.forEach(function (timer) { w.clearTimeout(timer); }); if (banner && !updateNotice) banner.hidden = true; var node = d.getElementById && d.getElementById('deviceRegistrationStatus'); if (node && node.hasAttribute('data-staff-startup-status')) { node.textContent = ''; node.removeAttribute('data-staff-startup-status'); } Promise.resolve().then(watchUpdates); }};
     timers.push(w.setTimeout(function () { if (!ready) { earlyStatus = 'The Staff app is still opening. Your phone has not been reset.'; show(earlyStatus + ' If it stays here, use Repair and reopen.'); } }, 15000));
     timers.push(w.setTimeout(function () { if (!ready) { earlyStatus = 'The Staff app could not finish opening. Your device registration and saved data are kept.'; show(earlyStatus + ' Use Repair and reopen while connected.'); } }, 30000));
     w.addEventListener('error', function (event) {

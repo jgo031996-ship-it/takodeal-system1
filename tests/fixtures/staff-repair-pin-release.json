@@ -1,0 +1,33 @@
+{
+  "parent": "18d7f2509f48a02506299f72f5868c1fdfe88031",
+  "files": {
+    "takodeal-staff/app.js": {
+      "before": "fa9b32968b4e07073343624a7b0dd7fb92fb94cb",
+      "after": "3bccbe2c1d11ab41a908003ef0c52f46b11a730b"
+    },
+    "takodeal-staff/index.html": {
+      "before": "5687e084598b044bfc8b889e8a19ecd825ee828c",
+      "after": "dc488072216221156676bcdc8c84ad061c9a244d"
+    },
+    "takodeal-staff/staff-self-repair-sdk.js": {
+      "before": "a1ba479ca21230ef36d53b3ed4dd1dc97c090dbc",
+      "after": "5d96a578a31189c8af9d2e87a114954de362e201"
+    },
+    "takodeal-staff/staff-self-repair.js": {
+      "before": "5422c1a19c296b5561dea319145520fc9662ec04",
+      "after": "3f4e74bace6ff7c5d0fbbc60a6324f3d6e55a734"
+    },
+    "takodeal-staff/staff-setup-access.js": {
+      "before": "a1d7c5d4d75d2fd4daf396c01d04cdda4af38930",
+      "after": "0e5b35c231cd7dacf9958ac3ff84750e6e0a271b"
+    },
+    "takodeal-staff/staff-startup.js": {
+      "before": "a6eb70fe0fcdae71de12203b3c506b80b4bac020",
+      "after": "51e0a55ea2d2773244a23d46c1fe7febc46733b2"
+    },
+    "takodeal-staff/sw.js": {
+      "before": "fa62e4a800c7313ffdb8b9c4d137559c9a814559",
+      "after": "79a885c1ba56347e27bf6e6acc03410340e32e48"
+    }
+  }
+}
