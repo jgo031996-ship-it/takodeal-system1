@@ -36,7 +36,10 @@ export function watchEmployeeProfile(api,d,id){
  const allowed=branch=>api.auth.currentUser?.email?.toLowerCase()===OWNER_EMAIL||session.allowedBranches?.includes('All')||session.allowedBranches?.includes(branch);
  if(!allowed(row.branch))return;
  const fields=sharedProfileValues(row);baseline.shared=fields;baseline.pinVersion=row.loginPinVersion??0;
- const pin=el('empPin');if(pin){pin.type='password';pin.placeholder='Enter a new login PIN to change it';}
+ const pin=el('empPin');
+ const showPinStatus=profile=>{if(pin)pin.placeholder=profile.pin?'••••  PIN saved':'Enter a daily PIN';};
+ if(pin)pin.type='password';
+ showPinStatus(row);
  const status=el('employeeLiveProfileStatus');
  const message=text=>{if(status)status.textContent=text;};
  for(const [key,input] of Object.entries(inputs))if(el(input))el(input).value=fields[key];
@@ -58,6 +61,7 @@ export function watchEmployeeProfile(api,d,id){
     if(node.value.trim()===fields[key]||node.value.trim()===latest){node.value=latest;fields[key]=latest;}
     else if(latest!==fields[key])overlap=true;
    }
+   showPinStatus(next);
    if(!pin?.value)baseline.pinVersion=next.loginPinVersion??0;
    const photo=el('masterProfilePic');
    const nextPhoto=next.profilePicUrl||'';

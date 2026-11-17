@@ -5557,7 +5557,7 @@
 
         <section id="staffSetupCodePanel" class="staff-setup-panel" aria-labelledby="staffSetupCodeTitle">
           <div class="staff-setup-heading"><div><span class="staff-setup-eyebrow">STAFF APP · THIS EMPLOYEE</span><h3 id="staffSetupCodeTitle">Personal setup code</h3></div><span class="staff-setup-badge">10 private digits</span></div>
-          <p>Save a new employee to create their private setup link. Send it directly to them. They can activate their phone and sign in with the PIN you assigned.</p>
+          <p>Save a new employee to create their private setup link. For an existing employee, generate or replace the code here. Send the link privately so they can activate their phone, then sign in with their daily PIN.</p>
           <p id="staffSetupCodeStatus" role="status" aria-live="polite">Open a saved employee profile to check their setup code.</p>
           <div class="staff-setup-device-usage"><div><strong id="staffSetupDeviceUsage">Phone usage not available</strong><p id="staffSetupDeviceUsageNote" class="staff-setup-note" role="status" aria-live="polite">Refresh phone usage to check this employee’s limit. No count has been assumed.</p></div><button id="staffSetupUsageRefresh" type="button" disabled>Refresh phone usage</button></div>
           <div class="staff-setup-actions"><button id="staffSetupCodeGenerate" type="button" class="staff-setup-primary" disabled>Generate setup code</button><button id="staffSetupCodeDisable" type="button" class="staff-setup-danger" disabled>Disable code</button><button id="staffSetupCodeRefresh" type="button">Refresh status</button></div>
@@ -5577,8 +5577,8 @@
                     <p id="empRateEffectiveHelp" style="font-size:11px;line-height:1.5;color:#71816e;margin-top:6px">This rate starts on the selected Philippine work date. Earlier shifts keep their previous rate; saved paid payslips stay unchanged.</p>
                 </div>
                 <div>
-                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Login Password *</label>
-                    <input type="text" id="empPin" placeholder="e.g. 1234" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; background: white; border-radius: 6px; box-sizing: border-box; font-weight: 900; font-size: 18px; color: #dc2626; outline: none; letter-spacing: 2px;">
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;" for="empPin">Daily login PIN</label>
+                    <input type="password" id="empPin" autocomplete="new-password" aria-describedby="employeeLiveProfileStatus" placeholder="Enter a daily PIN" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; background: white; border-radius: 6px; box-sizing: border-box; font-weight: 900; font-size: 18px; color: #dc2626; outline: none; letter-spacing: 2px;">
                 </div>
             </div>
 
