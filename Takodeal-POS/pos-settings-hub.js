@@ -35,7 +35,11 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
     }
     function refresh(){try{checkSession();paint();notice('Settings ready for '+w.sessionUser.cashierName+' · '+branch()+'.');return true;}catch(error){paint();notice(error.message);return false;}}
     function paint(){const view=d.getElementById('view-settings');if(!view)return;let ready=false;try{checkSession();ready=true;}catch{}
-        for(const button of view.querySelectorAll('[data-pos-action]'))button.disabled=!ready||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&!['printerTools','manualDrawer','autoDrawer','kds'].includes(button.dataset.posAction);
+        let ownerOrders=false;
+        if(w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&w.cashierOwnerPOS?.parked){
+            try{const c=w.getCashierOwnerWorkspaceContext();c.assertCurrent();ownerOrders=c.session===w.sessionUser;}catch{}
+        }
+        for(const button of view.querySelectorAll('[data-pos-action]'))button.disabled=button.dataset.posAction==='parkedOrders'&&ownerOrders?false:!ready||w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE&&!['printerTools','manualDrawer','autoDrawer','kds'].includes(button.dataset.posAction);
         const printer=d.getElementById('view-printer');if(printer)for(const control of printer.querySelectorAll('button,input,select,textarea'))control.disabled=!ready;
         const info=d.getElementById('posSettingsDevice');if(info)info.textContent=(w.localStorage.getItem('takodeal_device_name')||'This device')+' · '+(branch()||'Branch not selected');
         const audit=d.getElementById('posAuditState');if(audit)audit.textContent=w.isAuditModeActive?'Inventory deductions paused':'Inventory deductions active';

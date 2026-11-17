@@ -8,11 +8,11 @@
     },
     "Takodeal-POS/cashier-owner-parked.js": {
       "before": null,
-      "after": "6c2b0548598c9cf3c7f1bff1ea17fcbf9cb92b28"
+      "after": "21f23d652653f74084e1030c1b045d94bc350086"
     },
     "Takodeal-POS/cashier-owner-pos.js": {
       "before": null,
-      "after": "9835756197596443c5d609be71cbef3e916c0aa0"
+      "after": "f7c2b330d699fe192ff26170ebc44d72e876747b"
     },
     "Takodeal-POS/cashier-owner-register.js": {
       "before": "fde9d9ad3129dbd0f47f8d50ec762e1da500d645",
@@ -48,7 +48,7 @@
     },
     "Takodeal-POS/mobile-hub-upgrade.js": {
       "before": "208545f8058746dd78df887dada9f07c3fbe4af0",
-      "after": "b767932ddfa00f8f5232eb5a4fc7cbd9e4fad59f"
+      "after": "9ea0c3f8a3bde3bbda94e66269b2f7b71d3c33ef"
     },
     "Takodeal-POS/mobile-order-actions.js": {
       "before": "27bc963b1a21e51dbe972d75a284ecc28007ee00",
@@ -56,7 +56,7 @@
     },
     "Takodeal-POS/pos-settings-hub.js": {
       "before": "77e7367c1f079f400d458c5fbddfee64fb876e8a",
-      "after": "d8dc435643f4661f42c0d6523c77acf8570a3446"
+      "after": "74fe5daeb1009f10692683ed7ded3399cef9d04b"
     },
     "Takodeal-POS/sw.js": {
       "before": "dac0a74d64e3083dd0911d2bb71950ffcd2bc7e0",

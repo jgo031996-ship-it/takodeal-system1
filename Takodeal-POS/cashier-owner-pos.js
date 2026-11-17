@@ -1,3 +1,4 @@
+import {clearMobileOrder} from './mobile-delivery-state.js';
 import {installOwnerParked} from './cashier-owner-parked.js';
 import {createSaleEngine, saleIdentity, SALE_VERSION, saleFingerprint, safeId} from './pos-safety.js';
 import {recipeRevision,recipeRows} from './recipe-feed.js';
@@ -131,7 +132,7 @@ export function installOwnerPOS(w,d){
                 const order=rowData(await tx.get(w.doc(c.db,'incoming_orders',mobile.mobileOrderId)));
                 if(order.branch!==c.branch||(order.orderCode||mobile.mobileOrderId)!==mobile.mobileOrderCode||
                     !['preparing','ready','out_for_delivery','completed'].includes(order.status)||order.receiptId||order.paymentStatus==='paid')
-                    throw Error('This mobile order changed or was already paid. Check its receipt in Orders.');
+                    throw Object.assign(Error('This mobile order changed or was already paid. Check its receipt in Orders.'),{code:'owner-order-changed'});
             }
             const originalCashier=voidAction?await verifyVoid(tx,c,shiftId,voidAction):'';
             c.assertCurrent();
@@ -150,7 +151,26 @@ export function installOwnerPOS(w,d){
         if(p.ownerUid!==c.user.uid||p.branch!==c.branch||!p.shiftId)throw Error('The saved checkout belongs to a different session.');
         const verification=await scoped(c,p.shiftId,{checkShift:false});
         const {ownerInput,ownerParkedTicket,...sale}=p;
-        if(!await verification.alreadyCommitted(sale))await (await scoped(c,p.shiftId,{markSale:!sale.voidCorrection,mobile:sale.isMobileOrder?sale:null,parkedOrder:p.ownerParkedTicket||null})).commit(sale);
+        try{
+            if(!await verification.alreadyCommitted(sale)){
+                await (await scoped(c,p.shiftId,{markSale:!sale.voidCorrection,mobile:sale.isMobileOrder?sale:null,parkedOrder:ownerParkedTicket||null})).commit(sale);
+            }
+        }catch(error){
+            if(!sale.isMobileOrder&&!ownerParkedTicket)throw error;
+            c.assertCurrent();
+            const saved=await w.getDocFromServer(w.doc(c.db,'transactions',p.saleId));c.assertCurrent();
+            if(!saved.exists()&&error.code!=='owner-order-changed')throw error;
+            if(saved.exists()&&saved.data().ownerUid===c.user.uid&&saleFingerprint(saved.data())===saleFingerprint(p))return {status:'committed',payload:p,receiptId:p.receiptId,saleId:p.saleId};
+            if(pending(c)?.saleId===p.saleId)w.localStorage.removeItem(key(c));
+            throw Object.assign(Error('This order was handled or changed at the store. Check Orders and Shift Sales before taking payment.'),{code:'owner-order-changed'});
+        }
+        if(sale.isMobileOrder){
+            const saved=rowData(await w.getDocFromServer(w.doc(c.db,'transactions',p.saleId)));c.assertCurrent();
+            if(saved.ownerUid!==c.user.uid||saved.mobileOrderId!==sale.mobileOrderId){
+                if(pending(c)?.saleId===p.saleId)w.localStorage.removeItem(key(c));
+                throw Object.assign(Error('The store already recorded this mobile payment. Check its receipt in Shift Sales.'),{code:'owner-order-changed'});
+            }
+        }
         c.assertCurrent();return {status:'committed',payload:p,receiptId:p.receiptId,saleId:p.saleId};
     }
     function exclusive(c,fn){
@@ -167,7 +187,7 @@ export function installOwnerPOS(w,d){
             const saved=pending(c);if(saved?.saleId!==p.saleId)return;
             await finish(c,saved);parked.clear();w.localStorage.removeItem(key(c));
             if(awaitingCart?.saleId===saved.saleId&&w.cart===awaitingCart.cart&&voidCanonical(w.cart)===voidCanonical(saved.cart)){
-                w.cart=[];if(w.platformCarts)w.platformCarts[w.posPlatform||'Standard']=w.cart;
+                w.cart=[];clearMobileOrder(w);if(w.platformCarts)w.platformCarts[w.posPlatform||'Standard']=w.cart;
                 w.renderCart?.();resetCheckoutForNextOrder(w,d);w.closeModal?.('checkoutModal');
             }
             awaitingCart=null;correction=null;
@@ -219,7 +239,7 @@ export function installOwnerPOS(w,d){
                 try{resetCheckoutForNextOrder(w,d);}catch(error){console.warn('Owner receipt saved; payment controls will reset on the next order.',error);}
                 return result;
             });
-        }catch(e){return {status:persisted?'owner-pending':'failed',error:e.message};}
+        }catch(e){return {status:persisted&&e.code!=='owner-order-changed'?'owner-pending':'failed',error:e.message};}
     }
     async function changeReceipt(id,receiptId){
         if(busy)return;busy=true;

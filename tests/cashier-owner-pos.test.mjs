@@ -95,3 +95,19 @@ test('checkout detects a parked order already picked up on the store tablet befo
     h.put(path,{branch:c.branch,items:[{...item,qty:3}],name:'Table 5',total:195});
     const paid=await punch();assert.equal(paid.status,'failed');assert.equal(h.get('inventory/F').currentStock,20);
 });
+
+test('a store pickup between preparation and commit clears only the superseded Owner payment',async()=>{
+    const {w,h,pos,c,punch,storage}=await fixture(),path='parked_orders/shared';
+    h.put(path,{branch:c.branch,items:[item],name:'Table 6',total:65});w.cart=[];await pos.parked.resumeOrder('shared');
+    const save=w.localStorage.setItem;
+    w.localStorage.setItem=(key,value)=>{save(key,value);h.docs.delete(path);};
+    const result=await punch();assert.equal(result.status,'failed',result.error);assert.equal(storage.size,0);assert.equal(h.get('inventory/F').currentStock,20);
+});
+test('a mobile payment already recorded on another terminal is reported as paid at the store',async()=>{
+    const {w,h,pos,c,storage}=await fixture(),id='remote',path='incoming_orders/'+id;
+    h.put(path,{branch:c.branch,orderCode:'M-2',status:'preparing',items:[item]});
+    const input={branch:c.branch,shiftId:'CURRENT',cart:w.cart,netTotal:65,orderType:'Take-Out',paymentMethod:'Cash',isMobileOrder:true,mobileOrderId:id,mobileOrderCode:'M-2'};
+    const save=w.localStorage.setItem;
+    w.localStorage.setItem=(key,value)=>{save(key,value);const payload=JSON.parse(value);h.put('transactions/'+payload.saleId,{...payload,ownerUid:null,cashier:'Branch cashier'});h.put(path,{...h.get(path),paymentStatus:'paid',receiptId:'M-2'});};
+    const result=await pos.checkout(input);assert.equal(result.status,'failed');assert.match(result.error,/store already recorded/);assert.equal(storage.size,0);assert.equal(h.get('inventory/F').currentStock,20);
+});

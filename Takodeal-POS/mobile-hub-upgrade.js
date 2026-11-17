@@ -49,7 +49,7 @@ export function installMobileHubUpgrade(w=window,d=document){
    const owner=mobileOwnerContext(w),db=owner?.db||w.db;
    const current=()=>{if(epoch!==listenerEpoch||session!==w.sessionUser)return false;try{owner?.assertCurrent();return true;}catch{return false;}};
    listeningSession=session;void loadSettings(branch,db);
-   if(owner)stopSettings=w.cashierOwnerPOS?.watchOrderSettings(owner);
+   if(owner)stopSettings=w.cashierOwnerPOS?.watchOrderSettings?.(owner);
    w.mobileOrdersUnsubscribe=w.onSnapshot(w.query(w.collection(db,'incoming_orders'),w.where('branch','==',branch),w.where('status','in',['mobile_queue','preparing','ready','out_for_delivery'])),snapshot=>{
     if(!current())return;
     w.mobileOrdersList=rows(snapshot).filter(order=>order.branch===branch);

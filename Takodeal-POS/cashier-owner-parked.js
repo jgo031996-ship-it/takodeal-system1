@@ -15,7 +15,7 @@ export function installOwnerParked(w,d,{context,shift,exclusive,discard,blocked}
     async function available(tx,c,order){
         const row=await tx.get(ref(c,order.id));
         if(!row.exists()||row.data().branch!==c.branch||contents(row.data())!==order.contents)
-            throw Error('This parked order was changed or picked up at the store. Reopen Parked orders.');
+            throw Object.assign(Error('This parked order was changed or picked up at the store. Reopen Parked orders.'),{code:'owner-order-changed'});
     }
     async function run(fn){
         try{
