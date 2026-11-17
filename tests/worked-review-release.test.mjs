@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 const sync=JSON.parse(readFileSync(new URL('fixtures/employee-live-sync.json',import.meta.url),'utf8'));
 const onboarding=JSON.parse(readFileSync(new URL('fixtures/staff-phone-onboarding.json',import.meta.url),'utf8'));
+const stockReview=JSON.parse(readFileSync(new URL('fixtures/branch-item-sync-review.json',import.meta.url),'utf8'));
 const root=new URL('../',import.meta.url);
 const pin=JSON.parse(readFileSync(new URL('fixtures/worked-review-release.json',import.meta.url),'utf8'));
 const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:4e6}).trim();
@@ -38,10 +39,31 @@ test('employee profile sync matches the reviewed scope and exact production pare
 });
 
 test('staff phone onboarding matches the reviewed scope and exact production parent',()=>{
- const paths=[git('diff','--name-only',onboarding.parent,'--',...scope),git('ls-files','--others','--exclude-standard','--',...scope)].flatMap(list=>list.split(/\r?\n/)).filter(Boolean).sort();
+ const paths=git('diff','--name-only',onboarding.parent,stockReview.parent,'--',...scope).split(/\r?\n/).filter(Boolean).sort();
  assert.deepEqual(paths,Object.keys(onboarding.files).sort());
  for(const [file,row] of Object.entries(onboarding.files)){
   const original=git('ls-tree',onboarding.parent,'--',file).split(/\s+/)[2]||null;
+  assert.equal(original,row.before,file+' original');
+  assert.equal(git('rev-parse',stockReview.parent+':'+file),row.after,file+' released');
+ }
+});
+
+const staffPin=JSON.parse(readFileSync(new URL('fixtures/staff-pin-release.json',import.meta.url),'utf8'));
+test('branch item sync preview matches the reviewed scope and exact production parent',()=>{
+ const paths=git('diff','--name-only',stockReview.parent,staffPin.parent,'--',...scope).split(/\r?\n/).filter(Boolean).sort();
+ assert.deepEqual(paths,Object.keys(stockReview.files).sort());
+ for(const [file,row] of Object.entries(stockReview.files)){
+  const original=git('ls-tree',stockReview.parent,'--',file).split(/\s+/)[2]||null;
+  assert.equal(original,row.before,file+' original');
+  assert.equal(git('rev-parse',staffPin.parent+':'+file),row.after,file+' candidate');
+ }
+});
+
+test('personal setup and daily PIN display matches the reviewed scope and exact production parent',()=>{
+ const paths=[git('diff','--name-only',staffPin.parent,'--',...scope),git('ls-files','--others','--exclude-standard','--',...scope)].flatMap(list=>list.split(/\r?\n/)).filter(Boolean).sort();
+ assert.deepEqual(paths,Object.keys(staffPin.files).sort());
+ for(const [file,row] of Object.entries(staffPin.files)){
+  const original=git('ls-tree',staffPin.parent,'--',file).split(/\s+/)[2]||null;
   assert.equal(original,row.before,file+' original');
   assert.equal(git('hash-object','--no-filters',file),row.after,file+' candidate');
  }

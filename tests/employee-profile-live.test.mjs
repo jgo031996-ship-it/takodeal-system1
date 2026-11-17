@@ -12,6 +12,7 @@ test('an open Owner form follows only its selected employee, masks PIN state and
  node('empEmail').value='draft@example.test';
  next({exists:()=>true,data:()=>({...record,phone:'new',email:'staff@example.test',pin:'synthetic',payslipPinManaged:true,loginPinVersion:2})});
  assert.equal(node('empPhone').value,'new');assert.equal(node('empEmail').value,'draft@example.test');assert.equal(node('empPin').value,'');
+ assert.match(node('empPin').placeholder,/PIN saved/);assert.ok(!node('empPin').placeholder.includes('synthetic'));
  assert.equal(api.staffProfileBaseline.pinVersion,2);assert.match(node('employeeLiveProfileStatus').textContent,/field you are editing/);
  api.stopEmployeeProfileSync();next({exists:()=>true,data:()=>({...record,phone:'too late'})});assert.equal(stopped,1);assert.equal(node('empPhone').value,'new');
 });

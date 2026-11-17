@@ -23,6 +23,6 @@ test('branch catalog setup changes only exact reviewed Owner files and preserves
  for(const [file,expected]of Object.entries(proof.newFiles))assert.equal(sha(read(file)),expected);
 });
 test('the new catalog modules and all release entry labels are available in the same Owner app generation',()=>{
- const release='branch-inventory-20261115-r1',worker=read('takodeal-manager/sw.js');assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v163-employee-setup-20261117-r1');assert.ok(worker.includes('takodeal-manager-core-v155-'+release));assert.ok(readFileSync(new URL('takodeal-manager/sw.js',root),'utf8').includes('takodeal-manager-core-v158-plotted-payroll-20261116-r1'));assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));assert.ok(read('takodeal-manager/index.html').includes('auth.js?v='+release));
+ const release='branch-inventory-20261115-r1',worker=read('takodeal-manager/sw.js');assert.equal(OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v165-staff-pin-20261117-r1');assert.ok(worker.includes('takodeal-manager-core-v155-'+release));assert.ok(readFileSync(new URL('takodeal-manager/sw.js',root),'utf8').includes('takodeal-manager-core-v158-plotted-payroll-20261116-r1'));assert.ok(read('takodeal-manager/auth.js').includes('main.js?v='+release));assert.ok(read('takodeal-manager/index.html').includes('auth.js?v='+release));
  for(const path of Object.keys(proof.newFiles))assert.ok(worker.includes("'./"+path.split('/').pop()+"'"),path);
 });

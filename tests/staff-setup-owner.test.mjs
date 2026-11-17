@@ -53,11 +53,7 @@ function harness(request){
  const api={auth:{currentUser:owner(),onAuthStateChanged(fn){authChange=fn;}},navigator:{clipboard:{writeText:async value=>{api.copied=value;}}},Swal:{fire:async()=>({isConfirmed:true})},openEmployeeProfile(){},addNewStaff(){node('empProfileId').value='';},switchView(){},addEventListener:(event,fn)=>docEvents.set(event,fn)};
  const cryptoAPI={getRandomValues(bytes){bytes.set(Array.from({length:bytes.length},(_,i)=>i%10));return bytes;},randomUUID:()=> 'qa-operation-'+(++n)};
  const controller=installStaffSetupCodes(api,d,{request,cryptoAPI,observe:class{constructor(fn){mutation=fn;}observe(){}}});
- return{api,d,node,controller,docEvents,events,mutation:()=>mutation(),authChange:()=>authChange(),click:async id=>{
-  const wasPending=node('staffSetupCodeGenerate').textContent==='Retry same code';
-  await events.get(id+':click')?.();
-  if(id==='staffSetupCodeGenerate'&&!wasPending&&node(id).textContent==='Save Data to apply')return controller.profileSaved(node('empProfileId').value);
- }};
+ return{api,d,node,controller,docEvents,events,mutation:()=>mutation(),authChange:()=>authChange(),click:id=>events.get(id+':click')?.()};
 }
 const metadata={staffId:'employee-a',enabled:false,version:0};
 test('only server confirmation reveals code, retry retains exact code and operation after lost acknowledgement',async()=>{
@@ -152,12 +148,12 @@ test('protected phone confirmation can cancel before any server operation is cre
 test('protected lost-delete retry keeps the already confirmed operation without rereading or reconfirming a missing mirror',async()=>{const calls=[];let reads=0,confirms=0;const h=harness(async(route,body)=>{calls.push({...body});if(calls.length===1)throw Error('Delete acknowledgement lost');return{deviceId:body.deviceId,status:'Deleted'};});h.api.db={};h.api.doc=()=>'';h.api.getDocFromServer=async()=>{reads++;return{exists:()=>reads===1,data:()=>({appType:'Staff',setupVersion:1}),metadata:{}};};const confirm=async()=>{confirms++;return true;};await assert.rejects(h.controller.routeDeviceChange('DEV-QA','delete',()=>assert.fail('Unexpected legacy delete'),confirm),/acknowledgement lost/);await h.controller.routeDeviceChange('DEV-QA','delete',()=>assert.fail('Unexpected legacy delete'),confirm);assert.equal(reads,1);assert.equal(confirms,1);assert.deepEqual(calls[0],calls[1]);});
 test('changing Owner during protected phone confirmation aborts before the server operation',async()=>{const calls=[];const h=harness(async(route,body)=>{calls.push({route,body});return{ok:true};});h.api.db={};h.api.doc=()=>'';h.api.getDocFromServer=async()=>({exists:()=>true,data:()=>({appType:'Staff',setupVersion:1}),metadata:{}});await assert.rejects(h.controller.routeDeviceChange('DEV-QA','block',()=>assert.fail('Unexpected legacy path'),async()=>{h.api.auth.currentUser=null;return true;}),/account changed/);assert.equal(calls.length,0);});
 
-test('replacement takes effect after profile save; switching tabs restores only the confirmed employee version',async()=>{
+test('replacement takes effect from the real button; switching tabs restores only the confirmed employee version',async()=>{
  let state={...metadata,enabled:true,version:4},writes=0;
  const h=harness(async(route,body)=>{if(route==='code-status')return {...state,staffId:body.staffId};
   writes++;return state={...state,version:state.version+1};});
  await h.controller.loadProfile();await h.events.get('staffSetupCodeGenerate:click')();
- assert.equal(writes,0);assert.equal(h.node('staffSetupCodeResult').hidden,true);
+ assert.equal(writes,1);assert.equal(h.node('staffSetupCodeResult').hidden,false);
  await h.controller.profileSaved('employee-a');assert.equal(writes,1);
  h.d.hidden=true;h.docEvents.get('visibilitychange')();assert.equal(h.node('staffSetupCodeValue').textContent,'');
  h.d.hidden=false;h.docEvents.get('visibilitychange')();await new Promise(setImmediate);

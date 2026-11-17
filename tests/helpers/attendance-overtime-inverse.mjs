@@ -1,4 +1,5 @@
 import {normalizePlottedRelease} from './plotted-release-inverse.mjs';
+import {beforeWorkedReview} from './worked-review-source.mjs';
 import {isCommissaryModule} from './commissary-inverse.mjs';
 import {isHistoricalManualAttendanceChange} from './manual-attendance-simple-inverse.mjs';
 import {branchInventorySetupProof,restoreBranchInventorySetup} from './branch-inventory-setup-inverse.mjs';
@@ -23,7 +24,11 @@ export function restoreAttendanceOvertime(source,file){
 export function isHistoricalOwnerChange(file,base){
  if(!isHistoricalManualAttendanceChange(file,base))return false;
  if(isCommissaryModule(file))return false;
- if(Object.hasOwn(branchInventorySetupProof.newFiles,file)){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.equal(overtimeSha(source),branchInventorySetupProof.newFiles[file],'Exact branch inventory module: '+file);return false;}
+ if(Object.hasOwn(branchInventorySetupProof.newFiles,file)){
+  const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');
+  assert.equal(overtimeSha(beforeWorkedReview(source,file)),branchInventorySetupProof.newFiles[file],'Exact branch inventory module: '+file);
+  return false;
+ }
  if(Object.hasOwn(branchInventorySetupProof.files,file)&&!attendanceOvertimeProof.files[file]&&!scheduleCrossBranchProof.files[file]){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.notEqual(restoreBranchInventorySetup(source,file),source,'Exact branch inventory layer: '+file);return false;}
  if(Object.hasOwn(scheduleCrossBranchProof.files,file)&&!attendanceOvertimeProof.files[file]&&!attendanceOvertimeProof.newFiles[file]){const source=readFileSync(new URL('../../'+file,import.meta.url),'utf8');assert.notEqual(restoreScheduleCrossBranch(source,file),source,'The exact scoped schedule change is inverted: '+file);return false;}
  if(!attendanceOvertimeProof.files[file]&&!attendanceOvertimeProof.newFiles[file])return true;
