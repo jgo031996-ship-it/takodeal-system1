@@ -1,3 +1,4 @@
+import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {activeAccessStaff} from './access-model.mjs';
 import {randomBytes,pbkdf2 as pbkdf2Callback,timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
@@ -12,9 +13,7 @@ export function createStaffPrivateProfileStore(db,{now=Date.now,serverTimestamp}
  if(typeof db?.runTransaction!=='function'||typeof db?.doc!=='function'||typeof serverTimestamp!=='function')throw Error('A trusted private profile database is required.');
  async function authority(tx,input,actor){
   if(actor?.firebase?.sign_in_provider!=='anonymous'||!profileId(actor?.uid))denied();
-  const [configSnap,bindingSnap,profileSnap]=await Promise.all(['staff_document_config/current','staff_document_devices/'+actor.uid,'cashiers/'+input.staffId].map(path=>tx.get(db.doc(path))));
-  const config=configSnap.exists?configSnap.data():null,binding=bindingSnap.exists?bindingSnap.data():null,profile=profileSnap.exists?profileSnap.data():null;
-  if(config?.enabled!==true||config.policyVersion!==2||config.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||binding?.active!==true||binding.uid!==actor.uid||binding.staffId!==input.staffId||binding.deviceId!==input.deviceId||!activeAccessStaff(profile)||binding.branch!==profile.branch)denied();
+  const profileSnap=await readPrivateStaffPhone(tx,db,{uid:actor.uid,...input},denied);
   return profileSnap;
  }
  async function read(body,actor){const input=profileIntent('read',body);return db.runTransaction(async tx=>{

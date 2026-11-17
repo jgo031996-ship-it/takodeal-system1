@@ -1,3 +1,4 @@
+import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {createHash} from 'node:crypto';
 import {buildStaffLoanLedgerSnapshot} from './staff-loan-ledger-model.mjs';
 const deny=()=>{throw Object.assign(Error('Use your personally approved Staff phone. Ask HQ to check private access.'),{status:403,code:'staff-loans/approval'});};
@@ -12,10 +13,8 @@ export function createStaffLoanLedgerStore(db,{now=Date.now}={}){
  if(typeof db?.runTransaction!=='function'||typeof db?.doc!=='function'||typeof db?.collection!=='function')throw Error('A trusted loan database is required.');
  async function authority(tx,{uid,staffId,deviceId}){
   if(!id(uid)||!id(staffId)||!/^DEV-[A-Z0-9-]{6,80}$/.test(deviceId||''))deny();
-  const refs=['staff_document_config/current','staff_document_devices/'+uid,'cashiers/'+staffId];
-  const [configSnap,bindingSnap,profileSnap]=await Promise.all(refs.map(path=>tx.get(db.doc(path))));
-  const config=configSnap.exists?configSnap.data():null,binding=bindingSnap.exists?bindingSnap.data():null,profile=profileSnap.exists?profileSnap.data():null;
-  if(config?.enabled!==true||config.policyVersion!==2||config.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||binding?.active!==true||binding.uid!==uid||binding.staffId!==staffId||binding.deviceId!==deviceId||inactive(profile)||!text(profile.cashierName)||!text(profile.branch)||binding.branch!==profile.branch)deny();
+  const snapshot=await readPrivateStaffPhone(tx,db,{uid,staffId,deviceId},deny),profile=snapshot.data();
+  if(inactive(profile)||!text(profile.cashierName)||!text(profile.branch))deny();
   return profile;
  }
  async function read(scope){
