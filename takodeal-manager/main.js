@@ -23965,7 +23965,7 @@ window.openEmployeeProfile = function(docId) {
     setVal('empDateHired', data.dateHired || '');
     setVal('empHourlyRate',data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data)??'');
     setVal('empRateEffectiveDate',new Date(Date.now()+8*3600000).toISOString().slice(0,10));
-    setVal('empPin', data.pin || '');
+    setVal('empPin', '');
     
     let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
     setVal('empNightDiffRate', data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate);
@@ -24002,7 +24002,7 @@ window.openEmployeeProfile = function(docId) {
 
     let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
     let picEl = document.getElementById('masterProfilePic');
-    if (picEl) picEl.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
+    if (picEl) { if (picEl.dataset) picEl.dataset.defaultAvatar = defaultPic; picEl.src = data.profilePicUrl || defaultPic; }
 
     const setupLink = (linkId, url) => {
         let el = document.getElementById(linkId);
@@ -24107,7 +24107,7 @@ window.saveEmployeeProfile = async function() {
     let pin = document.getElementById('empPin').value.trim();
     let nightRate = parseFloat(document.getElementById('empNightDiffRate').value) || 0;
 
-    if (!name || document.getElementById('empHourlyRate').value.trim()==='' || !Number.isFinite(rate) || rate<0 || !pin || pin.length < 4) {
+    if (!name || document.getElementById('empHourlyRate').value.trim()==='' || !Number.isFinite(rate) || rate<0 || ((!docId || pin) && pin.length < 4)) {
         window.ManagerUI.notify('Staff name, valid Daily Rate and a PIN of at least 4 characters are required.');
         if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = true;
         return;
@@ -24147,7 +24147,7 @@ window.saveEmployeeProfile = async function() {
         roleHistory: currentHistory,
         dateHired: document.getElementById('empDateHired').value,
         hourlyRate: rate,
-        pin: pin,
+        ...(pin?{pin}:{}),
         customDeductions: customDeductionsArray,
         nightDiffRate: nightRate,
         eligibleNightDiff: nightRate > 0, 
@@ -24209,7 +24209,7 @@ window.saveEmployeeProfile = async function() {
     payload.empId=empId;
     if(!sameActor())throw Error('The Google account changed before this staff save. Reopen the profile.');
     const operationId=staffProfileOperation(window,payload,reference.id,{effectiveDate});
-        const saved=await saveStaffProfileAtomic(window,reference.id,payload,{operationId,expectedExists:baseline.exists,expectedRate:baseline.rate,expectedRateRevision:baseline.rateRevision,effectiveDate});
+        const saved=await saveStaffProfileAtomic(window,reference.id,payload,{operationId,expectedExists:baseline.exists,expectedRate:baseline.rate,expectedRateRevision:baseline.rateRevision,expectedShared:baseline.shared,expectedPinVersion:baseline.pinVersion,effectiveDate});
         docId=reference.id;
         if(ownsForm()){
             document.getElementById('empProfileId').value=docId;formSelection=docId;

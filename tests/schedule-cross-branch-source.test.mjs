@@ -32,4 +32,4 @@ test('the page, entry module, service worker and update notice identify the same
  const html=read('takodeal-manager/index.html');assert.ok(html.includes('content="'+release+'"'));assert.ok(html.includes('auth.js?v='+release));
 });
 
-test('current document release matches this compatibility generation',()=>assert.equal(LIVE_OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v161-inbox-actions-20261116-r1'));
+test('current document release matches this compatibility generation',()=>assert.equal(LIVE_OWNER_DOCUMENT_RELEASE,'takodeal-manager-core-v162-employee-sync-20261117-r1'));
