@@ -118,3 +118,26 @@ test('Live Stocks shows the preview before any sync and closing it keeps stock u
  const page=readFileSync(new URL('../takodeal-manager/index.html',import.meta.url),'utf8');
  assert.match(page,/reviewBranchItemSync\(\)[^\n]*Branch item sync[\s\S]{0,850}csvInvUpload/);
 });
+
+test('choosing a registered branch and confirming creates only missing items and refreshes the stock list',async()=>{
+ const f=fixture({items:[item('Added','Main Office'),item('Existing','Main Office'),item('Existing',branch,{currentStock:17})]});
+ f.api.document={getElementById:()=>({value:'All'}),createElement:()=>({style:{},append(){}})};
+ let refreshes=0;
+ const dialogs=[];
+ f.api.refreshInventoryStocks=async()=>{refreshes++;};
+ f.api.Swal.fire=async options=>{
+  dialogs.push(options);
+  if(options.input==='select'){
+   assert.equal(options.inputOptions.get(branch),branch);
+   return {isConfirmed:true,value:branch};
+  }
+  return {isConfirmed:options.confirmButtonText==='Add 1 missing item'};
+ };
+ await f.api.reviewBranchItemSync();
+ assert.equal(dialogs[0].showConfirmButton,false);
+ assert.equal(dialogs[0].didOpen,undefined);
+ assert.equal(dialogs.at(-1).icon,'success');
+ assert.equal(refreshes,1);
+ assert.equal(f.h.get('inventory/'+await branchInventoryId(branch,'Added')).currentStock,0);
+ assert.equal(f.inventory().find(row=>row.branch===branch&&row.name==='Existing').currentStock,17);
+});

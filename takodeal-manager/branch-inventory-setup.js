@@ -89,7 +89,7 @@ export function installBranchInventorySetup(api){
   try{
    const actor=branchInventoryActor(api),user=api.auth.currentUser,session=api.sessionUser;
    const guard=()=>{if(api.auth.currentUser!==user||api.sessionUser!==session||branchInventoryActor(api)!==actor)throw Error('Your HQ session changed. Reopen Branch item sync.');};
-   api.Swal.fire({titleText:'Checking the stock catalog',allowOutsideClick:false,didOpen:()=>api.Swal.showLoading()});
+   api.Swal.fire({titleText:'Checking the stock catalog',allowOutsideClick:false,showConfirmButton:false});
    const data=await service.directory(guard);
    const choices=data.branches.filter(row=>activeInventoryBranch(row)&&row.name!=='Main Office'&&api.isBranchAllowed(row.name)).map(row=>row.name).sort((a,b)=>a.localeCompare(b));
    if(!choices.length)throw Error('No active store branches are available to review.');
@@ -104,7 +104,7 @@ export function installBranchInventorySetup(api){
    const decision=await api.Swal.fire({titleText:'Item sync · '+branch,html:reviewItems(api.document,summary),showCancelButton:true,cancelButtonText:'Close',showConfirmButton:count>0,confirmButtonText:'Add '+count+' missing item'+(count===1?'':'s'),focusCancel:true});
    if(!decision.isConfirmed||!count)return;
    guard();
-   api.Swal.fire({titleText:'Adding missing items to '+branch,allowOutsideClick:false,didOpen:()=>api.Swal.showLoading()});
+   api.Swal.fire({titleText:'Adding missing items to '+branch,allowOutsideClick:false,showConfirmButton:false});
    const result=await service.ensure(branch,{assertCurrent:guard,reviewedCreates:summary.plan.creates});guard();
    await api.refreshInventoryStocks?.();guard();
    await api.Swal.fire({titleText:'Item sync · '+branch,text:result.created+' items added with zero stock. '+result.kept+' existing item names kept. '+result.issues.length+' need review.',icon:result.ready?'success':'warning'});

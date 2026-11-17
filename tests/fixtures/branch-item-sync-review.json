@@ -3,7 +3,7 @@
   "files": {
     "takodeal-manager/branch-inventory-setup.js": {
       "before": "6610ac4d31e854e6163f938154057a7cae2dcf76",
-      "after": "4f47b3b21cc10580f201e583c2a932996261ef0d"
+      "after": "837cbf311cd8ba5a832f0b3b7dda50cd888bd4b2"
     },
     "takodeal-manager/index.html": {
       "before": "8c4feadbb4aa6b66f3db53c3b055ebef4891f68c",
