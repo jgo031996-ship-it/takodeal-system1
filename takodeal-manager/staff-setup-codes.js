@@ -37,7 +37,15 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
     if(api.staffSetupCodes)return api.staffSetupCodes;
     const el=id=>d.getElementById(id),profileID=()=>el('empProfileId')?.value||'',visible=()=>!d.hidden&&el('employeeProfileModal')?.style.display!=='none';
     let epoch=0,profileState=null,pending=null,secret='',profileBusy=false,policy=null,policyBusy=false,policyEpoch=0,pendingPolicy=null,usage=null,usageBusy=false,usageEpoch=0,usageError='';
-    const devicePending=new Map();
+    // Only the signed-in Owner tab retains the handoff. The employee record and browser storage never contain the readable setup code.
+    const handoffs=new Map(),devicePending=new Map();
+    const handoffKey=id=>JSON.stringify([actorKey(api),id]);
+    function showConfirmed(entry){
+        secret=entry.code;
+        text('staffSetupCodeValue',secret.slice(0,5)+' '+secret.slice(5));
+        if(el('staffSetupCodeResult'))el('staffSetupCodeResult').hidden=false;
+        text('staffSetupCodeStatus','Ready. Copy the private setup link for this employee.');
+    }
     const text=(id,value)=>{const node=el(id);if(node)node.textContent=value;};
     const hideSecret=()=>{secret='';text('staffSetupCodeValue','');if(el('staffSetupCodeResult'))el('staffSetupCodeResult').hidden=true;};
     function renderUsage(){
@@ -47,10 +55,10 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
     }
     function profileControls(){
         const owner=isSetupOwner(api.auth?.currentUser),ready=owner&&!!profileID()&&codeStatus(profileState)&&!profileBusy;
-        if(el('staffSetupCodeGenerate')){el('staffSetupCodeGenerate').disabled=!ready;el('staffSetupCodeGenerate').textContent=profileBusy?'Saving…':pending?'Retry same code':profileState?.version?'Replace setup code':'Generate setup code';}
+        if(el('staffSetupCodeGenerate')){el('staffSetupCodeGenerate').disabled=!ready;el('staffSetupCodeGenerate').textContent=profileBusy?'Saving…':pending?(pending.sent?'Retry same code':'Save Data to apply'):profileState?.version?'Replace setup code':'Generate setup code';}
         if(el('staffSetupCodeDisable'))el('staffSetupCodeDisable').disabled=!ready||!profileState?.enabled||!!pending;
         if(el('staffSetupCodeRefresh'))el('staffSetupCodeRefresh').disabled=profileBusy||!owner||!!pending;
-        if(el('staffSetupCodeCopy'))el('staffSetupCodeCopy').disabled=!secret;
+        for(const id of ['staffSetupCodeCopy','staffSetupLinkCopy'])if(el(id))el(id).disabled=!secret;
         if(el('staffSetupUsageRefresh'))el('staffSetupUsageRefresh').disabled=profileBusy||usageBusy||!owner||!profileID();
     }
     function clear(){epoch++;usageEpoch++;profileState=null;pending=null;profileBusy=false;usage=null;usageBusy=false;usageError='';hideSecret();renderUsage();profileControls();}
@@ -60,7 +68,16 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
         if(!id){text('staffSetupCodeStatus','Save the employee profile before generating a personal setup code.');return;}
         if(!isSetupOwner(api.auth?.currentUser)){text('staffSetupCodeStatus','Only the verified Owner can generate or disable personal setup codes.');return;}
         text('staffSetupCodeStatus','Checking this employee’s setup code…');
-        try{const result=await request('code-status',{staffId:id});if(!same(token,id,key))return;if(!codeStatus(result)||result.staffId!==id)throw Error('HQ returned an invalid code status. Refresh before continuing.');profileState=result;usage=setupDeviceUsage(result);renderUsage();text('staffSetupCodeStatus',result.enabled?'Personal setup code is enabled. The saved code is private; replace it if the staff member needs a new copy.':result.version?'Personal setup code is disabled. Existing activated phones remain separate.':'No personal setup code has been issued.');}
+        try{const result=await request('code-status',{staffId:id});if(!same(token,id,key))return;if(!codeStatus(result)||result.staffId!==id)throw Error('HQ returned an invalid code status. Refresh before continuing.');profileState=result;usage=setupDeviceUsage(result);renderUsage();text('staffSetupCodeStatus',result.enabled?'Personal setup code is enabled. The saved code is private; replace it if the staff member needs a new copy.':result.version?'Personal setup code is disabled. Existing activated phones remain separate.':'No personal setup code has been issued.');
+            const cacheKey=handoffKey(id),entry=handoffs.get(cacheKey);
+            if(entry?.confirmed){
+                if(result.enabled&&entry.version===result.version)showConfirmed(entry);
+                else handoffs.delete(cacheKey);
+            }else if(entry){
+                pending=entry;
+                text('staffSetupCodeStatus',entry.sent?'Profile saved. Retry the same code to confirm activation details.':'Choose Save Data to apply the new setup code.');
+            }
+        }
         catch(error){if(same(token,id,key))text('staffSetupCodeStatus',error.message||'Setup codes are unavailable. Reconnect and refresh.');}
         finally{if(same(token,id,key))profileControls();}
     }
@@ -75,29 +92,58 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
             // an explicit newer code decision can invalidate that code; a read
             // started before local issuance cannot overwrite its newer state.
             if(!pending&&profileState?.version===startVersion&&(result.version!==startVersion||result.enabled!==profileState.enabled)){
-                profileState=result;hideSecret();text('staffSetupCodeStatus','The personal setup code status changed at HQ. The shown code has been cleared; check the current status before giving out another code.');
+                profileState=result;handoffs.delete(handoffKey(id));hideSecret();text('staffSetupCodeStatus','The personal setup code status changed at HQ. The shown code has been cleared; check the current status before giving out another code.');
             }
         }catch(error){if(same(token,id,key)&&read===usageEpoch)usageError=error.message||'Phone usage could not refresh.';}
         finally{if(same(token,id,key)&&read===usageEpoch){usageBusy=false;renderUsage();profileControls();}}
     }
     async function confirm(title,body,button){const result=await api.Swal.fire({title,text:body,icon:'question',showCancelButton:true,confirmButtonText:button,confirmButtonColor:'#146551'});return result.isConfirmed;}
+    function newHandoff(id,expectedVersion){
+        return {body:{staffId:id,expectedVersion,code:generateStaffSetupCode(cryptoAPI),operationId:operationID(cryptoAPI)},sent:false};
+    }
+    async function profileSaved(id,created=false){
+        if(!isSetupOwner(api.auth?.currentUser))return null;
+        const k=handoffKey(id),actor=api.auth.currentUser;
+        let entry=handoffs.get(k);
+        if(!entry&&created){entry=newHandoff(id,0);handoffs.set(k,entry);}
+        if(!entry||entry.confirmed)return null;
+        if(entry.flight)return entry.flight;
+        entry.sent=true;
+        const current=()=>api.auth.currentUser===actor&&handoffs.get(k)===entry&&k===handoffKey(id);
+        const selected=()=>current()&&visible()&&profileID()===id;
+        const work=(async()=>{
+            try{
+                const result=await request('issue-code',entry.body);
+                if(!current())return null;
+                if(!codeStatus(result)||result.staffId!==id||!result.enabled||result.version!==entry.body.expectedVersion+1)throw Error('Retry to confirm the saved code.');
+                const confirmed={confirmed:true,code:entry.body.code,version:result.version};
+                if(selected()){profileState=result;pending=null;showConfirmed(confirmed);profileControls();}
+                handoffs.set(k,confirmed);
+                return {ready:true,message:'Employee profile saved. Private setup link ready to copy.'};
+            }catch(error){
+                if(!current())return null;
+                if(error.status===409){handoffs.delete(k);if(visible()&&profileID()===id)await loadProfile();
+                    return {ready:false,message:'Employee profile saved. Setup changed elsewhere. Check the current code status.'};}
+                if(selected()){pending=entry;text('staffSetupCodeStatus','Profile saved. Setup code not confirmed. Retry the same code to finish phone setup.');profileControls();}
+                return {ready:false,message:'Employee profile saved. Retry the same code to finish phone setup.'};
+            }
+        })();
+        entry.flight=work;
+        try{return await work;}finally{delete entry.flight;}
+    }
     async function issue(){
         if(profileBusy||!codeStatus(profileState)||!isSetupOwner(api.auth?.currentUser))return;
-        const token=epoch,id=profileID(),key=actorKey(api);if(!same(token,id,key))return;
-        profileBusy=true;profileControls();hideSecret();
+        const token=epoch,id=profileID(),key=actorKey(api);
+        if(!same(token,id,key))return;
+        profileBusy=true;profileControls();
         try{
-            if(!pending){
-                if(profileState.version&&!await confirm('Replace this personal setup code?','The old code will stop activating new or reset phones. Already activated phones will stay active.','Replace code'))return;
-                if(!same(token,id,key))return;
-                pending={staffId:id,code:generateStaffSetupCode(cryptoAPI),expectedVersion:profileState.version,operationId:operationID(cryptoAPI)};
-            }
-            text('staffSetupCodeStatus','Saving the personal setup code with HQ…');
-            const result=await request('issue-code',pending);if(!same(token,id,key))return;
-            if(!codeStatus(result)||result.staffId!==id||result.enabled!==true||result.version!==pending.expectedVersion+1)throw Error('HQ has not confirmed this exact code. Retry the same code.');
-            secret=pending.code;pending=null;profileState=result;text('staffSetupCodeValue',secret.slice(0,5)+' '+secret.slice(5));if(el('staffSetupCodeResult'))el('staffSetupCodeResult').hidden=false;
-            text('staffSetupCodeStatus','Setup code saved. Give it privately to this employee. It is shown here only until you leave or close this profile.');
-        }catch(error){if(same(token,id,key)){if(error.status===409){pending=null;hideSecret();await loadProfile();}else text('staffSetupCodeStatus',error.message||'No code change was confirmed. Retry the same code.');}}
-        finally{if(same(token,id,key)){profileBusy=false;profileControls();}}
+            if(pending?.sent){await profileSaved(id);return;}
+            if(pending){text('staffSetupCodeStatus','Choose Save Data to apply the new setup code.');return;}
+            if(profileState.version&&!await confirm('Replace this personal setup code?','Choose Save Data to apply the replacement. Already activated phones stay active.','Prepare replacement'))return;
+            if(!same(token,id,key))return;
+            pending=newHandoff(id,profileState.version);handoffs.set(handoffKey(id),pending);hideSecret();
+            text('staffSetupCodeStatus','Choose Save Data to apply the new setup code.');
+        }finally{if(same(token,id,key)){profileBusy=false;profileControls();}}
     }
     async function disable(){
         if(profileBusy||pending||!profileState?.enabled||!isSetupOwner(api.auth?.currentUser))return;
@@ -106,11 +152,12 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
             if(!await confirm('Disable this personal setup code?','New or reset phones will be unable to activate with this code. Existing phones stay active; block a phone separately in Staff & POS devices.','Disable code')||!same(token,id,key))return;
             hideSecret();const result=await request('disable-code',{staffId:id,expectedVersion,operationId:operationID(cryptoAPI)});if(!same(token,id,key))return;
             if(!codeStatus(result)||result.staffId!==id||result.enabled||result.version!==expectedVersion+1)throw Error('The disable action was not confirmed. Refresh the code status.');
-            profileState=result;hideSecret();text('staffSetupCodeStatus','Personal setup code disabled. Existing phones have not been blocked.');
+            profileState=result;handoffs.delete(handoffKey(id));hideSecret();text('staffSetupCodeStatus','Personal setup code disabled. Existing phones have not been blocked.');
         }catch(error){if(same(token,id,key)){if(error.status===409){hideSecret();await loadProfile();}else text('staffSetupCodeStatus',error.message||'Disable was not confirmed. Refresh before retrying.');}}
         finally{if(same(token,id,key)){profileBusy=false;profileControls();}}
     }
-    async function copy(){const id=profileID(),key=actorKey(api),value=secret,token=epoch;if(!value||!same(token,id,key))return;try{await api.navigator.clipboard.writeText(value);if(same(token,id,key))text('staffSetupCodeStatus','Code copied. Share it privately with this employee; do not post it in a group chat.');}catch{if(same(token,id,key))text('staffSetupCodeStatus','Copy is unavailable. Read the ten digits shown and give them privately to this employee.');}}
+    async function copy(link=false){const id=profileID(),key=actorKey(api),value=secret,token=epoch;if(!value||!same(token,id,key))return;try{const target=link?'https://takodeal-staff.vercel.app/#staff-setup='+encodeURIComponent(id)+'.'+value:value;
+        await api.navigator.clipboard.writeText(target);if(same(token,id,key))text('staffSetupCodeStatus',link?'Private setup link copied. Send it directly to this employee.':'Code copied. Give it privately to this employee.');}catch{if(same(token,id,key))text('staffSetupCodeStatus','Copy is unavailable. Read the ten digits shown and give them privately to this employee.');}}
     function policyControls(){const owner=isSetupOwner(api.auth?.currentUser),ready=owner&&policyStatus(policy)&&!policyBusy;for(const id of ['staffSetupPolicyEnable','staffSetupPolicyPause'])if(el(id))el(id).disabled=!ready;if(el('staffSetupPolicyEnable'))el('staffSetupPolicyEnable').hidden=policy?.enabled===true;if(el('staffSetupPolicyPause'))el('staffSetupPolicyPause').hidden=policy?.enabled!==true;if(el('staffSetupPolicyRefresh'))el('staffSetupPolicyRefresh').disabled=policyBusy||!owner;}
     async function loadPolicy(){
         const token=++policyEpoch,key=actorKey(api);policy=null;pendingPolicy=null;policyBusy=false;policyControls();
@@ -151,13 +198,13 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
         try{const result=await request('device-action',operation);if(actorKey(api)!==key)throw Error('Your account changed. Refresh the device list.');devicePending.delete(pendingKey);return result;}
         catch(error){if(error.status===409){devicePending.delete(pendingKey);if(actorKey(api)===key)api.loadDeviceFleet?.();}throw error;}
     }
-    el('staffSetupCodeGenerate')?.addEventListener('click',issue);el('staffSetupCodeDisable')?.addEventListener('click',disable);el('staffSetupCodeRefresh')?.addEventListener('click',loadProfile);el('staffSetupCodeCopy')?.addEventListener('click',copy);el('staffSetupUsageRefresh')?.addEventListener('click',loadUsage);
+    el('staffSetupCodeGenerate')?.addEventListener('click',issue);el('staffSetupCodeDisable')?.addEventListener('click',disable);el('staffSetupCodeRefresh')?.addEventListener('click',loadProfile);el('staffSetupCodeCopy')?.addEventListener('click',()=>copy());el('staffSetupLinkCopy')?.addEventListener('click',()=>copy(true));el('staffSetupUsageRefresh')?.addEventListener('click',loadUsage);
     el('staffSetupPolicyRefresh')?.addEventListener('click',loadPolicy);el('staffSetupPolicyEnable')?.addEventListener('click',()=>changePolicy(true));el('staffSetupPolicyPause')?.addEventListener('click',()=>changePolicy(false));
     const open=api.openEmployeeProfile;if(open)api.openEmployeeProfile=function(...args){clear();const result=open.apply(this,args);void loadProfile();return result;};
     const fresh=api.addNewStaff;if(fresh)api.addNewStaff=function(...args){clear();const result=fresh.apply(this,args);text('staffSetupCodeStatus','Save the employee profile before generating a personal setup code.');return result;};
     const switchView=api.switchView;if(switchView)api.switchView=function(view,...args){const result=switchView.call(this,view,...args);if(view==='branches')void loadPolicy();else{clear();policyEpoch++;pendingPolicy=null;policyBusy=false;}return result;};
-    const invalidate=()=>{clear();policyEpoch++;pendingPolicy=null;policyBusy=false;policy=null;devicePending.clear();policyControls();};
+    const invalidate=()=>{handoffs.clear();clear();policyEpoch++;pendingPolicy=null;policyBusy=false;policy=null;devicePending.clear();policyControls();};
     if(observe&&el('employeeProfileModal'))new observe(()=>{if(!visible())clear();}).observe(el('employeeProfileModal'),{attributes:true,attributeFilter:['style']});
-    el('empProfileId')?.addEventListener('change',clear);d.addEventListener('visibilitychange',()=>{if(d.hidden)invalidate();else if(visible()&&profileID())void loadProfile();});api.addEventListener?.('pagehide',invalidate);api.auth?.onAuthStateChanged?.(invalidate);
-    renderUsage();profileControls();policyControls();api.staffSetupCodes={loadProfile,loadUsage,loadPolicy,clear,invalidate,routeDeviceChange};return api.staffSetupCodes;
+    el('empProfileId')?.addEventListener('change',clear);d.addEventListener('visibilitychange',()=>{if(d.hidden)clear();else if(visible()&&profileID())void loadProfile();});api.addEventListener?.('pagehide',invalidate);api.auth?.onAuthStateChanged?.(invalidate);
+    renderUsage();profileControls();policyControls();api.staffSetupCodes={loadProfile,loadUsage,loadPolicy,clear,invalidate,routeDeviceChange,profileSaved};return api.staffSetupCodes;
 }

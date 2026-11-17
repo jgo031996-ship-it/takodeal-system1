@@ -116,6 +116,23 @@ test('confirmed employee profile updates and new staff saves close their own edi
     }
 });
 
+test('the Master Employee Profile issues phone setup only after the new employee and assigned PIN are saved', async () => {
+    const f=fixture({owner:true}),issued=[];
+    f.api.staffSetupCodes={profileSaved:async(id,created)=>{
+        issued.push({id,created});
+        return {ready:true,message:'Employee profile saved. Private setup link ready to copy.'};
+    }};
+    f.api.addNewStaff();
+    for(const [key,value] of Object.entries({empFullName:'Synthetic Crew',empHourlyRate:'480',empPin:'3127',profEmpId:'QA-001'}))f.node(key).value=value;
+    const failed=f.api.saveEmployeeProfile();await f.waitForSave();f.saves[0].fail();await failed;
+    assert.deepEqual(issued,[]);
+    const saved=f.api.saveEmployeeProfile();await f.waitForSave(2);assert.deepEqual(issued,[]);
+    assert.equal(f.saves[1].payload.pin,'3127');f.saves[1].finish();await saved;
+    assert.deepEqual(issued,[{id:f.saves[1].id,created:true}]);
+    assert.equal(f.node('employeeProfileModal').style.display,'flex');
+    assert.equal(f.node('btnSaveEmpProfile').disabled,false);
+});
+
 test('an unconfirmed profile save stays open with edits and closes only after a successful retry', async () => {
     const f=fixture();f.api.openEmployeeProfile('A');f.node('empPhone').value='Edited phone';
     const failed=f.api.saveEmployeeProfile();await f.waitForSave();
