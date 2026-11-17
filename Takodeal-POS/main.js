@@ -1,3 +1,5 @@
+import {enrollOwnerWorkstation} from './cashier-workstation.js';
+import {createCashierStaffAccess} from './cashier-staff-access.js';
 import {mobileOwnerContext} from './mobile-order-actions.js';
 import {createCashierMealContext} from './cashier-meal-context.js';
 import {readCashierBranchPolicy} from './cashier-branch-policy.js';
@@ -76,7 +78,8 @@ const firebaseConfig = {
   appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
 
-const app = initializeApp(firebaseConfig);
+const workstation=window.cashierWorkstation?.current;
+const app=workstation?initializeApp(firebaseConfig,window.cashierWorkstation.appName(workstation.id)):initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
@@ -143,8 +146,25 @@ const cashierMealContext=createCashierMealContext(window,{primaryAuth:auth,devic
 window.resolveCashierMealApi=options=>cashierMealContext.read(options);
 const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
 const cashierOwnerWorkspace=createCashierOwnerWorkspace(window,document,{primaryAuth:auth,primaryDb:db,firebaseConfig});
+document.addEventListener('keydown',event=>{
+    if((event.key==='Enter'||event.key===' ')&&event.target.matches?.('tr[data-staff-receipt],tr[data-owner-receipt]')){event.preventDefault();event.target.click();}
+});
 window.getCashierOwnerWorkspaceContext=()=>cashierOwnerWorkspace.current();
+const workstationStaff=workstation?createCashierStaffAccess({primaryAuth:auth,primaryDb:db,deviceContext:cashierDeviceContext,storage:window.localStorage,getSession:()=>window.sessionUser}):null;
+window.verifyWorkstationStaffPin=async(pin,valid)=>{
+    await auth.authStateReady();
+    const user=auth.currentUser;
+    const guard=()=>{if(!valid()||!user?.isAnonymous||user.uid!==workstation.uid||user!==auth.currentUser)throw Error('Reopen the saved workstation and enter the staff PIN again.');};
+    guard();const staff=await workstationStaff.login(pin,{assertCurrent:guard});guard();return staff;
+};
 window.clearCashierOwnerWorkspace=()=>cashierOwnerWorkspace.clear();
+window.openRememberedStaffSignIn=()=>{
+    const c=cashierOwnerWorkspace.current();if(!c)return;
+    c.assertCurrent();
+    if(cashierStartupBusy(window,{ownerSession:c.session})||window.cashierOwnerPOS?.hasPending())return Swal.fire('Finish this order first','Complete or park the current cart and confirm any saved payment before switching.','info');
+    const r=window.cashierWorkstation.find(c.user.uid,c.branch);
+    if(r)window.cashierWorkstation.open(r);else return window.ownerBypassLogin();
+};
 window.isCashierOwnerToolsMode=()=>cashierOwnerWorkspace.isToolsMode();
 window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 window.ensureStockAuditDevice = createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
@@ -1670,10 +1690,12 @@ window.getReceiptDetails = async function (receiptId) {
 };
 
 // --- RECEIPT DETAILS ENGINE (ULTRA MODERN DESIGN WITH DISCOUNTS) ---
-window.viewReceiptDetails = async function (receiptId) {
-    let tx = await window.getReceiptDetails(receiptId);
+window.viewReceiptDetails = async function (receiptId,selected,current=()=>true) {
+    let tx = selected || await window.getReceiptDetails(receiptId);
+    if(!current())return;
     if (!tx) { alert("Receipt not found!"); return; }
 
+    const escape=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
     let displayTotal = isCashTx ? '***' : (tx.netTotal || 0).toFixed(2);
 
@@ -1686,7 +1708,7 @@ window.viewReceiptDetails = async function (receiptId) {
                 for(let key in cartItem.addons) {
                     if(cartItem.addons[key].qty > 0) {
                         let addonName = cartItem.addons[key].name || key; 
-                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px; font-weight:bold;">+ ${cartItem.addons[key].qty}x ${addonName}</span>`;
+                        addonsText += `<br><span style="color:#d97706; font-size:11px; margin-left:10px; font-weight:bold;">+ ${escape(cartItem.addons[key].qty)}x ${escape(addonName)}</span>`;
                     }
                 }
             }
@@ -1699,14 +1721,14 @@ window.viewReceiptDetails = async function (receiptId) {
             if (variantName && (safeItemName.toLowerCase().includes(variantName.toLowerCase()) || (safeItemName.endsWith("(L)") && variantName === "L"))) {
                 variantName = ''; 
             }
-            let varHtml = variantName ? `<br><span style="font-size:11px; color:#64748b; font-style:italic; margin-left:10px;">Size: ${variantName}</span>` : '';
+            let varHtml = variantName ? `<br><span style="font-size:11px; color:#64748b; font-style:italic; margin-left:10px;">Size: ${escape(variantName)}</span>` : '';
 
-            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${cartItem.orderType}</span>` : '';
+            let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${escape(cartItem.orderType)}</span>` : '';
 
             itemsHtml += `
                 <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 10px 0;">
                     <div>
-                        <strong style="color: #334155; font-size: 13px;">${cartItem.qty}x ${safeItemName}</strong>${itemTypeBadge}
+                        <strong style="color: #334155; font-size: 13px;">${escape(cartItem.qty)}x ${escape(safeItemName)}</strong>${itemTypeBadge}
                         ${varHtml}
                         ${addonsText}
                     </div>
@@ -1722,7 +1744,7 @@ window.viewReceiptDetails = async function (receiptId) {
         let discAmountDisplay = isCashTx ? '***' : tx.globalDiscountAmount.toFixed(2);
         let rawType = tx.globalDiscountType || 'Discount';
         let discTypeStr = String(tx.mealLevelName || (rawType === 'staff_meal' ? 'Staff Meal' : (rawType === 'manager_meal' ? 'Manager Meal' : rawType.toUpperCase()))).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-        let discReasonStr = tx.globalDiscountReason ? `<br><span style="font-size: 11px; color: #fca5a5; font-style: italic;">Note: ${tx.globalDiscountReason}</span>` : '';
+        let discReasonStr = tx.globalDiscountReason ? `<br><span style="font-size: 11px; color: #fca5a5; font-style: italic;">Note: ${escape(tx.globalDiscountReason)}</span>` : '';
         
         discountHtml = `
             <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 10px; background: #fff1f2; border-radius: 6px; margin-top: 5px;">
@@ -1736,8 +1758,8 @@ window.viewReceiptDetails = async function (receiptId) {
     }
 
     let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-    let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
-    let statusBadge = tx.preparedCancellation ? '<span style="color:#b45309;font-weight:bold">Cancelled · prepared</span>' : tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
+    const safeCustomer=escape(tx.customerName||'Guest');
+    let statusBadge = tx.isPendingSync ? 'Awaiting upload' : tx.status==='Parked' ? 'Parked' : tx.preparedCancellation ? '<span style="color:#b45309;font-weight:bold">Cancelled · prepared</span>' : tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
 
     let oldModal = document.getElementById('dynamicReceiptModal');
     if (oldModal) oldModal.remove();
@@ -1749,7 +1771,7 @@ window.viewReceiptDetails = async function (receiptId) {
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 15px;">
                     <div>
                         <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900;">🧾 Receipt Details</h3>
-                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; font-weight: bold;">${tx.receiptId}</div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; font-weight: bold;">${escape(tx.receiptId)}</div>
                     </div>
                     <button onclick="document.getElementById('dynamicReceiptModal').remove()" style="background: #f1f5f9; border: none; font-size: 18px; font-weight: bold; color: #475569; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✖</button>
                 </div>
@@ -1763,7 +1785,7 @@ window.viewReceiptDetails = async function (receiptId) {
                     <div>
                         <div style="font-size: 10px; color: #64748b; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">Time & Payment</div>
                         <div style="font-size: 13px; font-weight: bold; color: #334155; margin-top: 4px;">${timeStr}</div>
-                        <div style="font-size: 13px; font-weight: 900; color: #d97706; margin-top: 4px;">${tx.paymentMethod || 'Cash'}</div>
+                        <div style="font-size: 13px; font-weight: 900; color: #d97706; margin-top: 4px;">${escape(tx.paymentMethod || 'Cash')}</div>
                     </div>
                 </div>
 
@@ -1782,6 +1804,21 @@ window.viewReceiptDetails = async function (receiptId) {
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    if(selected){
+        const modal=document.getElementById('dynamicReceiptModal'),panel=modal.firstElementChild;
+        const actions=document.createElement('div');actions.className='cashier-receipt-controls';panel.append(actions);
+        const button=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;actions.append(b);b.onclick=()=>{modal.remove();if(current())fn();};};
+        if(!tx.isPendingSync){
+            button('Print receipt',()=>window.reprintDashboardReceipt(receiptId));
+            const prepared=document.createElement('div');prepared.innerHTML=window.preparedCancellationActions?.(tx)||'';
+            for(const node of prepared.querySelectorAll('.action-item')){
+                if(!node.onclick){actions.append(node);continue;}
+                button(node.textContent,()=>node.click());
+            }
+            if(!tx.preparedCancellation&&!tx.cancelledFoodSourceId&&tx.status!=='Voided'&&tx.status!=='Parked')button('Void / correct order',()=>window.voidTx(tx.id,tx.receiptId,tx.cashier));
+        }else actions.textContent='Awaiting upload';
+        if(/^gcash$/i.test(tx.paymentMethod||'')){const v=document.createElement('p');v.textContent='GCash verification: '+(tx.paymentVerified?'Verified':'Awaiting verification');panel.insertBefore(v,actions);}
+    }
 };
 
 // ========================================================
@@ -6209,7 +6246,10 @@ window.hasSignedNTE = false;
 
 
 
-window.logoutCashier = function() {
+window.logoutCashier = async function() {
+    if(workstation&&window.sessionUser?.staffLoginSessionId){
+        try{await workstationStaff.logout();}catch(error){await Swal.fire('Cashier sign-out',error.message,'info');return;}
+    }
     if (window.cashierVoid?.blockLogout()) return;
     if (window.clearCashierOwnerWorkspace?.() === false) return;
     window.cashierVoid?.invalidate();
@@ -6223,7 +6263,7 @@ window.logoutCashier = function() {
 
     // Reload fresh
     window.location.href =
-        window.location.pathname + "?t=" + Date.now();
+        window.location.pathname + (workstation?"?station="+encodeURIComponent(workstation.id)+"&t=":"?t=") + Date.now();
 };
 
 // ========================================================
@@ -8934,6 +8974,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 🛡️ OWNER "GOD MODE" TELEPORTER ENGINE
 // ========================================================
 window.ownerBypassLogin = async function() {
+    if(window.cashierWorkstation?.current){window.cashierWorkstation.original();return;}
     const setupOverlay=document.getElementById('deviceSetupOverlay'),setupDisplay=setupOverlay?.style.display;
     try {
         // 1. Trigger Google Login
@@ -8950,7 +8991,7 @@ window.ownerBypassLogin = async function() {
         
         if(typeof ownerAuth.authStateReady==='function')await ownerAuth.authStateReady();
         let user=ownerAuth.currentUser;
-        if(!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
+        if((window.cashierWorkstation?.requireOwnerLogin&&!existingOwner)||!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
         
         // 2. Strict Security Check: Only YOUR email is allowed through this backdoor
         if (user.email !== 'jgo031996@gmail.com' || user.emailVerified !== true) {
@@ -8972,9 +9013,11 @@ window.ownerBypassLogin = async function() {
         });
 
         // 4. Show the Teleporter Dropdown
+        let rememberStation=false;
         const { value: selectedBranch } = await Swal.fire({
-            title: '🛡️ God Mode Activated',
-            text: 'Select which branch POS you want to enter:',
+            title: 'Owner Access',
+            html:'<label><input type="checkbox" id="rememberCashierStation" '+(window.cashierWorkstation?.suggestRemember?'checked':'')+'> Remember this branch for staff PIN sign-in on this browser</label>',
+            preConfirm:value=>{rememberStation=document.getElementById('rememberCashierStation').checked;return value;},
             input: 'select',
             inputOptions: branchOptions,
             inputPlaceholder: '-- Choose Branch --',
@@ -9003,6 +9046,13 @@ window.ownerBypassLogin = async function() {
         // Keep Owner sales on the selected branch's isolated account.
         const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch,portable:true});
         workspace.assertCurrent();
+        if(rememberStation){
+            try{
+                await enrollOwnerWorkstation(window,workspace,{signInAnonymously,stationAuth:id=>{
+                    const name=window.cashierWorkstation.appName(id);return getAuth(getApps().find(a=>a.name===name)||initializeApp(firebaseConfig,name));
+                }});
+            }catch(error){workspace.assertCurrent();await Swal.fire('Staff PIN setup needs attention',error.message,'info');}
+        }
         // Physical tablet, paid queues and operational drawer stay untouched.
         window.switchView?.('pos');
         window.cashierOwnerRegister.start();

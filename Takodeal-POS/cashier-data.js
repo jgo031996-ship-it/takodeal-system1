@@ -1,6 +1,6 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
 import {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';
-export const CASHIER_RELEASE = 'owner-branch-orders-20261117-r2';
+export const CASHIER_RELEASE = 'cashier-workstation-receipts-20261117-r3';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();

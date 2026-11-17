@@ -22,3 +22,8 @@
 #tbTransBody button[data-owner-range]:disabled{opacity:.55;cursor:default}
 #tbTransBody .owner-receipt-action{color:#a53429;border-color:#e9c8c0;margin:.2rem}
 #tbTransBody .tk-sale-row td{padding:.7rem .8rem;border-bottom:1px solid #e8eeea}
+
+#tbTransBody tr[tabindex]{cursor:pointer}
+#tbTransBody tr[tabindex]:hover,#tbTransBody tr[tabindex]:focus-visible{background:#fff6e8;outline:2px solid #d58a38;outline-offset:-2px}
+.cashier-receipt-controls{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem}
+.cashier-receipt-controls button{padding:.65rem .9rem;border:1px solid #d8c7b5;background:#fff;border-radius:8px;color:#422d22;font:inherit;cursor:pointer}

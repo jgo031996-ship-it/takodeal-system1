@@ -1,3 +1,4 @@
+import {enrollOwnerWorkstation} from '../Takodeal-POS/cashier-workstation.js';
 import {transitionMobileOrder} from '../Takodeal-POS/mobile-order-actions.js';
 // Hosted only: real Firestore Web SDK reads/listeners/transactions and exact live32cdf Rules.
 // Every document is fictional in a demo-* namespace on loopback; no real data or approvals.
@@ -131,4 +132,15 @@ test('real SDK portable inspection without a registered tablet loads prior recei
  f.w.isCashierOwnerToolsMode=()=>f.workspace.isToolsMode();const document={getElementById(id){const node=f.document.getElementById(id);node.querySelector=()=>null;node.classList={contains:()=>true};node.addEventListener=()=>{};return node;}};const monitor=installCashierOwnerRegister(f.w,document,{setInterval:()=>1,clearInterval:()=>{}});stops.add(()=>monitor.stop());
  async function readyFor(check){const deadline=Date.now()+10000;while(Date.now()<deadline){const state=monitor.state();if(state.phase==='ready'&&check(state))return state;if(state.phase==='sales-error'||state.phase==='error')throw Error(state.message);await pause(15);}throw Error('History did not reach expected state: '+JSON.stringify(monitor.state()));}
  monitor.start();const latest=await readyFor(s=>s.rows.length===1);assert.equal(latest.shift,null);assert.equal(latest.rows[0].id,'fictional-history');assert.match(latest.message,/No open register is synced/);monitor.setRange('date','2026-11-09');const dated=await readyFor(s=>s.range==='date'&&s.rows.length===1);assert.equal(ownerSalesTotals(dated.rows).total,150);monitor.setRange('date','2026-11-10');await readyFor(s=>s.range==='date'&&s.rows.length===0);assert.equal(JSON.stringify([...f.values]),before);await assert.rejects(f.workspace.current().prepareAction(),/Receiving deliveries requires/);assert.equal(await count(f.ownerDb,'shifts'),0);assert.equal(await count(f.ownerDb,'transactions'),2);f.preserved();
+});
+
+test('remembered Owner workstation enrolls its own branch Cashier UID and never reactivates a blocked station',async()=>{
+ const f=fixture(),c=await f.workspace.enter({auth:f.ownerAuth,db:f.ownerDb,user:f.ownerUser,branch:selectedBranch,portable:true});
+ let saved=null;const device={uid:'fictional-workstation-user',isAnonymous:true},auth={currentUser:device,authStateReady:async()=>{}};
+ Object.assign(f.w,{crypto:globalThis.crypto,cashierWorkstation:{find:()=>saved,remember:v=>{saved=v;}}});
+ const action=()=>enrollOwnerWorkstation(f.w,c,{stationAuth:()=>auth});
+ await action();const registration=await read(f.ownerDb,'pos_devices',saved.id),binding=await read(f.ownerDb,'pos_bindings',device.uid);
+ assert.equal(registration.authorizedByUid,ownerUid);assert.equal(binding.status,'Active');assert.equal(binding.branch,selectedBranch);
+ assert.equal(f.values.get('takodeal_device_branch'),'Main Office');
+ await action();await seed('pos_bindings',device.uid,{...binding,status:'Blocked'});await assert.rejects(action(),/review/);
 });

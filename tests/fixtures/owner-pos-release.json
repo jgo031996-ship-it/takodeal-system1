@@ -1,10 +1,10 @@
 {
   "base": "9f14ec285c593cee9e9b780897511db01b989317",
-  "release": "owner-branch-orders-20261117-r2",
+  "release": "cashier-workstation-receipts-20261117-r3",
   "files": {
     "Takodeal-POS/cashier-data.js": {
       "before": "dd0451f35d74b8c4c68833b408e948d5972aba73",
-      "after": "602fcdb2cefdafde913cfa140d111221c9381358"
+      "after": "9f145cf25b58287c017a1932a542b8f507b2ae8d"
     },
     "Takodeal-POS/cashier-owner-parked.js": {
       "before": null,
@@ -12,19 +12,23 @@
     },
     "Takodeal-POS/cashier-owner-pos.js": {
       "before": null,
-      "after": "f7c2b330d699fe192ff26170ebc44d72e876747b"
+      "after": "1e55710815cfbc73d0db3c5f5682d80871809e9c"
     },
     "Takodeal-POS/cashier-owner-register.js": {
       "before": "fde9d9ad3129dbd0f47f8d50ec762e1da500d645",
-      "after": "c43abf8c792c23022e631e19486a19d1d60aef57"
+      "after": "a4620369b82c0c58d278c816198375f308727c0f"
     },
     "Takodeal-POS/cashier-owner-workspace.js": {
       "before": "45aba1f0d48493026c3d1e23d7f82cc8c059d853",
       "after": "91478da87adf7f13c980094bf0d600314c978c84"
     },
+    "Takodeal-POS/cashier-void-queue.js": {
+      "before": "50db43a71890fe3f9367eaba8d359a499931b5dc",
+      "after": "46b031526c2981f2015e860a5c470f3a39989f0c"
+    },
     "Takodeal-POS/cashier-void.css": {
       "before": "8a7ea7cc3d7184ff78c3a97364838ecd26e0ee33",
-      "after": "735f9f7eba01ba4b52800375918f3ac1f4dcf8cf"
+      "after": "81c0a5e68ea8b45812b8fed112d556edc163d8dc"
     },
     "Takodeal-POS/cashier-void.js": {
       "before": "4d3f7d79f4295c6470e0f0b0078d948b5ddd0f8a",
@@ -34,13 +38,25 @@
       "before": "8d5f8e1df3c70eb3d3bb57de9634a2abdf33bfe6",
       "after": "3c531a21886ae15d238c876d205ed65fed5170f4"
     },
+    "Takodeal-POS/cashier-workstation-boot.js": {
+      "before": null,
+      "after": "ac3615f401e6b3bee8acfff2abc3893ac218610e"
+    },
+    "Takodeal-POS/cashier-workstation.js": {
+      "before": null,
+      "after": "9250f1354ac5c6e6285f3f401626c6eabc454c1b"
+    },
+    "Takodeal-POS/checkout-controls.js": {
+      "before": "5ae1dfa9c51f27827a5866b6d45a8df12d0966d3",
+      "after": "833a4f3ee03370b11ea80bb7a15e06bd12a0d803"
+    },
     "Takodeal-POS/index.html": {
       "before": "f9b06333b9ce6e63e69e55d397e47b259e26590e",
-      "after": "0037b1fa5a531d5c2fa7502ff180080a36ca2bd0"
+      "after": "33a4376189667a944866ace9f9bb7086409f8b50"
     },
     "Takodeal-POS/main.js": {
       "before": "a1db7ad92bb732fa9bfc4b66b66282bc37092135",
-      "after": "4404abae969984ec36f037126c01be24be7f7a86"
+      "after": "8f710a06ebdf94648732cf37eaae5234af8e61b4"
     },
     "Takodeal-POS/mobile-hub-upgrade.css": {
       "before": "e74cf35c72f044953e71e1c9c3dd7461dcee15f0",
@@ -54,13 +70,17 @@
       "before": "27bc963b1a21e51dbe972d75a284ecc28007ee00",
       "after": "83f9134af3415c30b3c4b514c7dce2a59c748011"
     },
+    "Takodeal-POS/pos-checkout.js": {
+      "before": "62f45ecaeb1f64f269b4e3a93c4aa8a5ee7d9253",
+      "after": "52e92a0197d41f9134061f3204fa61d1b1f1e444"
+    },
     "Takodeal-POS/pos-settings-hub.js": {
       "before": "77e7367c1f079f400d458c5fbddfee64fb876e8a",
       "after": "74fe5daeb1009f10692683ed7ded3399cef9d04b"
     },
     "Takodeal-POS/sw.js": {
       "before": "dac0a74d64e3083dd0911d2bb71950ffcd2bc7e0",
-      "after": "722254574b7041498f8981f1b8b24b9d1461dd54"
+      "after": "a08bfb2d88b2646294263b742043163402e03eb2"
     }
   }
 }

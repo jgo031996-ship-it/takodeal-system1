@@ -58,25 +58,22 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
   paintStatus();if(!activeSales())return;
   const table=d.getElementById('tbTransBody');if(!table)return;
   const mode=state.range||'current';
-  const controls='<tr class="tk-sales-message"><td colspan="8" style="padding:12px;white-space:normal;"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
+  const controls='<tr class="tk-sales-message"><td colspan="7" style="padding:12px;white-space:normal;"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
    '<button type="button" data-owner-range="current" '+(!state.shift?'disabled':'')+'>Current shift</button><button type="button" data-owner-range="latest">Latest sales</button>'+
    '<label>Sales date <input type="date" data-owner-sales-date value="'+escape(date)+'"></label><button type="button" data-owner-show-date>Show date</button>'+
-   '<button type="button" data-owner-switch>Switch branch</button><button type="button" data-owner-refresh>Refresh Sales</button></div></td></tr>';
-  const savedPayment=w.cashierOwnerPOS?.hasPending()?'<tr><td colspan="8"><button class="btn" type="button" data-owner-pending>Check saved payment</button></td></tr>':'';
-  const banner=controls+savedPayment+'<tr class="tk-sales-message"><td colspan="8" style="padding:16px;white-space:normal;" role="status">'+escape(state.message)+'</td></tr>';
+   '<button type="button" data-owner-switch>Switch branch</button><button type="button" data-owner-staff>Staff PIN sign-in</button><button type="button" data-owner-refresh>Refresh Sales</button></div></td></tr>';
+  const savedPayment=w.cashierOwnerPOS?.hasPending()?'<tr><td colspan="7"><button class="btn" type="button" data-owner-pending>Check saved payment</button></td></tr>':'';
+  const banner=controls+savedPayment+'<tr class="tk-sales-message"><td colspan="7" style="padding:16px;white-space:normal;" role="status">'+escape(state.message)+'</td></tr>';
   if(state.phase!=='ready'){table.innerHTML=banner;return;}
   const totals=ownerSalesTotals(state.rows),start=state.shift?new Date(millis(state.shift.startTime)).toLocaleString('en-PH',zone):null;
-  const summary='<tr class="tk-sales-summary"><td colspan="8" style="padding:16px;white-space:normal;line-height:1.8;">'+
+  const summary='<tr class="tk-sales-summary"><td colspan="7" style="padding:16px;white-space:normal;line-height:1.8;">'+
    '<strong>'+escape(state.branch)+' · '+(state.hasMore?'Shown receipts total ':'Total sales ')+money(totals.total)+'</strong> · '+totals.count+' paid receipt(s)<br>'+['Cash','GCash','Grab','Foodpanda','Other'].map(key=>escape(key)+': '+money(totals[key])).join(' · ')+
    '<br>'+escape(mode==='current'?'Current shift':mode==='date'?'Sales on '+date+' (Philippine time)':'Latest uploaded receipts')+(start?' · Register opened '+escape(start)+' · '+escape(state.shift.startedBy||'Cashier'):'')+
    '<br><small>Uploaded receipts only. Pending branch-tablet uploads appear after syncing.</small>'+(state.hasMore?'<br><button type="button" data-owner-more>Show 100 more receipts</button>':'')+'</td></tr>';
   table.innerHTML=banner+summary+(state.rows.length?state.rows.map((row,index)=>{
    const time=Number.isFinite(millis(row.timestamp))?new Date(millis(row.timestamp)):null;
-   return '<tr class="tk-sale-row"><td data-label="Receipt" style="padding:15px;">'+escape(row.receiptId||row.id)+'</td><td data-label="Customer">'+ escape(row.customerName||'Guest')+'</td><td data-label="Payment">'+ escape(row.paymentMethod||'Cash')+'</td><td data-label="Status">'+ escape(row.status||'Paid')+'</td><td data-label="Date">'+ escape(time?.toLocaleDateString('en-PH',zone)||'')+'</td><td data-label="Time">'+ escape(time?.toLocaleTimeString('en-PH',zone)||'')+'</td><td data-label="Amount">'+ money(row.netTotal)+'</td><td data-label="Details"><button type="button" data-owner-receipt="'+index+'">View details</button>'+(
-    registerPhase==='open'&&row.shiftId===state.shift?.shiftId&&!row.preparedCancellation&&!row.cancelledFoodSourceId&&row.status!=='Parked'&&
-    (row.status!=='Voided'||row.voidReason==='WrongPunched'&&row.voidOwnerUid===context.user.uid)?
-    '<button type="button" class="owner-receipt-action" data-owner-void="'+index+'">'+(row.status==='Voided'?'Continue correction':'Void / correct order')+'</button>':'')+'</td></tr>';
-  }).join(''):'<tr class="tk-sales-message"><td colspan="8" style="padding:20px;">No uploaded receipts in this view. Choose Latest sales or another date.</td></tr>');
+   return '<tr class="tk-sale-row" tabindex="0" data-owner-receipt="'+escape(row.id)+'" aria-label="Receipt '+escape(row.receiptId||row.id)+'"><td data-label="Receipt" style="padding:15px;">'+escape(row.receiptId||row.id)+'</td><td data-label="Customer">'+ escape(row.customerName||'Guest')+'</td><td data-label="Payment">'+ escape(row.paymentMethod||'Cash')+'</td><td data-label="Status">'+ escape(row.status||'Paid')+'</td><td data-label="Date">'+ escape(time?.toLocaleDateString('en-PH',zone)||'')+'</td><td data-label="Time">'+ escape(time?.toLocaleTimeString('en-PH',zone)||'')+'</td><td data-label="Amount">'+ money(row.netTotal)+'</td></tr>';
+  }).join(''):'<tr class="tk-sales-message"><td colspan="7" style="padding:20px;">No uploaded receipts in this view. Choose Latest sales or another date.</td></tr>');
  }
  function publish(next){state=next;render();}
  function endSales(){salesGeneration++;stopSales?.();stopSales=null;salesKey='';}
@@ -150,20 +147,37 @@ export function installCashierOwnerRegister(w,d,{subscribe=(query,next,error)=>w
  function check(){if(!ownerMode()){stop();return;}if(!context){start();return;}if(!same(context,generation))start({force:true});}
  function refresh(){return start({force:true});}
  function setRange(next,day=''){if(!['current','latest','date'].includes(next))return false;if(next==='date')dayBounds(day);capture();range=next;date=day;pageSize=100;if(context)sales(context,generation,state.shift);return true;}
- d.getElementById('tbTransBody')?.addEventListener?.('click',event=>{
+ d.getElementById('tbTransBody')?.addEventListener?.('click',async event=>{
   try{capture();}catch{check();return;}
   if(event.target.closest?.('[data-owner-pending]')?.hasAttribute?.('data-owner-pending')){w.cashierOwnerPOS?.reviewPending().catch(error=>w.Swal.fire('Saved payment',error.message,'info'));return;}
-  const action=event.target.closest?.('[data-owner-void]');if(action?.dataset?.ownerVoid!==undefined){const row=state.rows[Number(action.dataset.ownerVoid)];if(row)w.cashierOwnerPOS?.changeReceipt(row.id,row.receiptId);return;}
   const rangeButton=event.target.closest?.('[data-owner-range]');if(rangeButton?.dataset?.ownerRange){setRange(rangeButton.dataset.ownerRange);return;}
   if(event.target.closest?.('[data-owner-show-date]')?.hasAttribute?.('data-owner-show-date')){try{setRange('date',d.querySelector?.('[data-owner-sales-date]')?.value||'');}catch(error){w.Swal?.fire?.('Sales date',error.message,'info');}return;}
+  if(event.target.closest?.('[data-owner-staff]')?.hasAttribute?.('data-owner-staff')){w.openRememberedStaffSignIn?.();return;}
   if(event.target.closest?.('[data-owner-switch]')?.hasAttribute?.('data-owner-switch')){w.ownerBypassLogin?.();return;}
   if(event.target.closest?.('[data-owner-refresh]')?.hasAttribute?.('data-owner-refresh')){refresh();return;}
   if(event.target.closest?.('[data-owner-more]')?.hasAttribute?.('data-owner-more')){capture();pageSize+=100;sales(context,generation,state.shift);return;}
   const button=event.target.closest?.('[data-owner-receipt]');if(!button||state.phase!=='ready'||button.dataset?.ownerReceipt===undefined)return;
   try{capture();}catch{check();return;}
-  const row=state.rows[Number(button.dataset.ownerReceipt)];if(!row)return;
+  const c=capture(),row=state.rows.find(r=>r.id===button.dataset.ownerReceipt);if(!row)return;
+  const current=()=>{try{c.assertCurrent();}catch{return false;}return activeSales()&&state.branch===c.branch&&state.rows.some(r=>r.id===row.id&&r.receiptId===row.receiptId);};
   const lines=(Array.isArray(row.cart)?row.cart:[]).map(item=>escape(item.qty??1)+' × '+escape(item.name||item.item||'Item')).join('<br>');
-  w.Swal?.fire?.({title:'Receipt details',html:'<strong>'+escape(row.receiptId||row.id)+'</strong><br>'+escape(state.branch)+'<br>'+escape(row.cashier||'')+'<br>'+lines+'<br><strong>'+money(row.netTotal)+'</strong>',confirmButtonText:'Close'});
+  const resume=row.status==='Voided'&&row.voidReason==='WrongPunched'&&row.voidOwnerUid===c.user.uid;
+  let replacement=null,lookupFailed=false;
+  if(resume){
+   replacement=state.rows.find(r=>r.voidCorrection?.sourceSaleId===row.id);
+   if(!replacement)try{const snap=await w.getDocFromServer(w.doc(c.db,'transactions','sale-owner-void-'+row.id));if(snap.exists())replacement=snap.data();}catch{lookupFailed=true;}
+  }
+  if(!current())return;
+  const linked=['manualVerification','paymentReconciliationId','refund','refundId','splitDetails','preparedCancellation','cancelledFoodSourceId','cancelledFoodPurchaseId'];
+  const canChange=registerPhase==='open'&&row.shiftId===state.shift?.shiftId&&row.status!=='Parked'&&
+   !linked.some(k=>row[k]!=null)&&!row.mealStaffName&&!row.isMobileOrder&&!row.mobileOrderId&&row.orderType!=='Delivery'&&
+   !/salary|split|refund|return/i.test(row.paymentMethod||'')&&!(row.paymentVerified===true&&!/^cash$/i.test(row.paymentMethod||''))&&
+   (row.status!=='Voided'||resume&&!replacement&&!lookupFailed);
+  const checked=/^gcash$/i.test(row.paymentMethod||'')?'<p>GCash verification: '+(row.paymentVerified?'Verified':'Awaiting verification')+'</p>':'';
+  const detail='<strong>'+escape(row.receiptId||row.id)+'</strong><p>'+escape(c.branch)+' · '+escape(row.cashier||'')+'</p><p>'+escape(row.customerName||'Guest')+' · '+escape(row.paymentMethod||'Cash')+' · '+escape(row.status||'Paid')+'</p>'+lines+'<p><strong>'+money(row.netTotal)+'</strong></p>'+checked+
+   (replacement?'<p>Corrected receipt: '+escape(replacement.receiptId||replacement.id)+'</p>':lookupFailed?'<p>Reconnect to check the corrected receipt.</p>':'');
+  const answer=await w.Swal?.fire?.({title:'Receipt details',html:detail,confirmButtonText:'Close',showDenyButton:canChange,denyButtonText:resume?'Continue correction':'Void / correct order'});
+  if(answer?.isDenied&&canChange&&current())await w.cashierOwnerPOS?.changeReceipt(row.id,row.receiptId);
  });
  d.getElementById('tbTransBody')?.addEventListener?.('change',event=>{if(event.target.hasAttribute?.('data-owner-sales-date')){try{capture();date=event.target.value;}catch{check();}}});
  w.addEventListener?.('cashier-workspace-changed',check);

@@ -49,7 +49,7 @@ export function installSaleSafety(api, environment = globalThis) {
     const w = environment.window || environment;
     installCheckoutControls(w,environment.document);
     const ls = environment.localStorage;
-    const outbox = createOutbox(environment.indexedDB || null);
+    const outbox = createOutbox(environment.cashierWorkstation?.outbox(environment.indexedDB)||environment.indexedDB||null);
     const engine = createMealScopedSaleEngine(api);
     const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid, api);
     w.cashierVoidQueue = correctionQueue;
@@ -204,7 +204,7 @@ export function installSaleSafety(api, environment = globalThis) {
             resetCheckoutForNextOrder(w,environment.document);
             const split = environment.document.getElementById('splitPaymentContainer');
             if (split) split.style.display = 'none';
-            await refreshQueue();
+            w.offlineQueue=[...(w.offlineQueue||[]).filter(row=>row.saleId!==saved.saleId),saved];
             updateBadge();
         } catch (error) { console.warn('Sale is saved; queue display could not refresh:', error); }
         w.syncOfflineQueue().catch(error => console.warn('Sale is saved; sync will retry:', error));

@@ -14,7 +14,7 @@ function memoryIndexedDB(){return vm.runInNewContext(storageCode+';memoryIndexed
 function button(method){const classes=new Set(['pay-btn',...(method==='Split'?['split-btn']:[])]),attrs={};return {textContent:method,dataset:method==='Split'?{}:{paymentMethod:method.toLowerCase()},style:{},classList:{contains:v=>classes.has(v),toggle(v,on){on?classes.add(v):classes.delete(v);},add:v=>classes.add(v),remove:v=>classes.delete(v)},setAttribute:(k,v)=>attrs[k]=v,getAttribute:k=>attrs[k],querySelector(){return this.innerHTML?.includes('data-split-label')?{}:null;}};}
 function checkout(){
     const h=firestoreHarness(),nodes={},payments=['Gcash','Cash','Bank','Grab','Foodpanda','Split'].map(button),alerts=[],saved=new Map([['takodeal_device_branch','Maa']]);
-    for(const id of ['btnSubmitFinal','checkoutModal','checkoutDiscountType','checkoutStaffPin','checkoutDiscountValue','checkoutDiscountReason','finalCustomerName','mainOrderType','posPlatformSelect','finalDeliveryAddress','finalContactNumber','rcptId','rcptDate','rcptTime','rcptTotal','rcptPaid','rcptChange','receiptModal','splitPaymentContainer','splitAmount1','splitAmount2','splitMethod1','splitMethod2'])nodes[id]={value:'',innerText:'',style:{}};
+    for(const id of ['btnSubmitFinal','checkoutModal','checkoutDiscountType','checkoutStaffPin','checkoutDiscountValue','checkoutDiscountReason','finalCustomerName','gcashTransactionReference','mainOrderType','posPlatformSelect','finalDeliveryAddress','finalContactNumber','rcptId','rcptDate','rcptTime','rcptTotal','rcptPaid','rcptChange','receiptModal','splitPaymentContainer','splitAmount1','splitAmount2','splitMethod1','splitMethod2'])nodes[id]={value:'',innerText:'',style:{}};
     nodes.checkoutTotalPayable={innerText:''};nodes.checkoutModal.style.display='none';nodes.splitPaymentContainer.style.display='none';nodes.posPlatformSelect.value='Standard';nodes.mainOrderType.value='Dine-In';nodes.checkoutDiscountType.value='none';
     for(const id of ['splitMethod1','splitMethod2']){nodes[id].options=[{value:'Cash'},{value:'Gcash'}];nodes[id].value='Cash';}
     const d={getElementById:id=>nodes[id]||null,querySelectorAll:selector=>selector.includes('pay-btn')?payments:[],querySelector:()=>({style:{}}),addEventListener(){}};
@@ -34,9 +34,9 @@ test('two consecutive GCash orders save Gcash both times and each completed orde
     for(let i=0;i<2;i++){
         f.nodes.mainOrderType.value='Take-Out';f.w.cart=[{name:'Sample food',qty:1,lineTotalFinal:70}];
         f.w.openCheckoutModal();assert.equal(f.w.selectedPaymentMethod,'Cash');assert.equal(f.cash.getAttribute('aria-pressed'),'true');
-        f.w.setPaymentMethod(f.gcash,'Gcash');f.nodes.finalCustomerName.value='SAMPLE-REF-'+i;
+        f.w.setPaymentMethod(f.gcash,'Gcash');f.nodes.finalCustomerName.value='Sample customer';f.nodes.gcashTransactionReference.value='SAMPLE-REF-'+i;
         assert.equal(f.gcash.getAttribute('aria-pressed'),'true');await f.w.submitFinalOrder();
-        assert.equal(f.w.lastTransactionData.paymentMethod,'Gcash');assert.equal(f.w.lastTransactionData.orderType,'Take-Out');
+        assert.equal(f.w.lastTransactionData.paymentMethod,'Gcash');assert.equal(f.w.lastTransactionData.paymentReference,'SAMPLE-REF-'+i);assert.equal(f.w.lastTransactionData.customerName,'Sample customer');assert.equal(f.w.lastTransactionData.orderType,'Take-Out');
         assert.equal(f.w.selectedPaymentMethod,'Cash');assert.equal(f.cash.getAttribute('aria-pressed'),'true');assert.equal(f.gcash.getAttribute('aria-pressed'),'false');assert.equal(f.nodes.mainOrderType.value,'');
     }
     const rows=await f.w.saleOutbox.list();assert.equal(rows.length,2);assert.ok(rows.every(row=>row.payload.paymentMethod==='Gcash'));
@@ -46,7 +46,7 @@ test('the next order cannot open payment until the cashier chooses its order typ
     assert.equal(f.nodes.checkoutModal.style.display,'none');assert.ok(f.alerts.some(args=>Array.isArray(args)&&args[0]==='Order Type Required'));
 });
 test('an unsuccessful local save keeps the selected GCash method, order type and draft intact',async()=>{
-    const f=checkout();f.nodes.mainOrderType.value='Dine-In';f.w.openCheckoutModal();f.w.setPaymentMethod(f.gcash,'Gcash');f.nodes.finalCustomerName.value='SAMPLE-REF';f.environment.indexedDB=null;
+    const f=checkout();f.nodes.mainOrderType.value='Dine-In';f.w.openCheckoutModal();f.w.setPaymentMethod(f.gcash,'Gcash');f.nodes.gcashTransactionReference.value='SAMPLE-REF';f.environment.indexedDB=null;
     // A serialization error occurs before the actual durable enqueue.
     f.w.cart[0].circular=f.w.cart[0];await f.w.submitFinalOrder();
     assert.equal(f.w.selectedPaymentMethod,'Gcash');assert.equal(f.gcash.getAttribute('aria-pressed'),'true');assert.equal(f.nodes.mainOrderType.value,'Dine-In');assert.equal(f.w.cart.length,1);assert.equal((await f.w.saleOutbox.list()).length,0);
