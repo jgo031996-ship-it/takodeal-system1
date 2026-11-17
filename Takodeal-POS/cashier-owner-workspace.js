@@ -66,6 +66,7 @@ export function createCashierOwnerWorkspace(w,d,{primaryAuth,primaryDb,firebaseC
   for(const name of ['openCheckoutModal','submitFinalOrder','processCheckout','openShiftModal','submitOpenShift','openNewShift','MASTER_CloseShift','submitComprehensiveCloseShift','safeSubmitComprehensiveCloseShift','closeShift','openTimeClockModal','confirmPrepCart','voidTransaction','authorizeMealPin','toggleAuditMode','parkOrder','parkOrderToDB','resumeOrder','discardParkedOrder','deleteParkedOrder','deleteParkedOrderManually','submitInventoryCheck','submitBranchExpense']){
    const original=w[name];if(typeof original!=='function')continue;
    w[name]=function(...args){if(isToolsMode()){
+    if(['parkOrder','resumeOrder','deleteParkedOrderManually'].includes(name)&&w.cashierOwnerPOS?.parked){current().assertCurrent();return w.cashierOwnerPOS.parked[name](...args);}
     if(['openCheckoutModal','submitFinalOrder','processCheckout'].includes(name)){
      let verified;try{verified=current();verified.assertCurrent();}catch{return notice();}
      if(!w.cashierOwnerPOS?.isReady()||!w.cashierOwnerRegister?.openShift()){

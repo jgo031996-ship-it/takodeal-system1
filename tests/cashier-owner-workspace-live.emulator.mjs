@@ -1,3 +1,4 @@
+import {transitionMobileOrder} from '../Takodeal-POS/mobile-order-actions.js';
 // Hosted only: real Firestore Web SDK reads/listeners/transactions and exact live32cdf Rules.
 // Every document is fictional in a demo-* namespace on loopback; no real data or approvals.
 // AuthUser/getIdTokenResult are mocks through the factory resolver seam, not real Google Auth.
@@ -42,6 +43,14 @@ test('portable Owner punches and cancels a sale using the real Firestore SDK and
  assert.equal((await read(f.ownerDb,'inventory','fictional-flour')).currentStock,20);
  assert.equal((await read(f.ownerDb,'shifts','fictional-open')).salesRevision,2);
  assert.equal((await read(f.ownerDb,'manager_alerts','void-'+receipt.saleId)).ownerUid,ownerUid);
+ await seed('incoming_orders','incoming-1',{branch:selectedBranch,status:'mobile_queue',orderCode:'TEST-REMOTE',items:[item],totalAmount:65});
+ await transitionMobileOrder(f.w,{id:'incoming-1',to:'preparing',prepTime:15,proofCheckAcknowledged:true});
+ const paid=await pos.checkout({cart:[item],branch:selectedBranch,shiftId:'fictional-open',orderType:'Take-Out',paymentMethod:'Cash',netTotal:65,isMobileOrder:true,mobileOrderId:'incoming-1',mobileOrderCode:'TEST-REMOTE'});
+ assert.equal(paid.status,'committed',paid.error);assert.equal(paid.receiptId,'TEST-REMOTE');
+ await transitionMobileOrder(f.w,{id:'incoming-1',to:'ready'});await transitionMobileOrder(f.w,{id:'incoming-1',to:'completed'});
+ const online=await read(f.ownerDb,'incoming_orders','incoming-1');assert.equal(online.paymentStatus,'paid');assert.equal(online.completedByUid,ownerUid);
+ assert.equal((await read(f.ownerDb,'inventory','fictional-flour')).currentStock,18);
+
  assert.equal(f.values.get('takodeal_device_branch'),'Main Office');f.preserved();
 });
 const ownerRow={email:owner,role:'Owner',active:true,pin:'fictional-nonsecret-fixture-only'},branchRow={name:selectedBranch,active:true};

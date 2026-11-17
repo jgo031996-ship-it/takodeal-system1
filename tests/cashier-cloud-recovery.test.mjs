@@ -14,7 +14,7 @@ import {restoreCashierCloudTransport} from './helpers/cashier-cloud-transport-in
 import {CASHIER_RELEASE as LIVE_CASHIER_RELEASE} from '../Takodeal-POS/cashier-data.js';
 // Historical reads above compose the exact new inverse before checking this cohort.
 const CASHIER_RELEASE='cashier-plotted-attendance-20261116-r1';
-assert.equal(LIVE_CASHIER_RELEASE,'owner-store-pos-20261117-r1');
+assert.equal(LIVE_CASHIER_RELEASE,'owner-branch-orders-20261117-r2');
 const read=file=>{const source=readFileSync(new URL('../Takodeal-POS/'+file,import.meta.url),'utf8');return file==='main.js'?source:restoreCashierVoidIntegration(source,'Takodeal-POS/'+file);},sha=value=>createHash('sha256').update(value).digest('hex');
 const release='cashier-cloud-recovery-20261110-r1';
 test('primary SDK transport explicitly forces long polling while retaining the exact persistent multi-tab cache manager',()=>{

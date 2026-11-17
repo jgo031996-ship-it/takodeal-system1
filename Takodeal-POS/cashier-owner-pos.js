@@ -1,3 +1,4 @@
+import {installOwnerParked} from './cashier-owner-parked.js';
 import {createSaleEngine, saleIdentity, SALE_VERSION, saleFingerprint, safeId} from './pos-safety.js';
 import {recipeRevision,recipeRows} from './recipe-feed.js';
 import {editableVoidCart,voidCanonical} from './cashier-void-model.js';
@@ -39,6 +40,54 @@ export function installOwnerPOS(w,d){
         menuSession=c.session;w.cashierOwnerRegister?.paintStatus();
         if(pending(c))await reviewPending();
     }
+    const orderSettings={
+        mobileOrdersActive:{id:'btnMobileKillSwitch',on:'Accepting orders',off:'Orders paused',defaultValue:true},
+        busyMode:{id:'btnToggleBusy',on:'Busy mode (+30m)',off:'Normal prep (15m)',defaultValue:false},
+        enabled:{id:'btnToggleDelivery',on:'Delivery on',off:'Delivery off',defaultValue:true}
+    };
+    const orderSettingDoc=(c,field)=>w.doc(c.db,'settings',field==='enabled'?'global_delivery':'status_'+c.branch);
+    function watchOrderSettings(c){
+        const stops=[],restore=[];
+        for(const fields of [['enabled'],['mobileOrdersActive','busyMode']]){
+            const buttons=fields.map(field=>d.getElementById(orderSettings[field].id));
+            if(!buttons.some(Boolean))continue;
+            for(const button of buttons.filter(Boolean)){
+                const html=button.innerHTML,bg=button.style.background,disabled=button.disabled;
+                restore.push(()=>{button.innerHTML=html;button.style.background=bg;button.disabled=disabled;});
+            }
+            const disable=()=>{for(const b of buttons)if(b)b.disabled=true;};
+            disable();
+            stops.push(w.onSnapshot(orderSettingDoc(c,fields[0]),snap=>{
+                try{c.assertCurrent();}catch{return;}
+                for(const [i,field] of fields.entries()){
+                    const button=buttons[i],setting=orderSettings[field];if(!button)continue;
+                    const value=rowData(snap)[field]??setting.defaultValue;
+                    button.textContent=value?setting.on:setting.off;button.disabled=false;
+                    button.style.background=(field==='busyMode'?!value:value)?'#15803d':'#b91c1c';
+                }
+            },()=>{if(w.sessionUser===c.session)disable();}));
+        }
+        return ()=>{stops.forEach(stop=>stop());restore.forEach(fn=>fn());};
+    }
+    async function toggleOrderSetting(field){
+        try{
+            const c=context(),setting=orderSettings[field];
+            if(!Object.hasOwn(orderSettings,field))return;
+            const ref=orderSettingDoc(c,field),guard=await c.prepareSale();
+            const previous=rowData(await w.getDocFromServer(ref))[field]??setting.defaultValue;
+            c.assertCurrent();
+            const next=!previous,scope=field==='enabled'?'all branches':c.branch;
+            const answer=await w.Swal.fire({title:(next?setting.on:setting.off)+' for '+scope+'?',showCancelButton:true,confirmButtonText:'Confirm'});
+            if(!answer.isConfirmed)return;
+            await w.runTransaction(c.db,async tx=>{
+                await guard.checkTransaction(tx);
+                const value=rowData(await tx.get(ref))[field]??setting.defaultValue;
+                if(value!==previous)throw Error('This setting changed at the store. Check its current value.');
+                c.assertCurrent();
+                tx.set(ref,{[field]:next,...(field==='enabled'?{lastChangedBy:c.actionActor,timestamp:w.serverTimestamp()}:{lastUpdatedBy:c.actionActor,lastUpdated:w.serverTimestamp()})},{merge:true});
+            });
+        }catch(e){await w.Swal.fire({title:'Order settings',text:e.message,icon:'info'});}
+    }
     async function verifyVoid(tx,c,shiftId,action){
         const reference=w.doc(c.db,'transactions',action.id);
         const data=rowData(await tx.get(reference));
@@ -59,7 +108,7 @@ export function installOwnerPOS(w,d){
         }
         return data.cashier||'';
     }
-    async function scoped(c,shiftId,{checkShift=true,markSale=false,voidAction=null}={}){
+    async function scoped(c,shiftId,{checkShift=true,markSale=false,voidAction=null,mobile=null,parkedOrder=null}={}){
         const guard=await c.prepareSale();
         async function queryRows(query){
             const snap=await w.getDocsFromServer(query);
@@ -77,6 +126,13 @@ export function installOwnerPOS(w,d){
                 revision=row.salesRevision??0;
                 if((markSale||voidAction)&&(!Number.isSafeInteger(revision)||revision<0||revision>=Number.MAX_SAFE_INTEGER))throw Error('The register sales count needs review before checkout.');
             }
+            if(parkedOrder)await parked.available(tx,c,parkedOrder);
+            if(mobile){
+                const order=rowData(await tx.get(w.doc(c.db,'incoming_orders',mobile.mobileOrderId)));
+                if(order.branch!==c.branch||(order.orderCode||mobile.mobileOrderId)!==mobile.mobileOrderCode||
+                    !['preparing','ready','out_for_delivery','completed'].includes(order.status)||order.receiptId||order.paymentStatus==='paid')
+                    throw Error('This mobile order changed or was already paid. Check its receipt in Orders.');
+            }
             const originalCashier=voidAction?await verifyVoid(tx,c,shiftId,voidAction):'';
             c.assertCurrent();
             const result=await fn(tx);
@@ -85,6 +141,7 @@ export function installOwnerPOS(w,d){
                 tx.update(w.doc(c.db,'transactions',voidAction.id),{voidReason:voidAction.reason,voidOperationId:voidAction.operationId,voidOwnerUid:c.user.uid});
                 tx.set(w.doc(c.db,'manager_alerts','void-'+voidAction.id),{voidReason:voidAction.reason,ownerUid:c.user.uid,sourceSaleId:voidAction.id,originalCashier},{merge:true});
             }
+            if(parkedOrder&&result==='committed')tx.delete(w.doc(db,'parked_orders',parkedOrder.id));
             if(markSale&&result==='committed'||voidAction&&result===true)tx.update(shiftRef,{salesRevision:revision+1});
             return result;
         })});
@@ -92,8 +149,8 @@ export function installOwnerPOS(w,d){
     async function finish(c,p){
         if(p.ownerUid!==c.user.uid||p.branch!==c.branch||!p.shiftId)throw Error('The saved checkout belongs to a different session.');
         const verification=await scoped(c,p.shiftId,{checkShift:false});
-        const {ownerInput,...sale}=p;
-        if(!await verification.alreadyCommitted(sale))await (await scoped(c,p.shiftId,{markSale:!sale.voidCorrection})).commit(sale);
+        const {ownerInput,ownerParkedTicket,...sale}=p;
+        if(!await verification.alreadyCommitted(sale))await (await scoped(c,p.shiftId,{markSale:!sale.voidCorrection,mobile:sale.isMobileOrder?sale:null,parkedOrder:p.ownerParkedTicket||null})).commit(sale);
         c.assertCurrent();return {status:'committed',payload:p,receiptId:p.receiptId,saleId:p.saleId};
     }
     function exclusive(c,fn){
@@ -108,7 +165,7 @@ export function installOwnerPOS(w,d){
         if(!(await w.Swal.fire({title:'Check saved Owner payment',text:'Receipt '+p.receiptId+' is awaiting confirmation. Use the same saved payment to check or finish it.',showCancelButton:true,confirmButtonText:'Check receipt'})).isConfirmed)return;
         await exclusive(c,async()=>{
             const saved=pending(c);if(saved?.saleId!==p.saleId)return;
-            await finish(c,saved);w.localStorage.removeItem(key(c));
+            await finish(c,saved);parked.clear();w.localStorage.removeItem(key(c));
             if(awaitingCart?.saleId===saved.saleId&&w.cart===awaitingCart.cart&&voidCanonical(w.cart)===voidCanonical(saved.cart)){
                 w.cart=[];if(w.platformCarts)w.platformCarts[w.posPlatform||'Standard']=w.cart;
                 w.renderCart?.();resetCheckoutForNextOrder(w,d);w.closeModal?.('checkoutModal');
@@ -123,7 +180,9 @@ export function installOwnerPOS(w,d){
             const c=context(),drawer=shift();
             if(!drawer||menuSession!==c.session||input.branch!==c.branch||input.shiftId!==drawer.shiftId)throw Error('Wait for the selected branch menu and open register.');
             if(!Array.isArray(input.cart)||!input.cart.length||!Number.isFinite(input.netTotal)||input.netTotal<0)throw Error('Review the items and total before checkout.');
-            if(input.mealStaffName||input.isMobileOrder||input.wasParked||input.resumeRecoveryId||input.paymentMethod==='Salary Deduction')throw Error('Complete this specialized order through its original staff workflow.');
+            if(input.mealStaffName||input.wasParked||input.resumeRecoveryId||input.paymentMethod==='Salary Deduction')throw Error('Complete this specialized order through its original staff workflow.');
+            if(Boolean(input.isMobileOrder)!==Boolean(input.mobileOrderId)||Boolean(input.mobileOrderId)!==Boolean(input.mobileOrderCode)||
+                input.mobileOrderId&&(![input.mobileOrderId,input.mobileOrderCode].every(v=>typeof v==='string'&&v.trim()&&!v.includes('/'))))throw Error('Reload the accepted order from Orders.');
             return await exclusive(c,async()=>{
                 let p=pending(c);
                 const base=JSON.parse(JSON.stringify(input));
@@ -139,22 +198,23 @@ export function installOwnerPOS(w,d){
                 }else{
                     const fix=correction?.session===c.session?correction:null;
                     if(fix&&(w.cart!==fix.cart||input.shiftId!==fix.shiftId))throw Error('Reopen the original correction in Shift Sales.');
-                    const saleId=fix?.saleId||saleIdentity({},w.crypto),now=new Date();
+                    const saleId=fix?.saleId||saleIdentity(base,w.crypto),now=new Date();
                     const before=recipeRevision(await settings(c,'recipe_revision'));
                     const bom=recipeRows((await rows(c,'bom')).docs.map(doc=>doc.data()));
                     const after=recipeRevision(await settings(c,'recipe_revision'));c.assertCurrent();
                     if(!bom.length||before.version!==after.version||before.revisionId!==after.revisionId)throw Error('Branch recipes are updating. Retry checkout.');
-                    p={...base,saleId,status:'Paid',receiptId:'OWN-'+saleId.slice(5).toUpperCase(),saleVersion:SALE_VERSION,
+                    const ticket=parked.current(c);
+                    p={...base,...(ticket?{wasParked:true,parkedOrderId:ticket.id,ownerParkedTicket:{id:ticket.id,contents:ticket.contents}}:{}),saleId,status:'Paid',receiptId:base.mobileOrderCode||'OWN-'+saleId.slice(5).toUpperCase(),saleVersion:SALE_VERSION,
                         localTimestamp:now.toISOString(),cashier:c.actionActor,ownerUid:c.user.uid,ownerInput:signature,
                         paymentVerified:base.paymentMethod==='Cash',recipeSnapshot:bom,recipeSnapshotStatus:'live',
                         ...(fix?{voidCorrection:{sourceSaleId:fix.sourceId,sourceReceiptId:fix.receiptId,operationId:fix.operationId}}:{})};
-                    const engine=await scoped(c,p.shiftId);
-                    await engine.alreadyCommitted(p);
+                    const engine=await scoped(c,p.shiftId,{mobile:p.isMobileOrder?p:null,parkedOrder:p.ownerParkedTicket||null});
+                    if(await engine.alreadyCommitted(p))throw Error('This receipt was already saved. Check Shift Sales.');
                     p=await engine.prepare(p,bom);c.assertCurrent();
                     w.localStorage.setItem(key(c),JSON.stringify(p));persisted=true;
                 }
                 awaitingCart={saleId:p.saleId,cart:w.cart};
-                const result=await finish(c,p);w.localStorage.removeItem(key(c));correction=null;awaitingCart=null;
+                const result=await finish(c,p);parked.clear();w.localStorage.removeItem(key(c));correction=null;awaitingCart=null;
                 if(w.platformCarts)w.platformCarts[w.posPlatform||'Standard']=[];
                 try{resetCheckoutForNextOrder(w,d);}catch(error){console.warn('Owner receipt saved; payment controls will reset on the next order.',error);}
                 return result;
@@ -200,5 +260,7 @@ export function installOwnerPOS(w,d){
             }else await w.Swal.fire({title:'Order cancelled',text:receiptId+' was voided and its inventory update was recorded.',icon:'success'});
         }catch(e){await w.Swal.fire({title:'Receipt update',text:e.message,icon:'info'});}finally{busy=false;}
     }
-    return {loadMenu,checkout,changeReceipt,reviewPending,isReady:()=>!!menuSession&&menuSession===w.sessionUser,isBusy:()=>busy,hasPending:()=>{try{return !!pending(context());}catch{return false;}}};
+    const parked=installOwnerParked(w,d,{context,shift,exclusive,blocked:c=>!!pending(c)||correction?.session===c.session,
+        discard:async(c,shiftId,id)=>(await scoped(c,shiftId)).discardParked(id,c.actionActor,c.branch,shiftId,c.assertCurrent)});
+    return {parked,loadMenu,checkout,changeReceipt,reviewPending,watchOrderSettings,toggleOrderSetting,isReady:()=>!!menuSession&&menuSession===w.sessionUser,isBusy:()=>busy,hasPending:()=>{try{return !!pending(context());}catch{return false;}}};
 }

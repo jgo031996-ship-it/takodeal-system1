@@ -50,6 +50,20 @@ export function installPOSSettingsHub(w,d,{primaryAuth,now=Date.now,timeoutMs=25
             continue;
         }
         w[name]=async function(...args){
+            if(action==='parkedOrders'&&w.cashierOwnerPOS?.parked&&w.sessionUser?.workspaceKind===CASHIER_OWNER_WORKSPACE){
+                let owner;try{owner=w.getCashierOwnerWorkspaceContext();if(!owner)throw Error('Reopen Owner Access.');}catch(error){message(error);return false;}
+                owner.assertCurrent();
+                if(['parkOrder','resumeOrder','deleteParkedOrderManually'].includes(name))return w.cashierOwnerPOS.parked[name](...args);
+                if(name==='showParkedOrders')return original.call(this,owner);
+                if(name==='printParkedReceipt'){
+                    try{
+                        const snap=await w.getDocFromServer(w.doc(owner.db,'parked_orders',args[0]));owner.assertCurrent();
+                        if(!snap.exists()||snap.data().branch!==owner.branch)throw Error('This ticket is no longer parked at this branch.');
+                        return original.call(this,args[0],{...owner,parkedOrder:{...snap.data(),id:snap.id}});
+                    }catch(error){message(error);return false;}
+                }
+            }
+
             const preference=['setAutoDrawer','setPrinterMode','setReceiptLogoMode','toggleKDS'].includes(name),run=(runs.get(name)||0)+1;runs.set(name,run);
             if(!preference&&lockedActions.has(name))return false;
             if(!preference)lockedActions.add(name);

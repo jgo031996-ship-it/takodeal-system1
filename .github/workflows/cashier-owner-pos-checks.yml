@@ -1,7 +1,7 @@
 name: Cashier Owner POS and receipt controls
 on:
   push:
-    branches: [fix/cashier-owner-store-pos-20261117]
+    branches: [fix/cashier-owner-store-pos-20261117, fix/remote-owner-branch-orders-20261117]
 permissions:
   contents: read
 jobs:

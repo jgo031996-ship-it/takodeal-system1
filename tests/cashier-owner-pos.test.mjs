@@ -27,7 +27,7 @@ async function fixture(){
     const pos=installOwnerPOS(w,d);w.cashierOwnerPOS=pos;await pos.loadMenu(c);
     function punch(){return pos.checkout({cart:w.cart,branch:'Agdao',shiftId:'CURRENT',orderType:'Dine-In',paymentMethod:'Cash',netTotal:w.cart[0].qty*65});}
     w.cart=[structuredClone(item)];
-    return {w,h,c,pos,punch,storage,dialogs};
+    return {w,h,c,pos,punch,storage,dialogs,nodes};
 }
 test('verified Owner uses selected menu, creates a sale, returns another cashier’s wrong punch to cart, and posts one corrected receipt',async()=>{
     const {w,h,pos,punch,storage}=await fixture();
@@ -62,4 +62,36 @@ test('Owner cancellation restores only applied stock once and identifies both op
     const alerts=[...h.docs].filter(([path])=>path.startsWith('manager_alerts/void-'));
     assert.equal(alerts.length,1);assert.equal(alerts[0][1].voidReason,'OrderCancelled');assert.equal(alerts[0][1].ownerUid,'sample-owner');
     assert.equal(h.get('inventory/F').currentStock,20);assert.equal(w.cart[0].name,'another unpaid order');
+});
+
+import {transitionMobileOrder,mobileActor} from '../Takodeal-POS/mobile-order-actions.js';
+test('remote Owner accepts an incoming order, charges its original code once and marks it ready and complete',async()=>{
+    const {w,h,pos,c}=await fixture();
+    const id='online-fixture',ref='incoming_orders/'+id;
+    h.put(ref,{branch:c.branch,orderCode:'WEB-42',items:[item],status:'mobile_queue'});
+    assert.equal(mobileActor(w).uid,c.user.uid);
+    const change=to=>transitionMobileOrder(w,{id,to,prepTime:15,proofCheckAcknowledged:true});
+    await change('preparing');
+    const input={cart:w.cart,branch:c.branch,shiftId:'CURRENT',orderType:'Take-Out',paymentMethod:'Cash',netTotal:65,isMobileOrder:true,mobileOrderCode:'WEB-42',mobileOrderId:id};
+    const paid=await pos.checkout(input);
+    assert.equal(paid.status,'committed',paid.error);assert.equal(paid.receiptId,'WEB-42');
+    assert.equal(h.get(ref).acceptedByUid,c.user.uid);assert.equal(h.get(ref).paymentStatus,'paid');
+    assert.equal((await pos.checkout(input)).status,'failed');assert.equal(h.get('inventory/F').currentStock,18);
+    await change('ready');await change('completed');assert.equal(h.get(ref).completedBy,c.actionActor);
+    h.put(ref,{branch:'Maa',items:[item],status:'mobile_queue'});await assert.rejects(change('preparing'),/another branch/);
+    h.put(ref,{branch:c.branch,items:[item],status:'mobile_queue'});h.put('hq_managers/owner',{active:false});await assert.rejects(change('preparing'),/revoked/);
+});
+test('remote Owner resumes a branch parked ticket and consumes it atomically with successful payment',async()=>{
+    const {w,h,pos,c,punch}=await fixture();const origin='parked_orders/table-4';
+    const row={branch:c.branch,items:[item],name:'Table 4',total:65,orderType:'Take-Out',platform:'Standard'};
+    h.put(origin,row);w.cart=[];await pos.parked.resumeOrder('table-4');
+    assert.equal(w.cart[0]?.name,item.name);assert.deepEqual(h.get(origin),row);
+    assert.equal((await punch()).status,'committed');assert.equal(h.get(origin),undefined);
+    assert.equal(h.get('inventory/F').currentStock,18);
+});
+test('checkout detects a parked order already picked up on the store tablet before recording payment',async()=>{
+    const {w,h,pos,c,punch}=await fixture();const path='parked_orders/table-5';
+    h.put(path,{branch:c.branch,items:[item],name:'Table 5',total:65});w.cart=[];await pos.parked.resumeOrder('table-5');
+    h.put(path,{branch:c.branch,items:[{...item,qty:3}],name:'Table 5',total:195});
+    const paid=await punch();assert.equal(paid.status,'failed');assert.equal(h.get('inventory/F').currentStock,20);
 });

@@ -1,3 +1,4 @@
+import {mobileOwnerContext} from './mobile-order-actions.js';
 import {createCashierMealContext} from './cashier-meal-context.js';
 import {readCashierBranchPolicy} from './cashier-branch-policy.js';
 import {createPlottedTimeInBatch} from './plotted-time-in.js';
@@ -1619,8 +1620,10 @@ window.parkOrderToDB = async function (payload, assertCurrent = () => {}) {
 
 window.getParkedOrders = async function (branch) {
   try {
-    const q = query(collection(db, "parked_orders"), where("branch", "==", branch));
-    const snap = await getDocs(q);
+    const owner=mobileOwnerContext(window);
+    if(owner&&branch!==owner.branch)return [];
+    const q=query(collection(owner?.db||db,"parked_orders"),where("branch","==",branch));
+    const snap=await (owner?getDocsFromServer:getDocs)(q);owner?.assertCurrent();
     
     let orders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
@@ -3809,6 +3812,7 @@ setTimeout(() => {
     if (!branch) return;
 
     onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
+        if(window.isCashierOwnerToolsMode?.())return;
         let btn = document.getElementById('btnMobileKillSwitch');
         if (docSnap.exists()) {
             let data = docSnap.data();
@@ -4181,7 +4185,10 @@ window.loadMenuManager = async function() {
     container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Menu...</div>';
 
     try {
-        const snap = await window.getDocs(window.collection(window.db, "menu"));
+        const session=window.sessionUser,owner=mobileOwnerContext(window);
+        const snap=await (owner?window.getDocsFromServer:window.getDocs)(window.collection(owner?.db||window.db,"menu"));
+        if(session!==window.sessionUser)return;
+        owner?.assertCurrent();
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
         let uniqueCategories = new Set();
         
@@ -4209,8 +4216,6 @@ window.loadMenuManager = async function() {
         // 2. Render the grid
         window.renderMenuToggleList(window.globalMenuToggleList);
 
-        let topTitle = document.getElementById('topBarTitle');
-        if (topTitle) topTitle.innerText = "🍔 Menu Toggle";
 
     } catch (e) {
         console.error("Menu Toggle Error:", e);
@@ -4228,7 +4233,7 @@ window.renderMenuToggleList = function(itemsToRender) {
     }
 
     itemsToRender.forEach(item => {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let branch = window.sessionUser?.branch || localStorage.getItem('takodeal_device_branch') || 'Unknown';
         let isAvail = !(item.unavailableAt && item.unavailableAt.includes(branch));
         let statusColor = isAvail ? '#16a34a' : '#ef4444';
         let statusText = isAvail ? 'Available' : 'Sold Out';
@@ -4275,23 +4280,24 @@ window.filterMenuToggle = function() {
 // --- THE SMART BRANCH-SPECIFIC TOGGLE ---
 window.toggleItemStatus = async function(docId, makeAvailable) {
     try {
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        
-        // 🔥 FIX: Removed "window." prefixes so it correctly uses the imported Firebase functions!
-        const itemRef = doc(db, "menu", docId);
-        const itemSnap = await getDoc(itemRef);
-        let unavailableBranches = itemSnap.data().unavailableAt || [];
-
-        // Add or remove this specific branch from the "Sold Out" list
-        if (makeAvailable) {
-            unavailableBranches = unavailableBranches.filter(b => b !== branch);
-        } else {
-            if (!unavailableBranches.includes(branch)) unavailableBranches.push(branch);
+        const owner=mobileOwnerContext(window);
+        const branch=owner?.branch||localStorage.getItem('takodeal_device_branch');
+        if(!branch)throw Error('Choose the branch before changing availability.');
+        const database=owner?.db||db,guard=await owner?.prepareSale(),ref=doc(database,'menu',docId);
+        const unavailableBranches=await runTransaction(database,async tx=>{
+            await guard?.checkTransaction(tx);
+            const snap=await tx.get(ref);
+            if(!snap.exists())throw Error('This menu item is no longer available.');
+            const unavailable=new Set(snap.data().unavailableAt||[]);
+            if(makeAvailable)unavailable.delete(branch);else unavailable.add(branch);
+            owner?.assertCurrent();const next=[...unavailable];tx.update(ref,{unavailableAt:next});return next;
+        });
+        owner?.assertCurrent();
+        if(owner){
+            const item=window.masterPOSData?.items?.find(row=>row.id===docId);
+            if(item)item.unavailableAt=unavailableBranches;
+            window.renderMenuItems?.();
         }
-
-        // 1. Update Cloud
-        await updateDoc(itemRef, { unavailableAt: unavailableBranches });
-        
         // 2. Update local memory immediately!
         let item = window.globalMenuToggleList.find(i => i.id === docId);
         if (item) item.unavailableAt = unavailableBranches;
@@ -4371,6 +4377,7 @@ window.deliveryEnabled = true;
 
 // Listens to the cloud to see if delivery is currently on or off
 onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+        if(window.isCashierOwnerToolsMode?.())return;
     if (docSnap.exists()) {
         window.deliveryEnabled = docSnap.data().enabled;
     } else {
@@ -4387,6 +4394,7 @@ onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
 });
 
 window.toggleGlobalDelivery = async function() {
+    if(window.isCashierOwnerToolsMode?.())return window.cashierOwnerPOS.toggleOrderSetting('enabled');
     let newState = !window.deliveryEnabled;
     if (!confirm(`Are you sure you want to turn Delivery ${newState ? 'ON' : 'OFF'} for all customers across all branches?`)) return;
     
@@ -4449,6 +4457,7 @@ window.submitGrabEarnings = async function() {
 window.isBusyMode = false;
 
 window.toggleBusyMode = async function() {
+    if(window.isCashierOwnerToolsMode?.())return window.cashierOwnerPOS.toggleOrderSetting('busyMode');
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) { alert("Branch not set!"); return; }
 
@@ -4480,6 +4489,7 @@ setTimeout(async () => {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (branch) {
         window.onSnapshot(window.doc(window.db, "settings", "status_" + branch), (docSnap) => {
+        if(window.isCashierOwnerToolsMode?.())return;
             if (docSnap.exists()) {
                 window.isBusyMode = docSnap.data().busyMode || false;
                 let btn = document.getElementById('btnToggleBusy');
@@ -5344,6 +5354,7 @@ setTimeout(() => {
     if (!branch) return;
 
     onSnapshot(doc(db, "settings", "status_" + branch), (docSnap) => {
+        if(window.isCashierOwnerToolsMode?.())return;
         let btn = document.getElementById('btnMobileKillSwitch');
         if (docSnap.exists()) {
             let data = docSnap.data();
@@ -5365,6 +5376,7 @@ setTimeout(() => {
 }, 3000);
 
 window.toggleMobileOrderingStatus = async function() {
+    if(window.isCashierOwnerToolsMode?.())return window.cashierOwnerPOS.toggleOrderSetting('mobileOrdersActive');
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) { alert("Branch not set!"); return; }
 
@@ -8994,7 +9006,8 @@ window.ownerBypassLogin = async function() {
         // Physical tablet, paid queues and operational drawer stay untouched.
         window.switchView?.('pos');
         window.cashierOwnerRegister.start();
-        await window.cashierOwnerPOS.loadMenu(workspace);
+        try{await window.cashierOwnerPOS.loadMenu(workspace);}
+        catch(error){workspace.assertCurrent();await Swal.fire('Branch menu could not load',error.message+' Use Reload branch menu to retry.','info');return;}
         workspace.assertCurrent();
 
         Swal.fire({

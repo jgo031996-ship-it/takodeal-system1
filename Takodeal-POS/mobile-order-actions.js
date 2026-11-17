@@ -1,12 +1,25 @@
 const finite=value=>typeof value!=='boolean'&&value!==''&&value!=null&&Number.isFinite(Number(value));
 export function mobileCartItems(items){if(!Array.isArray(items)||!items.length)throw Error('The mobile order has no items.');return items.map(item=>{const qty=Number(item.quantity??item.qty),price=Number(item.price??item.variantPrice??item.basePrice),addons=structuredClone(item.addons||{}),extra=Object.values(addons).reduce((sum,addon)=>sum+Number(addon.qty||0)*Number(addon.price||0),0),total=finite(item.lineTotalFinal)?Number(item.lineTotalFinal):(price+extra)*qty;if(!Number.isFinite(qty)||qty<=0||!Number.isFinite(price)||price<0||!Number.isFinite(total)||total<0)throw Error('The mobile order contains an invalid item quantity or price.');return {...structuredClone(item),name:item.name||item.itemName,qty,basePrice:price,variantPrice:price,variantName:item.variantName||'Standard',lineTotalFinal:total,discountType:'none',discountVal:0,addons,notes:item.notes||'Mobile App Order'};});}
-export function mobileActor(api){const session=api.sessionUser,uid=api.auth?.currentUser?.uid||api.mobileOrderFirebaseUid?.()||'',deviceBranch=api.localStorage.getItem('takodeal_device_branch'),deviceId=api.localStorage.getItem('takodeal_device_id');if(!session?.cashierName||!deviceId||!session.branch||session.branch!==deviceBranch)throw Error('Sign in to the Cashier app for this device’s assigned branch.');return {uid,name:session.cashierName,branch:session.branch,deviceId};}
+export function mobileOwnerContext(api){
+ const owner=api.getCashierOwnerWorkspaceContext?.();
+ if(!owner){
+  if(api.isCashierOwnerToolsMode?.()||api.sessionUser?.workspaceKind==='verified-owner-workspace-v1')throw Error('Reopen Owner Access for this branch.');
+  return null;
+ }
+ owner.assertCurrent();
+ if(owner.session!==api.sessionUser||owner.branch!==api.sessionUser?.branch)throw Error('The Owner branch changed. Reopen Orders.');
+ return owner;
+}
+export function mobileActor(api){const owner=mobileOwnerContext(api);
+ if(owner)return {uid:owner.user.uid,name:owner.actionActor,branch:owner.branch,deviceId:'owner-remote:'+owner.user.uid};
+ const session=api.sessionUser,uid=api.auth?.currentUser?.uid||api.mobileOrderFirebaseUid?.()||'',deviceBranch=api.localStorage.getItem('takodeal_device_branch'),deviceId=api.localStorage.getItem('takodeal_device_id');if(!session?.cashierName||!deviceId||!session.branch||session.branch!==deviceBranch)throw Error('Sign in to the Cashier app for this device’s assigned branch.');return {uid,name:session.cashierName,branch:session.branch,deviceId};}
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export async function transitionMobileOrder(api,{id,to,prepTime,reason='',proofCheckAcknowledged=false}){
- if(typeof id!=='string'||!id||id.includes('/')||!['preparing','rejected','ready','completed'].includes(to))throw Error('Choose a valid order action.');const actor=mobileActor(api),ref=api.doc(api.db,'incoming_orders',id);
+ if(typeof id!=='string'||!id||id.includes('/')||!['preparing','rejected','ready','completed'].includes(to))throw Error('Choose a valid order action.');const owner=mobileOwnerContext(api),db=owner?.db||api.db,actor=mobileActor(api),ref=api.doc(db,'incoming_orders',id);
  if(to==='preparing'&&(![10,15,20,30,45,60].includes(Number(prepTime))||!proofCheckAcknowledged))throw Error('Choose preparation time and acknowledge the order / payment-proof check.');
  if(to==='rejected'&&(!String(reason).trim()||String(reason).length>500))throw Error('Enter a brief rejection reason, up to 500 characters.');
- return api.runTransaction(api.db,async tx=>{if(!same(actor,mobileActor(api)))throw Error('The cashier or device branch changed. Reopen the order.');const snap=await tx.get(ref);if(!snap.exists())throw Error('This mobile order no longer exists.');const order=snap.data();if(order.branch!==actor.branch)throw Error('This order belongs to another branch.');
+ const guard=await owner?.prepareSale();
+ return api.runTransaction(db,async tx=>{await guard?.checkTransaction(tx);owner?.assertCurrent();if(!same(actor,mobileActor(api)))throw Error('The cashier or device branch changed. Reopen the order.');const snap=await tx.get(ref);if(!snap.exists())throw Error('This mobile order no longer exists.');const order=snap.data();if(order.branch!==actor.branch)throw Error('This order belongs to another branch.');
   const prefix={preparing:'accepted',rejected:'rejected',ready:'ready',completed:'completed'}[to];
   if(order.status===to){if(order[prefix+'ByUid']===actor.uid&&order[prefix+'By']===actor.name&&order[prefix+'DeviceId']===actor.deviceId&&(to!=='preparing'||Number(order.prepTime)===Number(prepTime)))return {alreadySaved:true,order};throw Error('This order was already handled. Refresh the Mobile Hub.');}
   const permitted={preparing:['mobile_queue'],rejected:['mobile_queue'],ready:['preparing'],completed:['ready','out_for_delivery']};if(!permitted[to].includes(order.status))throw Error('The order status changed. Refresh the Mobile Hub before continuing.');
