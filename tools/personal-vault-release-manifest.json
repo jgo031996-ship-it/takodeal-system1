@@ -1,6 +1,6 @@
 {
   "baseline": "b916c8c49210fab8d1c61c255e812e74a3844ef1",
-  "candidateSource": "7e4b33b16d3924736e5fcb4cdbd4111d64d02c8e",
+  "candidateSource": "526a5ab413288b21fd0e3ad078df098fa44c61ca",
   "functions": {
     "staffDeviceSetup": {
       "completeSourceInventory": true,
@@ -302,7 +302,7 @@
         },
         "staff-private-profile-store.mjs": {
           "baseline": "3cade0bce182e39734dd1632b34270a0b85c08825b0c593e3e69628e96ad2f5b",
-          "candidate": "e600a7cdb04d2ce179311a5acfef9cf45ea3062a154c2acdbf209adac658fdcc"
+          "candidate": "0097ae4840f69b45b6f42a62c3c5c745cab15c47d7dc2be56581b6faf285c77a"
         },
         "store.mjs": {
           "baseline": "3dafe9c07c9fe67279b0923f7bd4df4dee8bc3ac26d616d5e8292b968d6c7585",
