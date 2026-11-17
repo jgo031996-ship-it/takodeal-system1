@@ -25,7 +25,8 @@ export function createAccessHandler({verifyToken,store}={}){
    if(['staff-login','verify-staff-pin'].includes(route)){
     const proof=route==='verify-staff-pin';
     if(!['staff','cashier'].includes(app)||!only(body,proof?['pin','staffId','deviceId','app','purpose']:['pin','deviceId','app','sessionId'],proof?['branch','scope','sessionId']:['branch','selectedStaffId'])||body.app!==app||!pin(body.pin)||!accessDevice(body.deviceId)||body.branch!==undefined&&(typeof body.branch!=='string'||!body.branch.trim()||body.branch.length>120)||app==='cashier'&&body.branch===undefined||body.selectedStaffId!==undefined&&!accessId(body.selectedStaffId)||(!proof||app==='staff')&&(!accessId(body.sessionId)||body.sessionId.length<16)||body.sessionId!==undefined&&(!accessId(body.sessionId)||body.sessionId.length<16)||proof&&(!accessId(body.staffId)||!STAFF_PIN_PURPOSES.includes(body.purpose)||body.scope!==undefined&&!scopeId(body.scope)))fail(400,'access/request','Check the employee PIN and the saved device.');
-    if(proof&&(['purchase','meal'].includes(body.purpose)&&!scopeId(body.scope)||app==='cashier'&&body.purpose!=='time-clock'&&body.sessionId===undefined))fail(400,'access/request','Sign in to the Cashier app and reopen this exact PIN action.');
+    if(proof&&(['purchase','meal'].includes(body.purpose)&&!scopeId(body.scope)||app==='cashier'&&!['time-clock','receipt-void'].includes(body.purpose)&&body.sessionId===undefined))fail(400,'access/request','Sign in to the Cashier app and reopen this exact PIN action.');
+    if(proof&&body.purpose==='receipt-void'&&(app!=='cashier'||body.sessionId!==undefined||typeof body.scope!=='string'||!/^[a-f0-9]{64}$/.test(body.scope)))fail(400,'access/request','Confirm the original cashier PIN for this exact saved receipt in the Cashier app.');
     await store.rate(actor.uid,request.trustedIP,route);
     return response(200,proof?await store.verifyPin(body,actor):await store.login(body,actor));
    }

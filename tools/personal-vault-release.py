@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check and stage the reviewed Vault fix against the deployed source. No deploy."""
+import argparse
 import hashlib
 import json
 import os
@@ -57,7 +58,7 @@ def validate_metadata(name, metadata, spec):
         raise ReleaseCheckError(name+': a fixed source generation is required.')
     return 'gs://'+source['bucket']+'/'+obj+'#'+generation
 
-def stage_bundle(name, archive_path, spec, repo_root, target):
+def stage_bundle(name, archive_path, spec, repo_root, target, *, require_candidate=False):
     # Validate the archive without executing any deployed code.
     if archive_path.stat().st_size > 64*1024*1024:
         raise ReleaseCheckError(name+': source archive is too large for this bounded check.')
@@ -92,6 +93,15 @@ def stage_bundle(name, archive_path, spec, repo_root, target):
         if len(roots) != 1:
             raise ReleaseCheckError(name+': function source root is ambiguous.')
         prefix = roots[0]
+        if spec.get('completeSourceInventory'):
+            for filename, info in names.items():
+                if not filename.startswith(prefix) or info.is_dir():
+                    continue
+                relative = filename[len(prefix):]
+                if {'.git', 'node_modules'}.intersection(PurePosixPath(relative).parts):
+                    continue
+                if relative not in spec['files']:
+                    raise ReleaseCheckError(name+': deployed source contains a file outside the reviewed inventory.')
         mismatches = []
         for relative, hashes in spec['files'].items():
             candidate = repo_root / spec['directory'] / relative
@@ -99,10 +109,15 @@ def stage_bundle(name, archive_path, spec, repo_root, target):
                 raise ReleaseCheckError(name+': checked-out candidate source was changed: '+relative)
             deployed = prefix+relative
             current = digest(archive.read(names[deployed])) if deployed in names else None
-            if current not in (hashes['baseline'], hashes['candidate']):
+            allowed = (hashes['candidate'],) if require_candidate else (hashes['baseline'], hashes['candidate'])
+            if current not in allowed:
                 mismatches.append(relative)
         if mismatches:
+            if require_candidate:
+                raise ReleaseCheckError(name+': deployed source does not match the complete candidate: '+', '.join(mismatches[:12]))
             raise ReleaseCheckError(name+': deployed source differs from the reviewed baseline in '+', '.join(mismatches[:12])+'. Nothing was deployed.')
+        if require_candidate:
+            return
         target.mkdir(mode=0o700)
         for filename, info in names.items():
             if not filename.startswith(prefix) or info.is_dir():
@@ -121,9 +136,13 @@ def stage_bundle(name, archive_path, spec, repo_root, target):
                 shutil.copyfile(repo_root / spec['directory'] / relative, destination)
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--verify-deployed', action='store_true', help='Require the exact candidate for both live functions; do not stage source.')
+    args = parser.parse_args()
     manifest = json.loads(MANIFEST.read_text())
     work = Path(tempfile.mkdtemp(prefix='takodeal-vault-stage-', dir=Path.home()))
     results = []
+    observed = {}
     for name, spec in manifest['functions'].items():
         print('Checking '+name+'...', flush=True)
         metadata = describe(name)
@@ -131,11 +150,12 @@ def main():
         archive = work / (name+'.zip')
         cloud('storage', 'cp', uri, str(archive), '--quiet')
         target = work / name
-        stage_bundle(name, archive, spec, ROOT, target)
+        stage_bundle(name, archive, spec, ROOT, target, require_candidate=args.verify_deployed)
         # Detect a concurrent deployment during source download/staging.
         fresh = describe(name)
         if fresh.get('updateTime') != metadata.get('updateTime') or validate_metadata(name, fresh, spec) != uri:
             raise ReleaseCheckError(name+': deployment changed during the check; retry before publishing.')
+        observed[name] = (metadata.get('updateTime'), uri)
         service = metadata['serviceConfig']
         results.append({'name':name, 'source':str(target), 'updateTime':metadata.get('updateTime'),
                         'runtime':metadata['buildConfig']['runtime'],
@@ -144,7 +164,17 @@ def main():
                         'timeout':service.get('timeoutSeconds'), 'concurrency':service.get('maxInstanceRequestConcurrency'),
                         'minInstances':service.get('minInstanceCount',0), 'maxInstances':service.get('maxInstanceCount'),
                         'ingress':service.get('ingressSettings')})
-        print('READY '+name+': deployed source matches the reviewed baseline; PIN changes staged.', flush=True)
+        if args.verify_deployed:
+            print('VERIFIED '+name+': deployed source matches every reviewed candidate checksum.', flush=True)
+        else:
+            print('READY '+name+': source verified and candidate staged.', flush=True)
+    for name, (update_time, uri) in observed.items():
+        final = describe(name)
+        if final.get('updateTime') != update_time or validate_metadata(name, final, manifest['functions'][name]) != uri:
+            raise ReleaseCheckError(name+': deployment changed while checking the pair; retry.')
+    if args.verify_deployed:
+        print('DEPLOYED SOURCE VERIFIED for both functions. No deployment performed.')
+        return
     state = {'project':PROJECT, 'region':REGION, 'candidateSource':manifest['candidateSource'], 'functions':results}
     marker = work / 'ready.json'
     marker.write_text(json.dumps(state, indent=2)+'\n')
