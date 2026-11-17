@@ -26,11 +26,13 @@ try{
  const table=document.getElementById('tbTransBody');
  if(!table.textContent.includes('Total sales ₱240.00')||!document.getElementById('btnTopShift').textContent.includes('register open'))throw Error('Missing actual open status or sales totals');
  table.querySelector('[data-owner-receipt]').click();if(!window.fixtureDetails?.html.includes('FICTIONAL-001'))throw Error('Details click failed');
- window.switchView('pos');if(document.querySelector('#globalShiftLockout h2').textContent!=='Owner branch view'||!document.getElementById('btnMainPlaceOrder').disabled)throw Error('Owner POS mode was not preserved');
- document.querySelector('#globalShiftLockout button').click();if(reads.length!==3)throw Error('View branch sales did not refresh the verified Owner connection');
+ let requested=null;window.cashierOwnerPOS={isReady:()=>true,hasPending:()=>false,changeReceipt:(id,receipt)=>{requested=[id,receipt];}};
+ table.querySelector('[data-owner-void]').click();if(requested?.join('/')!=='fictional-sale/FICTIONAL-001')throw Error('Receipt action did not identify the displayed branch sale');
+ window.switchView('pos');if(document.getElementById('globalShiftLockout').style.display!=='none'||document.getElementById('btnMainPlaceOrder').disabled)throw Error('Verified Owner cannot use the actual POS');
+ document.getElementById('btnTopShift').click();if(reads.length!==3)throw Error('View branch sales did not refresh the verified Owner connection');
  emit(2,[]);emit(3,[{id:'past-sale',receiptId:'PAST-001',branch:'Agdao',timestamp:new Date('2026-11-14T03:00:00Z'),netTotal:80}]);if(!table.textContent.includes('No open register is synced')||!table.textContent.includes('PAST-001'))throw Error('Missing-register history failed');window.fixtureSwitches=0;window.ownerBypassLogin=()=>window.fixtureSwitches++;table.querySelector('[data-owner-switch]').click();if(window.fixtureSwitches!==1)throw Error('Branch switch control failed');table.querySelector('[data-owner-range=latest]').click();table.querySelector('[data-owner-sales-date]').value='2026-11-15';table.querySelector('[data-owner-show-date]').click();if(reads.at(-1).query.filters.find(v=>v.op==='>=').value.toISOString()!=='2026-11-14T16:00:00.000Z')throw Error('Philippine sales-date range failed');
  window.sessionUser=null;window.dispatchEvent(new Event('cashier-workspace-changed'));if(table.textContent!=='Sign in to view branch sales.')throw Error('Logout retained branch sales');
- report.textContent='PASS: actual HTML, open register, cash totals, receipt details, Owner POS lock, remote close and logout';
+ report.textContent='PASS: actual HTML, open register, cash totals, receipt details, Owner checkout and receipt action, remote close and logout';
 }catch(error){report.textContent='FAIL: '+error.message;}
 `;
 const html=page.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace('</body>','<output id="owner-register-proof">PENDING</output><script>'+ui+'</script><script type="module">'+script+'</script></body>');
@@ -47,6 +49,6 @@ try{for(const size of ['1280,900','412,915']){
  try{
   const child=spawn(executable,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-background-networking','--no-first-run','--user-data-dir='+profile,'--window-size='+size,'--virtual-time-budget=5000','--dump-dom','http://127.0.0.1:'+server.address().port]);
   child.stdout.on('data',data=>out+=data);child.stderr.on('data',data=>errors=(errors+data).slice(-4000));
-  const timer=setTimeout(()=>child.kill(),20000);const code=await new Promise(resolve=>child.on('close',resolve));clearTimeout(timer);assert.equal(code,0,errors);assert.match(out,/<output id="owner-register-proof">PASS:/);console.log(size+': passed actual Cashier DOM and Owner entry/actions');
+  const timer=setTimeout(()=>child.kill(),20000);const code=await new Promise(resolve=>child.on('close',resolve));clearTimeout(timer);assert.equal(code,0,errors);assert.match(out.match(/<output id="owner-register-proof">[^<]*/)?.[0]||errors,/<output id="owner-register-proof">PASS:/);console.log(size+': passed actual Cashier DOM and Owner entry/actions');
  }finally{rmSync(profile,{recursive:true,force:true});}
 }}finally{await new Promise(resolve=>server.close(resolve));}

@@ -63,7 +63,7 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
  const session=()=>({person:w.sessionUser,uid:w.auth?.currentUser,staffId:w.sessionUser?.staffId||w.sessionUser?.id,name:w.sessionUser?.cashierName,branch:w.localStorage.getItem('takodeal_device_branch'),deviceId:w.localStorage.getItem('takodeal_device_id'),shift:w.currentShift,shiftId:w.currentShift?.shiftId});
  function capture({cart=true,requireOpen=true}={}){
   const start=session(),epoch=generation,order=w.cart,serialized=voidCanonical(order),platform=checkoutPlatform(w,d),platforms=voidCanonical(w.platformCarts||null),platformCache=w.platformCarts,platformRefs=Object.entries(w.platformCarts||{});let checkCart=cart;
-  const guard=()=>{const current=session();if(epoch!==generation||current.person!==start.person||current.uid!==start.uid||current.staffId!==start.staffId||current.name!==start.name||current.branch!==start.branch||current.deviceId!==start.deviceId||current.shift!==start.shift||current.shiftId!==start.shiftId||requireOpen&&(!current.shift?.active||!voidId(start.shiftId))||w.sessionUser?.branch!==start.branch||!voidId(start.staffId)||checkCart&&(w.cart!==order||voidCanonical(w.cart)!==serialized||checkoutPlatform(w,d)!==platform||voidCanonical(w.platformCarts||null)!==platforms||w.platformCarts!==platformCache||platformRefs.some(([key,value])=>w.platformCarts?.[key]!==value)))throw changed();};
+  const guard=()=>{const current=session();if(epoch!==generation||current.person!==start.person||current.uid!==start.uid||current.staffId!==start.staffId||current.name!==start.name||current.branch!==start.branch||current.deviceId!==start.deviceId||current.shiftId!==start.shiftId||requireOpen&&(!current.shift?.active||!voidId(start.shiftId))||w.sessionUser?.branch!==start.branch||!voidId(start.staffId)||checkCart&&(w.cart!==order||voidCanonical(w.cart)!==serialized||checkoutPlatform(w,d)!==platform||voidCanonical(w.platformCarts||null)!==platforms||w.platformCarts!==platformCache||platformRefs.some(([key,value])=>w.platformCarts?.[key]!==value)))throw changed();};
   guard.releaseCart=()=>{checkCart=false;};
   guard();return {start,guard};
  }
@@ -208,9 +208,26 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
   if(view.state!=='cancelled')throw held();
   throw error;
  }
- async function start(saleId,receiptId,{reason:selectedReason}={}){
+ function hasUnfinishedOrder(){
+  return !Array.isArray(w.cart)||w.cart.length>0||Object.values(w.platformCarts||{}).some(cart=>!Array.isArray(cart)||cart.length>0)||
+   w.isActiveOrderMobile||w.isResumedParkedOrder||w.parkedRecovery?.activeId?.()||cartOwners.has(w.cart)||
+   w.isProcessingOrder||w.isSubmittingOrder||w.cashierRemitSubmitting||w.cashierCashCountActive||w.hasPendingCashRemittance?.();
+ }
+ async function switchForReceipt(originalCashier,receiptId,captured){
+  const switchable=typeof w.logoutCashier==='function'&&!hasUnfinishedOrder();
+  const instructions=switchable?'Switch cashier, sign in as '+originalCashier+', then open this receipt in Shift Sales.':'Finish or park the open order before switching cashiers.';
+  const decision=await dialog({title:'This receipt belongs to another cashier',text:'Receipt '+receiptId+' was recorded by '+originalCashier+'. You are signed in as '+captured.start.name+'. '+instructions,
+   showCancelButton:switchable,confirmButtonText:switchable?'Switch cashier':'Keep current order',cancelButtonText:'Stay signed in',focusCancel:switchable});
+  captured.guard();
+  if(switchable&&decision.isConfirmed&&!hasUnfinishedOrder())w.logoutCashier();
+  return {cancelled:true};
+ }
+ async function start(saleId,receiptId,{reason:selectedReason,originalCashier}={}){
   ready();if(!voidId(saleId)||!voidId(receiptId)||saleId.startsWith('LOCAL-'))throw Error('Select an uploaded receipt with an exact saved reference.');
-  const captured=capture();let reason=selectedReason;
+  const captured=capture();
+  if(typeof originalCashier==='string'&&originalCashier.trim()&&originalCashier!==captured.start.name)
+   return switchForReceipt(originalCashier,receiptId,captured);
+  let reason=selectedReason;
   if(!reason){const choice=await dialog({title:'Why are you voiding this order?',text:'Receipt '+receiptId+'. Its applied recipe deductions will be returned and a security alert will be recorded.',showDenyButton:true,showCancelButton:true,confirmButtonText:'Order cancelled',denyButtonText:'Wrong punched items',cancelButtonText:'Keep receipt',focusCancel:true});captured.guard();reason=choice.isConfirmed?'OrderCancelled':choice.isDenied?'WrongPunched':null;}
   if(!reason)return {cancelled:true};if(!['OrderCancelled','WrongPunched'].includes(reason))throw changed();if(reason==='WrongPunched'&&!journal.forOperator(captured.start).some(row=>row.saleId===saleId&&!['closed','cancelled'].includes(row.state)))emptyForReplacement();
   let connected=await connection(null,captured.guard),actor=connected.actor;connected.current();
@@ -236,7 +253,7 @@ export function installCashierVoid(w=window,d=document,{access=w.cashierVoidAcce
  }
  function checkoutRow(payload){active=cartOwners.get(w.cart)||null;if(!active)return null;if(active.queued)throw Error('This replacement order is already queued. Clear the completed cart before entering another customer.');const row=journal.get(active.uid,active.operationId);if(!row||!['saved','claimed'].includes(row.state)||row.reason!=='WrongPunched')throw held();const s=active.session,current=session();if(current.person!==s.person||current.uid!==s.uid||current.staffId!==s.staffId||current.name!==s.name||current.branch!==s.branch||current.deviceId!==s.deviceId||current.shift!==s.shift||current.shiftId!==s.shiftId||!current.shift?.active||w.cart!==active.cart||checkoutPlatform(w,d)!==(row.sourcePlatform||'Standard')||payload.branch!==s.branch||payload.shiftId!==s.shiftId||active.checkoutCart&&voidCanonical(w.cart)!==active.checkoutCart)throw changed();active.context.current();return row;}
  const service={journal,
-  start:(saleId,receiptId)=>run(()=>start(saleId,receiptId)),recover:(op,options)=>run(()=>recover(op,options)),
+  start:(saleId,receiptId,originalCashier)=>run(()=>start(saleId,receiptId,{originalCashier})),recover:(op,options)=>run(()=>recover(op,options)),
   invalidate(){generation++;active=null;access.invalidate();},
   blockLogout(){
    try{const current=session(),rows=journal.forOperator(current);if(!rows.some(row=>!['closed','cancelled'].includes(row.state)&&(row.state==='pending'||!!row.payload)))return false;}

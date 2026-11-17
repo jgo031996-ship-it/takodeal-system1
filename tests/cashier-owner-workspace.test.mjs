@@ -23,9 +23,9 @@ function fixture(options={}){
 
 test('fresh real-shaped named Owner claims and current records boot a tools session, labels and matching private context',async()=>{
  const f=fixture(),context=await f.enter();f.unchanged();assert.equal(f.tokenCalls,1);assert.equal(context.auth,f.ownerAuth);assert.equal(context.db,f.ownerDb);assert.equal(context.session,f.w.sessionUser);assert.equal(context.branch,'Agdao');assert.equal(context.actionActor,'Owner: Fictional Owner');assert.doesNotThrow(context.assertCurrent);
- assert.equal(f.w.sessionUser.workspaceKind,CASHIER_OWNER_WORKSPACE);assert.equal(f.w.sessionUser.cashierName,'Owner (System Test)');assert.equal(f.w.sessionUser.uid,f.user.uid);assert.equal(f.w.sessionUser.role,'Owner');assert.equal(Object.isFrozen(f.w.sessionUser),true);for(const key of ['staffId','sessionId','staffLoginSessionId','pin','token'])assert.equal(Object.hasOwn(f.w.sessionUser,key),false);
+ assert.equal(f.w.sessionUser.workspaceKind,CASHIER_OWNER_WORKSPACE);assert.equal(f.w.sessionUser.cashierName,'Owner: Fictional Owner');assert.equal(f.w.sessionUser.uid,f.user.uid);assert.equal(f.w.sessionUser.role,'Owner');assert.equal(Object.isFrozen(f.w.sessionUser),true);for(const key of ['staffId','sessionId','staffLoginSessionId','pin','token'])assert.equal(Object.hasOwn(f.w.sessionUser,key),false);
  assert.equal(f.nodes.get('displayCashierText').textContent,'Owner · Fictional Owner');assert.equal(f.nodes.get('displayBranchText').textContent,'Agdao');assert.equal(f.nodes.get('loginOverlay').style.display,'none');assert.equal(f.nodes.get('ownerAccessBtnContainer').style.display,'none');assert.equal(f.w.POS_BRANCH,'Agdao');
- assert.equal(JSON.parse(f.values.get(OWNER_PREVIEW_KEY)).originalBranch,'Main Office');assert.equal(f.values.get('cashierName'),'Owner (System Test)');assert.equal(JSON.stringify([...f.values]).includes('fictional-private'),false);assert.equal(f.events.filter(row=>row==='cashier-workspace-changed').length,1);
+ assert.equal(JSON.parse(f.values.get(OWNER_PREVIEW_KEY)).originalBranch,'Main Office');assert.equal(f.values.get('cashierName'),'Owner: Fictional Owner');assert.equal(JSON.stringify([...f.values]).includes('fictional-private'),false);assert.equal(f.events.filter(row=>row==='cashier-workspace-changed').length,1);
  assert.deepEqual(f.reads.map(ref=>[ref.table,ref.filters[0].field,ref.filters.at(-1).limit]).sort(),[['branches','name',2],['hq_managers','email',2],['pos_devices','deviceId',3]]);
 });
 
@@ -74,7 +74,8 @@ test('established context loss throws rather than returning a fallback writer or
 test('tools mode blocks new financial/staff callers while ordinary methods and paid queue sync retain exact identity',async()=>{
  const f=fixture(),calls=[],sync=()=>{calls.push('paid-sync');return f.w.offlineQueue;};for(const name of ['openCheckoutModal','submitFinalOrder','processCheckout','openShiftModal','openNewShift','openTimeClockModal','confirmPrepCart','voidTransaction','authorizeMealPin','toggleAuditMode','parkOrder'])f.w[name]=function(...args){calls.push([name,this,...args]);return args;};f.w.syncOfflineQueue=sync;f.workspace.installStaffActionGuards();
  assert.deepEqual(f.w.processCheckout('ordinary-paid-input'),['ordinary-paid-input']);calls.length=0;await f.enter();
- for(const name of ['openCheckoutModal','submitFinalOrder','processCheckout','openShiftModal','openNewShift','openTimeClockModal','confirmPrepCart','voidTransaction','authorizeMealPin','toggleAuditMode','parkOrder'])assert.equal(f.w[name]({new:'unpaid input'}),false,name);
+ assert.equal(f.w.processCheckout({}).status,'failed');
+ for(const name of ['openCheckoutModal','submitFinalOrder','openShiftModal','openNewShift','openTimeClockModal','confirmPrepCart','voidTransaction','authorizeMealPin','toggleAuditMode','parkOrder'])assert.equal(f.w[name]({new:'unpaid input'}),false,name);
  assert.deepEqual(calls,[]);assert.equal(f.w.syncOfflineQueue,sync);assert.equal(f.w.syncOfflineQueue(),f.original.queue);f.unchanged();
 });
 

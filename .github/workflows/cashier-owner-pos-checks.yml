@@ -1,0 +1,59 @@
+name: Cashier Owner POS and receipt controls
+on:
+  push:
+    branches: [fix/cashier-owner-store-pos-20261117]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install the locked service dependencies
+        run: |
+          for service in staff-document-broker staff-device-setup cash-remittance-review; do
+            npm ci --ignore-scripts --no-audit --no-fund --prefix "functions/$service"
+          done
+      - name: Run regression suite and report each failure by file
+        run: |
+          tests=()
+          for file in tests/*.test.mjs; do
+            [[ "$file" == tests/outbox-browser.test.mjs ]] || tests+=("$file")
+          done
+          result=0
+          node --test --test-reporter=tap "${tests[@]}" > "$RUNNER_TEMP/results.tap" || result=$?
+          awk '/^not ok / || /^# (pass|fail|tests) / || /^  location: / { print substr($0,1,240) }' "$RUNNER_TEMP/results.tap"
+          exit "$result"
+  cashier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify checkout, PIN handoff, register and stock reversal
+        run: node --test tests/owner-pos-release.test.mjs tests/cashier-owner-pos.test.mjs tests/cashier-owner-register.test.mjs tests/cashier-owner-workspace.test.mjs tests/cashier-simple-void.test.mjs tests/cashier-void-ui.test.mjs tests/cashier-void-correction-engine.test.mjs tests/pos-config.test.mjs
+      - name: Exercise the Cashier interface on desktop and mobile
+        run: |
+          node tests/cashier-owner-register.browser.mjs
+          node tests/cashier-simple-void.browser.mjs
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Exercise Owner sales and stock reversal against the database emulator
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix tests/fixtures/prep-hosted-tools
+          node tools/prepare-prep-hosted-emulator.mjs
+          node --test tests/cashier-owner-workspace-live.emulator.mjs
