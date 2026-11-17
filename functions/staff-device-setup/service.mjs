@@ -51,9 +51,11 @@ export async function verifySetupCode(value,verifier) {
  return timingSafeEqual(key,Buffer.from(verifier.hash,'hex'));
 }
 export function activeSetupStaff(profile) {
- const inactive=new Set(['blocked','revoked','terminated','resigned','inactive','disabled','archived','deleted']);
- return object(profile)&&profile.active!==false&&profile.archived!==true&&profile.blocked!==true
-  &&!inactive.has(String(profile.status??'').trim().toLowerCase())&&!['REVOKED','BLOCKED'].includes(String(profile.pin??'').trim().toUpperCase())
+ const inactive=new Set(['blocked','revoked','terminated','resigned','inactive','disabled','archived','deleted','offboarded','finished contract','contract ended','end of contract']);
+ return object(profile)&&profile.active!==false&&profile.isActive!==false
+  &&!['archived','isArchived','blocked','deleted','isDeleted','revoked','offboarded','terminated','resigned','disabled'].some(key=>profile[key]===true)
+  &&!inactive.has(String(profile.status??'').trim().toLowerCase())&&!inactive.has(String(profile.employmentStatus??'').trim().toLowerCase())
+  &&!['resigned','terminated','revoked','offboarded'].includes(String(profile.contractStatus??'').trim().toLowerCase())&&!['REVOKED','BLOCKED'].includes(String(profile.pin??'').trim().toUpperCase())
   &&plainText(profile.cashierName,160)&&plainText(profile.branch,128);
 }
 function configOf(record) {
@@ -183,7 +185,7 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
   const privatePhone=object(docConfig)&&docConfig.enabled===true&&docConfig.policyVersion===2&&docConfig.brokerEndpoint==='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'
    &&object(docBinding)&&docBinding.active===true&&docBinding.uid===actor.uid&&docBinding.staffId===body.staffId&&docBinding.deviceId===body.deviceId&&docBinding.branch===profile.branch.trim();
   if(!privatePhone){
-   configOf(config); // Pausing new enrollment does not revoke an activated personal phone.
+   if(!configOf(config).enabled)fail(409,'setup-not-enabled','Use an HQ-approved personal phone and personal setup code. Ask HQ to confirm private phone approval before recovering this PIN.');
    const binding=bindingOf(rawBinding,actor.uid);if(!binding||binding.staffId!==body.staffId||binding.deviceId!==body.deviceId)unavailable();
    const slots=await readSlots(tx,body.staffId,savedSlots,credential);assertBindingSlot(slots,binding);
    if(protectedDevice(binding,index,mirror,profile).status!=='Active')unavailable();
@@ -249,7 +251,8 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
    ]);
    const cfg=configOf(config),binding=bindingOf(storedBinding,actor.uid),retry=await priorResult(prior,'/activate',body,actor);
    if(retry){if(!binding||binding.deviceId!==body.deviceId||binding.staffId!==body.staffId)unavailable();const current=credentialOf(credential,body.staffId),slots=await readSlots(tx,body.staffId,savedSlots,current);assertBindingSlot(slots,binding);const currentDevice=protectedDevice(binding,index,mirror,profile);if(currentDevice.status!=='Active')unavailable();return {...retry,enabled:cfg.enabled,device:currentDevice};}
-   if(!cfg.enabled)fail(409,'setup-not-enabled','Personal setup codes are not enabled yet. Ask HQ before continuing.');
+   // The Owner-issued enabled credential authorizes this one phone. `enabled`
+   // controls enforcement for unregistered phones, not individual redemption.
    if(binding||index||reservedMirror(mirror))unavailable();
    const current=credentialOf(credential,body.staffId),verifier=current?.enabled&&safeVerifier(current.verifier)?current.verifier:dummyVerifier;
    const matches=await verifyCode(body.code,verifier);
@@ -262,6 +265,9 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
    if(mirror!=null)unavailable();
    const next={protocolVersion:1,uid:actor.uid,...device,deviceName:body.deviceName.trim(),codeVersion:current.version,recordVersion:1,lastOperationId:body.operationId,activatedAt:stamp,updatedAt:stamp};
    const nextSlots={...slots,revision:slots.revision+1,activeDevices:[...slots.activeDevices,{uid:actor.uid,deviceId:body.deviceId}],updatedAt:stamp};
+   // Bootstrap only after every code/profile/registry check succeeded. Existing
+   // disabled rollout stays disabled; this never locks out legacy phones.
+   if(config==null)tx.set(configPath,{protocolVersion:1,enabled:false,revision:0});
    tx.set(bindingPath(actor.uid),next);
    tx.set(slotsPath(body.staffId),nextSlots);
    tx.set(credentialPath(body.staffId),{...current,deviceSlotsRevision:nextSlots.revision,deviceSlotsHash:sha(canonical(nextSlots))});
