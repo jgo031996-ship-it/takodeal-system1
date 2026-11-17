@@ -18,7 +18,16 @@ export function createStaffPrivateProfileStore(db,{now=Date.now,serverTimestamp}
  }
  async function read(body,actor){const input=profileIntent('read',body);return db.runTransaction(async tx=>{
   const snapshot=await authority(tx,input,actor),source=snapshot.data();let timeline;
-  if(source.salaryRateVersion===1){const saved=await tx.get(db.doc('staff_salary_rates/'+input.staffId));if(!saved.exists||saved.data().staffId!==input.staffId||saved.data().branch!==source.branch||saved.data().revision!==source.salaryRateRevision)throw profileError(409,'review','Your dated salary history needs HQ review.');timeline=saved.data();}
+  if(source.salaryRateVersion===1){
+   const saved=await tx.get(db.doc('staff_salary_rates/'+input.staffId));
+   const history=saved.exists?saved.data():null,revision=source.salaryRateRevision;
+   // Owner saves a revision ID. Earlier records used the numeric sequence.
+   const matches=typeof revision==='string'?profileId(revision)&&history?.revisionId===revision:
+    Number.isSafeInteger(revision)&&revision>0&&history?.revision===revision;
+   if(!history||history.staffId!==input.staffId||history.branch!==source.branch||!matches)
+    throw profileError(409,'review','Your dated salary history needs HQ review.');
+   timeline=history;
+  }
   // The Owner form edits gcashNum. Expose it through the existing Staff response field.
   const contactSource=Object.hasOwn(source,'gcashNum')?{...source,gcashNumber:source.gcashNum}:source;
   return{schemaVersion:1,staffId:input.staffId,expectedFingerprint:privateProfileFingerprint(snapshot),profile:projectPrivateProfile(input.staffId,contactSource,timeline),legacyDocumentPresent:{sss:typeof source.sssIdUrl==='string'&&!!source.sssIdUrl,philhealth:typeof source.philhealthIdUrl==='string'&&!!source.philhealthIdUrl,pagibig:typeof source.pagibigIdUrl==='string'&&!!source.pagibigIdUrl}};

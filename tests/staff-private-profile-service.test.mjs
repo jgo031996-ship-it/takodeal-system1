@@ -4,6 +4,21 @@ import {adminMemory} from './helpers/admin-memory.mjs';
 import {createStaffPrivateProfileStore} from '../functions/cash-remittance-review/staff-private-profile-store.mjs';
 import {createStaffPrivateProfileHandler} from '../functions/cash-remittance-review/staff-private-profile-handler.mjs';
 import {CONTACT_FIELDS,profileIntent,privateProfileFingerprint,projectPrivateProfile,profileHash} from '../functions/cash-remittance-review/staff-private-profile-model.mjs';
+test('Owner revision IDs and historic numeric revisions both open the matching private employee profile',async()=>{
+ const {store,memory}=fixture(),path='cashiers/'+staffId,ratePath='staff_salary_rates/'+staffId;
+ const row={version:1,staffId,branch:'Home',revision:3,revisionId:'staff-profile-synthetic',baselineDailyRate:480,rates:{}};
+ memory.put(ratePath,row);
+ for(const revision of [row.revisionId,3]){
+  memory.put(path,{...memory.get(path),salaryRateVersion:1,salaryRateRevision:revision});
+  assert.equal((await store.read(scope,actor)).profile.salaryRateTimeline.revision,3);
+ }
+ for(const revision of ['staff-profile-other',4,null,'']){
+  memory.put(path,{...memory.get(path),salaryRateVersion:1,salaryRateRevision:revision});
+  await assert.rejects(store.read(scope,actor),{status:409});
+ }
+ memory.put(path,{...memory.get(path),salaryRateRevision:row.revisionId});memory.put(ratePath,{...row,staffId:'another-person'});
+ await assert.rejects(store.read(scope,actor),{status:409});
+});
 const staffId='private-staff',uid='private-phone',deviceId='DEV-OLD-PRIVATE-PHONE',actor={uid,firebase:{sign_in_provider:'anonymous'}},scope={staffId,deviceId};
 function fixture(){const memory=adminMemory();memory.put('staff_document_config/current',{enabled:true,policyVersion:2,brokerEndpoint:'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'});memory.put('staff_document_devices/'+uid,{uid,staffId,deviceId,branch:'Home',active:true});memory.put('cashiers/'+staffId,{cashierName:'Private Employee',branch:'Home',active:true,pin:'DailyAlpha99',payslipPinManaged:false,phone:'old',salarySecret:'NOT-EXPOSED',hourlyRate:500,sssIdUrl:'https://private.invalid/legacy',signedContracts:{initial:'2026-01-01',secret:'NOT-EXPOSED'}});memory.put('staff_login_sessions/'+uid,{sessionId:'EXISTING-SID'});memory.put('payroll_records/paid',{isPaid:true,finalNetPay:800});const store=createStaffPrivateProfileStore(memory.db,{serverTimestamp:memory.serverTimestamp,now:()=>1700000000000});return{memory,store};}
 test('private read uses approved OLD private device and projects no raw PIN, government URL, verifier or arbitrary source fields',async()=>{const {store}=fixture(),result=await store.read(scope,actor);assert.equal(result.profile.phone,'old');assert.equal(result.profile.hourlyRate,500);assert.deepEqual(result.legacyDocumentPresent,{sss:true,philhealth:false,pagibig:false});assert.equal(/DailyAlpha|NOT-EXPOSED|private.invalid|"pin"|"payslipPin"/.test(JSON.stringify(result)),false);assert.deepEqual(result.profile.signedContracts,{initial:'2026-01-01'});await assert.rejects(store.read({...scope,deviceId:'DEV-NEW-OPERATIONAL'},actor),{status:403});});
