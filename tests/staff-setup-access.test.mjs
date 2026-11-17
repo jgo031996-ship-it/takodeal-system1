@@ -10,6 +10,17 @@ function deadlineClock(){const timers=new Map();let id=0;return {delay:fn=>(time
 const deviceId='DEV-12345678-1234-4123-8123-123456789000';
 const protectedState=(overrides={})=>({enabled:true,mode:'protected',device:{staffId:'staff-a',staffName:'Sample Staff',branch:'Maa',deviceId,status:'Active',...overrides}});
 function authHarness(){const user={uid:'uid-a',getIdToken:async()=>'firebase-token'},auth={currentUser:user};return {auth,user,ensureUser:async()=>auth.currentUser};}
+test('Pay, profile and background status share one in-flight verification for the same phone and UID',async()=>{
+ let uid='uid-a';const requests=[];
+ const authority=createStaffSetupAuthority({getUid:()=>uid,transport:{ready:async()=>({uid}),call:async()=>{const gate=deferred();requests.push(gate);return gate.promise;}}});
+ const initial=authority.confirm(deviceId),profile=authority.confirm(deviceId,{join:true}),pay=authority.confirm(deviceId,{join:true});
+ await new Promise(setImmediate);assert.equal(requests.length,1);requests[0].resolve(protectedState());
+ await Promise.all([initial,profile,pay]);assert.equal(authority.assertStaff('staff-a'),true);
+ const old=authority.confirm(deviceId,{join:true});await new Promise(setImmediate);
+ authority.invalidate();uid='uid-b';const next=authority.confirm(deviceId,{join:true});await new Promise(setImmediate);
+ assert.equal(requests.length,3);requests[2].resolve(protectedState({status:'Revoked'}));await next;
+ requests[1].resolve(protectedState());await assert.rejects(old,/session changed/);assert.equal(authority.isVerified(),false);
+});
 test('setup code normalizes display spacing but refuses partial, alphabetic or overlong input',()=>{
     assert.equal(normalizeSetupCode('12345-67890'),'1234567890');assert.equal(normalizeSetupCode('12345 67890'),'1234567890');
     for(const value of ['1234','12345678901','1234x67890','<script>',''])assert.throws(()=>normalizeSetupCode(value),/10-digit/);

@@ -43,7 +43,7 @@ export function createStaffVaultRecoveryClient({auth,authority,identity,deviceId
   const scope=capture(),controller=new Controller();activeController=controller;let expired=false,timer;
   const check=()=>{if(expired)throw failure('HQ has not confirmed this PIN action yet. It may have saved. Retry the same request when the connection returns.','recovery-timeout');still(scope,assertCurrent);};
   const physical=Promise.resolve().then(async()=>{
-   check();await auth.authStateReady?.();check();await scope.authority.confirm(scope.deviceId);check();binding(scope,assertCurrent);
+   check();await auth.authStateReady?.();check();await scope.authority.confirm(scope.deviceId,{join:true});check();binding(scope,assertCurrent);
    const proof=scope.authority.capture(),savedBinding=JSON.stringify(scope.authority.binding());
    const guard=()=>{check();scope.authority.assert(proof,scope.staffId);binding(scope,assertCurrent);if(JSON.stringify(scope.authority.binding())!==savedBinding)throw failure('Your personal phone setup changed. Reopen PIN recovery.','account-changed');};
    async function post(route,body){
@@ -94,7 +94,7 @@ async function recoveryForPhone({auth,authority,identity,deviceId,createPrivateC
  await auth?.authStateReady?.();local();const primaryUser=auth?.currentUser,a=typeof authority==='function'?authority():authority;
  const primaryCurrent=()=>{local();if(auth?.currentUser!==primaryUser)throw failure('Your Staff phone identity changed. Reopen PIN recovery.','account-changed');};
  if(primaryUser?.uid&&primaryUser.isAnonymous===true&&a?.confirm){
-  try{await a.confirm(selectedDevice);primaryCurrent();const b=a.binding?.();if(a.isVerified?.()&&a.mode?.()==='protected'&&b?.status==='Active'&&b.staffId===staffId&&b.deviceId===selectedDevice)return createStaffVaultRecoveryClient({auth,authority,identity,deviceId,...options});}
+  try{await a.confirm(selectedDevice,{join:true});primaryCurrent();const b=a.binding?.();if(a.isVerified?.()&&a.mode?.()==='protected'&&b?.status==='Active'&&b.staffId===staffId&&b.deviceId===selectedDevice)return createStaffVaultRecoveryClient({auth,authority,identity,deviceId,...options});}
   catch{primaryCurrent();}
  }
  primaryCurrent();if(typeof createPrivateClient!=='function')throw unavailable();

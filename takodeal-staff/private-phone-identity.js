@@ -9,7 +9,7 @@ export async function resolvePrivatePhoneIdentity({client,staffId,assertCurrent=
  if(client.personalVaultPhone){
   const {authority:a,staffId:boundStaff,deviceId:boundDevice}=client.personalVaultPhone;
   if(boundStaff!==staffId||!device(boundDevice)||!a?.confirm||!a?.capture||!a?.assert)throw failure('denied');
-  async function confirm(){guard();await a.confirm(boundDevice);guard();const b=a.binding?.();if(a.mode?.()!=='protected'||!a.isVerified?.()||b?.status!=='Active'||b.staffId!==staffId||b.deviceId!==boundDevice||typeof b.branch!=='string'||!b.branch.trim())throw failure('denied');return b;}
+  async function confirm(){guard();await a.confirm(boundDevice,{join:true});guard();const b=a.binding?.();if(a.mode?.()!=='protected'||!a.isVerified?.()||b?.status!=='Active'||b.staffId!==staffId||b.deviceId!==boundDevice||typeof b.branch!=='string'||!b.branch.trim())throw failure('denied');return b;}
   const binding=await confirm(),proof=a.capture();
   return{uid:user.uid,staffId,deviceId:boundDevice,branch:binding.branch,async assertFresh(){const next=await confirm();a.assert(proof,staffId);guard();if(next.branch!==binding.branch)throw failure('changed');}};
  }

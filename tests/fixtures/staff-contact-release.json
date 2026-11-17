@@ -1,0 +1,45 @@
+{
+  "parent": "4e4c47f331a1a25c7bff48539830259ecef605f6",
+  "files": {
+    "takodeal-staff/index.html": {
+      "before": "fff9af5c4825605f45e2f2bcbb115e07ad925957",
+      "after": "f24ad778958a760bc64f1ea3953a033950ade27b"
+    },
+    "takodeal-staff/private-phone-identity.js": {
+      "before": "0b7e50360d37f094ec6d7665bfbaf5c243eda682",
+      "after": "2f469eb1e791c3fd4398b2fd63ffe3ed8a21ad30"
+    },
+    "takodeal-staff/staff-pay-phone.js": {
+      "before": "8ab4fda07c4b7b7c5564b448dabac6ea7b3b9787",
+      "after": "d2a770e6a4ea4ba0557890415b501be8b21ea00a"
+    },
+    "takodeal-staff/staff-portal.js": {
+      "before": "63076ee790be9cec7b95de8157db412cf6474eaf",
+      "after": "a0271e30ab745b598e81c75ec27471147df319e8"
+    },
+    "takodeal-staff/staff-private-profile-client.js": {
+      "before": "3a7d64ef3c6c29061abbe8887ff26f2ea56c67dc",
+      "after": "14211e376b3195b15a45012f5e288ed40319ecf7"
+    },
+    "takodeal-staff/staff-private-profile-ui.js": {
+      "before": "032c40010949f385217bf9d22b422ac48e1847a2",
+      "after": "9368f3959b011d1bdf273403c66d7e32457f0a1c"
+    },
+    "takodeal-staff/staff-setup-access.js": {
+      "before": "4c4c73cb1ddbe260f698ac8410269a9948063c83",
+      "after": "fcea1eb5438943531e5d1a8d8e6cdde2f9859551"
+    },
+    "takodeal-staff/staff-startup.js": {
+      "before": "bf44fa59e86c9f924945583bddccaa26d075014d",
+      "after": "c3b816ea5feed9232b617ba34bcdb626286c4608"
+    },
+    "takodeal-staff/staff-vault-recovery.js": {
+      "before": "501d98aa77bc9ee929829072952f379d195cd890",
+      "after": "0ab8a652986e48ca5e361acf70a98941c096a6e6"
+    },
+    "takodeal-staff/sw.js": {
+      "before": "3369a294825150f28c12729c3286cf3e2a6060b8",
+      "after": "2d1f7f8cfe2bbb46d011894af77bb447cd69d67e"
+    }
+  }
+}

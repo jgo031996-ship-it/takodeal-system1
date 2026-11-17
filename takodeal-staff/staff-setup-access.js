@@ -46,11 +46,21 @@ export function validateSetupStatus(data,deviceId){
     return {enabled:data.enabled,mode:'protected',device:{staffId:d.staffId,staffName:d.staffName,branch:d.branch,deviceId:d.deviceId,status:d.status}};
 }
 export function createStaffSetupAuthority({transport,getUid,now=Date.now,maxAgeMs=60000}){
-    let state=null,authorityEpoch=0,readEpoch=0;
-    function invalidate(){state=null;authorityEpoch++;readEpoch++;}
+    let state=null,authorityEpoch=0,readEpoch=0,pendingRead=null;
+    function invalidate(){pendingRead=null;state=null;authorityEpoch++;readEpoch++;}
     const current=()=>state && state.uid===getUid() && now()-state.checkedAt>=0 && now()-state.checkedAt<=maxAgeMs ? state : null;
     const isVerified=()=>{const value=current();return !!value && (value.mode==='legacy' || value.device?.status==='Active');};
-    async function confirm(deviceId){
+    function confirm(deviceId,{join=false}={}){
+        const uid=getUid();
+        if(join && pendingRead?.deviceId===deviceId && pendingRead.uid===uid)return pendingRead.promise;
+        const promise=readStatus(deviceId);
+        const entry={uid,deviceId,promise};
+        pendingRead=entry;
+        const release=()=>{if(pendingRead===entry)pendingRead=null;};
+        promise.then(release,release);
+        return promise;
+    }
+    async function readStatus(deviceId){
         if(!deviceKey(deviceId))throw Error('This phone’s setup ID is invalid. Contact the Owner.');
         const token=++readEpoch;
         try{
@@ -132,7 +142,7 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     async function run(showChecking){
         const token=++visibleEpoch;if(showChecking){enteredKey='';stopLegacy?.();checking('Connecting to HQ to confirm this phone.');}
         if(w.staffSelfRepair?.requiresCode()){authority.invalidate();enteredKey='';checking('A confirmed personal-code reset is unfinished. Open Repair Staff app and choose Check saved reset. Your original reference and private approval are kept.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Finish the saved sign-in reset';return;}
-        try{const id=deviceId(),result=await authority.confirm(id);if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
+        try{const id=deviceId(),result=await authority.confirm(id,{join:!showChecking});if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
         catch(error){if(token===visibleEpoch&&!d.hidden){checking(error.message||'HQ could not confirm this phone. Reconnect and choose Check again.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Connection to HQ needed';}}
         finally{if(token===visibleEpoch)schedule();}
     }
