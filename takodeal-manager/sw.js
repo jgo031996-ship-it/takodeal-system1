@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v161-inbox-actions-20261116-r1';
+const CACHE_NAME = 'takodeal-manager-core-v162-employee-sync-20261117-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -31,7 +31,7 @@ CORE_ASSETS.push('./time-out-request-display.js');
 CORE_ASSETS.push('./schedule-workspace.js','./schedule-workspace.css');
 CORE_ASSETS.push('./logistics-feed.js','./dispatch-restock-model.js','./dispatch-restock-finance.js','./dispatch-restock-ui.js','./dispatch-set-aside.js','./dispatch-request-draft.js','./dispatch-destination-repair.js');
 CORE_ASSETS.push('./franchise-dispatch-pricing.js','./franchise-supply-model.js');
-CORE_ASSETS.push('./staff-rate-changes.js','./staff-document-hq.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js');
+CORE_ASSETS.push('./staff-rate-changes.js','./employee-profile-sync.js','./staff-document-hq.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js');
 CORE_ASSETS.push('./attendance-reconcile.js','./payroll-attendance.js');
 CORE_ASSETS.push('./remittance-dialogs.css');
 CORE_ASSETS.push('./discipline-cases.css','./discipline-case-model.js','./discipline-actions.js','./discipline-case-ui.js');

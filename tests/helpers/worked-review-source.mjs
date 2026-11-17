@@ -9,11 +9,13 @@ const proof=JSON.parse(readFileSync(new URL('../fixtures/worked-review-release.j
 const inbox=JSON.parse(readFileSync(new URL('../fixtures/owner-inbox-release.json',import.meta.url),'utf8'));
 const pathKey=name=>{const file=name instanceof URL?fileURLToPath(name):String(name);return (isAbsolute(file)?relative(fileURLToPath(root),file):file).split(sep).join('/');};
 const hash=bytes=>createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+const sync=JSON.parse(readFileSync(new URL('../fixtures/employee-live-sync.json',import.meta.url),'utf8'));
 const originals=new Map();
 
 // Historical checks can remove only a complete byte-identical release change.
 // The current release scope test reads the working tree directly.
 export function beforeWorkedReview(value,path){
+ value=historicalBlob(value,sync.files[pathKey(path)]);
  return historicalBlob(historicalBlob(value,inbox.files[pathKey(path)]),proof.files[pathKey(path)]);
 }
 function historicalBlob(value,row){
@@ -36,11 +38,13 @@ export function beforeWorkedReviewPaths(output,command,args){
  if(!base)return output;
  const kept=output.toString().split(/\r?\n/).filter(Boolean).filter(file=>{
   const bytes=readFileSync(new URL(file,root));
-  const revision=inbox.files[file],key=hash(bytes);
+  const live=sync.files[file],current=hash(bytes);
+  if(live&&current!==live.after)return true;
+  const revision=inbox.files[file],key=live?live.before:current;
   if(revision&&key!==revision.after)return true;
   const previous=revision?revision.before:key;
   const row=proof.files[file];
-  if(!revision&&(!row||previous!==row.after))return true;
+  if(!live&&!revision&&(!row||previous!==row.after))return true;
   const original=row&&previous===row.after?row.before:previous;
   const listing=execFileSync('git',['ls-tree',base,'--',file],{cwd:root,encoding:'utf8'}).trim();
   return (listing.split(/\s+/)[2]||null)!==original;

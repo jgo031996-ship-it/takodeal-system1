@@ -1,0 +1,25 @@
+{
+  "parent": "e9b4fde1d4d825d1fc531296ee63eabe311ecda2",
+  "files": {
+    "takodeal-manager/employee-profile-sync.js": {
+      "before": null,
+      "after": "82d8a807e38741b3ba15af17924744b9188b32b0"
+    },
+    "takodeal-manager/main.js": {
+      "before": "faf92786a6fd07cf947d31f69a9bb355f0e094a1",
+      "after": "588046f65988cae9a12c20c5666b713d96213d7e"
+    },
+    "takodeal-manager/owner-update-notice.js": {
+      "before": "bd870fb5004c8cd02021122f2302d4ba8db70f3f",
+      "after": "5b6c37f4064d4acd7ea6a8d34e050ea2233c492d"
+    },
+    "takodeal-manager/staff-rate-changes.js": {
+      "before": "256873e7cb6a65654446dbc085b4da824f60ce4e",
+      "after": "06d014fca3c3336ed28e94c173018e949ebd7381"
+    },
+    "takodeal-manager/sw.js": {
+      "before": "1a523fa74663554139c3383c89be30bf41efb578",
+      "after": "15bd5b11e136add40d0e775b7bcafeda8b75b25f"
+    }
+  }
+}

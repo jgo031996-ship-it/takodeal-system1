@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
+const sync=JSON.parse(readFileSync(new URL('fixtures/employee-live-sync.json',import.meta.url),'utf8'));
 const root=new URL('../',import.meta.url);
 const pin=JSON.parse(readFileSync(new URL('fixtures/worked-review-release.json',import.meta.url),'utf8'));
 const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:4e6}).trim();
@@ -16,10 +17,20 @@ test('prior worked-shift release matches its immutable product parent and comple
  }
 });
 test('Owner Inbox changes exactly match the reviewed release and its production parent',()=>{
- const paths=[git('diff','--name-only',linked.parent,'--',...scope),git('ls-files','--others','--exclude-standard','--',...scope)].flatMap(list=>list.split(/\r?\n/)).filter(Boolean).sort();
+ const paths=git('diff','--name-only',linked.parent,sync.parent,'--',...scope).split(/\r?\n/).filter(Boolean).sort();
  assert.deepEqual(paths,Object.keys(linked.files).sort());
  for(const [file,row] of Object.entries(linked.files)){
   const original=git('ls-tree',linked.parent,'--',file).split(/\s+/)[2]||null;
+  assert.equal(original,row.before,file+' original');
+  assert.equal(git('rev-parse',sync.parent+':'+file),row.after,file+' released');
+ }
+});
+
+test('employee profile sync matches the reviewed scope and exact production parent',()=>{
+ const paths=[git('diff','--name-only',sync.parent,'--',...scope),git('ls-files','--others','--exclude-standard','--',...scope)].flatMap(list=>list.split(/\r?\n/)).filter(Boolean).sort();
+ assert.deepEqual(paths,Object.keys(sync.files).sort());
+ for(const [file,row] of Object.entries(sync.files)){
+  const original=git('ls-tree',sync.parent,'--',file).split(/\s+/)[2]||null;
   assert.equal(original,row.before,file+' original');
   assert.equal(git('hash-object','--no-filters',file),row.after,file+' candidate');
  }
