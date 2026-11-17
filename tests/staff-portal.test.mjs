@@ -143,12 +143,12 @@ function portalHarness(initialPin) {
     vm.runInNewContext(source+'\ninstallStaffPortal();',context);
     return {context,node,listeners,writes:()=>writes,loads:()=>loads,staff:()=>staff};
 }
-test('Pay entry without a PIN directs staff to Profile without creating or unlocking one', async () => {
+test('Pay entry without a PIN shows setup in place and waits for verified credentials', async () => {
     const h=portalHarness(); let opened=0;
     h.context.window.openProfile=()=>opened++;
     await h.context.window.openVaultPin('unlock');
-    assert.equal(opened,1); assert.equal(h.writes(),0); assert.equal(h.loads(),0);
-    assert.equal(h.node('vaultPinModal').style.display,'none');
+    assert.equal(opened,0); assert.equal(h.writes(),0); assert.equal(h.loads(),0);
+    assert.equal(h.node('vaultPinModal').style.display,'flex');assert.equal(h.node('vaultNewFields').hidden,false);assert.equal(h.node('vaultPinForm').hidden,false);
 });
 test('first setup requires the staff login PIN and refuses to reuse it', async () => {
     const h=portalHarness(); await h.context.window.openVaultPin('change');

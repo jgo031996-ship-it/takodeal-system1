@@ -54,16 +54,21 @@ export function installStaffPortal() {
         $('vaultPinModal').style.display = 'flex'; $('vaultPinForm').hidden = true;
         $('vaultError').hidden = true; $('vaultPinIntro').textContent = 'Checking your PIN settings…';
         $('vaultSubmit').disabled = false;
+        const retry=$('vaultRetryCheck');
+        const activate=$('activateVaultPhone');activate.hidden=true;
+        activate.onclick=async()=>{
+            activate.disabled=true;
+            try{if(await window.choosePersonalCodeActivation() && current(token))window.closeVaultPin();}
+            catch(error){if(current(token))notice(error.message);}
+            finally{activate.disabled=false;}
+        };
+        retry.hidden=true;
+        retry.onclick=()=>window.openVaultPin(mode,target);
         try {
             const data = await privateProfile(id,()=>{if(!current(token))throw Error('The private PIN view changed.');}); if (!current(token)) return;
             if (data.payslipPinManaged === true && mode !== 'unlock') {
                 window.closeVaultPin();
                 return window.openVaultRecovery();
-            }
-            if (!data.payslipPin && mode === 'unlock') {
-                window.closeVaultPin(); window.openProfile();
-                document.querySelector('.profile-security')?.scrollIntoView?.({block:'center'});
-                return;
             }
             if (data.payslipPin && !validVerifier(data.payslipPin)) throw new Error('Your PIN settings need a review by HQ.');
             modalMode = data.payslipPin ? mode : 'setup';
@@ -74,7 +79,7 @@ export function installStaffPortal() {
             $('vaultNewFields').hidden = !editing;
             $('vaultSubmit').textContent = editing ? 'Save Payslip PIN' : 'Unlock vault';
             $('vaultPinForm').hidden = false; $('vaultCurrentPin').focus();
-        } catch (error) { if (current(token)) { $('vaultPinIntro').textContent = 'PIN settings are unavailable.'; notice(error.message || 'Please try again when connected.'); } }
+        } catch (error) { if (current(token)) { activate.hidden=error.code!=='private-profile/approval'||window.staffSetupAccess?.mode()!=='legacy';retry.hidden=false; $('vaultPinIntro').textContent = 'Check your phone again to open your Vault.'; notice(error.message || 'Please try again when connected.'); } }
     };
     window.submitVaultPin = async function(event) {
         event?.preventDefault(); if (busy) return;

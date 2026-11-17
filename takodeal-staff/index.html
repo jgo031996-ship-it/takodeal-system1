@@ -6,7 +6,7 @@
     <script>/* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-employee-access-20261116-r1';
+    var release = 'staff-contact-vault-20261117-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;
@@ -442,7 +442,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-employee-access-20261116-r1">
+    <meta name="takodeal-release" content="staff-contact-vault-20261117-r1">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -671,7 +671,9 @@
             </div>
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
                 <p id="staffProfileStatus" role="status" aria-live="polite">Contact details, daily PIN and photos save separately.</p>
-                <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">Save contact details</button>
+                <button type="button" class="btn-outline" id="activateProfilePhone" hidden>Use my personal setup code</button>
+                <button type="button" class="btn-outline" id="retryStaffProfile" hidden>Reload my profile</button>
+                <button type="button" class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">Save contact details</button>
             </div>
         </div>
     </div>
@@ -964,7 +966,7 @@
                 <label class="field-label" id="vaultCurrentLabel" for="vaultCurrentPin">Payslip PIN</label><input type="password" id="vaultCurrentPin" inputmode="numeric" autocomplete="off" required>
                 <div id="vaultNewFields" hidden><label class="field-label" for="vaultNewPin">New Payslip PIN · 6–8 digits</label><input type="password" id="vaultNewPin" inputmode="numeric" maxlength="8" autocomplete="new-password"><label class="field-label" for="vaultConfirmPin">Confirm new PIN</label><input type="password" id="vaultConfirmPin" inputmode="numeric" maxlength="8" autocomplete="new-password"></div>
                 <button type="submit" class="btn-primary" id="vaultSubmit">Unlock vault</button>
-            </form><p id="vaultError" class="form-error" role="alert" hidden></p><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
+            </form><button type="button" class="btn-outline" id="activateVaultPhone" hidden>Use my personal setup code</button><button type="button" class="btn-outline" id="vaultRetryCheck" hidden>Retry phone check</button><p id="vaultError" class="form-error" role="alert" hidden></p><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
         </div>
     </div>
 
@@ -1128,6 +1130,6 @@
   </div>
 
     <dialog id="staffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="staffDocumentPreviewTitle">Document photo</h3><button type="button" id="staffDocumentPreviewClose">Close</button></div><img id="staffDocumentPreviewImage" alt="Private document photo"></dialog>
-      <script type="module" src="app.js?v=staff-employee-access-20261116-r1"></script>
+      <script type="module" src="app.js?v=staff-contact-vault-20261117-r1"></script>
 </body>
 </html>
