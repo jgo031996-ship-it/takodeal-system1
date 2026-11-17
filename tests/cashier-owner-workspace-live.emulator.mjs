@@ -25,7 +25,7 @@ test('portable Owner punches and cancels a sale using the real Firestore SDK and
  await seed('menu','fictional-menu',{name:item.name,category:'Food'});
  await seed('bom','fictional-recipe',{menuItem:item.name,ingredientName:'Flour',qty:2});
  await seed('inventory','fictional-flour',{name:'Flour',branch:selectedBranch,currentStock:20,baseUom:'g'});
- await seed('shifts','fictional-open',{branch:selectedBranch,active:true,startTime:new Date()});
+ await seed('shifts','fictional-open',{branch:selectedBranch,active:true,startTime:stamp});
  const c=await f.workspace.enter({auth:f.ownerAuth,db:f.ownerDb,user:f.ownerUser,branch:selectedBranch,portable:true});
  Object.assign(f.w,{crypto:globalThis.crypto,increment:sdk.increment,processRawItemsIntoMenu:items=>items,
   buildCategories(){},renderOrderAndPaymentUI(){},renderCart(){},cashierOwnerRegister:{openShift:()=>({shiftId:'fictional-open'}),paintStatus(){}}});
@@ -108,7 +108,7 @@ test('real Owner register monitor follows remote open, paid sales, offline metad
  const monitor=installCashierOwnerRegister(f.w,document,{setInterval:()=>1,clearInterval:()=>{}});stops.add(()=>monitor.stop());
  async function phase(expected){const end=Date.now()+10000;while(Date.now()<end){const state=monitor.state();if(state.phase===expected)return state;if(state.phase==='error'||state.phase==='sales-error')throw Error(state.message);await pause(15);}throw Error('Owner register did not reach '+expected+': '+JSON.stringify(monitor.state()));}
  monitor.start();await phase('ready');assert.equal(monitor.state().shift,null);
- await seed('shifts','fictional-live-drawer',{branch:selectedBranch,active:true,startTime:new Date(),cashier:'Fictional Real Crew'});
+ await seed('shifts','fictional-live-drawer',{branch:selectedBranch,active:true,startTime:stamp,cashier:'Fictional Real Crew'});
  await phase('ready');
  await seed('transactions','fictional-live-sale',{branch:selectedBranch,shiftId:'fictional-live-drawer',timestamp:sdk.Timestamp.fromMillis(stamp.toMillis()+1000),status:'Paid',paymentMethod:'Cash',netTotal:240,receiptId:'FICTIONAL-REAL-SALE'});
  const until=Date.now()+10000;while(monitor.state().rows.length!==1&&Date.now()<until)await pause(15);assert.equal(ownerSalesTotals(monitor.state().rows).total,240);f.preserved();

@@ -8,7 +8,7 @@
     },
     "Takodeal-POS/cashier-owner-pos.js": {
       "before": null,
-      "after": "012e142b7de4836665f53cfbd7a952d20862c1ef"
+      "after": "f333ae9466330d3599fae83a4dc904cf32b1222e"
     },
     "Takodeal-POS/cashier-owner-register.js": {
       "before": "fde9d9ad3129dbd0f47f8d50ec762e1da500d645",
@@ -33,10 +33,6 @@
     "Takodeal-POS/main.js": {
       "before": "a1db7ad92bb732fa9bfc4b66b66282bc37092135",
       "after": "ce434a69a8ebe4000dfad68881c2f395c62ee308"
-    },
-    "Takodeal-POS/pos-safety.js": {
-      "before": "5dfebbe374cac0e9b67a8cdced1ef379095a4a1a",
-      "after": "afb4317f8c737c39e097f5df582b2a4aa659b7dc"
     },
     "Takodeal-POS/sw.js": {
       "before": "dac0a74d64e3083dd0911d2bb71950ffcd2bc7e0",

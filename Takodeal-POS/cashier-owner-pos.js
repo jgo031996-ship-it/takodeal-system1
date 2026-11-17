@@ -1,4 +1,4 @@
-import {createSaleEngine, saleIdentity, SALE_VERSION, saleFingerprint} from './pos-safety.js';
+import {createSaleEngine, saleIdentity, SALE_VERSION, saleFingerprint, safeId} from './pos-safety.js';
 import {recipeRevision,recipeRows} from './recipe-feed.js';
 import {editableVoidCart,voidCanonical} from './cashier-void-model.js';
 import {restoreVoidPlatform,revealEditableVoidCart} from './cashier-void.js';
@@ -39,9 +39,34 @@ export function installOwnerPOS(w,d){
         menuSession=c.session;w.cashierOwnerRegister?.paintStatus();
         if(pending(c))await reviewPending();
     }
-    async function scoped(c,shiftId,{checkShift=true,markSale=false}={}){
+    async function verifyVoid(tx,c,shiftId,action){
+        const reference=w.doc(c.db,'transactions',action.id);
+        const data=rowData(await tx.get(reference));
+        if(data.saleId!==action.id||data.branch!==c.branch||data.receiptId!==action.receiptId||data.shiftId!==shiftId||
+            saleFingerprint(data)!==action.fingerprint||data.status==='Voided')throw Error('This receipt changed. Reopen it in Shift Sales.');
+        const method=String(data.paymentMethod||'').trim().toLowerCase();
+        const linked=['paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile','manualVerification','refundId','refund','refundAmount','refundedAt','refundedBy','returnId','returnedAt','splitDetails','preparedCancellation','cancelledFoodPurchaseId','cancelledFoodAllocationVersion'];
+        if(![undefined,'Paid','Completed','Complete','Settled','Received'].includes(data.status)||!method||data.paymentVerified===true&&method!=='cash'||
+            /salary|split|return|refund/.test(method)||linked.some(key=>Object.hasOwn(data,key))||data.isMobileOrder||data.mobileOrderId||data.orderType==='Delivery'||data.mealStaffName||data.mealIdentityId)
+            throw Error('This receipt is linked to a payment, delivery, or payroll record. Review it in the Owner App before reversing it.');
+        const marker=rowData(await tx.get(w.doc(c.db,'pos_sale_commits',action.id)));
+        if(marker.fingerprint!==action.fingerprint||marker.branch!==c.branch||marker.receiptId!==action.receiptId||marker.saleId!==action.id)
+            throw Error('This receipt no longer matches its original sale record. Review it in the Owner App.');
+        if(data.inventoryState==='applied'){
+            const audit=rowData(await tx.get(w.doc(c.db,'settings','audit_'+safeId(c.branch))));
+            if(audit.active)throw Error('Finish the branch stock count before returning ingredients.');
+            if(!Array.isArray(data.inventoryMovements)||data.inventoryMovements.some(m=>!m?.unitSnapshot))throw Error('Use the original cashier’s stock-unit review before reversing this older receipt.');
+        }
+        return data.cashier||'';
+    }
+    async function scoped(c,shiftId,{checkShift=true,markSale=false,voidAction=null}={}){
         const guard=await c.prepareSale();
-        return createSaleEngine({db:c.db,doc:w.doc,collection:w.collection,query:w.query,where:w.where,getDocsFromServer:w.getDocsFromServer,
+        async function queryRows(query){
+            const snap=await w.getDocsFromServer(query);
+            if(voidAction&&(snap.docs.length!==1||snap.docs[0].id!==voidAction.id))throw Error('The saved receipt reference changed. Reopen Shift Sales.');
+            return snap;
+        }
+        return createSaleEngine({db:c.db,doc:w.doc,collection:w.collection,query:w.query,where:w.where,getDocsFromServer:queryRows,
             increment:w.increment,serverTimestamp:w.serverTimestamp,runTransaction:(db,fn)=>w.runTransaction(db,async tx=>{
             await guard.checkTransaction(tx);
             let shiftRef,revision;
@@ -50,12 +75,17 @@ export function installOwnerPOS(w,d){
                 const row=rowData(await tx.get(shiftRef));
                 if(row.branch!==c.branch||row.active!==true||String(row.status||'').toLowerCase()==='closed')throw Error('The original register has closed. Check this receipt in Shift Sales.');
                 revision=row.salesRevision??0;
-                if(markSale&&(!Number.isSafeInteger(revision)||revision<0||revision>=Number.MAX_SAFE_INTEGER))throw Error('The register sales count needs review before checkout.');
+                if((markSale||voidAction)&&(!Number.isSafeInteger(revision)||revision<0||revision>=Number.MAX_SAFE_INTEGER))throw Error('The register sales count needs review before checkout.');
             }
+            const originalCashier=voidAction?await verifyVoid(tx,c,shiftId,voidAction):'';
             c.assertCurrent();
             const result=await fn(tx);
             c.assertCurrent();
-            if(markSale&&result==='committed')tx.update(shiftRef,{salesRevision:revision+1});
+            if(voidAction&&result===true){
+                tx.update(w.doc(c.db,'transactions',voidAction.id),{voidReason:voidAction.reason,voidOperationId:voidAction.operationId,voidOwnerUid:c.user.uid});
+                tx.set(w.doc(c.db,'manager_alerts','void-'+voidAction.id),{voidReason:voidAction.reason,ownerUid:c.user.uid,sourceSaleId:voidAction.id,originalCashier},{merge:true});
+            }
+            if(markSale&&result==='committed'||voidAction&&result===true)tx.update(shiftRef,{salesRevision:revision+1});
             return result;
         })});
     }
@@ -155,8 +185,8 @@ export function installOwnerPOS(w,d){
                 if((await w.getDocFromServer(w.doc(c.db,'transactions','sale-'+operationId))).exists())throw Error('The corrected receipt was already checked out.');
             }
             if(!resuming){
-                const engine=await scoped(c,drawer.shiftId);
-                const changed=await engine.voidSale(receiptId,c.actionActor,c.branch,{id,shiftId:drawer.shiftId,reason,operationId,uid:c.user.uid,fingerprint:saleFingerprint(row)});
+                const engine=await scoped(c,drawer.shiftId,{voidAction:{id,receiptId,reason,operationId,fingerprint:saleFingerprint(row)}});
+                const changed=await engine.voidSale(receiptId,c.actionActor,c.branch);
                 if(!changed)throw Error('Another cashier changed this receipt. Reopen it in Shift Sales.');
             }
             c.assertCurrent();
