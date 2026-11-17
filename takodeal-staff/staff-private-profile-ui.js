@@ -24,7 +24,7 @@ export function captureContactFields(d,baseline){
  }
  return patch;
 }
-export function installStaffPrivateProfileUI(api=window,d=document,{client,access,createPrivateClient,normalize=prepareDocumentPhoto,uuid=()=>crypto.randomUUID()}={}){
+export function installStaffPrivateProfileUI(api=window,d=document,{client,access,createPrivateClient,createPinClient=createPrivateClient,normalize=prepareDocumentPhoto,uuid=()=>crypto.randomUUID()}={}){
  const $=id=>d.getElementById(id),identity=()=>api.localStorage.getItem('takodeal_staff_id');let epoch=0,loaded=null,contactFlight=null,pinFlight=null,pendingContact=null,pendingPin=null,photoModal=null;const documentChoices=new Map(),documentFlights=new Map(),urls=new Set();
  const visible=()=>!d.hidden&&$('profileModal')?.style.display!=='none',status=message=>{if($('staffProfileStatus'))$('staffProfileStatus').textContent=message;};
  const guardFor=(id,generation)=>()=>{if(epoch!==generation||identity()!==id||!visible())throw Error('Your profile closed or changed. Reopen it.');};
@@ -38,7 +38,8 @@ export function installStaffPrivateProfileUI(api=window,d=document,{client,acces
   catch(error){if(visible() && identity()===id)status(error.message);}
   finally{activate.disabled=false;}
  });
- function clear(){if(activate)activate.hidden=true;showRetry(true);sections.clear();epoch++;loaded=null;client.invalidate();status('Private profile locked. Reopen it to load saved details.');const ownedPhoto=photoModal;photoModal=null;if(ownedPhoto){const image=api.Swal.getImage?.()||d.querySelector?.('.swal2-popup img.swal2-image');if(image?.src===ownedPhoto.url){image.removeAttribute('src');api.Swal.close?.();}}pendingContact=null;pendingPin=null;documentChoices.clear();for(const url of urls)URL.revokeObjectURL(url);urls.clear();for(const input of Object.keys(fields))if($(input)){$(input).value='';$(input).disabled=true;}for(const id of ['profPin','profFullName','profNickname'])if($(id))$(id).value='';$('profRoleHistory')?.replaceChildren();$('profContracts')?.replaceChildren();for(const item of governments){$(item.input).value='';$(item.view).removeAttribute('href');$(item.view).style.display='none';}if($('btnSaveProfileData'))$('btnSaveProfileData').disabled=true;}
+ let syncTimer=null;
+ function clear(){api.clearTimeout?.(syncTimer);syncTimer=null;if(activate)activate.hidden=true;showRetry(true);sections.clear();epoch++;loaded=null;client.invalidate();status('Private profile locked. Reopen it to load saved details.');const ownedPhoto=photoModal;photoModal=null;if(ownedPhoto){const image=api.Swal.getImage?.()||d.querySelector?.('.swal2-popup img.swal2-image');if(image?.src===ownedPhoto.url){image.removeAttribute('src');api.Swal.close?.();}}pendingContact=null;pendingPin=null;documentChoices.clear();for(const url of urls)URL.revokeObjectURL(url);urls.clear();for(const input of Object.keys(fields))if($(input)){$(input).value='';$(input).disabled=true;}for(const id of ['profPin','profFullName','profNickname'])if($(id))$(id).value='';$('profRoleHistory')?.replaceChildren();$('profContracts')?.replaceChildren();for(const item of governments){$(item.input).value='';$(item.view).removeAttribute('href');$(item.view).style.display='none';}if($('btnSaveProfileData'))$('btnSaveProfileData').disabled=true;}
  function renderHistory(profile,id){
   const history=$('profRoleHistory');history.replaceChildren();if(profile.roleHistory?.length){const ul=d.createElement('ul');for(const row of profile.roleHistory){const li=d.createElement('li');li.textContent='Promoted to '+(row.role||'Role not recorded')+' · Effective: '+(row.date||'Date not recorded');ul.append(li);}history.append(ul);}else history.textContent='Current role: '+(profile.role||'Crew');
   const contracts=$('profContracts');contracts.replaceChildren();for(const [key,label,type]of [['initial','Initial Employment Contract','Initial'],['extension','6-Month Extension','Extension'],['regularization','Regularization Contract','Regularization']]){const date=profile.signedContracts?.[key];if(!date)continue;const button=d.createElement('button');button.type='button';button.className='btn-outline';button.textContent=label+' · Signed: '+date;button.addEventListener('click',()=>{if(loaded?.staffId===id&&identity()===id&&visible())return api.reprintContract(type,encodeURIComponent(id),date);});contracts.append(button);}if(!contracts.children.length)contracts.textContent='No signed contracts on file yet.';
@@ -48,11 +49,37 @@ export function installStaffPrivateProfileUI(api=window,d=document,{client,acces
   try{const fresh=await client.read(id,{assertCurrent:guard});guard();const keys=Object.keys(captureContactFields(d)),changed=keys.some(key=>(fresh.profile[key]??'')!==(before.profile[key]??''));loaded={...fresh,documents:before.documents,needsRefresh:before.needsRefresh||changed};$('btnSaveProfileData').disabled=loaded.needsRefresh===true;showRetry(loaded.needsRefresh===true);if(changed)status('The saved profile changed again. Reopen it before saving more contact details.');return !loaded.needsRefresh;}catch(error){try{guard();loaded={...before,needsRefresh:true};showRetry(true);$('btnSaveProfileData').disabled=true;status('Your PIN action finished. Reopen your profile to confirm current contact details before saving more changes.');}catch{}return false;}
  }
  async function loadGovernment(id,generation){const guard=guardFor(id,generation);try{const vault=await createPrivateClient({assertCurrent:guard});guard();const user=vault.auth.currentUser,records=await vault.store.records({groups:governments.map(row=>row.group)});guard();if(vault.auth.currentUser!==user)throw Error('Your private account changed.');loaded.documents=records;for(const item of governments){const link=$(item.view);link.removeAttribute('href');link.style.display=records[item.group]?'inline-block':'none';link.textContent='View private '+item.label;const hint=$('status-'+item.group);if(hint)hint.textContent=records[item.group]?'Private photo saved · '+records[item.group].status:loaded.legacyDocumentPresent[item.legacy]?'An earlier ID exists. Upload a private copy here; the old record is retained.':'Optional private photo · Upload separately from contact details.';}}catch(error){try{guard();for(const item of governments)if($('status-'+item.group))$('status-'+item.group).textContent=error.message;}catch{}}}
+ function scheduleSync(id,generation){
+  api.clearTimeout?.(syncTimer);
+  if(!api.setTimeout||!visible()||epoch!==generation||identity()!==id)return;
+  syncTimer=api.setTimeout(async()=>{
+   const guard=guardFor(id,generation),before=loaded;
+   try{
+    guard();if(!before||before.needsRefresh||contactFlight||pinFlight||pendingContact)return;
+    const fresh=await client.read(id,{assertCurrent:guard});guard();
+    if(before!==loaded||contactFlight||pinFlight||pendingContact||fresh.expectedFingerprint===before.expectedFingerprint)return;
+    let conflict=false;
+    for(const [input,key] of Object.entries(fields)){
+     const node=$(input),old=displayContact(before.profile,key),latest=displayContact(fresh.profile,key);
+     if(node.value.trim()===old||node.value.trim()===latest)node.value=latest;
+     else if(old!==latest)conflict=true;
+    }
+    loaded={...fresh,documents:before.documents,needsRefresh:conflict};sections.show(fresh.profile);renderHistory(fresh.profile,id);
+    $('profFullName').value=fresh.profile.cashierName||'';$('profNickname').value=fresh.profile.scheduleNickname||'';
+    if(conflict){$('btnSaveProfileData').disabled=true;showRetry(true);status('HQ updated a field you are editing. Reload your profile to review it.');}
+   }catch(error){
+    if(epoch===generation && identity()===id && visible()){
+     if(['private-profile/approval','private-profile/changed','private-profile/review'].includes(error.code)){clear();status(error.message);}
+     else status('Live refresh interrupted. Your edits are kept while Staff reconnects.');
+    }
+   }finally{if(epoch===generation)scheduleSync(id,generation);}
+  },30000);
+ }
  api.openProfile=async()=>{
   clear();const id=identity(),generation=epoch;if(!id)return;$('profileModal').style.display='flex';status('Checking your phone and employee profile…');const guard=guardFor(id,generation);
   const pic=api.localStorage.getItem('takodeal_staff_pic'),preview=$('profilePreview'),placeholder=$('profilePlaceholder');if(preview&&placeholder){if(pic){preview.src=pic;preview.style.display='block';placeholder.style.display='none';}else{preview.removeAttribute('src');preview.style.display='none';placeholder.style.display='flex';}}
   api.selectedProfileFile=null;
-  try{const result=await client.read(id,{assertCurrent:guard});guard();loaded=result;sections.show(result.profile);for(const [input,key]of Object.entries(fields)){$(input).value=displayContact(result.profile,key);$(input).disabled=false;}$('profFullName').value=result.profile.cashierName||'';$('profNickname').value=result.profile.scheduleNickname||'';renderHistory(result.profile,id);$('btnSaveProfileData').disabled=false;status('Contact details, daily PIN and government photos save separately.');void loadGovernment(id,generation);}catch(error){try{guard();showRetry(true);if(activate)activate.hidden=error.code!=='private-profile/approval'||api.staffSetupAccess?.mode()!=='legacy';status(error.message);}catch{}}
+  try{const result=await client.read(id,{assertCurrent:guard});guard();loaded=result;sections.show(result.profile);for(const [input,key]of Object.entries(fields)){$(input).value=displayContact(result.profile,key);$(input).disabled=false;}$('profFullName').value=result.profile.cashierName||'';$('profNickname').value=result.profile.scheduleNickname||'';renderHistory(result.profile,id);$('btnSaveProfileData').disabled=false;status('Contact details, daily PIN and government photos save separately.');scheduleSync(id,generation);void loadGovernment(id,generation);}catch(error){try{guard();showRetry(true);if(activate)activate.hidden=error.code!=='private-profile/approval'||api.staffSetupAccess?.mode()!=='legacy';status(error.message);}catch{}}
  };
  api.saveProfileData=()=>{
   if(contactFlight)return contactFlight;
@@ -99,7 +126,7 @@ export function installStaffPrivateProfileUI(api=window,d=document,{client,acces
  };
  api.changeDailyStaffPin=()=>{
   if(pinFlight)return pinFlight;const id=identity(),generation=epoch,guard=guardFor(id,generation),newPin=$('profPin').value.trim();if(!/^\d{4,10}$/.test(newPin)){status('Use 4–10 digits for your daily login PIN. Your separate Payslip PIN stays unchanged.');return Promise.resolve(false);}
-  const action=(async()=>{try{guard();if(loaded?.staffId!==id||loaded.needsRefresh)throw Error('Reopen your private profile first.');const approved=await api.Swal.fire({title:'Change daily Staff PIN?',text:'This changes your next Staff login. It does not change your separate Payslip PIN.',icon:'question',showCancelButton:true,confirmButtonText:'Change daily PIN'});guard();if(!approved.isConfirmed)return false;if($('profPin').value.trim()!==newPin)throw Error('The new PIN changed. Check it and confirm again.');if(!pendingPin||pendingPin.staffId!==id||pendingPin.newPin!==newPin)pendingPin={staffId:id,newPin,operationId:uuid(),expectedVersion:loaded.profile.loginPinVersion??0};status('Saving daily Staff PIN…');await access.changePin({...pendingPin,createPrivateClient,assertCurrent:guard});guard();pendingPin=null;if($('profPin').value.trim()===newPin)$('profPin').value='';const fresh=await refreshHead();guard();if(fresh)status('Daily Staff PIN saved. Your Payslip PIN and recorded attendance are unchanged.');return true;}catch(error){try{guard();status(error.message);}catch{}return false;}})();pinFlight=action;action.finally(()=>{if(pinFlight===action)pinFlight=null;});return action;
+  const action=(async()=>{try{guard();if(loaded?.staffId!==id||loaded.needsRefresh)throw Error('Reopen your private profile first.');const approved=await api.Swal.fire({title:'Change daily Staff PIN?',text:'This changes your next Staff login. It does not change your separate Payslip PIN.',icon:'question',showCancelButton:true,confirmButtonText:'Change daily PIN'});guard();if(!approved.isConfirmed)return false;if($('profPin').value.trim()!==newPin)throw Error('The new PIN changed. Check it and confirm again.');if(!pendingPin||pendingPin.staffId!==id||pendingPin.newPin!==newPin)pendingPin={staffId:id,newPin,operationId:uuid(),expectedVersion:loaded.profile.loginPinVersion??0};status('Saving daily Staff PIN…');await access.changePin({...pendingPin,createPrivateClient:createPinClient,assertCurrent:guard});guard();pendingPin=null;if($('profPin').value.trim()===newPin)$('profPin').value='';const fresh=await refreshHead();guard();if(fresh)status('Daily Staff PIN saved. Your Payslip PIN and recorded attendance are unchanged.');return true;}catch(error){try{guard();status(error.message);}catch{}return false;}})();pinFlight=action;action.finally(()=>{if(pinFlight===action)pinFlight=null;});return action;
  };
  for(const item of governments){
   $(item.input)?.addEventListener('change',()=>{documentChoices.delete(item.group);});

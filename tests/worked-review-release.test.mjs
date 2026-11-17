@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
+const sync=JSON.parse(readFileSync(new URL('fixtures/employee-live-sync.json',import.meta.url),'utf8'));
 const root=new URL('../',import.meta.url);
 const pin=JSON.parse(readFileSync(new URL('fixtures/worked-review-release.json',import.meta.url),'utf8'));
 const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer:4e6}).trim();
@@ -26,10 +27,20 @@ test('Staff employee portal changes exactly match the reviewed release and its p
  }
 });
 test('contact and Vault release matches the reviewed files and live Staff parent',()=>{
- const paths=[git('diff','--name-only',contact.parent,'--',...scope),git('ls-files','--others','--exclude-standard','--',...scope)].flatMap(list=>list.split(/\r?\n/)).filter(Boolean).sort();
+ const paths=git('diff','--name-only',contact.parent,sync.parent,'--',...scope).split(/\r?\n/).filter(Boolean).sort();
  assert.deepEqual(paths,Object.keys(contact.files).sort());
  for(const [file,row] of Object.entries(contact.files)){
   assert.equal(git('rev-parse',contact.parent+':'+file),row.before,file+' original');
+  assert.equal(git('rev-parse',sync.parent+':'+file),row.after,file+' released');
+ }
+});
+
+test('employee profile sync matches the reviewed scope and exact production parent',()=>{
+ const paths=[git('diff','--name-only',sync.parent,'--',...scope),git('ls-files','--others','--exclude-standard','--',...scope)].flatMap(list=>list.split(/\r?\n/)).filter(Boolean).sort();
+ assert.deepEqual(paths,Object.keys(sync.files).sort());
+ for(const [file,row] of Object.entries(sync.files)){
+  const original=git('ls-tree',sync.parent,'--',file).split(/\s+/)[2]||null;
+  assert.equal(original,row.before,file+' original');
   assert.equal(git('hash-object','--no-filters',file),row.after,file+' candidate');
  }
 });
