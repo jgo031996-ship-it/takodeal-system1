@@ -1,7 +1,7 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-contact-vault-20261117-r1';
+    var release = 'staff-profile-sync-20261117-r1';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     var ready = false, updating = false, run = null, banner, bannerText;

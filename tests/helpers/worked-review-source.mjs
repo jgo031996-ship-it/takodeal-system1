@@ -10,11 +10,13 @@ const employeePortal=JSON.parse(readFileSync(new URL('../fixtures/staff-employee
 const pathKey=name=>{const file=name instanceof URL?fileURLToPath(name):String(name);return (isAbsolute(file)?relative(fileURLToPath(root),file):file).split(sep).join('/');};
 const hash=bytes=>createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
 const contactRelease=JSON.parse(readFileSync(new URL('../fixtures/staff-contact-release.json',import.meta.url),'utf8'));
+const sync=JSON.parse(readFileSync(new URL('../fixtures/employee-live-sync.json',import.meta.url),'utf8'));
 const originals=new Map();
 
 // Historical checks can remove only a complete byte-identical release change.
 // The current release scope test reads the working tree directly.
 export function beforeWorkedReview(value,path){
+ value=historicalBlob(value,sync.files[pathKey(path)]);
  const key=pathKey(path);
  return historicalBlob(historicalBlob(historicalBlob(value,contactRelease.files[key]),employeePortal.files[key]),proof.files[key]);
 }
@@ -38,13 +40,15 @@ export function beforeWorkedReviewPaths(output,command,args){
  if(!base)return output;
  const kept=output.toString().split(/\r?\n/).filter(Boolean).filter(file=>{
   const bytes=readFileSync(new URL(file,root));
-  const latest=contactRelease.files[file],current=hash(bytes);
+  const live=sync.files[file],actual=hash(bytes);
+  if(live&&actual!==live.after)return true;
+  const latest=contactRelease.files[file],current=live?live.before:actual;
   if(latest&&current!==latest.after)return true;
   const revision=employeePortal.files[file],key=latest?latest.before:current;
   if(revision&&key!==revision.after)return true;
   const previous=revision?revision.before:key;
   const row=proof.files[file];
-  if(!latest&&!revision&&(!row||previous!==row.after))return true;
+  if(!live&&!latest&&!revision&&(!row||previous!==row.after))return true;
   const original=row&&previous===row.after?row.before:previous;
   const listing=execFileSync('git',['ls-tree',base,'--',file],{cwd:root,encoding:'utf8'}).trim();
   return (listing.split(/\s+/)[2]||null)!==original;

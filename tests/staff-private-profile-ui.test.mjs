@@ -33,6 +33,20 @@ test('a concurrent non-contact edit allows one fresh revision retry without over
  assert.equal(await f.api.saveProfileData(),true);assert.equal(calls,2);assert.equal(f.node('profAddress').value,'new HQ address');assert.equal(f.calls.contacts[0].patch.address,undefined);
 });
 const drain=()=>new Promise(resolve=>setImmediate(resolve)),deferred=()=>{let resolve;return{promise:new Promise(done=>resolve=done),resolve:value=>resolve(value)};};
+test('open Staff profile receives Owner edits while preserving a draft and clearing private data on denial',async()=>{
+ const f=fixture();let callback;f.api.setTimeout=(fn,ms)=>{assert.equal(ms,30000);callback=fn;return 1;};f.api.clearTimeout=()=>{};
+ await f.api.openProfile();f.node('profAddress').value='draft address';
+ f.response.profile.phone='new Owner phone';f.response.expectedFingerprint='c'.repeat(64);await callback();
+ assert.equal(f.node('profPhone').value,'new Owner phone');assert.equal(f.node('profAddress').value,'draft address');
+ f.client.read=async()=>{throw Object.assign(Error('Phone access ended'),{code:'private-profile/approval'});};await callback();
+ assert.equal(f.node('profPhone').value,'');assert.equal(f.node('btnSaveProfileData').disabled,true);
+});
+test('daily PIN uses the activated Pay phone even when private document uploads have separate approval',async()=>{
+ const f=fixture(),phone=()=>({personal:true});
+ let changes=0;const access={changePin:async input=>{assert.equal(input.createPrivateClient,phone);assert.equal(input.staffId,'own-staff');changes++;}};
+ installStaffPrivateProfileUI(f.api,f.d,{client:f.client,access,createPinClient:phone,createPrivateClient:async()=>{throw Error('No document approval');},uuid:()=> 'fixture-operation'});
+ await f.api.openProfile();f.node('profPin').value='581437';assert.equal(await f.api.changeDailyStaffPin(),true);assert.equal(changes,1);
+});
 function fixture(){
  const nodes=new Map(),events=new Map(),storage=new Map([['takodeal_staff_id','own-staff'],['takodeal_device_id','DEV-NEW-OPERATIONAL']]);let sequence=0;
  function node(id){if(!nodes.has(id)){const handlers=new Map(),attributes=new Map();nodes.set(id,{id,value:'',files:[],style:{display:id==='profileModal'?'none':'block'},textContent:'',disabled:false,children:[],className:'',setAttribute:(key,value)=>attributes.set(key,value),removeAttribute:key=>attributes.delete(key),getAttribute:key=>attributes.get(key),replaceChildren(...children){this.children=[...children];},append(...children){this.children.push(...children);},addEventListener:(type,fn)=>{const list=handlers.get(type)||[];list.push(fn);handlers.set(type,list);},emit(type){for(const fn of handlers.get(type)||[])fn({preventDefault(){}});}});}return nodes.get(id);}
