@@ -17,6 +17,10 @@ export function createStaffSelfRepairSDK({app,auth,db,config,sdk,readPrivateClie
   const privateClient=readPrivateClient(),row=journal(),uid=auth.currentUser?.uid;
   if(auth.currentUser&&auth.currentUser.isAnonymous!==true)throw Error('This is not a normal Staff phone sign-in. Its existing account has been kept; ask the Owner for help.');
   let staffId=storage.getItem('takodeal_staff_id'),deviceId=storage.getItem('takodeal_device_id');
+  if(staffId===null && w.staffSetupAccess?.isVerified()){
+   const bound=w.staffSetupAccess.binding(),session=w.staffSetupAccess.capture();
+   if(auth.currentUser?.isAnonymous===true && session.uid===uid && bound?.deviceId===deviceId && bound.status==='Active' && id(bound.staffId))staffId=bound.staffId;
+  }
   if(row&&['handoff-pending','complete'].includes(row.phase)&&row.candidateUid===uid){if(staffId===null&&id(row.staffId))staffId=row.staffId;if(deviceId===null&&device(row.deviceId))deviceId=row.deviceId;}
   // A second explicit reset can start before the usual login selection is
   // restored. Its exact persisted candidate links the new journal to the same

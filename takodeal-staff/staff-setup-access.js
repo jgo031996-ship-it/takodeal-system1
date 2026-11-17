@@ -148,7 +148,9 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     function schedule(){clearTimeout(pollTimer);if(!d.hidden&&authority.isVerified())pollTimer=setTimeout(()=>start(false),30000);}
     async function run(showChecking){
         const token=++visibleEpoch;if(showChecking){enteredKey='';stopLegacy?.();checking('Connecting to HQ to confirm this phone.');}
-        if(w.staffSelfRepair?.requiresCode()){authority.invalidate();enteredKey='';checking('A confirmed personal-code reset is unfinished. Open Repair Staff app and choose Check saved reset. Your original reference and private approval are kept.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Finish the saved sign-in reset';return;}
+        const pendingRecovery=w.staffSelfRepair?.requiresCode();
+        if(el('resumeStaffRecovery'))el('resumeStaffRecovery').hidden=!pendingRecovery;
+        if(pendingRecovery){authority.invalidate();enteredKey='';checking('Choose Continue saved recovery to finish the phone sign-in you already started.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Finish the saved sign-in reset';return;}
         try{const id=deviceId(),result=await authority.confirm(id,{join:!showChecking});if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
         catch(error){if(token===visibleEpoch&&!d.hidden){checking(error.message||'HQ could not confirm this phone. Reconnect and choose Check again.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Connection to HQ needed';}}
         finally{if(token===visibleEpoch)schedule();}
@@ -168,7 +170,10 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
         try{
         const id=ls.getItem('takodeal_device_id'),uid=(await transport.ready()).uid,result=await authority.confirm(deviceId());
         if(busy||w.staffDeviceRegistrationBusy||w.staffPunchBusy||config.auth.currentUser?.uid!==uid||ls.getItem('takodeal_device_id')!==id){message('Your attendance or phone session changed. Finish that action before activating this phone.');return false;}
-        if(result.mode==='protected'&&result.device){message('This phone already has a protected registration. Check its current status before continuing.');return false;}
+        if(result.mode==='protected'&&result.device){
+            if(result.device.status==='Active'&&el('loginOverlay')?.style.display==='flex'&&w.staffSelfRepair?.open){w.staffSelfRepair.open();return true;}
+            message('Check this phone’s registration before continuing.');return false;
+        }
         if(result.mode==='protected'&&!result.device){await apply(result,id);return true;}
         if(result.mode!=='legacy'||result.enabled!==false){message('Check this phone again before starting setup.');return false;}
         personalEnrollment=true;stopLegacy?.();enteredKey='';enrollmentId(id);form(true);await directory();return true;

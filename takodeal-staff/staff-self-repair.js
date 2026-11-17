@@ -6,7 +6,7 @@
     var ACCOUNT = ['takodeal_staff_id', 'takodeal_staff_name', 'takodeal_staff_pic', 'takodeal_staff_session_id'];
     var PHASES = ['activation-pending', 'activated', 'handoff-pending', 'complete'];
     var FIELDS = ['schemaVersion', 'phase', 'primaryUid', 'privateUid', 'staffId', 'deviceId', 'candidateUid', 'candidateDeviceId', 'operationId', 'createdAt'];
-    var sdk = null, flight = null, panel = null, text = null, codeInput = null, consent = null, resetButton = null;
+    var sdk = null, flight = null, panel = null, text = null, codeInput = null, resumeButton = null, resetButton = null;
     var storage = null; try { storage = w.localStorage; } catch (_) { /* File-repair UI remains independent of browser account storage. */ }
     function exact(value, fields) { return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === fields.slice().sort().join(','); }
     function id(value) { return typeof value === 'string' && /^[-A-Za-z0-9_]{1,128}$/.test(value); }
@@ -176,35 +176,62 @@
             if (flight === operation) flight = null; if (resetButton) resetButton.disabled = false;
         }
     }
+    var PIN_REQUIRED = 'takodeal_staff_repair_pin_required';
+    function needsPin() {
+        try { return w.sessionStorage.getItem(PIN_REQUIRED) === '1'; } catch (_) { return false; }
+    }
+    function pinAccepted() {
+        if (needsPin()) w.sessionStorage.removeItem(PIN_REQUIRED);
+    }
+    function lockForPin() {
+        // Preserve the phone registration, attendance session and operation journals.
+        if (!storage) throw Error('Allow app storage and try Repair again so this phone can ask for your PIN.');
+        try { w.sessionStorage.setItem(PIN_REQUIRED, '1'); } catch (_) { /* The saved login selection is also removed. */ }
+        ['takodeal_staff_id','takodeal_staff_name','takodeal_staff_pic'].forEach(function (key) { storage.removeItem(key); });
+        if (storage.getItem('takodeal_staff_id') || storage.getItem('takodeal_staff_name')) throw Error('Sign-in could not be locked. Reopen the Staff app and try again.');
+    }
+    function showRepairStatus(value) {
+        message(value);
+        if (w.staffStartup && w.staffStartup.showStatus) w.staffStartup.showStatus(value);
+    }
     async function refreshFiles() {
-        if (flight) { message('Finish or resume the current personal-code check first.'); return false; }
-        var reason = blockReason({filesOnly: true}); if (reason) { message(reason); return false; }
+        if (flight) { showRepairStatus('Finish the current personal-code check, then tap Repair again.'); return false; }
+        var reason = blockReason({filesOnly: true}); if (reason) { showRepairStatus(reason); return false; }
         var updater = w[Symbol.for('takodeal.staff.appUpdate')];
-        if (typeof updater !== 'function') { message('App-file repair is not available yet. Reopen the official Staff link online. No sign-in data was removed.'); return false; }
-        message('Refreshing app files keeps phone approvals, sign-in and saved data.');
-        try { return await updater(); } catch (_) { message('The app files could not be confirmed. Reconnect and try again; your saved data is kept.'); return false; }
+        if (typeof updater !== 'function') { showRepairStatus('App-file repair is not available yet. Reopen the official Staff link online. No sign-in data was removed.'); return false; }
+        showRepairStatus('Refreshing Staff app files. Afterward, sign in with your Staff PIN.');
+        try { return await updater({beforeReload: lockForPin}); } catch (_) { showRepairStatus('The app files could not be confirmed. Reconnect and try again; your saved data is kept.'); return false; }
     }
     function append(tag, value, parent) { var node = d.createElement(tag); if (value) node.textContent = value; if (tag === 'button') node.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;margin:12px 0 0;padding:12px 16px;border:1px solid #166534;border-radius:12px;background:#f0fdf4;color:#14532d;font:inherit;font-weight:700;line-height:1.35;cursor:pointer;touch-action:manipulation'; (parent || panel).appendChild(node); return node; }
     function open() {
         if (!panel && d.body) {
-            panel = d.createElement('section'); panel.id = 'staffSelfRepair'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Repair Staff app');
-            panel.style.cssText = 'position:fixed;inset:12px;max-width:560px;max-height:90vh;overflow:auto;margin:auto;padding:20px;border:2px solid #174e3c;border-radius:16px;background:#fff;color:#193a30;z-index:1000010;box-shadow:0 8px 48px #0005;font:16px/1.5 system-ui,sans-serif';
-            append('h2', 'Repair Staff app');
-            append('p', 'Refresh app files keeps this phone’s sign-in, approvals and saved work. The app cannot uninstall itself. This is not a full privacy wipe.');
-            var refresh = append('button', 'Refresh app files'); refresh.type = 'button'; refresh.addEventListener('click', refreshFiles);
-            append('h3', 'Reset Staff sign-in with a personal code');
-            append('p', 'For this same staff account only. Have your current Owner-issued personal setup code ready. If the code or phone-slot limit fails, your current sign-in stays here. The Owner may need to free an old phone slot; this action does not revoke it.');
-            var codeLabel = append('label', 'Personal setup code'); codeLabel.htmlFor = 'staffSelfRepairCode'; codeLabel.style.cssText = 'display:block;margin:16px 0 8px;font-weight:700;line-height:1.4';
-            codeInput = append('input'); codeInput.id = 'staffSelfRepairCode'; codeInput.type = 'password'; codeInput.inputMode = 'numeric'; codeInput.autocomplete = 'off'; codeInput.maxLength = 14; codeInput.setAttribute('aria-label', 'Personal setup code'); codeInput.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;padding:12px 14px;border:1px solid #55836a;border-radius:10px;background:#fff;color:#193a30;font:inherit;line-height:1.35';
-            var label = append('label'); label.style.cssText = 'display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:15px;font-weight:400;line-height:1.5;cursor:pointer'; consent = d.createElement('input'); consent.type = 'checkbox'; consent.style.cssText = 'flex:0 0 22px;width:22px;height:22px;min-width:22px;min-height:22px;margin:2px 0 0;accent-color:#166534'; label.appendChild(consent); label.appendChild(d.createTextNode(' I understand: confirm my personal setup code first, then use my usual Staff login PIN. My private-document approval is kept.'));
-            resetButton = append('button', 'Confirm code and reset Staff sign-in'); resetButton.style.background = '#166534'; resetButton.style.borderColor = '#166534'; resetButton.style.color = '#fff'; resetButton.type = 'button'; resetButton.addEventListener('click', function () { void perform(codeInput.value, consent.checked, false); });
-            var resume = append('button', 'Check saved reset'); resume.type = 'button'; resume.addEventListener('click', function () { void perform('', false, true); });
-            text = append('p', 'Choose Refresh app files if the Staff app has not finished opening.'); text.setAttribute('role', 'status'); text.setAttribute('aria-live', 'polite');
-            var close = append('button', 'Back to Staff app'); close.type = 'button'; close.addEventListener('click', function () { if (flight) return message('Wait for this check to finish. Its saved reference is kept.'); codeInput.value = ''; panel.hidden = true; });
+            panel = d.createElement('section'); panel.id = 'staffSelfRepair'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Recover phone sign-in');
+            panel.style.cssText = 'position:fixed;inset:0;width:min(420px,calc(100% - 32px));height:fit-content;max-height:85vh;box-sizing:border-box;overflow:auto;margin:auto;padding:20px;border:1px solid #b4cbbb;border-radius:16px;background:#fff;color:#193a30;z-index:1000010;box-shadow:0 8px 48px #0005;font:16px/1.45 system-ui,sans-serif';
+            append('h2', 'Recover phone sign-in');
+            append('p', 'Use your personal setup code to replace this phone registration, then sign in with your Staff PIN. A free phone slot is required for a replacement.');
+            var codeLabel = append('label', 'Personal setup code'); codeLabel.htmlFor = 'staffSelfRepairCode';
+            codeInput = append('input'); codeInput.id = 'staffSelfRepairCode'; codeInput.type = 'password'; codeInput.inputMode = 'numeric'; codeInput.autocomplete = 'off'; codeInput.maxLength = 14;
+            codeInput.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;margin:6px 0;padding:10px;border:1px solid #55836a;border-radius:10px;font:inherit';
+            resetButton = append('button', 'Confirm code and replace registration'); resetButton.type = 'button';
+            resetButton.addEventListener('click', function () { void perform(codeInput.value, true, false).then(closeOnSuccess); });
+            resumeButton = append('button', 'Continue saved recovery'); resumeButton.type = 'button';
+            resumeButton.addEventListener('click', function () { void perform('', false, true).then(closeOnSuccess); });
+            text = append('p'); text.setAttribute('role', 'status'); text.setAttribute('aria-live', 'polite');
+            var close = append('button', 'Back'); close.type = 'button';
+            close.addEventListener('click', function () { if (flight) return message('Wait for this check to finish.'); codeInput.value = ''; panel.hidden = true; });
             d.body.appendChild(panel);
         }
-        if (panel) panel.hidden = false;
+        if (panel) {
+            var saved = null;
+            try { saved = readJournal(); } catch (error) { message(error.message); }
+            resumeButton.hidden = !saved || saved.phase === 'complete';
+            resumeButton.style.display = resumeButton.hidden ? 'none' : 'block';
+            panel.hidden = false;
+        }
         return panel;
+    }
+    function closeOnSuccess(ok) {
+        if (ok && panel) { panel.hidden = true; if (w.startStaffDeviceSetup) w.startStaffDeviceSetup(); }
     }
     function configureSDK(adapter) {
         var names = ['capture', 'createCandidate', 'activateCandidate', 'verifyCandidate', 'drainPendingWrites', 'assertSingleWindow', 'handoffPrimary'];
@@ -212,8 +239,8 @@
         if (flight) throw Error('Wait for the current reset check to finish.');
         sdk = adapter; notify(); return api;
     }
-    var api = {open: open, refreshFiles: refreshFiles, startReset: function (input) { return perform(input && input.code, input && input.confirmed, false); }, resumeReset: function () { return perform('', false, true); }, blockReason: function (options) { return flight ? 'A personal-code reset is still finishing. Keep this screen open and its saved reference intact.' : blockReason(options); }, requiresCode: requiresCode, configureSDK: configureSDK};
+    var api = {open: open, needsPin: needsPin, pinAccepted: pinAccepted, refreshFiles: refreshFiles, startReset: function (input) { return perform(input && input.code, input && input.confirmed, false); }, resumeReset: function () { return perform('', false, true); }, blockReason: function (options) { return flight ? 'A personal-code reset is still finishing. Keep this screen open and its saved reference intact.' : blockReason(options); }, requiresCode: requiresCode, configureSDK: configureSDK};
     w.staffSelfRepair = Object.freeze(api);
-    d.addEventListener('click', function (event) { var target = event.target; while (target && target !== d) { if (target.getAttribute && target.hasAttribute('data-staff-self-repair')) { event.preventDefault(); open(); return; } target = target.parentElement; } });
+    d.addEventListener('click', function (event) { var target = event.target; while (target && target !== d) { if (target.getAttribute && target.hasAttribute('data-staff-self-repair')) { event.preventDefault(); void refreshFiles(); return; } if (target.hasAttribute && target.hasAttribute('data-staff-resume-recovery')) { event.preventDefault(); open(); return; } target = target.parentElement; } });
     w.addEventListener('storage', function (event) { if (event.key === JOURNAL) notify(); });
 }(window, document, navigator));

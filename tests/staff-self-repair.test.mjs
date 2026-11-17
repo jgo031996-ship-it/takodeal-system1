@@ -149,3 +149,15 @@ test('source remains classic and has no direct Auth, IndexedDB, cache deletion, 
  assert.doesNotMatch(source,/^\s*(?:import|export)\s/m);assert.doesNotMatch(source,/\bsignOut\s*\(|\bindexedDB\s*\.|\bcaches\s*\.|\bfetch\s*\(|location\.reload\s*\(|\.clear\s*\(|\.unregister\s*\(/);
  assert.match(source,/TAKODEAL|Staff/);assert.match(source,/ACCOUNT\.forEach/);
 });
+
+test('Repair starts the file check directly and locks only daily login when the updater confirms reload',async()=>{
+ const h=fixture(),before=h.snapshot(),panel=h.d.getElementById('staffSelfRepair');panel.hidden=true;
+ const state=new Map();h.w.sessionStorage={setItem:(k,v)=>state.set(k,v),getItem:k=>state.get(k),removeItem:k=>state.delete(k)};
+ const button=h.node('button');button.setAttribute('data-staff-self-repair','');
+ let beforeReload,requests=0;h.w[Symbol.for('takodeal.staff.appUpdate')]=async options=>{requests++;beforeReload=options.beforeReload;return true;};
+ h.events.get('dom:click')({target:button,preventDefault(){}});await flush();
+ assert.equal(requests,1);assert.equal(panel.hidden,true);assert.equal(h.calls.create,0);assert.deepEqual(h.snapshot(),before);
+ beforeReload();assert.equal(h.api.needsPin(),true);assert.equal(h.storage.getItem('takodeal_staff_id'),null);
+ for(const k of ['takodeal_device_id','takodeal_staff_session_id','privateApproval','queuedReceiptSentinel'])assert.equal(h.storage.getItem(k),before[k]);
+ h.api.pinAccepted();assert.equal(h.api.needsPin(),false);h.intact();
+});

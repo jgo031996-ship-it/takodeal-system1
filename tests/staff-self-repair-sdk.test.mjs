@@ -80,3 +80,12 @@ test('an already-created private client accessor never initializes Auth and retu
  const context={getApp:()=>({}),getAuth:()=>{authReads++;return auth;},getFirestore:()=>{dbReads++;return db;},signInAnonymously:()=>{signins++;},createDocumentStore:()=>({}),doc:noop,getDocFromServer:noop,runTransaction:noop,serverTimestamp:noop,query:noop,where:noop,collection:noop,getDocsFromServer:noop,limit:noop,onAuthStateChanged:noop};vm.runInNewContext(source+';globalThis.readExisting=readInitializedStaffDocumentClient;globalThis.createPrivate=createStaffDocumentFirebase;',context);
  assert.equal(context.readExisting(),null);assert.equal(authReads,0);assert.equal(dbReads,0);await context.createPrivate({},()=> 'fictional-staff');const one=context.readExisting(),two=context.readExisting();assert.notEqual(one,two);assert.equal(one.auth,auth);assert.equal(one.db,db);assert.equal(authReads,1);assert.equal(dbReads,1);assert.equal(signins,0);
 });
+
+test('optional recovery after daily sign-out uses only an active binding for this exact UID and phone',()=>{
+ const h=fixture();h.w.localStorage.removeItem('takodeal_staff_id');
+ const binding={deviceId:'DEV-ORIGINAL-123456',status:'Active',staffId:'fictional-staff'},session={uid:'original-primary'};
+ h.w.staffSetupAccess={isVerified:()=>true,binding:()=>binding,capture:()=>session};
+ assert.equal(h.adapter().capture().staffId,'fictional-staff');
+ session.uid='different';assert.equal(h.adapter().capture().staffId,null);
+ session.uid='original-primary';binding.deviceId='DEV-OTHER-123456';assert.equal(h.adapter().capture().staffId,null);
+});

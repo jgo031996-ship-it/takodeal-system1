@@ -217,3 +217,22 @@ test('manual activation with a blank phone label submits the selected employee a
   await h.window.requestDeviceAccess();assert.equal(h.loginCalls,1);
  }finally{h.gate.stop();}
 });
+
+test('after repair a saved employee must enter the right daily PIN before the portal is reopened',async()=>{
+ const h=actualLoginHarness();let held=true;
+ h.window.staffSelfRepair={requiresCode:()=>false,needsPin:()=>held,pinAccepted:()=>{held=false;}};
+ h.store.set('takodeal_staff_name','Sample Staff');h.store.set('takodeal_staff_id','staff-a');
+ await h.window.staffSetupAccess.confirm(deviceId);h.window.checkNormalLogin();
+ assert.equal(h.node('loginOverlay').style.display,'flex');assert.equal(h.node('appContainer').style.display,'none');
+ h.node('loginPin').value='9999';await h.window.loginStaff();assert.equal(held,true);
+ h.node('loginPin').value='1111';await h.window.loginStaff();assert.equal(held,false);
+});
+test('optional code recovery opens only for the freshly verified active phone; merely opening it creates no registration',async()=>{
+ const h=uiHarness();let opened=0;h.window.staffSelfRepair={requiresCode:()=>false,open:()=>opened++};
+ try{
+  h.store.set('takodeal_device_id',deviceId);h.setResult(protectedState());await h.gate.start();h.node('loginOverlay').style.display='flex';
+  assert.equal(await h.window.choosePersonalCodeActivation(),true);assert.equal(opened,1);
+  h.setResult(protectedState({status:'Blocked'}));assert.equal(await h.window.choosePersonalCodeActivation(),false);
+  assert.equal(opened,1);assert.equal(h.requests.some(r=>r.url.endsWith('/activate')),false);
+ }finally{h.gate.stop();}
+});
