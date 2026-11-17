@@ -1,6 +1,6 @@
 {
-  "baseline": "acee141f515f964d48dfdab97a2230e773fab05d",
-  "candidateSource": "e3f30bc9aa2a231f828959aca524797ab2979ec9",
+  "baseline": "b916c8c49210fab8d1c61c255e812e74a3844ef1",
+  "candidateSource": "7e4b33b16d3924736e5fcb4cdbd4111d64d02c8e",
   "functions": {
     "staffDeviceSetup": {
       "completeSourceInventory": true,
@@ -25,7 +25,7 @@
           "candidate": "6ab20fd38d67a76878dd4ee9295e4d0d6697ac89331f47a20d8bea4f77d9daa1"
         },
         "service.mjs": {
-          "baseline": "2e6945441c3dbb4577a450660fe7634329500167a6e6cc102f0d40acfeb1ab7c",
+          "baseline": "d735784758e8550179f4f24f61900c34a44a041ed0260bd914b829a69e0adb66",
           "candidate": "d735784758e8550179f4f24f61900c34a44a041ed0260bd914b829a69e0adb66"
         }
       }
@@ -53,15 +53,15 @@
           "candidate": "77d58fa546bb1e36efa89b061cc016fe6458f0710a488cd51be72ced8b228c08"
         },
         "access-payroll-inputs-store.mjs": {
-          "baseline": "73fcf0aa875a360d2a87dc47814e5369edd098284b35858ff61983760dece228",
+          "baseline": "d0ea1f76acc09c28bd84ed374499b37a732dfa1e456f7ea525307642584f4ce1",
           "candidate": "d0ea1f76acc09c28bd84ed374499b37a732dfa1e456f7ea525307642584f4ce1"
         },
         "access-payroll-store.mjs": {
-          "baseline": "5bda6163a246a1a84fc941bae7410d48c435cda6badf8134efa526e41a89949c",
+          "baseline": "39e7d0009ea551033ebf44bd2e997516f2583b7ca06a778b84ae39e2804b521a",
           "candidate": "39e7d0009ea551033ebf44bd2e997516f2583b7ca06a778b84ae39e2804b521a"
         },
         "access-store.mjs": {
-          "baseline": "2083cdf86141f42beee8695b1532a751788e4e0bb1485a8777ab0fb4e3242159",
+          "baseline": "457a4fc50ee80c1f4f8141912f787e6382b740baec30802b3a758c4fd3ad45dc",
           "candidate": "457a4fc50ee80c1f4f8141912f787e6382b740baec30802b3a758c4fd3ad45dc"
         },
         "cash-remittance-model.js": {
@@ -177,7 +177,7 @@
           "candidate": "74474a653f0c041a13478104bf8144ca3a35e3ad4bad73e03ae70ffd0651f822"
         },
         "personal-vault-phone.mjs": {
-          "baseline": null,
+          "baseline": "1500b72096214f7a892b124579c2926493a3b4babd6f1dd825b37ffc89963c0b",
           "candidate": "1500b72096214f7a892b124579c2926493a3b4babd6f1dd825b37ffc89963c0b"
         },
         "prep-actual-model.mjs": {
@@ -289,7 +289,7 @@
           "candidate": "c6b1a992a907de62bc5c7930c6c7c8b13d103bbef537feea2ec66f829f0fb524"
         },
         "staff-loan-ledger-store.mjs": {
-          "baseline": "15fbc9cbc1fdaf4368d6206e36456f7c5397cbb8c93c1c2f47826302a820f60f",
+          "baseline": "b2d6618529c322e669e1d196c2108e7ac384d32e7f9e1313666489c9d07de7c0",
           "candidate": "b2d6618529c322e669e1d196c2108e7ac384d32e7f9e1313666489c9d07de7c0"
         },
         "staff-private-profile-handler.mjs": {
@@ -301,8 +301,8 @@
           "candidate": "589eba76025bbf905c6059e0c20936e7f1cf60f36cefe103f79cc371ea940dae"
         },
         "staff-private-profile-store.mjs": {
-          "baseline": "e0378d554f79bec925fd6a14fd8243f5c17fbd6e0ff2c7c77f12868a8b5fa64c",
-          "candidate": "3cade0bce182e39734dd1632b34270a0b85c08825b0c593e3e69628e96ad2f5b"
+          "baseline": "3cade0bce182e39734dd1632b34270a0b85c08825b0c593e3e69628e96ad2f5b",
+          "candidate": "e600a7cdb04d2ce179311a5acfef9cf45ea3062a154c2acdbf209adac658fdcc"
         },
         "store.mjs": {
           "baseline": "3dafe9c07c9fe67279b0923f7bd4df4dee8bc3ac26d616d5e8292b968d6c7585",
