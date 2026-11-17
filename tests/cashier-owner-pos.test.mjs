@@ -111,3 +111,10 @@ test('a mobile payment already recorded on another terminal is reported as paid 
     w.localStorage.setItem=(key,value)=>{save(key,value);const payload=JSON.parse(value);h.put('transactions/'+payload.saleId,{...payload,ownerUid:null,cashier:'Branch cashier'});h.put(path,{...h.get(path),paymentStatus:'paid',receiptId:'M-2'});};
     const result=await pos.checkout(input);assert.equal(result.status,'failed');assert.match(result.error,/store already recorded/);assert.equal(storage.size,0);assert.equal(h.get('inventory/F').currentStock,20);
 });
+
+test('ordinary Owner checkout reads the branch inventory once and authorizes one sale transaction',async()=>{
+    const {w,c,punch}=await fixture();let inventories=0,authorities=0;
+    const get=w.getDocsFromServer,prepare=c.prepareSale;w.getDocsFromServer=async q=>{if(q.table==='inventory')inventories++;return get(q);};
+    c.prepareSale=async()=>{authorities++;return prepare();};
+    const paid=await punch();assert.equal(paid.status,'committed',paid.error);assert.equal(inventories,1);assert.equal(authorities,1);
+});

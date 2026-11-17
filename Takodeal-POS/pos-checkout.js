@@ -49,7 +49,7 @@ export function installSaleSafety(api, environment = globalThis) {
     const w = environment.window || environment;
     installCheckoutControls(w,environment.document);
     const ls = environment.localStorage;
-    const outbox = createOutbox(environment.indexedDB || null);
+    const outbox = createOutbox(environment.cashierWorkstation?.outbox(environment.indexedDB)||environment.indexedDB||null);
     const engine = createMealScopedSaleEngine(api);
     const correctionQueue = createCashierVoidQueue(engine, environment, () => w.cashierVoid, api);
     w.cashierVoidQueue = correctionQueue;

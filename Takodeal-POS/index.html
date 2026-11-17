@@ -2,6 +2,7 @@
 <html>
   
 <head>
+<script src="./cashier-workstation-boot.js"></script>
 <link rel="stylesheet" href="./cashier-prep.css">
 <link rel="stylesheet" href="./cashier-void.css">
 <link rel="stylesheet" href="./meal-checkout.css">
@@ -376,8 +377,8 @@
     <h1 style="color: #f59e0b; margin-bottom: 10px; font-size: 32px;">⚙️ Device Setup</h1>
     <p style="margin-bottom: 30px; color: #94a3b8; font-size: 15px;">Authorize this tablet to connect to the TAKODEÁL network.</p>
 
-    <button type="button" data-owner-access-portable data-cashier-startup-lock disabled onclick="window.ownerBypassLogin()" style="width:320px;max-width:calc(100vw - 32px);min-height:48px;padding:14px 20px;margin-bottom:12px;border:0;border-radius:12px;background:#f59e0b;color:#17251f;font-size:16px;font-weight:800;cursor:pointer;">Owner Access · View branch sales</button>
-    <p style="max-width:320px;margin:0 16px 24px;text-align:center;color:#cbd5e1;">Owners can inspect sales without registering this device.</p>
+    <button type="button" data-owner-access-portable data-cashier-startup-lock disabled onclick="window.ownerBypassLogin()" style="width:320px;max-width:calc(100vw - 32px);min-height:48px;padding:14px 20px;margin-bottom:12px;border:0;border-radius:12px;background:#f59e0b;color:#17251f;font-size:16px;font-weight:800;cursor:pointer;">Owner Access</button>
+    <p style="max-width:320px;margin:0 16px 24px;text-align:center;color:#cbd5e1;">Open the branch POS or set up staff PIN sign-in on this browser.</p>
 
     <!-- 🔥 NEW: SMART GOOGLE REGISTRATION ENGINE -->
     <button onclick="window.smartDeviceRegistration()" style="background: white; color: #334155; border: 2px solid #cbd5e1; padding: 14px 20px; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-bottom: 30px; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
@@ -506,7 +507,7 @@
                   throw Object.assign(new Error('Saved-data access is unavailable.'), {code:'cashier-login/unavailable'});
               }
               // Standard verify call
-              let identity = await window.verifyPin(password);
+              let identity = window.cashierWorkstation?.current ? await window.verifyWorkstationStaffPin(password,()=>!expired&&window.cashierLoginCheckAttempt===attempt&&passInput.value.trim()===password) : await window.verifyPin(password);
               if (expired || window.cashierLoginCheckAttempt !== attempt) return;
               if (passInput.value.trim() !== password) throw Object.assign(new Error('The entered PIN changed. Check it and try again.'), {code:'cashier-login/changed'});
               
@@ -544,7 +545,7 @@
               if (ownerBtn) ownerBtn.style.display = 'none';
 
               if (typeof window.checkLoginShortage === 'function') window.checkLoginShortage(identity.cashierName);
-              if (typeof window.updateActiveShiftCashier === 'function') window.updateActiveShiftCashier(identity.cashierName);
+              if (!window.cashierWorkstation?.current && typeof window.updateActiveShiftCashier === 'function') window.updateActiveShiftCashier(identity.cashierName);
               
               btn.innerText = "Loading POS..."; 
 
@@ -943,7 +944,6 @@
                   <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">Date</th>
                   <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">Time</th>
                   <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">Sales Amount</th>
-                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; text-align: center;">Action</th>
                 </tr>
               </thead>
               <tbody id="tbTransBody">
@@ -1744,6 +1744,9 @@
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
             <input type="text" id="finalCustomerName" class="input-box" placeholder="Customer Name (Optional)">
+                <label id="gcashReferenceField" hidden>GCash transaction reference
+                    <input type="text" id="gcashTransactionReference" class="input-box" maxlength="120" autocomplete="off" placeholder="Reference on the GCash receipt">
+                </label>
         </div>
         
         <!-- 🔥 NEW: HIDDEN DELIVERY FIELDS -->
@@ -2662,11 +2665,11 @@ window.loadSalesDashboard = async function (liveTransactions) {
   if (window.isCashierOwnerToolsMode?.()) { window.cashierOwnerRegister?.refresh(); return; }
   if(!document.getElementById('view-sales')?.classList?.contains('active')){window.stopShiftSalesFeed?.();return;}
   const renderGeneration = window.shiftSalesRenderGeneration = (window.shiftSalesRenderGeneration || 0) + 1;
-  document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
+  document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
   
   if (!window.currentShift || !window.currentShift.active) { 
       window.stopShiftSalesFeed?.();
-      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; 
+      document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="7" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; 
       return; 
   }
   
@@ -2701,7 +2704,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
   let totalGrab = 0; let totalGCash = 0; let totalFoodpanda = 0;
 
   if (!transactions || transactions.length === 0) { 
-      tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
+      tBody = '<tr><td colspan="7" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
   } else {
     transactions.forEach((tx, idx) => {
       let statusBadge = '';
@@ -2763,7 +2766,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
       let isMobile = tx.isMobileOrder || (tx.receiptId && tx.receiptId.startsWith("TKDL-"));
       let mobileBadge = isMobile ? `<br><span style="background:#0ea5e9; color:white; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; display:inline-block; margin-top:4px;">📱 APP ORDER</span>` : '';
 
-      tBody += `<tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s; ${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+      tBody += `<tr class="tk-sale-row" tabindex="0" data-staff-receipt="${idx}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s; ${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
         <td style="padding: 15px 25px; font-weight: 900; color: #334155; font-family: monospace; font-size: 13px; white-space: nowrap;">${tx.receiptId || 'N/A'} ${kdsBadge} ${mobileBadge}</td>
         <td style="padding: 15px 25px; font-weight: bold; color: #475569; white-space: nowrap;">${tx.customerName || '-'}</td>
         <td style="padding: 15px 25px; color: #0ea5e9; font-weight: bold; white-space: nowrap;">${tx.paymentMethod || 'Unknown'} ${verifyLabel}</td>
@@ -2771,27 +2774,13 @@ window.loadSalesDashboard = async function (liveTransactions) {
         <td style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txDate}</td>
         <td style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txTime}</td>
         <td style="padding: 15px 25px; font-weight: 900; color: var(--primary); font-size: 15px; white-space: nowrap;">${displayAmount}</td>
-        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; white-space: nowrap;">
-            ${tx.isPendingSync ? '<span style="color:#b45309;">Awaiting upload</span>' : `
-            <div style="position: relative; display: inline-block;">
-                <button class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';">
-                    ⚙️ Action ▼
-                </button>
-                <div class="action-dropdown" id="txMenu-${idx}" style="right: 0; top: 100%; margin-top: 5px; text-align: left; width: 160px; font-weight: bold; cursor: default; z-index: 100;">
-                    <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🔍 View Details</div>
-                    <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🖨️ Print Receipt</div>
-                    ${window.preparedCancellationActions?.(tx) || ''}
-                    ${tx.preparedCancellation || tx.cancelledFoodSourceId || tx.status === 'Voided' ? '' : `<div class="action-item danger" data-void-sale="${escapeSyncText(tx.id)}" data-void-receipt="${escapeSyncText(tx.receiptId)}" data-void-cashier="${escapeSyncText(tx.cashier)}" onclick="voidTx(this.dataset.voidSale,this.dataset.voidReceipt,this.dataset.voidCashier)" style="color: #dc2626; padding: 10px 15px;">Void / correct order</div>`}
-                </div>
-            </div>`}
-        </td>
       </tr>`;
     });
   }
   
   let auditHeader = `
       <tr style="background: #f8fafc; font-size: 16px;">
-        <td colspan="8" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
+        <td colspan="7" style="padding: 15px; text-align: center; border-bottom: 3px solid #cbd5e1;">
             <span style="color: #64748b; font-size: 14px; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 6px;">🔒 Cash Drawer: Blind Count</span> &nbsp;&nbsp; | &nbsp;&nbsp;
             <strong style="color: #00b14f; font-size: 16px;">🟢 Grab: ₱${totalGrab.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
             <strong style="color: #d70f64; font-size: 16px;">🐼 Panda: ₱${totalFoodpanda.toFixed(2)}</strong> &nbsp;&nbsp; | &nbsp;&nbsp;
@@ -2800,7 +2789,15 @@ window.loadSalesDashboard = async function (liveTransactions) {
       </tr>
   `;
 
-  document.getElementById('tbTransBody').innerHTML = auditHeader + tBody;
+  const body=document.getElementById('tbTransBody');
+  body.innerHTML = auditHeader + tBody;
+  const session=window.sessionUser;
+  body.onclick=event=>{
+      const tr=event.target.closest?.('[data-staff-receipt]');if(!tr||!body.contains(tr))return;
+      const receipt=transactions[Number(tr.dataset.staffReceipt)];
+      const current=()=>session===window.sessionUser&&session.branch===salesBranch&&window.currentShift?.shiftId===salesShiftId&&document.getElementById('view-sales').classList.contains('active');
+      if(receipt&&current())window.viewReceiptDetails(receipt.receiptId,receipt,current);
+  };
   window.cashierVoid?.renderRecovery();
 };
 
@@ -3621,10 +3618,13 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       }
 
       let custName = document.getElementById('finalCustomerName').value.trim();
-      if ((window.selectedPaymentMethod === 'Grab' || window.selectedPaymentMethod === 'Foodpanda' || window.selectedPaymentMethod === 'GCash') && custName === "") {
-          let reqStr = window.selectedPaymentMethod === 'GCash' ? 'GCash Ref Number' : `${window.selectedPaymentMethod} Order ID`;
-          alert(`🚨 SECURITY LOCK!\n\nYou selected ${window.selectedPaymentMethod}. You MUST enter the exact ${reqStr} in the Customer Name box to prevent phantom orders.`);
-          btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+      const gcash=String(window.selectedPaymentMethod||'').trim().toLowerCase()==='gcash';
+      const gcashReference=gcash?document.getElementById('gcashTransactionReference').value.trim():'';
+      if(gcash&&!gcashReference||['Grab','Foodpanda'].includes(window.selectedPaymentMethod)&&!custName){
+          alert(gcash?'Enter the transaction reference printed on the GCash receipt.':'Enter the delivery platform order ID.');
+          btn.innerText='Complete checkout';btn.disabled=false;btn.style.pointerEvents='auto';window.isSubmittingOrder=false;
+          if(gcash)document.getElementById('gcashTransactionReference').focus();
+          return;
       }
 
       let exactShiftId = (typeof window.currentShift !== 'undefined' && window.currentShift && window.currentShift.shiftId) ? window.currentShift.shiftId : "UNKNOWN";
@@ -3654,7 +3654,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountReason: dReason,
         netTotal: window.finalCheckoutAmount ?? window.currentGrandTotal,
         customerName: custName,
-        ...(window.selectedPaymentMethod==='GCash'?{paymentReference:custName}:{}),
+        ...(gcash?{paymentReference:gcashReference}:{}),
         ...(['Grab','Foodpanda'].includes(window.selectedPaymentMethod)?{platformOrderId:custName}:{}),
         amountReceived: window.isMealDiscount(dType) ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
@@ -3675,7 +3675,12 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         contactNumber: contactNumber
       };
 
-      const checkout = await window.processCheckout(payload);
+      let checkout;
+      const feedback=setTimeout(()=>{if(btn.disabled)btn.innerText='Confirming receipt…';},2500);
+      try{checkout=await window.processCheckout(payload);}
+      catch(error){checkout={status:'failed',error:error.message||'Check this receipt in Shift Sales.'};}
+      finally{clearTimeout(feedback);}
+
       const receiptId = checkout.receiptId;
 
       if (checkout.status === 'queued' || checkout.status === 'committed') {
@@ -4569,7 +4574,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=owner-branch-orders-20261117-r2"></script>
+    <script type="module" src="main.js?v=cashier-workstation-receipts-20261117-r3"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

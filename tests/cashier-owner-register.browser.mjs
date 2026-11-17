@@ -17,6 +17,13 @@ import {installCashierOwnerRegister} from './cashier-owner-register.js';
 const report=document.getElementById('owner-register-proof');
 try{
  const setup=document.getElementById('deviceSetupOverlay');setup.style.display='flex';const setupOwner=setup.querySelector('[data-owner-access-portable]');if(!setupOwner)throw Error('Unregistered device hides Owner Access');setupOwner.disabled=false;window.ownerBypassLogin=()=>{window.fixtureSetupAccess=true;setup.style.display='none';};setupOwner.click();if(!window.fixtureSetupAccess||setup.style.display!=='none')throw Error('Setup Owner button failed');
+ const profiles=window.cashierWorkstation,station={id:'DEV-11111111-1111-4111-8111-111111111111',branch:'Agdao',ownerUid:'fictional-owner',uid:'fictional-terminal'};
+ localStorage.setItem('takodeal_device_branch','Original store');profiles.remember(station);
+ const frame=document.createElement('iframe');frame.src='/station-check?station='+station.id;document.body.append(frame);
+ const isolated=await new Promise(ok=>frame.onload=()=>ok(frame.contentWindow));if(isolated.localStorage.getItem('takodeal_device_branch')!=='Agdao'||localStorage.getItem('takodeal_device_branch')!=='Original store')throw Error('Saved branch mixed with physical settings');
+ isolated.localStorage.setItem('cart-fixture','Agdao only');if(localStorage.getItem('cart-fixture')!==null)throw Error('Staff cart storage escaped its workstation');
+ let physicalName;isolated.cashierWorkstation.outbox({open:name=>{physicalName=name;}}).open('takodeal_sale_outbox_v2',1);if(!physicalName.endsWith(station.id))throw Error('Paid queue was shared');
+ frame.remove();
  const db={},user={uid:'fictional'},auth={currentUser:user},session=Object.freeze({branch:'Agdao',workspaceKind:'verified-owner-workspace-v1'}),reads=[];
  const owner={db,user,auth,session,branch:'Agdao',assertCurrent(){if(window.sessionUser!==session)throw Error('changed');}};
  Object.assign(window,{sessionUser:session,currentShift:null,isCashierOwnerToolsMode:()=>window.sessionUser===session,getCashierOwnerWorkspaceContext:()=>owner,collection:(db,table)=>({db,table}),where:(field,op,value)=>({field,op,value}),limit:count=>({count}),orderBy:(field,direction)=>({field,direction}),query:(q,...filters)=>({...q,filters}),stopShiftSalesFeed(){},Swal:{fire:options=>{window.fixtureDetails=options;}}});
@@ -30,7 +37,9 @@ try{
  if(!table.textContent.includes('Total sales ₱240.00')||!document.getElementById('btnTopShift').textContent.includes('register open'))throw Error('Missing actual open status or sales totals');
  table.querySelector('[data-owner-receipt]').click();if(!window.fixtureDetails?.html.includes('FICTIONAL-001'))throw Error('Details click failed');
  let requested=null;window.cashierOwnerPOS={isReady:()=>true,hasPending:()=>false,changeReceipt:(id,receipt)=>{requested=[id,receipt];}};
- table.querySelector('[data-owner-void]').click();if(requested?.join('/')!=='fictional-sale/FICTIONAL-001')throw Error('Receipt action did not identify the displayed branch sale');
+ if(table.querySelector('[data-owner-void]'))throw Error('Receipt action still visible in the table');
+ window.Swal.fire=options=>{window.fixtureDetails=options;return {isDenied:options.title==='Receipt details'&&options.showDenyButton};};
+ table.querySelector('[data-owner-receipt]').click();await Promise.resolve();if(requested?.join('/')!=='fictional-sale/FICTIONAL-001')throw Error('Receipt action did not identify the displayed branch sale');
  window.loadMenuManager=async()=>{};
  const ticket={id:'customer-order',data:()=>({orderCode:'TEST-QUEUE',branch:'Agdao',status:'preparing',items:[],timestamp:new Date()})};
  window.getDocs=async()=>({docs:[]});window.getDocsFromServer=async q=>{if(q.db!==db)throw Error('Wrong order history account');return {docs:[ticket]};};
@@ -55,10 +64,11 @@ try{
  report.textContent='PASS: actual HTML, open register, cash totals, receipt details, Owner checkout and receipt action, remote close and logout';
 }catch(error){report.textContent='FAIL: '+error.message;}
 `;
-const html=page.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace('</body>','<output id="owner-register-proof">PENDING</output><script>const hiddenCategories=[];'+menu+mobileTabs+ui+'</script><script type="module">'+script+'</script></body>');
+const html=page.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace('</body>','<script src="./cashier-workstation-boot.js"></script><output id="owner-register-proof">PENDING</output><script>const hiddenCategories=[];'+menu+mobileTabs+ui+'</script><script type="module">'+script+'</script></body>');
 const server=createServer((request,response)=>{
  const path=new URL(request.url,'http://127.0.0.1').pathname;
  response.setHeader('Content-Security-Policy',"default-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+ if(path==='/station-check'){response.setHeader('Content-Type','text/html');response.end('<script src="/cashier-workstation-boot.js"></script>');return;}
  if(path==='/'){response.setHeader('Content-Type','text/html');response.end(html);return;}
  try{const url=new URL('.'+path,root);if(!url.href.startsWith(root.href))throw Error('outside');const data=readFileSync(url);response.setHeader('Content-Type',extname(path)==='.js'?'text/javascript':extname(path)==='.css'?'text/css':'application/octet-stream');response.end(data);}catch{response.writeHead(404).end();}
 });

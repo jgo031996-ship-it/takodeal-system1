@@ -1,3 +1,5 @@
+import {enrollOwnerWorkstation} from './cashier-workstation.js';
+import {createCashierStaffAccess} from './cashier-staff-access.js';
 import {mobileOwnerContext} from './mobile-order-actions.js';
 import {createCashierMealContext} from './cashier-meal-context.js';
 import {readCashierBranchPolicy} from './cashier-branch-policy.js';
@@ -76,7 +78,8 @@ const firebaseConfig = {
   appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
 
-const app = initializeApp(firebaseConfig);
+const workstation=window.cashierWorkstation?.current;
+const app=workstation?initializeApp(firebaseConfig,window.cashierWorkstation.appName(workstation.id)):initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
@@ -143,8 +146,25 @@ const cashierMealContext=createCashierMealContext(window,{primaryAuth:auth,devic
 window.resolveCashierMealApi=options=>cashierMealContext.read(options);
 const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
 const cashierOwnerWorkspace=createCashierOwnerWorkspace(window,document,{primaryAuth:auth,primaryDb:db,firebaseConfig});
+document.addEventListener('keydown',event=>{
+    if((event.key==='Enter'||event.key===' ')&&event.target.matches?.('tr[data-staff-receipt],tr[data-owner-receipt]')){event.preventDefault();event.target.click();}
+});
 window.getCashierOwnerWorkspaceContext=()=>cashierOwnerWorkspace.current();
+const workstationStaff=workstation?createCashierStaffAccess({primaryAuth:auth,primaryDb:db,deviceContext:cashierDeviceContext,storage:window.localStorage,getSession:()=>window.sessionUser}):null;
+window.verifyWorkstationStaffPin=async(pin,valid)=>{
+    await auth.authStateReady();
+    const user=auth.currentUser;
+    const guard=()=>{if(!valid()||!user?.isAnonymous||user.uid!==workstation.uid||user!==auth.currentUser)throw Error('Reopen the saved workstation and enter the staff PIN again.');};
+    guard();const staff=await workstationStaff.login(pin,{assertCurrent:guard});guard();return staff;
+};
 window.clearCashierOwnerWorkspace=()=>cashierOwnerWorkspace.clear();
+window.openRememberedStaffSignIn=()=>{
+    const c=cashierOwnerWorkspace.current();if(!c)return;
+    c.assertCurrent();
+    if(cashierStartupBusy(window,{ownerSession:c.session})||window.cashierOwnerPOS?.hasPending())return Swal.fire('Finish this order first','Complete or park the current cart and confirm any saved payment before switching.','info');
+    const r=window.cashierWorkstation.find(c.user.uid,c.branch);
+    if(r)window.cashierWorkstation.open(r);else return window.ownerBypassLogin();
+};
 window.isCashierOwnerToolsMode=()=>cashierOwnerWorkspace.isToolsMode();
 window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 window.ensureStockAuditDevice = createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
@@ -1670,8 +1690,9 @@ window.getReceiptDetails = async function (receiptId) {
 };
 
 // --- RECEIPT DETAILS ENGINE (ULTRA MODERN DESIGN WITH DISCOUNTS) ---
-window.viewReceiptDetails = async function (receiptId) {
-    let tx = await window.getReceiptDetails(receiptId);
+window.viewReceiptDetails = async function (receiptId,selected,current=()=>true) {
+    let tx = selected || await window.getReceiptDetails(receiptId);
+    if(!current())return;
     if (!tx) { alert("Receipt not found!"); return; }
 
     let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
@@ -1782,6 +1803,21 @@ window.viewReceiptDetails = async function (receiptId) {
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    if(selected){
+        const modal=document.getElementById('dynamicReceiptModal'),panel=modal.firstElementChild;
+        const actions=document.createElement('div');actions.className='cashier-receipt-controls';panel.append(actions);
+        const button=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;actions.append(b);b.onclick=()=>{modal.remove();if(current())fn();};};
+        if(!tx.isPendingSync){
+            button('Print receipt',()=>window.reprintDashboardReceipt(receiptId));
+            const prepared=document.createElement('div');prepared.innerHTML=window.preparedCancellationActions?.(tx)||'';
+            for(const node of prepared.querySelectorAll('.action-item')){
+                if(!node.onclick){actions.append(node);continue;}
+                button(node.textContent,()=>node.click());
+            }
+            if(!tx.preparedCancellation&&!tx.cancelledFoodSourceId&&tx.status!=='Voided'&&tx.status!=='Parked')button('Void / correct order',()=>window.voidTx(tx.id,tx.receiptId,tx.cashier));
+        }else actions.textContent='Awaiting upload';
+        if(/^gcash$/i.test(tx.paymentMethod||'')){const v=document.createElement('p');v.textContent='GCash verification: '+(tx.paymentVerified?'Verified':'Awaiting verification');panel.insertBefore(v,actions);}
+    }
 };
 
 // ========================================================
@@ -6209,7 +6245,10 @@ window.hasSignedNTE = false;
 
 
 
-window.logoutCashier = function() {
+window.logoutCashier = async function() {
+    if(workstation&&window.sessionUser?.staffLoginSessionId){
+        try{await workstationStaff.logout();}catch(error){await Swal.fire('Cashier sign-out',error.message,'info');return;}
+    }
     if (window.cashierVoid?.blockLogout()) return;
     if (window.clearCashierOwnerWorkspace?.() === false) return;
     window.cashierVoid?.invalidate();
@@ -6223,7 +6262,7 @@ window.logoutCashier = function() {
 
     // Reload fresh
     window.location.href =
-        window.location.pathname + "?t=" + Date.now();
+        window.location.pathname + (workstation?"?station="+encodeURIComponent(workstation.id)+"&t=":"?t=") + Date.now();
 };
 
 // ========================================================
@@ -8934,6 +8973,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // 🛡️ OWNER "GOD MODE" TELEPORTER ENGINE
 // ========================================================
 window.ownerBypassLogin = async function() {
+    if(workstation){window.cashierWorkstation.original();return;}
     const setupOverlay=document.getElementById('deviceSetupOverlay'),setupDisplay=setupOverlay?.style.display;
     try {
         // 1. Trigger Google Login
@@ -8950,7 +8990,7 @@ window.ownerBypassLogin = async function() {
         
         if(typeof ownerAuth.authStateReady==='function')await ownerAuth.authStateReady();
         let user=ownerAuth.currentUser;
-        if(!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
+        if(new URL(window.location.href).searchParams.get('reauth')==='1'||!isCashierOwnerActionUser(user))user=(await signInWithPopup(ownerAuth,ownerProvider)).user;
         
         // 2. Strict Security Check: Only YOUR email is allowed through this backdoor
         if (user.email !== 'jgo031996@gmail.com' || user.emailVerified !== true) {
@@ -8973,8 +9013,9 @@ window.ownerBypassLogin = async function() {
 
         // 4. Show the Teleporter Dropdown
         const { value: selectedBranch } = await Swal.fire({
-            title: '🛡️ God Mode Activated',
-            text: 'Select which branch POS you want to enter:',
+            title: 'Owner Access',
+            html:'<label><input type="checkbox" id="rememberCashierStation" '+(!localStorage.getItem('takodeal_device_id')||hasCashierOwnerPreview(window)?'checked':'')+'> Remember this branch for staff PIN sign-in on this browser</label>',
+            preConfirm:value=>({branch:value,remember:document.getElementById('rememberCashierStation').checked}),
             input: 'select',
             inputOptions: branchOptions,
             inputPlaceholder: '-- Choose Branch --',
@@ -9001,8 +9042,15 @@ window.ownerBypassLogin = async function() {
         // changing any local preview state. Cashier sign-in is kept separate.
         if(ownerAuth.currentUser!==user||user.email!=='jgo031996@gmail.com'||user.emailVerified!==true)throw Error('The Owner account changed. Reopen Owner Access before starting a branch preview.');
         // Keep Owner sales on the selected branch's isolated account.
-        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch,portable:true});
+        const workspace=await cashierOwnerWorkspace.enter({auth:ownerAuth,db:ownerDb,user,branch:selectedBranch.branch,portable:true});
         workspace.assertCurrent();
+        if(selectedBranch.remember){
+            try{
+                await enrollOwnerWorkstation(window,workspace,{signInAnonymously,stationAuth:id=>{
+                    const name=window.cashierWorkstation.appName(id);return getAuth(getApps().find(a=>a.name===name)||initializeApp(firebaseConfig,name));
+                }});
+            }catch(error){workspace.assertCurrent();await Swal.fire('Staff PIN setup needs attention',error.message,'info');}
+        }
         // Physical tablet, paid queues and operational drawer stay untouched.
         window.switchView?.('pos');
         window.cashierOwnerRegister.start();
@@ -9012,7 +9060,7 @@ window.ownerBypassLogin = async function() {
 
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
-            title: `Owner Access · ${selectedBranch}`,
+            title: `Owner Access · ${selectedBranch.branch}`,
             text: 'Point of Sale is ready for the selected branch.',
             showConfirmButton: false, timer: 4000,
             customClass: { popup: 'rounded-xl shadow-xl border border-green-200' }

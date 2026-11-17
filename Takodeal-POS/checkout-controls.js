@@ -7,6 +7,7 @@ const platformLocked=(w,d)=>['Grab','Foodpanda'].includes(checkoutPlatform(w,d))
 export function paymentButtonMethod(button){return button.classList.contains('split-btn')?'split':key(button.dataset.paymentMethod||button.dataset.tkMethod||button.textContent);}
 export function syncPaymentButtons(w,d){
     const selected=key(w.selectedPaymentMethod);
+    const reference=el(d,'gcashReferenceField');if(reference)reference.hidden=selected!=='gcash';
     for(const button of buttons(d)){
         const method=paymentButtonMethod(button);
         if(method==='split'&&!button.querySelector('[data-split-label]')){
@@ -33,7 +34,7 @@ function resetPayment(w,d){
 export function resetCheckoutForNextOrder(w,d){
     if(!platformLocked(w,d)){const type=el(d,'mainOrderType');if(type)type.value='';}
     if(el(d,'checkoutDiscountType'))el(d,'checkoutDiscountType').value='none';
-    for(const id of ['checkoutDiscountValue','checkoutDiscountReason','checkoutStaffPin','finalCustomerName','finalDeliveryAddress','finalContactNumber'])if(el(d,id))el(d,id).value='';
+    for(const id of ['checkoutDiscountValue','checkoutDiscountReason','checkoutStaffPin','finalCustomerName','finalDeliveryAddress','finalContactNumber','gcashTransactionReference'])if(el(d,id))el(d,id).value='';
     const name=el(d,'finalCustomerName');if(name){name.readOnly=false;if(name.style)name.style.fontWeight='';}
     if(el(d,'checkoutStaffPinContainer'))el(d,'checkoutStaffPinContainer').style.display='none';
     resetPayment(w,d);
