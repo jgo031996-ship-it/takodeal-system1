@@ -5,7 +5,7 @@ import {webcrypto} from 'node:crypto';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {createWorkedShiftCorrectionService} from '../takodeal-manager/worked-shift-correction-service.js';
 import {createScheduleRevision,resolveScheduleForDate} from '../takodeal-manager/schedule-history.js';
-import {captureAttendanceSchedule} from '../takodeal-manager/payroll-safety.js';
+import {captureAttendanceSchedule,resolveAttendanceShift,payrollReliefHoursVerified,attendanceLateMinutes} from '../takodeal-manager/payroll-safety.js';
 import {ordinaryPayrollId} from '../takodeal-manager/payroll-settlement.js';
 import {emergencyShiftSourceFingerprint} from '../takodeal-manager/emergency-shift-model.js';
 import {readFileSync} from 'node:fs';
@@ -56,7 +56,30 @@ test('one actual saved Night correction appends its exact dated roster and audit
 });
 test('a readonly historical roster cell can identify one exact saved Time In by staff, branch and Philippine work date',async()=>{const f=fixture(),view=await f.service.inspect({staffId,branch,workDate:'2026-10-17'});assert.equal(view.status,'ready');assert.equal(view.attendanceLogId,f.start.id);assert.equal(view.timeOutLogId,f.out.id);assert.equal(view.recommendedKey,view.choices.find(row=>row.shiftId==='night').key);assert.equal(f.calls.writes.length,0);});
 test('multiple saved Time Ins on one work date return compact exact-record choices instead of guessing',async()=>{const f=fixture();f.put('attendance_logs/earlier-in',{...f.start,id:'earlier-in',timestamp:at('09:00')});const view=await f.service.inspect({staffId,branch,workDate:'2026-10-17'});assert.equal(view.status,'choose-record');assert.equal(view.recordChoices.length,2);assert.equal(view.recommendedKey,null);assert.throws(()=>f.service.propose(view),/Inspect/);assert.equal(f.calls.writes.length,0);});
-test('missing historical roster evidence stays blocked despite a currently published Night template',async()=>{const f=fixture({missingHistory:true}),view=await inspect(f);assert.equal(view.status,'blocked');assert.equal(view.choices.length,0);assert.match(view.blockers.join(' '),/No saved dated roster/);assert.throws(()=>f.service.propose(view),/No saved dated/);assert.equal(f.calls.writes.length,0);});
+test('a missing dated roster accepts explicit Owner confirmation for one punch and keeps the dated roster absent',async()=>{
+ const f=fixture({missingHistory:true}),view=await inspect(f),choice=view.choices.find(c=>!c.blockers.length);
+ assert.equal(view.status,'ready');assert.ok(choice.standalone);assert.equal(view.recommendedKey,null);
+ assert.throws(()=>f.service.propose(view));const head=structuredClone(f.get('settings/global_schedule'));
+ const proposal=f.service.propose(view,choice.key),result=await f.service.apply(proposal);
+ const store=createScheduleHistoryStore(f.api),history=await store.loadRange(f.start.timestamp,f.out.timestamp);
+ const saved=resolveAttendanceShift(f.start,history,{[name]:{...f.profile,staffId}},name);
+ assert.equal(saved.workedShiftCorrectionId,result.revisionId);assert.equal(saved.shiftId,choice.shiftId);
+ assert.equal(resolveScheduleForDate(history,choice.workDate),null);assert.deepEqual(f.get('settings/global_schedule'),head);
+ assert.equal(resolveAttendanceShift({...f.start,id:'other-punch'},history,{[name]:{...f.profile,staffId}},name).workedShiftCorrectionId,undefined);
+ const second=await inspect(f);assert.equal((await f.service.apply(f.service.propose(second,choice.key))).alreadySaved,true);assert.equal(revisions(f).length,1);
+});
+test('a cross-branch cover can be confirmed against the original stable ID after an employee rename',async()=>{
+ const f=fixture(),cover={branch,homeBranch:'Home Branch',version:1,requiresReview:true};
+ f.put('attendance_logs/'+f.start.id,{...f.start,emergencyRelief:cover});f.put('attendance_logs/'+f.out.id,{...f.out,emergencyRelief:cover,reliefRequestId:'cover-request'});
+ f.put('cashiers/'+staffId,{...f.profile,branch:'Home Branch',cashierName:'New name',scheduleAliases:[name]});
+ const before=structuredClone(f.get('settings/global_schedule')),view=await inspect(f);
+ const selected=view.choices.find(c=>c.shiftId==='night');assert.equal(selected.attendanceOnly,true);
+ await f.service.apply(f.service.propose(view,selected.key));
+ const history=await createScheduleHistoryStore(f.api).loadRange(f.start.timestamp,f.out.timestamp);
+ const actual=resolveAttendanceShift(f.get('attendance_logs/'+f.start.id),history,{'New name':{...f.profile,cashierName:'New name',staffId}},'New name');
+ assert.equal(actual.shiftId,'night');assert.ok(payrollReliefHoursVerified(actual,f.out));assert.equal(payrollReliefHoursVerified(actual,{...f.out,id:'different-out'}),false);assert.equal(actual.reliefNeedsReview,undefined);assert.deepEqual(f.get('settings/global_schedule'),before);
+});
+
 test('equivalent saved Night slots require a compact explicit choice and never fill both slots',async()=>{const f=fixture({rules:[rule('morning','09:00','17:30','morning'),rule('night1','17:30','02:00','night'),rule('night2','17:30','02:00','night')]}),view=await inspect(f);assert.equal(view.recommendedKey,null);assert.throws(()=>f.service.propose(view),/Choose/);const result=await f.service.apply(f.service.propose(view,view.choices.find(row=>row.shiftId==='night2').key)),saved=f.get('settings/schedule_revision_'+result.revisionId);assert.equal(saved.snapshot.currentSchedule[17][branch].scheduled.night1,'UNFILLED');assert.equal(saved.snapshot.currentSchedule[17][branch].scheduled.night2,'CREW');});
 test('an occupied overnight slot can be explicitly confirmed without changing its plotted employee',async()=>{
  const f=fixture({extraDay:{scheduled:{morning:'CREW',night:'Other colleague'}}});
@@ -201,3 +224,23 @@ test('the bounded default reader rejects an overfull or unconfirmed window befor
 for(const mode of ['confirm','declaration','declaration-only','failure','lost','stale','active','paid','source','keep']){
  test('Owner Inbox linked action through its actual dialog: '+mode,()=>workedLetterIntegration(false,mode.startsWith('declaration')||mode==='confirm',mode));
 }
+
+test('manually entered overnight duty uses the selected hours for this employee without an archived roster',async()=>{
+ const f=fixture({missingHistory:true}),manualDuty={name:'Night 1',shiftType:'night',startTime:'17:30',endTime:'02:00'},context={...f.context,workDate:'2026-10-17',manualDuty};
+ const view=await f.service.inspect(context),choice=view.choices.find(c=>!c.blockers.length);assert.ok(choice.ownerEntered);assert.equal(view.recommendedKey,null);
+ await f.service.apply(f.service.propose(view,choice.key));
+ const history=await createScheduleHistoryStore(f.api).loadRange(f.start.timestamp,f.out.timestamp);
+ const shift=resolveAttendanceShift(f.start,history,{[name]:{...f.profile,staffId}},name);
+ assert.equal(shift.shiftName,'Night 1');assert.equal(attendanceLateMinutes(f.start,shift),0);
+ assert.equal(resolveScheduleForDate(history,context.workDate),null);
+});
+test('a real dated assignment at the cover branch can confirm hours without a staff request decision',async()=>{
+ const f=fixture(),profile={...f.profile,staffId,branch:'Home Branch'},marker={version:1,requiresReview:true,homeBranch:'Home Branch',branch};
+ const start={...f.start,emergencyRelief:marker,timestamp:at('08:55')},out={...f.out,timestamp:at('17:25')};
+ const history=await createScheduleHistoryStore(f.api).loadRange(start.timestamp,out.timestamp);
+ const result=resolveAttendanceShift(start,history,{[name]:profile},name);
+ assert.ok(payrollReliefHoursVerified(result,out));assert.equal(result.reliefNeedsReview,undefined);
+ assert.equal(payrollReliefHoursVerified(result,{...out,timestamp:at('02:00',18)}),false);
+ const unmatched=resolveAttendanceShift({...start,staffName:'Unassigned',staffId:'different'},history,{'Unassigned':{staffId:'different',cashierName:'Unassigned'}},'Unassigned');
+ assert.ok(unmatched.reliefNeedsReview);assert.equal(payrollReliefHoursVerified(unmatched,out),false);
+});
