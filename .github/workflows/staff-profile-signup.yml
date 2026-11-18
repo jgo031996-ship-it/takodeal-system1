@@ -20,6 +20,8 @@ jobs:
       - name: Profile, payroll, schedule, PIN and signed contract regression tests
         run: |
           node --test \
+          tests/staff-profile-photo.test.mjs \
+          tests/employment-contract-current.test.mjs \
           tests/staff-self-service.test.mjs \
           tests/staff-release-cohort.test.mjs \
           tests/staff-private-profile-ui.test.mjs \

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v166-staff-signup-20261118-r1';
+const CACHE_NAME = 'takodeal-manager-core-v167-contract-preview-20261118-r3';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -201,3 +201,5 @@ CORE_ASSETS.push("./branch-private-settings.js","./hq-image-upload.js","./owner-
 CORE_ASSETS.push('./live-branch-directory.js');
 
 CORE_ASSETS.push('./dispatch-delivery-radar.js');
+
+CORE_ASSETS.push('./employment-contract.mjs','./contract-logo.mjs','./signed-contract-document.js');

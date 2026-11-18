@@ -1,7 +1,8 @@
 import {CONTRACT_LOGO} from './contract-logo.mjs';
-// User-supplied TAKODEAL EMPLOYMENT CONTRACT.pdf, received 18 November 2026.
+// User-supplied updated agreement, 18 November 2026. Repeated attendance explanations condensed.
 // Signed snapshots retain their original wording and values after later changes.
-export const CONTRACT_VERSION='takodeal-employment-pdf-20261118-v2';
+export const CONTRACT_VERSION='takodeal-employment-20261118-v3';
+export const PREVIOUS_CONTRACT_VERSION='takodeal-employment-pdf-20261118-v2';
 export const LEGACY_CONTRACT_VERSION='takodeal-existing-employment-20261118-v1';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=value=>value&&Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',day:'numeric',month:'long',year:'numeric'}).format(new Date(value)):'Date of signing';
@@ -20,8 +21,7 @@ export function initialContract(offer,person={}){
 <h2>2. WORK SCHEDULE AND COMPENSATION</h2>
 <ul><li><b>Basic Wage:</b> The Employee shall receive a daily basic salary of <b>₱${salary}</b>.</li><li><b>Work Schedule:</b> The Employee shall be scheduled to work for five (5) or six (6) days per week, subject to the scheduling and operational needs of the business.</li><li><b>Working Hours:</b> Working hours shall be determined by the Employer and may vary depending on business requirements.</li><li><b>Payroll Cut-off &amp; Distribution:</b><ul><li>The payroll cut-off periods are the 15th (1st to 15th) and the end of each month (16th to 30th/31st).</li><li>Salary shall be distributed four (4) days after each cut-off period (every 19th and 4th of the succeeding month).</li></ul></li></ul>
 </section><section class="contract-page"><h2>3. ATTENDANCE AND ABSENCES POLICY</h2>
-<h3>Purpose</h3><p>This policy establishes clear rules and sanctions regarding employee attendance, punctuality, and absences to ensure efficient operations and workplace discipline.</p>
-<h3>Work Attendance</h3><p>All employees are required to report for work on their scheduled days and time as assigned by management. Employees must be present, punctual, and fit for duty during working hours.</p>
+<h3>Attendance</h3><p>Employees must report on their assigned days and times, remain punctual and fit for duty, and follow this attendance and absence policy.</p>
 <h3>Absences</h3><p>An absence is defined as failure to report for work during a scheduled workday without prior approval or valid reason.</p><ul><li><b>Excused Absence:</b> Absences due to valid reasons such as illness or emergencies, provided that proper notice and supporting documents are submitted.</li><li><b>Unexcused Absence:</b> Absences without prior approval, notice, or valid supporting documents.</li></ul><p>Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence unless justified and approved by management.</p>
 <h3>Tardiness</h3><p>Tardiness is defined as failure to report for work at the scheduled start time.</p><ul><li>Repeated tardiness shall be subject to disciplinary action.</li><li>Excessive tardiness may be treated as a violation equivalent to an absence, at the discretion of management.</li><li>Management reserves the right to deduct corresponding time or wages for late arrivals, in accordance with labor laws.</li></ul>
 <h3>Disciplinary Actions and Sanctions</h3><p>Any violation of this Attendance, Absences and SOPs Policy shall be subject to progressive disciplinary action, depending on the frequency and severity of the offense:</p><ul><li>1st Offense: Verbal Warning / Documented Coaching</li><li>2nd Offense: Written Warning / Strict Reprimand</li><li>3rd Offense: 1-Day Suspension</li><li>4th Offense: 3-Day Suspension</li><li>5th Offense: Termination of Employment / Dismissal</li></ul><p><b>Suspension Rule:</b> In accordance with the "No Work, No Pay" principle, all disciplinary suspensions imposed shall be strictly without pay.</p>

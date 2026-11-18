@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {validProfilePhoto} from './profile-photo.mjs';
 export const PRIVATE_PROFILE_ORIGIN='https://takodeal-staff.vercel.app';
 export const CONTACT_FIELDS=Object.freeze(['cashierName','scheduleNickname','phone','address','emergencyName','emergencyNumber','emergencyPhone','emergencyContact','emergencyContactNumber','emergNum','email','gcashName','gcashNumber','gotymeName','gotyme','goTymeName','gotymeNumber','gotymeNum','gotymeAcc','gotymeAccount','goTymeNumber','goTymeAccount','gotymeAccountNumber','sss','sssNumber','philhealth','philhealthNumber','pagibig','pagibigNumber']);
 export class PrivateProfileError extends Error{constructor(status,code,message){super(message);this.status=status;this.code='staff-private-profile/'+code;}}
@@ -9,7 +10,8 @@ const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 const invalid=()=>{throw profileError(400,'request','Reopen your private profile and check the saved fields.');};
 export function profileIntent(kind,body){
- if(kind==='read'&&body?.profileVersion===2){if(!exact(body,['staffId','deviceId','profileVersion'])||!profileId(body.staffId)||!profileDevice(body.deviceId))invalid();return{...body};}
+ if(kind==='read'&&[2,3].includes(body?.profileVersion)){if(!exact(body,['staffId','deviceId','profileVersion'])||!profileId(body.staffId)||!profileDevice(body.deviceId))invalid();return{...body};}
+ if(kind==='photo'){if(!exact(body,['staffId','deviceId','operationId','expectedFingerprint','profilePicUrl'])||!profileId(body.staffId)||!profileDevice(body.deviceId)||!profileId(body.operationId)||body.operationId.length<8||!/^[a-f0-9]{64}$/.test(body.expectedFingerprint||'')||!validProfilePhoto(body.profilePicUrl))invalid();return{...body};}
  const keys=['read','vault-settings'].includes(kind)?['staffId','deviceId']:kind==='vault-save'?['staffId','deviceId','operationId','expectedFingerprint','mode','currentPin','newPin']:['staffId','deviceId','operationId','expectedFingerprint','patch'];
  if(!exact(body,keys)||!profileId(body.staffId)||!profileDevice(body.deviceId))invalid();
  if(['read','vault-settings'].includes(kind))return{...body};

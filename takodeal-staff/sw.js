@@ -1,6 +1,7 @@
-const STAFF_RELEASE = 'staff-signup-repair-20261118-r2';
-const CACHE_NAME = 'takodeal-staff-v70-signup-repair-20261118-r2';
+const STAFF_RELEASE = 'staff-profile-photo-contract-20261118-r3';
+const CACHE_NAME = 'takodeal-staff-v71-profile-photo-contract-20261118-r3';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
+SHELL.push('./staff-profile-photo.js','./profile-photo-prepare.js','./signed-contract-document.js');
 SHELL.push('./live-branch-directory.js','./staff-self-service.js','./employment-contract.mjs','./contract-logo.mjs');
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./staff-self-repair.js','./staff-self-repair-sdk.js');
@@ -44,12 +45,12 @@ SHELL.push('./staff-startup.js','./staff-pay-phone.js','./staff-employee-section
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "9e4f4622f8784c8d5ff8d6573cb0f5455109329456695a0637e2f8d77cfd3345",
-    "bytes": 112217
+    "sha256": "7f07170939fdb90020cd74211d9e60e5e1f68a35069fc273143f0ec0f322e2d8",
+    "bytes": 112244
   },
   "./index.html": {
-    "sha256": "9e4f4622f8784c8d5ff8d6573cb0f5455109329456695a0637e2f8d77cfd3345",
-    "bytes": 112217
+    "sha256": "7f07170939fdb90020cd74211d9e60e5e1f68a35069fc273143f0ec0f322e2d8",
+    "bytes": 112244
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -60,8 +61,8 @@ const SHELL_INTEGRITY = {
     "bytes": 18549
   },
   "./app.js": {
-    "sha256": "7d9ff657fffeef897a418d27001e7698357b50fa72570e2004865a55967a7f7d",
-    "bytes": 272172
+    "sha256": "71fa571d3d056205dd4d17b53959f008ba0a0bc8e8e44ac69bb2617f6ad23ad8",
+    "bytes": 274411
   },
   "./staff-portal.js": {
     "sha256": "1acd4d52f23bc52b1ec57183b2f4c4734c30b92011052b56ace6090af0daca0c",
@@ -115,6 +116,18 @@ const SHELL_INTEGRITY = {
     "sha256": "c395d1d4987d1031e603b55c27e543f0390e3417585abece4a74f54da691b696",
     "bytes": 672
   },
+  "./staff-profile-photo.js": {
+    "sha256": "1f1a2a1fbea21f2779d7e82bea3bf43c9ab5021a567fdabef4d852115307d545",
+    "bytes": 3111
+  },
+  "./profile-photo-prepare.js": {
+    "sha256": "12b003060be88466b302fb918e71902e6a83101b27dff2493560713934c8e409",
+    "bytes": 2805
+  },
+  "./signed-contract-document.js": {
+    "sha256": "13625731e9ef1657a9a992ed2c9d67b4adafbb9ff5d71cacb76bee15921a42c8",
+    "bytes": 2422
+  },
   "./live-branch-directory.js": {
     "sha256": "79f46d3cd5892d89d40a42a6d7b56ab5cb9046fb5096c54b57a97194cd602aaa",
     "bytes": 7967
@@ -124,8 +137,8 @@ const SHELL_INTEGRITY = {
     "bytes": 6445
   },
   "./employment-contract.mjs": {
-    "sha256": "bbec3e4919d7db1e0801c177a25e392896d26772c455505c903299381fbb0dc0",
-    "bytes": 12607
+    "sha256": "0110076158a59459e78608e6d331a218848c192344006ae7d1e90169a079240b",
+    "bytes": 12505
   },
   "./contract-logo.mjs": {
     "sha256": "eb5c690837d9e67e149658542c3fd69ca4ec94daf36bf9c7c07bff1db81187e3",
@@ -436,12 +449,12 @@ const SHELL_INTEGRITY = {
     "bytes": 11436
   },
   "./staff-private-profile-client.js": {
-    "sha256": "2f4a49b658b2f307dc0b4bfdbc016c651025468448f19aea0be9e5646335f10d",
-    "bytes": 8071
+    "sha256": "b9e75aef6b78357dc81c9ef07c47b0e72498791bd589864514bc30d2a4543147",
+    "bytes": 8474
   },
   "./staff-private-profile-ui.js": {
-    "sha256": "787c3fdf2a468ba434b15367ce342d0ebc8b5c13a5cb824d0db698c04c70abbd",
-    "bytes": 19217
+    "sha256": "128f77080123b8751f4fcbe3b52d58ef1c22c7dd7e43a6253d6b7d2ce731bd8c",
+    "bytes": 19483
   },
   "./staff-startup.js": {
     "sha256": "2324d696ef62b9588ce59bd01f306f09bd13418b75ecef6ca111bdc9b6a1ca38",
@@ -464,7 +477,7 @@ const SHELL_INTEGRITY = {
     "bytes": 3998
   }
 };
-const COHORT_HASH = "f196d594fbd4f49229c36e9ae7a7b9188b06507027cd5176aa37a0d2bb288c1a";
+const COHORT_HASH = "7e409fe1e5c5c5f33c6165deb192bfcbdf1810204802336b0000f591275d5d5c";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces

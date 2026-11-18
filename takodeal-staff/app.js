@@ -1,3 +1,5 @@
+import {signedContractDocument} from './signed-contract-document.js';
+import {installStaffProfilePhoto} from './staff-profile-photo.js';
 import {createStaffSelfService,createDailyPinRecoveryClient,createPersonalPhonePreparation} from './staff-self-service.js';
 import {payslipText,payslipWorkRows} from './staff-payslip-work.js';
 import {createPlottedTimeInBatch} from './plotted-time-in.js';
@@ -739,43 +741,6 @@ window.getContractPrintHTML = function(type, data, signDate) {
             <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
         </body></html>
     `;
-};
-
-window.previewProfileImage = async function(event) {
-    const file = event.target.files[0];
-    if (file) {
-        window.selectedProfileFile = file;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            document.getElementById('profilePreview').src = e.target.result;
-            document.getElementById('profilePreview').style.display = 'block';
-            document.getElementById('profilePlaceholder').style.display = 'none';
-        }
-        reader.readAsDataURL(file);
-        await window.uploadProfilePicture();
-    }
-};
-
-window.uploadProfilePicture = async function() {
-    if (!window.selectedProfileFile) return;
-    let staffName = localStorage.getItem('takodeal_staff_name');
-    let staffId = localStorage.getItem('takodeal_staff_id');
-
-    try {
-        const fileExt = window.selectedProfileFile.name.split('.').pop();
-        const fileName = `staff_profiles/${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
-        const storageReference = ref(storage, fileName);
-        const snapshot = await uploadBytes(storageReference, window.selectedProfileFile);
-        const photoUrl = await getDownloadURL(snapshot.ref);
-
-        await updateDoc(doc(db, "cashiers", staffId), { profilePicUrl: photoUrl });
-        localStorage.setItem('takodeal_staff_pic', photoUrl);
-        document.getElementById('topAvatar').innerText = '';
-        document.getElementById('topAvatar').style.backgroundImage = `url('${photoUrl}')`;
-        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Photo Uploaded!', showConfirmButton: false, timer: 2000});
-    } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to upload photo.', 'error');
-    }
 };
 
 // ==========================================
@@ -3797,6 +3762,7 @@ window.readMyLoanLedgerSnapshot=async options=>{const client=createStaffLoanLedg
 window.readPrivateVaultSettings=options=>window.staffPrivateProfileClient.vaultSettings(options.staffId,{assertCurrent:options.assertCurrent});
 window.savePrivateVaultPin=(input,options)=>window.staffPrivateProfileClient.vaultSave(input,options);
 window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPinClient:createPrivateStaffClient,createPrivateClient:createDocumentClient});
+installStaffProfilePhoto(window,document,{client:window.staffPrivateProfileClient});
 installStaffPortal();
 installStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});
 window.staffBranchDirectory=installLiveBranchDirectory(window,document,{kind:'staff',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});
@@ -3849,7 +3815,7 @@ window.reprintContract=async function(type,encodedId,...rest){
  const staffId=decodeURIComponent(encodedId);
  if(type!=='Initial')return legacyReprintContract?.call(this,type,encodedId,...rest);
  let popup;
- try{if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Open your own employee profile.');popup=window.open('','','width=850,height=900');if(!popup)throw Error('Allow the document window to view your signed contract.');popup.document.write('<p>Loading your saved contract…</p>');const result=await window.staffSelfService.call('contract',{staffId,deviceId:localStorage.getItem('takodeal_device_id')});if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your account changed.');if(!result.found){popup.close();return legacyReprintContract?.call(this,type,encodedId,...rest);}popup.document.open();popup.document.write('<!doctype html><meta charset="utf-8"><title>Signed employment contract</title>'+result.html);popup.document.close();popup.focus();popup.print();}
+ try{if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Open your own employee profile.');popup=window.open('','','width=850,height=900');if(!popup)throw Error('Allow the document window to view your signed contract.');popup.document.write('<p>Loading your saved contract…</p>');const result=await window.staffSelfService.call('contract',{staffId,deviceId:localStorage.getItem('takodeal_device_id')});if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your account changed.');if(!result.found){popup.close();return legacyReprintContract?.call(this,type,encodedId,...rest);}popup.document.open();popup.document.write(signedContractDocument(result));popup.document.close();popup.focus();}
  catch(error){popup?.close();await Swal.fire('Contract unavailable',error.message,'warning');}
 };
 

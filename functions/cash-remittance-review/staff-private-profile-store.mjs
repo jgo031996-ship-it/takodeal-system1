@@ -32,17 +32,18 @@ export function createStaffPrivateProfileStore(db,{now=Date.now,serverTimestamp}
   // The Owner form edits gcashNum. Expose it through the existing Staff response field.
   const contactSource=Object.hasOwn(source,'gcashNum')?{...source,gcashNumber:source.gcashNum}:source;
   const projected=projectPrivateProfile(input.staffId,contactSource,timeline);
-  if(input.profileVersion===2){
+  if(input.profileVersion>=2){
    const aliases=source.scheduleAliases??[];if(!Array.isArray(aliases)||aliases.length>100||aliases.some(v=>typeof v!=='string'||v.length>200))throw profileError(409,'review','The employee name history needs review.');
    projected.scheduleAliases=[...aliases];
   }
+  if(input.profileVersion===3 && typeof source.profilePicUrl==='string' && source.profilePicUrl.length<=180000 && (/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(source.profilePicUrl)||/^https:\/\/[^\s<>"']{1,2000}$/.test(source.profilePicUrl)))projected.profilePicUrl=source.profilePicUrl;
   return{schemaVersion:1,staffId:input.staffId,expectedFingerprint:privateProfileFingerprint(snapshot),profile:projected,legacyDocumentPresent:{sss:typeof source.sssIdUrl==='string'&&!!source.sssIdUrl,philhealth:typeof source.philhealthIdUrl==='string'&&!!source.philhealthIdUrl,pagibig:typeof source.pagibigIdUrl==='string'&&!!source.pagibigIdUrl}};
  });}
- async function update(body,actor){const input=profileIntent('update',body),requestHash=profileHash(input),operationPath='staff_access_operations/profile-'+profileHash({uid:actor.uid,operationId:input.operationId});return db.runTransaction(async tx=>{
+ async function update(body,actor,kind='update'){const input=profileIntent(kind,body),requestHash=profileHash(input),operationPath='staff_access_operations/profile-'+profileHash({uid:actor.uid,operationId:input.operationId});return db.runTransaction(async tx=>{
   const snapshot=await authority(tx,input,actor),operation=await tx.get(db.doc(operationPath));
   if(operation.exists){const row=operation.data();if(row.schemaVersion!==1||row.uid!==actor.uid||row.staffId!==input.staffId||row.deviceId!==input.deviceId||row.requestHash!==requestHash)changed();return{schemaVersion:1,staffId:input.staffId,operationId:input.operationId,saved:true,alreadySaved:true};}
   if(privateProfileFingerprint(snapshot)!==input.expectedFingerprint)changed();
-  let patch={...input.patch};
+  let patch=kind==='photo'?{profilePicUrl:input.profilePicUrl}:{...input.patch};
   if(Object.hasOwn(patch,'gcashNumber')){
    const old=snapshot.data();
    // Old clients submitted their entire form, including an uninitialized number.
@@ -84,5 +85,5 @@ export function createStaffPrivateProfileStore(db,{now=Date.now,serverTimestamp}
    return{schemaVersion:1,staffId:input.staffId,operationId:input.operationId,saved:true,alreadySaved:false};
   });
  }
- return{read,update,rate,vaultSettings,vaultSave};
+ return{read,update,photo:(body,actor)=>update(body,actor,'photo'),rate,vaultSettings,vaultSave};
 }
