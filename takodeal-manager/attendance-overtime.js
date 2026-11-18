@@ -56,13 +56,23 @@ export function createAttendanceOvertimeService(api,{readAttendance,readSchedule
   const matches=await query('cashiers','cashierName',name,3);if(matches.length!==1)throw Error('This name-only record does not identify one employee. Review its identity first.');return matches[0];
  }
  async function base(staffId,name,key){
-  const profile=await people(staffId,name),accounts=await query('hq_managers','email',OWNER_EMAIL,11);if(!accounts.length||accounts.length>10)throw Error('The saved Owner account needs review.');authority(api,key,accounts,profile.branch);
+  const [profile,accounts]=await Promise.all([people(staffId,name),query('hq_managers','email',OWNER_EMAIL,11)]);if(!accounts.length||accounts.length>10)throw Error('The saved Owner account needs review.');authority(api,key,accounts,profile.branch);
   const bonuses=new Map(),paid=new Map(),names=[...new Set([profile.cashierName,name,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(value=>typeof value==='string'&&value.trim()))];
   if(names.length>21)throw Error('This employee has too many saved names for one OT review.');
-  for(const alias of names){const matches=new Map();for(const row of await query('cashiers','cashierName',alias,3))matches.set(row.id,row);for(const row of await rows(await api.getDocsFromServer(api.query(api.collection(api.db,'cashiers'),api.where('scheduleAliases','array-contains',alias),api.limit(3)))))matches.set(row.id,row);if([...matches.keys()].some(id=>id!==profile.id))throw Error('A saved employee name is shared by another profile. Review the identity before changing OT.');}
-  for(const [field,value]of [['staffId',profile.id],...names.map(value=>['staffName',value])]){
-   for(const row of await query('staff_bonuses',field,value))if(row.type==='Overtime'&&(!row.staffId||row.staffId===profile.id))bonuses.set(row.id,row);
-   for(const row of await query('payroll_records',field,value))paid.set(row.id,row);
+  await Promise.all(names.map(async alias=>{
+   const [exact,aliases]=await Promise.all([
+    query('cashiers','cashierName',alias,3),
+    api.getDocsFromServer(api.query(api.collection(api.db,'cashiers'),api.where('scheduleAliases','array-contains',alias),api.limit(3))).then(rows)
+   ]);
+   if([...exact,...aliases].some(row=>row.id!==profile.id))throw Error('A saved employee name is shared by another profile. Review the identity before changing OT.');
+  }));
+  const identities=[['staffId',profile.id],...names.map(value=>['staffName',value])];
+  const history=await Promise.all(identities.map(([field,value])=>Promise.all([
+   query('staff_bonuses',field,value),query('payroll_records',field,value)
+  ])));
+  for(const [bonusRows,payrollRows] of history){
+   for(const row of bonusRows)if(row.type==='Overtime'&&(!row.staffId||row.staffId===profile.id))bonuses.set(row.id,row);
+   for(const row of payrollRows)paid.set(row.id,row);
   }
   if(bonuses.size>500||paid.size>500)throw Error('This employee has a large history that needs a separate payroll review.');authority(api,key,accounts,profile.branch);
   return {profile,accounts,names,bonuses:[...bonuses.values()],paid:[...paid.values()]};
@@ -79,7 +89,7 @@ export function createAttendanceOvertimeService(api,{readAttendance,readSchedule
   if(!Number.isFinite(row.amount)||row.amount<=0||typeof row.hours!=='number'||!Number.isFinite(row.hours)||row.hours<=0)hold='The saved OT amount or hours needs payroll review.';
   return {id:row.id,staffId:state.profile.id,staffName:state.profile.cashierName,workDate:date,amount:row.amount,hours:row.hours,remarks:row.remarks||'',status:row.status==='Cancelled'?'Cancelled':hold?'Paid / review':'Unpaid',legacy:row.otVersion!==1,sourceTimeOutId:row.timeOutLogId||null,canCancel:row.status!=='Cancelled'&&!hold,hold,cancellationReason:row.cancellationReason||'',previous:Array.isArray(row.overtimeHistory)?row.overtimeHistory.map(prior=>({revision:prior.otRevision,amount:prior.amount,hours:prior.hours,status:prior.status,reason:prior.remarks,cancellationReason:prior.cancellationReason})):[],expectedFingerprint:overtimeRecordFingerprint(row)};
  }
- async function prepare(timeOutId,key){
+ async function prepare(timeOutId,key,workDateOnly=false){
   if(!validId(timeOutId))throw Error('Choose an exact saved Time Out.');const out=await read(ref('attendance_logs',timeOutId));
   if(inactive(out)||attendanceKind(out)!=='TIME OUT'||!Number.isFinite(attendanceMillis(out.timestamp)))throw Error('This saved Time Out is unavailable or needs attendance review.');
   const state=await base(out.staffId,out.staffName,key),profile=state.profile;
@@ -91,13 +101,22 @@ export function createAttendanceOvertimeService(api,{readAttendance,readSchedule
   const starts=history.filter(row=>row.id===pair.in.id),outs=history.filter(row=>row.timeInLogId===pair.in.id&&attendanceKind(row)==='TIME OUT'&&!inactive(row));if(starts.length!==1||outs.length>1)throw Error('Conflicting attendance records need review before adding OT.');
   const timeIn=await read(ref('attendance_logs',pair.in.id));if(!timeIn||json(safeLog(timeIn))!==json(safeLog(pair.in)))throw Error('The original Time In changed during its metadata check. Refresh attendance.');const preDate=staffRateDate(timeIn.timestamp),scheduleRows=new Map(),scoped=Object.create(api);
   Object.defineProperty(scoped,'getDocFromServer',{value:async reference=>{const snapshot=fresh(await api.getDocFromServer(reference));scheduleRows.set(reference.path,{reference,row:snapshot.exists()?{...snapshot.data(),id:snapshot.id||reference.id}:null});return snapshot;}});
-  const schedule=readSchedule?await readSchedule(preDate):await createPayrollBonusHistoryStore(scoped).loadRange(staffRateDate(new Date(Date.parse(preDate+'T00:00:00+08:00')-86400000)),preDate),shift=resolveAttendanceShift(timeIn,schedule,{[profile.cashierName]:profile}),workDate=staffRateWorkDate(timeIn,shift),salary=await loadStaffSalaryTimeline(api,{...profile,staffId:profile.id});
+  const [schedule,salary]=await Promise.all([
+   readSchedule?readSchedule(preDate):createPayrollBonusHistoryStore(scoped).loadRange(staffRateDate(new Date(Date.parse(preDate+'T00:00:00+08:00')-86400000)),preDate),
+   loadStaffSalaryTimeline(api,{...profile,staffId:profile.id})
+  ]);
+  const shift=resolveAttendanceShift(timeIn,schedule,{[profile.cashierName]:profile}),workDate=staffRateWorkDate(timeIn,shift);
   const dailyRate=staffRateForDate(salary,workDate),appliedNightRate=shift.isNightShift?nightRate(profile):0,hourlyRate=(dailyRate+appliedNightRate)/8;
   if(dailyRate===null||!Number.isFinite(hourlyRate)||hourlyRate<=0)throw Error('The saved daily wage for this work date needs review.');
-  state.guards=await guardRows(state,[workDate,...new Set(state.bonuses.map(bonusDate))]);
-  const id=overtimeBonusId(timeOutId),target=await read(ref('staff_bonuses',id));if(target?.type==='Overtime'&&!state.bonuses.some(row=>row.id===id))state.bonuses.push(target);
-  const attendanceFingerprint=await overtimeAttendanceFingerprint({timeIn,timeOut:out,staffId:profile.id});
-  const workDateEvidence=overtimeWorkDateEvidence(timeIn,shift),source={attendanceFingerprint,timeIn:safeLog(timeIn),timeOut:safeLog(out),profile:profileView(profile),workDate,workDateEvidence,dailyRate,appliedNightRate,hourlyRate,slot:target?{status:target.status,revision:target.otRevision,grantFingerprint:target.grantFingerprint,cancelledAt:target.cancelledAt,cancellationReason:target.cancellationReason}:null,shift:{isNightShift:shift.isNightShift===true,shiftName:shift.shiftName||'',expectedStartAt:iso(shift.expectedStartAt),expectedEndAt:iso(shift.expectedEndAt)},salary:salary.salaryRateTimeline||null,schedule:[...scheduleRows].map(([path,value])=>({path,row:value.row}))};
+  if(workDateOnly)state.bonuses=state.bonuses.filter(row=>bonusDate(row)===workDate);
+  const id=overtimeBonusId(timeOutId);
+  const [guards,target,attendanceFingerprint]=await Promise.all([
+   guardRows(state,workDateOnly?[workDate]:[workDate,...new Set(state.bonuses.map(bonusDate))]),
+   read(ref('staff_bonuses',id)),overtimeAttendanceFingerprint({timeIn,timeOut:out,staffId:profile.id})
+  ]);
+  state.guards=guards;
+  if(target?.type==='Overtime'&&!state.bonuses.some(row=>row.id===id))state.bonuses.push(target);
+  const workDateEvidence=overtimeWorkDateEvidence(timeIn,shift),source={attendanceFingerprint,timeIn:safeLog(timeIn),timeOut:safeLog(out),profile:profileView(profile),workDate,workDateEvidence,dailyRate,appliedNightRate,hourlyRate,slot:target?{status:target.status,revision:target.otRevision,grantFingerprint:target.grantFingerprint,cancelledAt:target.cancelledAt,cancellationReason:target.cancellationReason}:null,shift:{isNightShift:shift.isNightShift===true,shiftName:shift.shiftName||'',expectedStartAt:iso(shift.expectedStartAt),expectedEndAt:iso(shift.expectedEndAt)},salary:salary.salaryRateTimeline||null,schedule:[...scheduleRows].sort(([a],[b])=>a.localeCompare(b)).map(([path,value])=>({path,row:value.row}))};
   const sourceFingerprint=await hash(source),sameDate=state.bonuses.filter(row=>row.status!=='Cancelled'&&bonusDate(row)===workDate&&(row.otVersion!==1||row.timeOutLogId===timeOutId)),paid=paidCoverage(state.paid,workDate,profile.id,state.names);
   const canGrant=activeStaffProfile(profile)&&!paid.length&&!sameDate.length&&(!target||target.status==='Cancelled'&&!target.payrollRecordId);
   authority(api,key,state.accounts,out.branch);return {...state,id,target,timeIn,out,history:[timeIn,out],scheduleRows,workDate,dailyRate,appliedNightRate,hourlyRate,source,sourceFingerprint,attendanceFingerprint,canGrant,hold:paid.length||target?.payrollRecordId||target?.type==='Attendance OT Payroll Lock'?'A paid payslip covers this shift. Use a separate payroll adjustment.':sameDate.length?'An OT bonus is already saved for this shift or an unlinked bonus exists on this work date. Review its history before adding another.':target&&target.status!=='Cancelled'?'This shift already has an OT history entry.':!activeStaffProfile(profile)?'This employee is inactive.':'',paidCutoffs:paid.map(row=>({id:row.id,from:row.startDate,to:row.endDate}))};
@@ -122,10 +141,10 @@ export function createAttendanceOvertimeService(api,{readAttendance,readSchedule
  function bounded(key,intent,work){const prior=pending.get(key);if(prior){if(prior.intent!==intent)return Promise.reject(Error('The original OT change is still pending. Refresh its result before changing it.'));return prior.promise;}const entry={intent,physical:Promise.resolve().then(work)};pending.set(key,entry);let timer;entry.promise=Promise.race([entry.physical,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(Error('HQ has not confirmed this OT change yet. It may still finish. Refresh this same shift before retrying.'),{code:'attendance-ot/pending',settled:entry.physical})),timeoutMs);})]).finally(()=>clearTimeout(timer));entry.physical.then(()=>pending.get(key)===entry&&pending.delete(key),()=>pending.get(key)===entry&&pending.delete(key));return entry.promise;}
  return {
   isSaving:()=>pending.size>0,
-  async inspect(timeOutId){const key=actorKey(api);return view(await prepare(timeOutId,key));},
+  async inspect(timeOutId,{workDateOnly=false}={}){const key=actorKey(api);return view(await prepare(timeOutId,key,workDateOnly));},
   async history(staffId){const key=actorKey(api),state=await historyState(staffId,key);return {staffId:state.profile.id,staffName:state.profile.cashierName,branch:state.profile.branch,bonuses:state.bonuses.map(row=>bonusView(row,state)).sort((a,b)=>(b.workDate||'').localeCompare(a.workDate||''))};},
   grant(input){let key;try{key=actorKey(api);if(!validId(input.timeOutId)||typeof input.reason!=='string'||input.reason.trim().length<8||input.reason.trim().length>1000)throw Error('Explain the OT bonus using 8 to 1,000 characters.');}catch(error){return Promise.reject(error);}return bounded('grant|'+input.timeOutId,json(input),async()=>{
-   const state=await prepare(input.timeOutId,key),amount=attendanceOvertimeAmount(state,input.hours),reason=input.reason.trim();
+   const state=await prepare(input.timeOutId,key,true),amount=attendanceOvertimeAmount(state,input.hours),reason=input.reason.trim();
    const same=row=>row?.otVersion===1&&row.status!=='Cancelled'&&row.staffId===state.profile.id&&row.timeOutLogId===state.out.id&&row.timeInLogId===state.timeIn.id&&row.workDate===state.workDate&&row.hours===input.hours&&row.amount===amount&&row.grantFingerprint===input.expectedFingerprint&&row.sourceFingerprint===state.attendanceFingerprint&&row.remarks===reason;
    if(state.target&&state.target.status!=='Cancelled'){if(same(state.target))return {alreadySaved:true,id:state.id,amount};throw Error('This shift already has a different OT history entry. Refresh it before proceeding.');}
    if(!state.canGrant)throw Error(state.hold);if(state.sourceFingerprint!==input.expectedFingerprint)throw Error('The attendance or rate changed. Review the work date and amount again.');

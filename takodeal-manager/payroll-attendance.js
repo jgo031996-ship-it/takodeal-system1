@@ -110,6 +110,6 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
         return {name,staffId,reason:[...reasons].join(' '),recordIds:[...new Set(issueRecords.map(row=>row.id).filter(Boolean))],issueRecords,records:group,recordedPairs,recordedHours:ids.size>1?null:recordedPairs.reduce((sum,pair)=>sum+pair.hours,0)};
     });
     const heldNames=new Set(reviews.map(review=>review.name));
-    const logs=ordered.filter(row=>!heldNames.has(row.payrollStaffName) && !foreignClosures.has(row) && !cutoffContext.has(row) && !(row.timeInLogId&&!available(row))).map(row=>normalized.has(row)?{...row,type:attendanceKind(row)}:row);
+    const logs=ordered.filter(row=>!heldNames.has(row.payrollStaffName) && !foreignClosures.has(row) && !cutoffContext.has(row) && available(row)).map(row=>normalized.has(row)?{...row,type:attendanceKind(row)}:row);
     return {logs,reviews,heldNames};
 }
