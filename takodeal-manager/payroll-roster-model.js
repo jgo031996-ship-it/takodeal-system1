@@ -5,7 +5,7 @@ const text=value=>typeof value==='string'?value.trim().replace(/\s+/g,' '):'';
 const nameKey=value=>text(value).normalize('NFKC').toLocaleLowerCase('en');
 const nameOf=profile=>text(profile?.cashierName)||text(profile?.fullName)||text(profile?.name);
 const idOf=profile=>text(profile?.staffId)||text(profile?.id);
-const aliasesOf=profile=>[profile?.cashierName,profile?.fullName,profile?.name,profile?.scheduleNickname,profile?.nickname].map(nameKey).filter(Boolean);
+const aliasesOf=profile=>[profile?.cashierName,profile?.fullName,profile?.name,profile?.scheduleNickname,profile?.nickname,...(Array.isArray(profile?.scheduleAliases)?profile.scheduleAliases:[])].map(nameKey).filter(Boolean);
 const positive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0;
 
 export function payrollProfileState(profile){

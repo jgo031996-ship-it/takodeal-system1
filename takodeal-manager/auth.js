@@ -45,7 +45,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=inbox-actions-20261116-r1');
+            await import('./main.js?v=payroll-pos-config-20261118-r4');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();

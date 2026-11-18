@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v167-contract-preview-20261118-r3';
+const CACHE_NAME = 'takodeal-manager-core-v168-payroll-pos-config-20261118-r4';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -36,7 +36,7 @@ CORE_ASSETS.push('./attendance-reconcile.js','./payroll-attendance.js');
 CORE_ASSETS.push('./remittance-dialogs.css');
 CORE_ASSETS.push('./discipline-cases.css','./discipline-case-model.js','./discipline-actions.js','./discipline-case-ui.js');
 CORE_ASSETS.push('./payroll-roster-model.js','./payroll-balance-review.js','./payroll-balance-review.css');
-CORE_ASSETS.push('./payroll-loading.js','./payroll-settlement.js','./payroll-completion.js','./manager-table-wrapper.js');
+CORE_ASSETS.push('./payroll-loading.js','./payroll-attendance-reader.js','./payroll-settlement.js','./payroll-completion.js','./manager-table-wrapper.js');
 CORE_ASSETS.push('./payroll-deduction-details.js');
 CORE_ASSETS.push('./recipe-bulk-model.js','./recipe-bulk.js','./recipe-changes.js','./sanction-schedule.js','./sanction-actions.js','./sanction-scheduling-ui.js');
 CORE_ASSETS.push('./audit-modal.css','./audit-modal-layout.js','./manager-mobile.css');

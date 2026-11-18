@@ -69,7 +69,9 @@ export function createPayrollPreviewGuard({getContext, onState = () => {}} = {})
         } catch { invalidate(); return false; }
         // Database errors can contain technical or account details. Keep the
         // user-facing status plain; the caller retains the original error.
-        emit('error', readMessage);
+        const code=String(error?.cause?.code||error?.code||'').replace(/^firestore\//,''),stage=['attendance','payroll','staff','ledger','deductions','bonuses','adjustments'].includes(error?.payrollStage)?error.payrollStage+' records':'payroll records';
+        const message=['permission-denied','unauthenticated'].includes(code)?'Your signed-in account could not read '+stage+'. Sign in again, then generate the list.':code==='deadline-exceeded'||/took too long/.test(error?.message||'')?'The '+stage+' check took too long. Check your connection and generate the list again. No payroll was confirmed.':readMessage;
+        emit('error', message);
         return true;
     }
     function requireReady() {

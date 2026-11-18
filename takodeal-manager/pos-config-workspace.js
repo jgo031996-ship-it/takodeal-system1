@@ -14,25 +14,26 @@ export function initPosConfigWorkspace({window:w=window,document:d=document}={})
     let catalog={};
     const panels=()=>purchaseHost===host?[host]:[host,purchaseHost];
     const controls=()=>panels().flatMap(panel=>[...panel.querySelectorAll('button,input,textarea,select')]);
-    let draft,revision=0,loaded=false,busy=false;
+    let draft,revision=0,loaded=false,busy=false,dirty=false,loadedUid=null;
     const writable=()=>Boolean(w.auth?.currentUser && (w.sessionUser?.isOwner || w.sessionUser?.permissions?.includes('posconfig')));
     const uid=prefix=>prefix+(w.crypto?.randomUUID?.() || Date.now().toString(36)+Math.random().toString(36).slice(2));
-    const status=(message,error=false)=>{for(const panel of panels()){const node=panel.querySelector('[data-pc-status]');if(node){node.textContent=message;node.dataset.error=String(error);}}};
+    const status=(message,error=false)=>{for(const panel of panels()){for(const node of panel.querySelectorAll('[data-pc-status]')){node.textContent=message;node.dataset.error=String(error);}}};
     const fields=()=>({levels:[...host.querySelectorAll('[data-level]')].map(row=>({id:row.dataset.level,name:row.querySelector('[data-name]').value,
         roles:[...row.querySelectorAll('[data-role]:checked')].map(input=>input.dataset.role),takoyakiPct:row.querySelector('[data-tako]').value,otherPct:row.querySelector('[data-other]').value,enabled:row.querySelector('[data-enabled]').checked})),
         dropdowns:[...host.querySelectorAll('[data-field]')].map(row=>({id:row.dataset.field,name:row.querySelector('[data-name]').value,options:row.querySelector('[data-options]').value.split('\n').map(value=>value.trim()).filter(Boolean),required:row.querySelector('[data-required]').checked,enabled:row.querySelector('[data-enabled]').checked})),
         lists:Object.fromEntries(LISTS.map(([key])=>[key,[...host.querySelectorAll(`[data-list-entry="${key}"]`)].map(node=>node.value.trim()).filter(Boolean)])),
         cancelledFood:{cancelledFoodPurchaseEnabled:purchaseHost.querySelector('[data-cancelled-food-enabled]').checked,cancelledFoodDiscountPct:purchaseHost.querySelector('[data-cancelled-food-discount]').value}});
     function render(message='') {
+        if(/draft|added|Removed/.test(message))dirty=true;
         host.className='pos-config-section pos-config-workspace';
         purchaseHost.className='pos-config-section pos-config-workspace';
-        host.innerHTML=`<div class="pc-intro"><div><h2>Checkout configuration</h2><p>Set meal benefits by role and add dropdowns for the details your cashiers need.</p></div><button data-reload>Reload saved settings</button></div>
+        host.innerHTML=`<div class="pc-intro"><div><h2>Checkout configuration</h2><p>Set meal benefits by role and add dropdowns for the details your cashiers need.</p></div><div class="pc-actions"><button class="pc-primary" data-save-config-top>Save POS configuration</button><button data-reload>Reload saved settings</button></div></div><p data-pc-status class="pc-status" role="status">${esc(dirty?'Unsaved changes. Save POS configuration to send them to Cashier.':message)}</p>
             <section class="pc-section"><header><div><h3>Staff & leadership meal discounts</h3><p class="pc-hint">Each level requires a matching PIN and role. Staff meals keep the daily limit. Unpaid meal amounts remain salary deductions.</p></div><button data-add-level>+ Add meal level</button></header>
             <div class="pc-scroll"><table class="pc-table"><thead><tr><th>LEVEL</th><th>ALLOWED ROLES</th><th>TAKOYAKI %</th><th>OTHER CATEGORIES %</th><th>ENABLED</th><th></th></tr></thead><tbody>${draft.levels.map(row=>`<tr data-level="${esc(row.id)}"><td><input data-name aria-label="Meal level name" maxlength="80" value="${esc(row.name)}"></td><td><div class="pc-roles">${Object.entries(ROLE_LABELS).map(([role,name])=>`<label><input type="checkbox" data-role="${role}" ${row.roles.includes(role)?'checked':''}>${name}</label>`).join('')}</div></td><td><input data-tako aria-label="Takoyaki discount percentage" type="number" min="0" max="100" step="0.01" value="${row.takoyakiPct}"></td><td><input data-other aria-label="Other category discount percentage" type="number" min="0" max="100" step="0.01" value="${row.otherPct}"></td><td><input type="checkbox" data-enabled aria-label="Enable meal level" ${row.enabled!==false?'checked':''}></td><td><button data-remove-level="${esc(row.id)}" aria-label="Remove ${esc(row.name)}">Remove</button></td></tr>`).join('')}</tbody></table></div></section>
             <section class="pc-section"><header><div><h3>Additional checkout dropdowns</h3><p class="pc-hint">Saved selections are included in the sale record and receipt. Enter one option per line.</p></div><button data-add-field>+ Add dropdown</button></header>
             ${draft.dropdowns.length?draft.dropdowns.map(row=>`<div class="pc-field" data-field="${esc(row.id)}"><div><label>Dropdown label<input data-name maxlength="80" value="${esc(row.name)}" placeholder="e.g. Order source"></label><div class="pc-actions"><label class="pc-toggle"><input type="checkbox" data-required ${row.required?'checked':''}>Required</label><label class="pc-toggle"><input type="checkbox" data-enabled ${row.enabled!==false?'checked':''}>Enabled</label></div></div><label>Options<textarea data-options placeholder="Walk-in&#10;Phone order">${esc(row.options.join('\n'))}</textarea></label><div><button data-remove-field="${esc(row.id)}">Remove</button></div></div>`).join(''):'<p class="pc-hint">No extra dropdowns yet. Add a field such as Order source or Pickup counter.</p>'}</section>
             <section class="pc-section"><header><div><h3>POS lists & categories</h3><p class="pc-hint">Choose saved item and category names, or add a new option once. Each entry can be edited or removed.</p></div></header><div class="pc-grid">${LISTS.map(([key,name])=>`<section class="pc-list-card"><h4>${esc(name)}</h4><div class="pc-list-entries">${draft.lists[key].map((value,i)=>`<div class="pc-list-row"><input data-list-entry="${key}" aria-label="${esc(name)} entry ${i+1}" maxlength="100" value="${esc(value)}"><button data-remove-entry="${key}" data-entry-index="${i}" aria-label="Remove ${esc(value)}">Remove</button></div>`).join('')}</div><label>Choose a saved option<select data-list-choice="${key}"><option value="">Choose an option…</option>${(catalog[key]||draft.lists[key]).filter(value=>!draft.lists[key].some(saved=>saved.toLowerCase()===value.toLowerCase())).map(value=>`<option value="${esc(value)}">${esc(value)}</option>`).join('')}</select></label><div class="pc-list-row"><input data-list-new="${key}" aria-label="New ${esc(name)} option" maxlength="100" placeholder="Or enter one new option"><button data-add-entry="${key}">Add</button></div></section>`).join('')}</div></section>
-            <div class="pc-actions"><button class="pc-primary" data-save-config>Save POS configuration</button><span class="pc-hint">Changes apply when each POS refreshes its settings.</span></div><p data-pc-status class="pc-status" role="status">${esc(message)}</p>`;
+            <div class="pc-actions"><button class="pc-primary" data-save-config>Save POS configuration</button><span class="pc-hint">Saved payment methods appear automatically in connected Cashier apps.</span></div><p data-pc-status class="pc-status" role="status">${esc(message)}</p>`;
         const purchaseHTML=`<div class="pc-intro"><div><h2>Purchased Cancelled Orders</h2><p>A separate discount for prepared Grab and Foodpanda food purchased by employees.</p></div><button data-reload>Reload saved settings</button></div>            <section class="pc-section" aria-labelledby="pcCancelledFoodHeading"><header><div><h3 id="pcCancelledFoodHeading">Discount and eligibility</h3><p class="pc-hint" id="pcCancelledFoodHelp">Active registered crew and managers may purchase prepared food from cancelled Grab or Foodpanda orders. The discounted amount is recorded directly as a Foods salary deduction, separate from the daily meal allowance.</p></div></header>
             <div class="pc-grid"><label class="pc-list-card"><span class="pc-toggle" style="min-height:44px;"><input type="checkbox" data-cancelled-food-enabled aria-describedby="pcCancelledFoodHelp" ${draft.cancelledFood.cancelledFoodPurchaseEnabled?'checked':''}>Allow cancelled-food staff purchases</span></label><label class="pc-list-card">Cancelled-order purchase discount (%)<input data-cancelled-food-discount type="number" inputmode="decimal" min="0" max="100" step="0.01" aria-describedby="pcCancelledFoodHelp pcCancelledFoodRateHelp" style="font-size:16px;min-height:44px;" value="${esc(draft.cancelledFood.cancelledFoodDiscountPct)}"><span class="pc-hint" id="pcCancelledFoodRateHelp">Applies to all purchased items from the cancelled order.</span></label></div></section>
 <div class="pc-actions"><button class="pc-primary" data-save-config>Save cancelled-order settings</button></div><p data-pc-status class="pc-status" role="status">${esc(message)}</p>`;
@@ -46,12 +47,15 @@ export function initPosConfigWorkspace({window:w=window,document:d=document}={})
             panel.querySelectorAll('[data-reload]').forEach(button=>button.onclick=load);
             panel.querySelector('[data-save-config]').onclick=()=>save(panel===purchaseHost&&purchaseHost!==host?'cancelled':'master');
         }
+        host.querySelector('[data-save-config-top]').onclick=()=>save('master');
+        for(const node of controls())if(['INPUT','TEXTAREA','SELECT'].includes(node.tagName)){node.addEventListener('input',()=>{dirty=true;status('Unsaved changes. Save POS configuration to send them to Cashier.');});node.addEventListener('change',()=>{dirty=true;status('Unsaved changes. Save POS configuration to send them to Cashier.');});}
         controls().forEach(node=>node.disabled=!writable()||busy);
     }
     async function load() {
-        if(busy)return; busy=true;controls().forEach(node=>node.disabled=true);
+        if(busy)return; const actor=w.auth?.currentUser?.uid;busy=true;controls().forEach(node=>node.disabled=true);
         try{
             const snap=await bounded(w.getDocFromServer(w.doc(w.db,'settings','global_pos_config'))),data=snap.exists()?snap.data():{};
+            if(!actor||actor!==w.auth?.currentUser?.uid)throw Error('The signed-in account changed. Reopen POS Config Hub.');loadedUid=actor;dirty=false;
             revision=Number(data.configEditorRevision)||0;
             draft={levels:mealLevels(data),dropdowns:validateCheckoutFields(data.customCheckoutFields||[]),lists:Object.fromEntries(LISTS.map(([key,,defaults])=>[key,Array.isArray(data[key])&&data[key].length?data[key]:defaults])),cancelledFood:cancelledFoodPolicy(data)};
             catalog=Object.fromEntries(LISTS.map(([key,,defaults])=>[key,[...new Set([...defaults,...draft.lists[key]])]]));
@@ -68,24 +72,24 @@ export function initPosConfigWorkspace({window:w=window,document:d=document}={})
             const names=rows.map(row=>row.name||row.realName).filter(Boolean),cats=rows.map(row=>row.category).filter(Boolean);
             for(const [key] of LISTS){const extra=['shiftAuditItems','auditItems','mixMatchFlavors'].includes(key)?names:key.toLowerCase().includes('cat')?cats:[];catalog[key]=[...new Set([...catalog[key],...extra])].sort((a,b)=>a.localeCompare(b));}
             // Keep every unsaved edit while the reference names arrive.
-            if(!busy){draft=fields();render('Saved reference names loaded.');}
-        }catch{status('Saved configuration loaded. Reference names could not load; use your saved choices or retry loading.');}
+            if(!busy){draft=fields();render(dirty?'Unsaved changes. Save POS configuration to send them to Cashier.':'Saved reference names loaded.');}
+        }catch{status(dirty?'Your unsaved changes are kept. Save POS configuration to apply them.':'Saved configuration loaded. Reference names could not load; use your saved choices or retry loading.');}
     }
     async function save(scope='master') {
         if(busy||!loaded)return;
         try{
-            if(!writable())throw Error('Your account cannot change POS configuration.');
+            if(!writable()||w.auth?.currentUser?.uid!==loadedUid)throw Error('Reopen POS Config Hub with your authorized account before saving.');
             const next=fields(),patch=scope==='cancelled'?cancelledFoodPolicy(next.cancelledFood):configurationPatch(next.levels,next.dropdowns,purchaseHost===host?next.cancelledFood:undefined);
             if(scope!=='cancelled')for(const [key,,] of LISTS){const list=next.lists[key];if(!list.length||list.length>100||list.some(value=>value.length>100)||new Set(list.map(value=>value.toLowerCase())).size!==list.length)throw Error('Each POS list needs distinct entries, up to 100 items.');patch[key]=list;}
             busy=true;controls().forEach(node=>node.disabled=true);status('Saving configuration to HQ…');
             await bounded(w.runTransaction(w.db,async tx=>{
                 const ref=w.doc(w.db,'settings','global_pos_config'),snap=await tx.get(ref);
                 if((Number(snap.data()?.configEditorRevision)||0)!==revision)throw Error('Another manager saved changes. Reload saved settings before editing again.');
-                if(!writable())throw Error('Your account changed. Sign in again.');
+                if(!writable()||w.auth?.currentUser?.uid!==loadedUid)throw Error('Your account changed. Sign in again.');
                 tx.set(ref,{...patch,configEditorRevision:revision+1,lastUpdatedBy:w.sessionUser?.cashierName||'Manager',timestamp:w.serverTimestamp()},{merge:true});
             }));
-            revision++;draft=scope==='cancelled'?{...next,cancelledFood:cancelledFoodPolicy(patch)}:{...next,levels:patch.mealDiscountLevels,dropdowns:patch.customCheckoutFields};busy=false;
-            render(scope==='cancelled'?'Purchased cancelled-order settings saved. Other unsaved edits remain in their draft.':'Master POS configuration saved. Cashiers can refresh the app to load it.');
+            if(scope==='master')dirty=false;revision++;draft=scope==='cancelled'?{...next,cancelledFood:cancelledFoodPolicy(patch)}:{...next,levels:patch.mealDiscountLevels,dropdowns:patch.customCheckoutFields};busy=false;
+            render(scope==='cancelled'?'Purchased cancelled-order settings saved. Other unsaved edits remain in their draft.':'POS configuration saved. Connected Cashier apps will receive the new payment methods automatically.');
         }catch(error){status(error.message||'Unable to confirm the save. Your draft values are kept.',true);}
         finally{busy=false;controls().forEach(node=>node.disabled=!writable());}
     }

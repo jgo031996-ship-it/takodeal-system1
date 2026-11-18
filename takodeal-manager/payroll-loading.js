@@ -1,3 +1,4 @@
+import {createPayrollAttendanceReader} from './payroll-attendance-reader.js';
 import {readPayrollSnapshot} from './payroll-preview-guard.js';
 import {loadStaffSalaryTimeline,staffProfileForWork,staffRateWorkDate,staffRateForDate,payrollSalaryProfile,dailyStaffRate} from './staff-rate-model.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
@@ -6,6 +7,7 @@ import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
 import {PAYROLL_ADJUSTMENT_TYPE} from './payroll-adjustment-model.js';
 import {loadPayrollShiftConfirmations} from './payroll-confirmed-shifts.js';
 
+const attendanceReaders=new WeakMap();
 const coordinators=new WeakMap(),references=new WeakMap(),pendingDocuments=new WeakMap(),sessionIds=new WeakMap(),sourceGenerations=new WeakMap();let nextSession=0;
 // A confirmed correction supersedes reads dispatched before that write. Keep
 // ordinary concurrent Generate clicks shared, but queue a fresh post-save run.
@@ -82,7 +84,9 @@ function previewReferences(api,options){
 
 export async function loadPayrollPreviewInputs(api,options){
  const {start,end,assertCurrent=()=>{},concurrency=8,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),sourceGenerations.get(api)||0,'schedule',start,end]);
- const tasks=[()=>readBoundedDocument(api,key,()=>{guard();return api.loadPayrollScheduleHistory(start,end);},{timeoutMs}),...Object.values(refs).map(reference=>()=>{guard();return readPayrollSnapshot(api,reference,{timeoutMs});})];
+ if(!attendanceReaders.has(api))attendanceReaders.set(api,api.readPayrollAttendance||createPayrollAttendanceReader({...api.deviceFleetConnection,auth:api.auth,fetch:api.fetch?.bind(api)||globalThis.fetch}));
+ const projected=attendanceReaders.get(api);
+ const tasks=[()=>readBoundedDocument(api,key,()=>{guard();return api.loadPayrollScheduleHistory(start,end);},{timeoutMs}),...Object.entries(refs).map(([stage,reference])=>async()=>{guard();try{return stage==='attendance'&&projected?await readBoundedDocument(api,key+'|attendance',()=>projected({from:options.fetchStartDate,to:options.fetchEndDate,timeoutMs,assertCurrent:guard}),{timeoutMs}):await readPayrollSnapshot(api,reference,{timeoutMs});}catch(error){error.payrollStage=stage;throw error;}})];
  const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,datedBonuses,adjustments]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();
  // Old unpaid credits must carry forward even when created before this cutoff.
  // Keep the existing dated rewards/OT query and merge only this distinct type.

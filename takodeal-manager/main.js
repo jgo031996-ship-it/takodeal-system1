@@ -10687,7 +10687,7 @@ window.loadPayrollGenerator = async function() {
         bonusSnap.forEach(docSnap => {
             let b = docSnap.data();
             if(isPayrollAdjustment({...b,id:docSnap.id})){
-                const creditName=staffNameById[b.staffId],profile=creditName&&staffDict[creditName];
+                const creditIdentity=rosterResolver(b),creditName=staffNameById[b.staffId],profile=creditIdentity.status==='matched'&&!creditIdentity.nameCollision&&creditName&&staffDict[creditName];
                 if(!profile){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:'Confirm the saved employee for this previous payroll credit.',records:[{...b,id:docSnap.id}]});return;}
                 const credit=payrollAdjustmentPreview([{...b,id:docSnap.id}],{staffId:profile.staffId,name:creditName,branch:profile.branch,start:startDateRaw,end:endDateRaw});
                 if(!credit.amount)return;
@@ -11841,7 +11841,7 @@ window.generateAutoPayslips = async function() {
         bonusSnap.forEach(docSnap => {
             let b = docSnap.data();
             if(isPayrollAdjustment({...b,id:docSnap.id})){
-                const creditName=staffNameById[b.staffId],profile=creditName&&staffDict[creditName];
+                const creditIdentity=rosterResolver(b),creditName=staffNameById[b.staffId],profile=creditIdentity.status==='matched'&&!creditIdentity.nameCollision&&creditName&&staffDict[creditName];
                 if(!profile){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:'Confirm the saved employee for this previous payroll credit.',records:[{...b,id:docSnap.id}]});return;}
                 const credit=payrollAdjustmentPreview([{...b,id:docSnap.id}],{staffId:profile.staffId,name:creditName,branch:profile.branch,start:startInput,end:endInput});
                 if(!credit.amount)return;
