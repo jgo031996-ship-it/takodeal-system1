@@ -1,3 +1,4 @@
+import {removeAttendancePunch} from './attendance-log-removal.js';
 import {installEmployeeSignup} from './employee-signup.js';
 import {repairApprovedStaffPhoneLabels} from './staff-phone-compatibility.js';
 import {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';
@@ -8200,7 +8201,7 @@ window.loadAttendanceLogs = async function () {
         };
 
         let logsArray = [];
-        snap.forEach(docSnap => { logsArray.push({ id: docSnap.id, ...docSnap.data() }); });
+        snap.forEach(docSnap => { const row=docSnap.data(); if(!row.deleted&&!['Voided','Cancelled','Canceled','Deleted'].includes(row.status))logsArray.push({...row,id:docSnap.id}); });
 
         if (sortBy === 'name') {
             logsArray.sort((a, b) => {
@@ -8261,7 +8262,7 @@ window.loadAttendanceLogs = async function () {
                 <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
                     <button onclick="window.viewSelfie('${data.photoBase64}', '${data.staffName} - ${data.type}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="View Selfie">📷</button>
                     <button onclick="window.applyAttendancePenalty('${data.id}', '${data.staffName}', '${timeStr}', ${currentPenalty})" style="${penaltyStyle} padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;" title="Apply Late/Undertime Penalty">${penaltyText}</button>
-                    <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
+                    <button type="button" data-remove-punch="${escapeHtml(data.id)}" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
             `;
             
             if (lateMinutes > 0 && !data.lateExempted && pType === "TIME IN") {
@@ -8277,7 +8278,7 @@ window.loadAttendanceLogs = async function () {
                 <div style="display: flex; gap: 5px; justify-content: center; align-items: center; flex-wrap: wrap;">
                     <span style="font-size: 10px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">Manual</span>
                     <button onclick="window.applyAttendancePenalty('${data.id}', '${data.staffName}', '${timeStr}', ${currentPenalty})" style="${penaltyStyle} padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;" title="Apply Late/Undertime Penalty">${penaltyText}</button>
-                    <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
+                    <button type="button" data-remove-punch="${escapeHtml(data.id)}" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
                 </div>`;
             }
 
@@ -8296,6 +8297,10 @@ window.loadAttendanceLogs = async function () {
         });
 
         tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 20px;">No logs found for this date.</td></tr>';
+        for(const button of tbody.querySelectorAll('[data-remove-punch]')){
+            const row=logsArray.find(log=>log.id===button.dataset.removePunch);
+            button.onclick=()=>window.deleteAttendanceLog(row,button);
+        }
         for(const button of tbody.querySelectorAll('[data-attendance-ot]'))button.onclick=()=>window.openAttendanceOvertime(button.getAttribute('data-attendance-ot'));
     } catch (error) {
         console.error("Error loading attendance:", error);
@@ -9806,12 +9811,26 @@ window.filterAlertsTable = function() {
 // ==========================================
 // 🗑️ MASTER DELETE FUNCTIONS (ATTENDANCE & BOM)
 // ==========================================
-window.deleteAttendanceLog = async function(docId, staffName) {
-    if(!(await window.ManagerUI.confirm(`⚠️ Are you sure you want to permanently delete this time punch for ${staffName}?`))) return;
-    try {
-        await deleteDoc(doc(db, "attendance_logs", docId));
-        window.loadAttendanceLogs(); // Refresh the table instantly!
-    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete log."); }
+window.deleteAttendanceLog = async function(row,button) {
+    if(!row||button.disabled)return;
+    button.disabled=true;
+    try{
+        const time=row.timestamp.toDate().toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'});
+        if(!await window.ManagerUI.confirm('Remove '+row.type+' for '+row.staffName+' at '+row.branch+' on '+time+'? The original punch will be kept in attendance history.'))return;
+        const result=await removeAttendancePunch(window,row);
+        window.invalidateCache?.('attendance_logs');
+        invalidatePayrollLoad(window);
+        window.getPayrollPreviewGuard?.().invalidate?.('Attendance changed. Generate the unpaid payroll list again.');
+        button.closest('tr')?.remove();
+        window.ManagerUI.notify(result.alreadyRemoved?'This punch was already removed.':'Punch removed. Generate the unpaid payroll list again.');
+        void window.loadAttendanceLogs();
+    }catch(error){
+        const code=String(error?.code||'').split('/').pop();
+        const message=code==='permission-denied'?'HQ declined removal for this record. Check its HR review and the signed-in payroll account.':
+            code==='unauthenticated'?'Sign in again to confirm attendance removal.':
+            error.message||'HQ could not confirm removal. Refresh the attendance feed before retrying.';
+        window.ManagerUI.notify(message,'warning');
+    }finally{button.disabled=false;}
 };
 
 window.deleteMenuAndBom = async function(docId, name) {

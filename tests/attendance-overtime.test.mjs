@@ -43,3 +43,18 @@ test('a stable-ID rename can grant once without rewriting its original attendanc
 test('a stale attendance name belonging to another saved employee is still rejected',async()=>{
  const f=fixture();f.h.put('cashiers/'+staffId,{...f.h.get('cashiers/'+staffId),cashierName:'Renamed Fictional Employee'});f.h.put('cashiers/other-person',{cashierName:'Fictional Employee',branch:'Maa'});await assert.rejects(f.inspect(),/different employees/);
 });
+
+test('the quick shift view reads only its cutoff locks; older bonuses still appear in history',async()=>{
+ const f=fixture(),seen=[],read=f.h.api.getDocFromServer;
+ f.h.api.getDocFromServer=ref=>{seen.push(ref.path);return read(ref);};
+ f.h.put('staff_bonuses/old',legacy('2026-09-29'));
+ const quote=await f.service.inspect(outId,{workDateOnly:true});
+ assert.deepEqual(quote.bonuses,[]);assert.ok(!seen.some(path=>path.startsWith('payroll_records/')&&path.includes('2026-09')));
+ assert.equal((await f.service.history(staffId)).bonuses[0].workDate,'2026-09-29');
+});
+test('independent HQ reads may complete in a different order when confirming the same OT quote',async()=>{
+ const f=fixture(),original=f.h.api.getDocFromServer;let delayedPath='settings/global_schedule';
+ f.h.api.getDocFromServer=async ref=>{if(ref.path===delayedPath)await new Promise(done=>setTimeout(done,12));return original(ref);};
+ const quote=await f.service.inspect(outId,{workDateOnly:true});delayedPath='settings/schedule_history_policy';
+ assert.equal((await f.service.grant({timeOutId:outId,expectedFingerprint:quote.sourceFingerprint,hours:2,reason:'Approved sample closing work.'})).saved,true);
+});
