@@ -1,3 +1,4 @@
+import {startPosConfigSync} from './pos-config-sync.js';
 import {clearMobileOrder} from './mobile-delivery-state.js';
 import {installOwnerParked} from './cashier-owner-parked.js';
 import {createSaleEngine, saleIdentity, SALE_VERSION, saleFingerprint, safeId} from './pos-safety.js';
@@ -38,6 +39,7 @@ export function installOwnerPOS(w,d){
             orderTypes:cfg.orderTypes?.length?cfg.orderTypes:['Dine-In','Take-Out','Delivery','Grab']}};
         w.masterPOSData.items=w.processRawItemsIntoMenu(items);
         w.buildCategories();w.renderOrderAndPaymentUI();w.renderCart?.();
+        startPosConfigSync(w,{db:c.db,assertCurrent:()=>c.assertCurrent(),cache:false});
         menuSession=c.session;w.cashierOwnerRegister?.paintStatus();
         if(pending(c))await reviewPending();
     }

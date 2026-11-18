@@ -1,0 +1,14 @@
+name: Cashier payment configuration release
+on:
+  push:
+    branches: [fix/cashier-payment-config-20261118]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/pos-config-sync.test.mjs tests/cashier-owner-pos.test.mjs tests/cashier-checkout-controls.test.mjs tests/checkout-reset.test.mjs tests/pos-config.test.mjs
