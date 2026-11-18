@@ -12,11 +12,15 @@ export function installStaffPortal() {
     window.staffVaultSession = session;
     let modalMode = 'unlock', modalTarget = 'payslip', modalEpoch = 0, busy = false, attendanceEpoch = 0, attendanceCache = null;
     const payTemplate = $('vaultContent').innerHTML;
-    let profileEpoch = 0;
+    let profileEpoch = 0,pendingVault=null;
     const profile = async id => {
-        const snap = await window.readPrivateStaffProfile(id);
+        const snap = await window.getDocFromServer(window.doc(window.db, 'cashiers', id));
         if (!snap.exists()) throw new Error('Your staff profile could not be found. Please contact HQ.');
         return snap.data();
+    };
+    const privateProfile = async (id,assertCurrent) => {
+        const [saved,settings]=await Promise.all([window.readPrivateStaffProfile(id,{assertCurrent}),window.readPrivateVaultSettings({staffId:id,assertCurrent})]);assertCurrent();if(saved.expectedFingerprint!==settings.expectedFingerprint)throw Error('Your private profile changed. Reopen this PIN check.');
+        return {...saved.data(),payslipPin:settings.verifier,payslipPinManaged:settings.managed,privateVaultFingerprint:settings.expectedFingerprint};
     };
     const wipeInputs = () => ['vaultCurrentPin','vaultNewPin','vaultConfirmPin'].forEach(id => { $(id).value = ''; });
     const current = token => identity().id === token.id && modalEpoch === token.epoch && !document.hidden;
@@ -30,7 +34,7 @@ export function installStaffPortal() {
     }
     window.lockPayslipVault = function({preserveRateRequest=false}={}) {
         rate.lock({preserveRequest:preserveRateRequest});
-        session.lock(); modalEpoch++; busy = false; wipeInputs();
+        session.lock(); modalEpoch++; busy = false; pendingVault=null; wipeInputs();
         window.clearStaffSavedPayslips?.();
         window.clearStaffLoanLedger?.();
         window.closeVaultRecovery?.();
@@ -41,7 +45,7 @@ export function installStaffPortal() {
         if (document.getElementById('printableStaffPayslip') || document.getElementById('payslipSignatureCanvas')) window.Swal?.close();
         refreshVault();
     };
-    window.closeVaultPin = function(accepted=false) { if(!accepted)rate.lock();modalEpoch++; busy = false; wipeInputs(); $('vaultPinModal').style.display = 'none'; };
+    window.closeVaultPin = function(accepted=false) { if(!accepted)rate.lock();modalEpoch++; busy = false; pendingVault=null; wipeInputs(); $('vaultPinModal').style.display = 'none'; };
     window.openProfileRatePin = function() { return window.openVaultPin('unlock','rate'); };
     window.openVaultPin = async function(mode = 'unlock',target='payslip') {
         const { id } = identity(); if (!id) return;
@@ -50,16 +54,21 @@ export function installStaffPortal() {
         $('vaultPinModal').style.display = 'flex'; $('vaultPinForm').hidden = true;
         $('vaultError').hidden = true; $('vaultPinIntro').textContent = 'Checking your PIN settings…';
         $('vaultSubmit').disabled = false;
+        const retry=$('vaultRetryCheck');
+        const activate=$('activateVaultPhone');activate.hidden=true;
+        activate.onclick=async()=>{
+            activate.disabled=true;
+            try{if(await window.choosePersonalCodeActivation() && current(token))window.closeVaultPin();}
+            catch(error){if(current(token))notice(error.message);}
+            finally{activate.disabled=false;}
+        };
+        retry.hidden=true;
+        retry.onclick=()=>window.openVaultPin(mode,target);
         try {
-            const data = await profile(id); if (!current(token)) return;
+            const data = await privateProfile(id,()=>{if(!current(token))throw Error('The private PIN view changed.');}); if (!current(token)) return;
             if (data.payslipPinManaged === true && mode !== 'unlock') {
                 window.closeVaultPin();
                 return window.openVaultRecovery();
-            }
-            if (!data.payslipPin && mode === 'unlock') {
-                window.closeVaultPin(); window.openProfile();
-                document.querySelector('.profile-security')?.scrollIntoView?.({block:'center'});
-                return;
             }
             if (data.payslipPin && !validVerifier(data.payslipPin)) throw new Error('Your PIN settings need a review by HQ.');
             modalMode = data.payslipPin ? mode : 'setup';
@@ -70,7 +79,7 @@ export function installStaffPortal() {
             $('vaultNewFields').hidden = !editing;
             $('vaultSubmit').textContent = editing ? 'Save Payslip PIN' : 'Unlock vault';
             $('vaultPinForm').hidden = false; $('vaultCurrentPin').focus();
-        } catch (error) { if (current(token)) { $('vaultPinIntro').textContent = 'PIN settings are unavailable.'; notice(error.message || 'Please try again when connected.'); } }
+        } catch (error) { if (current(token)) { activate.hidden=error.code!=='private-profile/approval'||window.staffSetupAccess?.mode()!=='legacy';retry.hidden=false; $('vaultPinIntro').textContent = 'Check your phone again to open your Vault.'; notice(error.message || 'Please try again when connected.'); } }
     };
     window.submitVaultPin = async function(event) {
         event?.preventDefault(); if (busy) return;
@@ -84,9 +93,11 @@ export function installStaffPortal() {
         if (modalMode !== 'unlock' && (!validVaultPin(newPin) || newPin !== confirm)) return notice('Use 6–8 digits and make sure the new PINs match.');
         busy = true; $('vaultSubmit').disabled = true; $('vaultError').hidden = true;
         try {
-            const data = await profile(id); if (!current(token)) return;
+            const data = await privateProfile(id,()=>{if(!current(token))throw Error('The private PIN view changed.');}); if (!current(token)) return;
             // Re-read the verifier before every attempt so changing a PIN on another device takes effect.
-            const authentic = modalMode === 'setup' ? !data.payslipPin && String(data.pin ?? '') === pin : await verifyPin(pin, data.payslipPin);
+            // Setup verifies the current daily PIN on the server. The browser
+            // receives only this phone's existing separate Vault verifier.
+            const authentic = modalMode === 'setup' ? true : await verifyPin(pin, data.payslipPin);
             if (!current(token)) return;
             if (!authentic) {
                 const count = (attempts.until && attempts.until <= Date.now() ? 0 : attempts.count || 0) + 1;
@@ -94,9 +105,11 @@ export function installStaffPortal() {
                 throw new Error(count >= 5 ? 'Too many attempts. Please wait one minute.' : 'Incorrect PIN. Please try again.');
             }
             if (modalMode !== 'unlock') {
-                if (String(data.pin ?? '') === newPin) throw new Error('Choose a Payslip PIN that is different from your staff login PIN.');
-                const verifier = await createPinVerifier(newPin); if (!current(token)) return;
-                await window.patchOwnStaffProfile({payslipPin:verifier},{allowPayslipPin:true,assertCurrent:()=>{if(!current(token))throw Error('Your private PIN view changed.');}});
+                if(!pendingVault||pendingVault.staffId!==id||pendingVault.mode!==modalMode||pendingVault.currentPin!==pin||pendingVault.newPin!==newPin)pendingVault={staffId:id,mode:modalMode,currentPin:pin,newPin,operationId:crypto.randomUUID(),expectedFingerprint:data.privateVaultFingerprint};
+                await window.savePrivateVaultPin(pendingVault,{assertCurrent:()=>{if(!current(token))throw Error('The private PIN view changed.');}});
+                if (!current(token)) return;
+                pendingVault=null;
+                await window.staffPrivateProfileUI?.refreshHead();
                 if (!current(token)) return;
             }
             localStorage.removeItem(attemptKey);
@@ -107,7 +120,13 @@ export function installStaffPortal() {
             // PIN editing from Profile does not reveal pay behind another screen.
             if (!$('view-payslip').classList.contains('active')) { window.lockPayslipVault(); return; }
             window.loadPayslipVault();
-        } catch (error) { if (current(token)) notice(error.message || 'Could not open your vault. Please try again.'); }
+        } catch (error) { if (current(token)) {
+            if(error?.code==='private-profile/pin'){
+                const count=(attempts.until&&attempts.until<=Date.now()?0:attempts.count||0)+1;
+                localStorage.setItem(attemptKey,JSON.stringify({count,until:count>=5?Date.now()+60000:0}));
+                notice(count>=5?'Too many attempts. Please wait one minute.':'Incorrect PIN. Please try again.');
+            }else notice(error.message || 'Could not open your vault. Please try again.');
+        } }
         finally { if (current(token)) { busy = false; $('vaultSubmit').disabled = false; } }
     };
     const oldSwitch = window.switchView;
@@ -119,9 +138,9 @@ export function installStaffPortal() {
         document.querySelector('.content-area').scrollTop = 0;
     };
     const oldLogin = window.checkNormalLogin;
-    window.checkNormalLogin = async function() {
+    window.checkNormalLogin = function() {
         const previousId = session.staffId;
-        await oldLogin(); if (previousId && previousId !== identity().id) window.lockPayslipVault();
+        oldLogin(); if (previousId && previousId !== identity().id) window.lockPayslipVault();
         if(rate.session.staffId && !rate.session.allows(identity().id))rate.lock();
         window.refreshStaffHeader();
     };
@@ -136,7 +155,7 @@ export function installStaffPortal() {
     window.refreshStaffHeader = async function() {
         const { id } = identity(), epoch = ++profileEpoch; if (!id) return;
         try {
-            const snap=await window.readStaffDirectoryProfile(id);const data=snap.data();if(epoch !== profileEpoch || identity().id !== id) return;
+            const data = await profile(id); if (epoch !== profileEpoch || identity().id !== id) return;
             $('staffProfileMeta').textContent = [data.role || 'Staff', data.branch].filter(Boolean).join(' · ');
             $('topAvatar').setAttribute('aria-label', 'Open profile for ' + (data.cashierName || 'staff'));
         } catch { $('staffProfileMeta').textContent = 'Your staff portal'; }

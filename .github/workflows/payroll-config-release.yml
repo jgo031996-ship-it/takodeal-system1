@@ -1,0 +1,17 @@
+name: Payroll and POS configuration release
+on:
+  push:
+    branches: [fix/staff-profile-signup-20261118]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  payroll-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify payroll, OT and configuration regressions
+        run: node --test tests/attendance-overtime.test.mjs tests/attendance-overtime-ui.test.mjs tests/payroll-adjustments.test.mjs tests/payroll-adjustment-history.test.mjs tests/payroll-adjustment-refresh.test.mjs tests/payroll-preview-integration.test.mjs tests/payroll-loading.test.mjs tests/payroll-attendance-reader.test.mjs tests/payroll-preview-guard.test.mjs tests/payroll-roster-model.test.mjs tests/payroll-confirmed-shifts.test.mjs tests/pos-config.test.mjs

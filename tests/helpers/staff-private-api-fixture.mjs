@@ -1,9 +1,12 @@
 // Explicit approved-private API boundary for extracted Staff UI unit harnesses.
 // The transport, real grant checks and real Admin projection have separate tests.
 import {loadStaffSalaryTimeline} from '../../takodeal-staff/staff-rate-model.js';
+import {createPinVerifier,verifyPin} from '../../takodeal-staff/staff-privacy.js';
 import {projectPrivatePayrollRecord,privatePayrollFingerprint,projectPrivatePayrollInput} from '../../functions/cash-remittance-review/access-payroll-store.mjs';
 export function installStaffPrivateAPIFixture(window,api,{staffId='sample',staffName='Test Staff',branch='Maa',paidRecords=[]}={}){
- window.readPrivateStaffProfile=async(id,{assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await api.getDocFromServer(api.doc(api.db,'cashiers',id));assertCurrent();return snapshot;};
+ window.readPrivateStaffProfile=async(id,{assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await api.getDocFromServer(api.doc(api.db,'cashiers',id));assertCurrent();return{...snapshot,expectedFingerprint:'a'.repeat(64),data:()=>{const {pin,payslipPin,...profile}=snapshot.data();return profile;}};};
+ window.readPrivateVaultSettings=async({staffId:id,assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await api.getDocFromServer(api.doc(api.db,'cashiers',id));assertCurrent();const row=snapshot.data();return{schemaVersion:1,staffId:id,expectedFingerprint:'a'.repeat(64),verifier:row.payslipPin??null,managed:row.payslipPinManaged===true,version:row.payslipPinVersion??0};};
+ window.savePrivateVaultPin=async(input,{assertCurrent=()=>{}}={})=>{assertCurrent();const snapshot=await api.getDocFromServer(api.doc(api.db,'cashiers',input.staffId));assertCurrent();const row=snapshot.data();if(row.payslipPinManaged===true)throw Error('Use Forgot Payslip PIN.');const valid=input.mode==='setup'?!row.payslipPin&&String(row.pin)===input.currentPin:await verifyPin(input.currentPin,row.payslipPin);assertCurrent();if(!valid)throw Error('Incorrect PIN.');if(String(row.pin)===input.newPin)throw Error('Choose a different Payslip PIN.');const verifier=await createPinVerifier(input.newPin);assertCurrent();await api.updateDoc(api.doc(api.db,'cashiers',input.staffId),{payslipPin:verifier});assertCurrent();return{saved:true};};
  window.readStaffDirectoryProfile=window.readPrivateStaffProfile;
  window.patchOwnStaffProfile=async(patch,{assertCurrent=()=>{}}={})=>{assertCurrent();await api.updateDoc(api.doc(api.db,'cashiers',staffId),patch);assertCurrent();};
  window.loadPrivateStaffSalaryProfile=profile=>loadStaffSalaryTimeline(api,profile);

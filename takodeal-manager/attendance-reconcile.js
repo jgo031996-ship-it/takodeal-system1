@@ -35,7 +35,7 @@ function attendanceReadError(cause,phase) {
     const recovery=attendanceReadRecovery(cause),error=new Error(recovery.message,{cause});
     error.code='attendance/hq-unconfirmed';error.sourceCode=String(cause?.code||'');error.phase=phase;error.attendanceRecovery=recovery;return error;
 }
-export async function readStaffRecords(api,staffId,name,{fresh=true,table='attendance_logs',names=[],metadataOnly=false,timeoutMs=25000,assertCurrent=()=>{}}={}) {
+export async function readStaffRecords(api,staffId,name,{fresh=true,table='attendance_logs',names=[],metadataOnly=false,resolveLegacyIdentity,timeoutMs=25000,assertCurrent=()=>{}}={}) {
     if(typeof staffId!=='string'||!staffId||staffId.includes('/'))throw Error('Sign in to your staff account again.');
     const aliases=[...new Set([name,...names].filter(value=>typeof value==='string'&&value.trim()).map(value=>value.trim()))];
     if(!aliases.length)throw Error('Choose your staff account again.');
@@ -70,6 +70,7 @@ export async function readStaffRecords(api,staffId,name,{fresh=true,table='atten
     // A name-only legacy row is safe only when the directory identifies one person.
     const legacyNames=[...new Set(rows.filter(row=>!row.staffId).map(row=>row.staffName))];
     for(const legacyName of legacyNames){
+        if(typeof resolveLegacyIdentity==='function'){assertCurrent();const confirmed=await resolveLegacyIdentity(legacyName,staffId);assertCurrent();if(confirmed===true)continue;}
         const table=api.staffProfileCollection==='staff_directory'?'staff_directory':'cashiers';
         const directory=await confirmedRead(api.query(api.collection(api.db,table),api.where('cashierName','==',legacyName)),'legacy-staff-directory',{table,field:'cashierName',value:legacyName});
         const people=directory.docs;
@@ -91,8 +92,8 @@ export function latestAttendance(records,staffId,name,now=Date.now()) {
     if(!latestShift?.out)return latestStart;
     return rows.find(row=>row.id && row.id===latestShift.out.id)||latestShift.out;
 }
-export function linkedAttendanceHistory(records,staffId,name,now=new Date()) {
-    const logs=records.filter(row=>belongsToAttendance(row,staffId,[name]) && attendanceKind(row) && !row.deleted && !['Voided','Cancelled'].includes(row.status))
+export function linkedAttendanceHistory(records,staffId,name,now=new Date(),names=[]) {
+    const logs=records.filter(row=>belongsToAttendance(row,staffId,[name,...names]) && attendanceKind(row) && !row.deleted && !['Voided','Cancelled'].includes(row.status))
         .map(row=>({...row,date:Number.isFinite(attendanceMillis(row.timestamp))?new Date(attendanceMillis(row.timestamp)):null}));
     const valid=logs.filter(row=>row.date).sort((a,b)=>a.date-b.date || (attendanceKind(a)===attendanceKind(b)?0:attendanceKind(a)==='TIME IN'?-1:1));
     const starts=new Map(valid.filter(row=>attendanceKind(row)==='TIME IN' && row.id).map(row=>[row.id,row]));

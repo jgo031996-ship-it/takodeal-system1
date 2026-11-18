@@ -25,11 +25,16 @@ export function payrollAdjustmentInput(input,{today}={}){
 export function payrollAdjustmentDetail(row){
  const originalStart=payrollAdjustmentDay(row?.originalStart),originalEnd=payrollAdjustmentDay(row?.originalEnd),effectiveDate=payrollAdjustmentDay(row?.effectiveDate),reason=text(row?.reason),sourcePayrollRecordId=text(row?.sourcePayrollRecordId);
  if(originalStart>originalEnd||originalEnd>=effectiveDate||reason.length<8||reason.length>1500||!sourceKey(sourcePayrollRecordId))throw Error('A previous payroll credit has incomplete saved details. Ask the Owner to review it.');
- return {id:payrollAdjustmentId(row.id),amount:payrollAdjustmentCents(row.amount)/100,originalStart,originalEnd,effectiveDate,reason,sourcePayrollRecordId};
+ const sourceStaffId=row.staffId??row.sourceStaffId,sourceStaffName=row.staffName??row.sourceStaffName,sourceBranch=row.branch??row.sourceBranch;
+ const source=sourceStaffId!==undefined||sourceStaffName!==undefined||sourceBranch!==undefined?{sourceStaffId,sourceStaffName,sourceBranch}:{};
+ if(Object.keys(source).length&&(!staffKey(sourceStaffId)||!text(sourceStaffName)||!text(sourceBranch)))throw Error('The saved payroll credit identity needs review.');
+ return {id:payrollAdjustmentId(row.id),amount:payrollAdjustmentCents(row.amount)/100,originalStart,originalEnd,effectiveDate,reason,sourcePayrollRecordId,...source};
 }
 export function validatePayrollAdjustmentRecord(row,{staffId,name,branch,unpaid=false}={}){
  if(!row||row.type!==PAYROLL_ADJUSTMENT_TYPE||row.payrollAdjustmentVersion!==1||!staffKey(row.staffId)||!text(row.staffName)||!text(row.branch)||!['Unpaid','Paid','Cancelled'].includes(row.status)||!text(row.createdByUid)||!text(row.createdByEmail))throw Error('A payroll adjustment record needs Owner review.');
- if(staffId&&row.staffId!==staffId||name&&row.staffName!==name||branch&&row.branch!==branch)throw Error('A payroll credit belongs to another saved employee or branch.');
+ // Credits follow the immutable employee ID after a rename or home-branch transfer.
+ // Keep the original source name/branch in the audit; never resolve a foreign ID by name.
+ if(staffId?row.staffId!==staffId:(name&&row.staffName!==name||branch&&row.branch!==branch))throw Error('A payroll credit belongs to another saved employee or branch.');
  if(unpaid&&(row.status!=='Unpaid'||['paidAt','payrollRecordId','amountPaid','partialPaid','payrollFrozen'].some(key=>Object.hasOwn(row,key))))throw Error('A payroll credit changed or was already included in a payslip. Regenerate payroll.');
  return payrollAdjustmentDetail(row);
 }

@@ -1,8 +1,12 @@
 // Presentation and file validation only. Authentication, ownership, review status,
 // and access to file bytes must be enforced by the private vault's server rules.
-export const DOCUMENT_GROUPS = Object.freeze(['valid_id', 'health_card', 'clearance']);
+export const REQUIRED_DOCUMENT_GROUPS = Object.freeze(['valid_id', 'health_card', 'clearance']);
+// Existing onboarding callers retain exactly the original three requirements.
+export const DOCUMENT_GROUPS = REQUIRED_DOCUMENT_GROUPS;
+export const OPTIONAL_DOCUMENT_GROUPS = Object.freeze(['sss_id','philhealth_id','pagibig_id']);
+export const SUPPORTED_DOCUMENT_GROUPS = Object.freeze([...REQUIRED_DOCUMENT_GROUPS,...OPTIONAL_DOCUMENT_GROUPS]);
 export const DOCUMENT_LABELS = Object.freeze({
-    valid_id: 'Valid ID', health_card: 'Health Card', clearance: 'NBI or Police Clearance'
+    valid_id: 'Valid ID', health_card: 'Health Card', clearance: 'NBI or Police Clearance', sss_id:'SSS ID', philhealth_id:'PhilHealth ID', pagibig_id:'Pag-IBIG ID'
 });
 export const CLEARANCE_TYPES = Object.freeze(['NBI', 'POLICE']);
 export const DOCUMENT_STATUSES = Object.freeze(['pending_review', 'approved', 'rejected']);
@@ -71,7 +75,7 @@ export function validateDocumentFile(file, {bytes, maxBytes = MAX_INPUT_BYTES, r
 export function validateDocumentDraft(draft, today = new Date()) {
     const errors = [], warnings = [];
     const group = draft?.group;
-    if (!DOCUMENT_GROUPS.includes(group)) errors.push('Choose a supported document.');
+    if (!SUPPORTED_DOCUMENT_GROUPS.includes(group)) errors.push('Choose a supported document.');
     const clearanceType = typeof draft?.clearanceType === 'string' ? draft.clearanceType.trim().toUpperCase() : null;
     if (group === 'clearance' && !CLEARANCE_TYPES.includes(clearanceType)) errors.push('Choose NBI or Police Clearance.');
     const expiry = draft?.expiresOn;
@@ -110,7 +114,8 @@ function state(group, code, label, message, extra = {}) {
 }
 
 export function documentState(group, record, today = new Date()) {
-    if (!DOCUMENT_GROUPS.includes(group)) return state(group, 'invalid', 'Needs attention', 'This document type is not supported.');
+    if (!SUPPORTED_DOCUMENT_GROUPS.includes(group)) return state(group, 'invalid', 'Needs attention', 'This document type is not supported.');
+    if ((record === undefined || record === null) && OPTIONAL_DOCUMENT_GROUPS.includes(group)) return state(group,'missing','Optional · Not uploaded','Keep this document privately if needed.',{urgent:false,needsUpload:false});
     if (record === undefined || record === null) return state(group, 'missing', 'Upload required', `Upload your ${DOCUMENT_LABELS[group]}.`);
     const result = validateDocumentRecord(group, record, today);
     if (!result.valid) return state(group, 'invalid', 'Needs attention', 'The saved document details need to be checked.', {errors: result.errors});
@@ -123,13 +128,14 @@ export function documentState(group, record, today = new Date()) {
 
 // Missing/unloaded metadata must be represented by the caller's loading/error
 // state. Call this only after an authenticated read completed successfully.
-export function documentSummary(records = {}, today = new Date()) {
+export function documentSummary(records = {}, today = new Date(), {groups=REQUIRED_DOCUMENT_GROUPS}={}) {
     const day = philippineDocumentDay(today);
-    const items = DOCUMENT_GROUPS.map(group => documentState(group, records?.[group], day));
+    if(!Array.isArray(groups)||groups.length>SUPPORTED_DOCUMENT_GROUPS.length||new Set(groups).size!==groups.length||groups.some(group=>!SUPPORTED_DOCUMENT_GROUPS.includes(group)))throw Error('Choose supported document groups.');
+    const items = groups.map(group => documentState(group, records?.[group], day));
     const urgentCount = items.filter(item => item.urgent).length;
     const reviewCount = items.filter(item => item.needsReview).length;
     const approvedCount = items.filter(item => item.complete).length;
-    return {items, urgentCount, reviewCount, approvedCount, uploadedCount: 3 - items.filter(item => ['missing', 'invalid'].includes(item.code)).length,
-        allUploaded: items.every(item => !item.needsUpload), allApproved: approvedCount === DOCUMENT_GROUPS.length,
+    return {items, urgentCount, reviewCount, approvedCount, uploadedCount: groups.length - items.filter(item => ['missing', 'invalid'].includes(item.code)).length,
+        allUploaded: items.every(item => !item.needsUpload), allApproved: items.every(item=>item.complete||OPTIONAL_DOCUMENT_GROUPS.includes(item.group)&&item.code==='missing'),
         tone: urgentCount > 0 ? 'danger' : reviewCount > 0 ? 'warning' : 'success'};
 }

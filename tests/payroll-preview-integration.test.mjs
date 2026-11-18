@@ -483,3 +483,8 @@ test('the actual shifted-reference action rejects a changed row or selected pays
 });
 
 test('a shifted reference can be corrected independently of the configured bonus and short-duty pay',async()=>{for(const mode of ['inclusive-zero','short']){const h=await bonusHintModalFixture({mode});assert.equal(h.button.textContent,'Apply worked shift');assert.equal(h.data.nightBonus,0);assert.equal(h.data.basicPay,mode==='inclusive-zero'?500:450);assert.equal(h.writes.length,0);}});
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(generator+': an earlier name and branch on the same employee credit do not block the cutoff',async()=>{
+ const h=harness();const credit=adjustmentFor(h,{staffName:'Earlier Sample Name',branch:'Earlier Branch'});h.person.scheduleAliases=['Earlier Sample Name'];h.records.staff_bonuses=[credit];
+ await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.ok(data,'payroll generated');assert.equal(data.payrollAdjustments,125);assert.equal(data.payrollAdjustmentRows[0].sourceStaffName,'Earlier Sample Name');assert.equal(data.payrollAdjustmentRows[0].sourceBranch,'Earlier Branch');assert.equal(h.writes.length,0);
+});

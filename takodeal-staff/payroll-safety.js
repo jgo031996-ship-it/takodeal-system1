@@ -78,7 +78,7 @@ export function resolveScheduledShift(logDate, branch, staffName, schedule, prof
     const configs = schedule?.branchConfig?.[branch];
     if (!local || !Array.isArray(configs)) return null;
     const profile = profiles[staffName] || {};
-    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname].filter(Boolean).map(nameKey));
+    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname, ...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(Boolean).map(nameKey));
     const assigned = [], fallback = [];
     for (const offset of [-1, 0, 1]) {
         const midnight = local.midnight + offset * day;
@@ -133,7 +133,7 @@ function closestTrustedShift(logDate, branch, staffName, schedule, profiles = {}
     const actual = asDate(logDate), local = parts(actual);
     if (!local) return null;
     const profile = profiles[staffName] || {};
-    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname].filter(Boolean).map(nameKey));
+    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname, ...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(Boolean).map(nameKey));
     const assigned = [], fallback = [];
     for (const offset of [-1, 0, 1]) {
         const midnight = local.midnight + offset * day, workDay = parts(new Date(midnight));
@@ -204,7 +204,7 @@ export function resolveAttendanceAmendment(log, schedule, profiles = {}, staffNa
     const dated = resolveScheduleForDate(schedule, workDate, {amendments:false});
     const configs = dated?.branchConfig?.[log.branch], profile = profiles[staffName];
     if (!dated || !Array.isArray(configs) || !profile?.cashierName) return null;
-    const names = new Set([staffName,profile.cashierName,profile.scheduleNickname,profile.nickname].filter(Boolean).map(nameKey));
+    const names = new Set([staffName,profile.cashierName,profile.scheduleNickname,profile.nickname,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(Boolean).map(nameKey));
     if (!names.has(nameKey(log.staffName))) return null;
     const profileId = profile.staffId || profile.id;
     if (log.staffId && (!profileId || String(log.staffId) !== String(profileId))) return null;
@@ -448,7 +448,7 @@ const captureAliases = profile => [profile?.name, profile?.fullName, profile?.ca
 function exactClockInAssignment(actual, branch, staffName, schedule, profiles) {
     const local = parts(actual), profile = profiles[staffName] || {}, staffId = captureProfileId(profile);
     if (!local) return {reason:'missing-schedule-history'};
-    const currentNames = [staffName, profile.cashierName, profile.scheduleNickname, profile.scheduleName, profile.nickname].filter(Boolean);
+    const currentNames = [staffName, profile.cashierName, profile.scheduleNickname, profile.scheduleName, profile.nickname, ...(staffId?captureAliases(profile):[])].filter(Boolean);
     const candidates = [], issues = []; let sawSavedDay = false;
     for (const offset of [-1, 0, 1]) {
         const midnight = local.midnight + offset * day, workDay = parts(new Date(midnight)), workDate = dateKey(workDay);
@@ -519,7 +519,7 @@ export function captureAttendanceSchedule(logDate, branch, staffName, schedule, 
 export function scheduledShiftForDate(date, branch, staffName, schedule, profiles = {}) {
     const local = parts(date), profile = profiles[staffName] || {};
     if (!local || +schedule?.currentYear !== local.year || +schedule?.currentMonth !== local.month) return null;
-    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname].filter(Boolean).map(nameKey));
+    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname, ...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(Boolean).map(nameKey));
     const assignments = schedule.currentSchedule?.[local.date]?.[branch]?.scheduled || {};
     const configs = (schedule.branchConfig?.[branch] || []).filter(shift => names.has(nameKey(assignments[shift.id])));
     if (configs.length !== 1) return null;

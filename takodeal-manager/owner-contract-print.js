@@ -1,3 +1,4 @@
+import {signedContractDocument} from './signed-contract-document.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 import {dailyStaffRate,staffRateForDate,loadStaffSalaryTimeline} from './staff-rate-model.js';
 import {onboardingDay,addCalendarMonths} from './onboarding-model.js';
@@ -40,6 +41,11 @@ export function installOwnerContractPrinting(api=window,d=document){
    if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Reconnect to confirm the saved employee contract.');
    let data={...snap.data(),staffId};if(api.isBranchAllowed?.(data.branch)!==true)throw Error('This employee branch is outside your Staff & Security access.');
    const signDate=data.signedContracts?.[types[type].key];if(typeof signDate!=='string'||!signDate.trim())throw Error('This saved contract has no employee acceptance on file.');
+   if(type==='Initial'&&data.signupContractId){
+    const saved=await api.readSignedSignupContract(staffId);current();if(!saved.found)throw Error('The signed contract snapshot is unavailable.');
+    if(api.isBranchAllowed?.(data.branch)!==true)throw Error('This employee branch is outside your Staff & Security access.');
+    if(popup.closed)throw Error('The document window was closed.');popup.document.open();popup.document.write(signedContractDocument(saved));popup.document.close();popup.focus?.();return true;
+   }
    data=await loadStaffSalaryTimeline(api,data);current();
    const rateDate=onboardingDay(data.contractTerms?.[types[type].key]?.startDate)||onboardingDay(signDate);
    if(data.salaryRateVersion===1&&!rateDate)throw Error('The saved contract date needs HR review before its historical wage can be printed.');

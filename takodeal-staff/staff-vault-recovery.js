@@ -6,7 +6,7 @@ const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,fields)=>object(value)&&Object.keys(value).sort().join(',')===[...fields].sort().join(',');
 const recoveryError=Symbol('staff-vault-recovery');
 const failure=(message,code='recovery-unavailable')=>Object.assign(Error(message),{code,[recoveryError]:true});
-const unavailable=()=>failure('Use your personally approved Staff phone. Ask HQ to confirm its personal setup and give you your personal setup code.');
+const unavailable=()=>failure('Activate this phone with your personal setup code, then reopen PIN recovery. If it is already activated, reconnect or ask HQ to review its registration.');
 const messages={
  'setup-code-invalid':'The personal setup code could not be verified. Check it with HQ and try again.',
  'setup-not-enabled':'Personal phone setup is not enabled. Ask HQ to confirm your phone before recovering this PIN.',
@@ -43,7 +43,7 @@ export function createStaffVaultRecoveryClient({auth,authority,identity,deviceId
   const scope=capture(),controller=new Controller();activeController=controller;let expired=false,timer;
   const check=()=>{if(expired)throw failure('HQ has not confirmed this PIN action yet. It may have saved. Retry the same request when the connection returns.','recovery-timeout');still(scope,assertCurrent);};
   const physical=Promise.resolve().then(async()=>{
-   check();await auth.authStateReady?.();check();await scope.authority.confirm(scope.deviceId);check();binding(scope,assertCurrent);
+   check();await auth.authStateReady?.();check();await scope.authority.confirm(scope.deviceId,{join:true});check();binding(scope,assertCurrent);
    const proof=scope.authority.capture(),savedBinding=JSON.stringify(scope.authority.binding());
    const guard=()=>{check();scope.authority.assert(proof,scope.staffId);binding(scope,assertCurrent);if(JSON.stringify(scope.authority.binding())!==savedBinding)throw failure('Your personal phone setup changed. Reopen PIN recovery.','account-changed');};
    async function post(route,body){
@@ -94,30 +94,31 @@ async function recoveryForPhone({auth,authority,identity,deviceId,createPrivateC
  await auth?.authStateReady?.();local();const primaryUser=auth?.currentUser,a=typeof authority==='function'?authority():authority;
  const primaryCurrent=()=>{local();if(auth?.currentUser!==primaryUser)throw failure('Your Staff phone identity changed. Reopen PIN recovery.','account-changed');};
  if(primaryUser?.uid&&primaryUser.isAnonymous===true&&a?.confirm){
-  try{const result=await a.confirm(selectedDevice);primaryCurrent();const b=a.binding?.();if(result?.enabled===true&&a.mode?.()==='protected'&&b?.status==='Active'&&b.staffId===staffId&&b.deviceId===selectedDevice)return createStaffVaultRecoveryClient({auth,authority,identity,deviceId,...options});}
+  try{await a.confirm(selectedDevice,{join:true});primaryCurrent();const b=a.binding?.();if(a.isVerified?.()&&a.mode?.()==='protected'&&b?.status==='Active'&&b.staffId===staffId&&b.deviceId===selectedDevice)return createStaffVaultRecoveryClient({auth,authority,identity,deviceId,...options});}
   catch{primaryCurrent();}
  }
  primaryCurrent();if(typeof createPrivateClient!=='function')throw unavailable();
  const client=await createPrivateClient();primaryCurrent();const privateAuth=client?.auth,sdk=client?.sdk,db=client?.db;
  await privateAuth?.authStateReady?.();primaryCurrent();const user=privateAuth?.currentUser;
  if(!user?.uid||user.isAnonymous!==true||!sdk?.getDocFromServer||!sdk?.doc)throw unavailable();
+ const privatePhone=await resolvePrivatePhoneIdentity({client,staffId,assertCurrent:primaryCurrent}),privateDevice=privatePhone.deviceId;primaryCurrent();
  let current=null,epoch=0;
  const guard=()=>{primaryCurrent();if(privateAuth.currentUser!==user)throw failure('Your approved private phone identity changed. Reopen PIN recovery.','account-changed');};
  const server=snapshot=>{if(!snapshot||typeof snapshot.exists!=='function'||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||!snapshot.exists())throw unavailable();return snapshot.data();};
  const privateAuthority={
   async confirm(value){
-   guard();if(value!==selectedDevice)throw unavailable();
+   guard();if(value!==privateDevice)throw unavailable();
    const [config,record]=await Promise.all([sdk.getDocFromServer(sdk.doc(db,'staff_document_config','current')),sdk.getDocFromServer(sdk.doc(db,'staff_document_devices',user.uid))]);guard();
    const policy=server(config),binding=server(record);
-   if(policy.enabled!==true||policy.policyVersion!==2||policy.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||binding.active!==true||binding.uid!==user.uid||binding.staffId!==staffId||binding.deviceId!==selectedDevice||typeof binding.branch!=='string'||!binding.branch.trim())throw unavailable();
-   const next={staffId,deviceId:selectedDevice,branch:binding.branch,status:'Active'};if(JSON.stringify(current)!==JSON.stringify(next))epoch++;current=next;
+   if(policy.enabled!==true||policy.policyVersion!==2||policy.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||binding.active!==true||binding.uid!==user.uid||binding.staffId!==staffId||binding.deviceId!==privateDevice||binding.branch!==privatePhone.branch)throw unavailable();
+   const next={staffId,deviceId:privateDevice,branch:binding.branch,status:'Active'};if(JSON.stringify(current)!==JSON.stringify(next))epoch++;current=next;
    return{enabled:true,mode:'protected',device:{...next}};
   },
   mode:()=>current?'protected':null,isVerified:()=>Boolean(current&&privateAuth.currentUser===user),binding:()=>current?{...current}:null,capture:()=>({epoch,uid:user.uid}),
   assert(proof,id){guard();if(!current||proof?.epoch!==epoch||proof?.uid!==user.uid||id!==staffId)throw unavailable();}
  };
- await privateAuthority.confirm(selectedDevice);guard();
- return createStaffVaultRecoveryClient({auth:privateAuth,authority:privateAuthority,identity,deviceId,...options});
+ await privateAuthority.confirm(privateDevice);guard();
+ return createStaffVaultRecoveryClient({auth:privateAuth,authority:privateAuthority,identity,...options,deviceId:()=>privateDevice});
 }
 export async function createStaffVaultRecoveryForPhone(options={}){
  let expired=false,timer;const current=options.assertCurrent||(()=>{}),schedule=options.delay||setTimeout,cancel=options.cancelDelay||clearTimeout;
@@ -125,3 +126,4 @@ export async function createStaffVaultRecoveryForPhone(options={}){
  catch(error){if(error?.[recoveryError])throw error;throw unavailable();}
  finally{cancel(timer);}
 }
+import {resolvePrivatePhoneIdentity} from './private-phone-identity.js';

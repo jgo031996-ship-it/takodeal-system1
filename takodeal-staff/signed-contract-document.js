@@ -1,0 +1,12 @@
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function signedContractDocument(saved){
+ const older=Boolean(saved.contractVersion&&saved.currentContractVersion&&saved.contractVersion!==saved.currentContractVersion);
+ return `<!doctype html><html><head><meta charset="utf-8"><title>Employment contract</title><style>
+body{margin:0;background:#edf2ee;color:#173e33;font:15px/1.5 Arial,sans-serif}#contract-tools{padding:18px 24px;background:#163f34;color:white}#contract-tools p{margin:5px 0}#contract-tools button{padding:10px 16px;margin:10px 8px 0 0;border:1px solid #bacfc3;border-radius:8px;background:white;color:#163f34;cursor:pointer;min-height:44px}#contract-current{background:white}#contract-current>p{padding:16px;text-align:center;font-weight:bold;border:2px solid #b17318}#contract-tools small{color:#dce9e2}@media print{body{background:white}#contract-tools{display:none!important}[hidden]{display:none!important}}
+</style></head><body><nav id="contract-tools"><b>${older?'Earlier signed version':'Saved signed contract'}</b><p>${older?'This employee signed an earlier agreement. The original signature stays with that agreement. The updated template below is unsigned.':'This is the agreement accepted by the employee.'}</p><small>Saved version: ${esc(saved.contractVersion||'Original recorded agreement')}</small><br><button type="button" id="contract-original-button">Original signed copy</button>${saved.currentHtml?'<button type="button" id="contract-current-button">Updated template · unsigned</button>':''}<button type="button" id="contract-print-button">Print / Save PDF</button></nav><main id="contract-original">${saved.html}</main>${saved.currentHtml?'<main id="contract-current" hidden><p>UNSIGNED PREVIEW — Updated wording using the original employment offer. This does not replace the signed agreement.</p>'+saved.currentHtml+'</main>':''}<script>
+document.getElementById('contract-print-button').onclick=()=>window.print();
+const original=document.getElementById('contract-original'),current=document.getElementById('contract-current');
+document.getElementById('contract-original-button').onclick=()=>{original.hidden=false;if(current)current.hidden=true;};
+if(current)document.getElementById('contract-current-button').onclick=()=>{original.hidden=true;current.hidden=false;};
+</script></body></html>`;
+}

@@ -2,6 +2,7 @@ import {staffDirectoryActorKey} from './staff-directory-reader.js';
 import {OWNER_EMAIL} from './workspace-access-model.js';
 
 const inputs={
+ cashierName:'empFullName',scheduleNickname:'empScheduleName',
  phone:'empPhone',address:'empAddress',email:'empEmail',emergencyName:'empEmergencyName',
  emergencyPhone:'empEmergencyPhone',gcashName:'empGcashName',gcashNum:'empGcashNum',
  gotymeName:'empGotymeName',gotymeNum:'empGotymeNum',sss:'empSSS',philhealth:'empPhilhealth',pagibig:'empPagibig'
