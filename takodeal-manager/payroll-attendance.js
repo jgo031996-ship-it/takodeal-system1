@@ -1,7 +1,7 @@
 import {attendanceMillis,attendanceKind,linkedAttendanceHistory} from './attendance-reconcile.js';
 import {validEmergencyReliefMarker} from './relief-attendance-model.js';
 import {resolveReliefScheduleReview} from './relief-schedule-review-model.js';
-import {payrollOwnerHoursApproved} from './payroll-safety.js';
+import {payrollReliefHoursVerified} from './payroll-safety.js';
 
 // Preview-only safety: never rewrite punches or recalculate a frozen payslip.
 // Explicit links that cannot be paid confidently hold that employee's preview.
@@ -68,7 +68,7 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
         // Existing open shifts may predate the Time In relief marker. The
         // linked actual departure is sufficient to route the pair to review,
         // but never to establish assigned hours or release an unpaid payroll.
-        if(validEmergencyReliefMarker(end.emergencyRelief,end.branch)&&end.reliefRequestId&&!resolveReliefScheduleReview(begin)&&!payrollOwnerHoursApproved(resolveShift?.(begin))){
+        if(validEmergencyReliefMarker(end.emergencyRelief,end.branch)&&end.reliefRequestId&&!resolveReliefScheduleReview(begin)&&!payrollReliefHoursVerified(resolveShift?.(begin),end)){
             hold(begin,'Emergency branch cover: Owner HR must confirm assigned hours. Actual Time In and Time Out remain recorded.');continue;
         }
         normalized.add(begin);normalized.add(end);

@@ -28,7 +28,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    tell('Worked shift confirmed for '+result.workDate+'.');return result;
   }
   function choose(){
-   dialog?.close();dialog?.remove();const node=d.createElement('dialog');dialog=node;node.setAttribute('aria-labelledby','workedShiftTitle');node.style.cssText='position:fixed;inset:0;margin:auto;width:560px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #cadbcf;border-radius:16px;background:#fff;color:#214738;box-shadow:0 24px 80px #102b2640';
+   dialog?.close();dialog?.remove();const node=d.createElement('dialog');dialog=node;node.setAttribute('aria-labelledby','workedShiftTitle');node.className='owner-time-out-correction payroll-worked-shift';node.style.cssText='position:fixed;inset:0;margin:auto;width:560px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #cadbcf;border-radius:16px;background:#fff;color:#214738;box-shadow:0 24px 80px #102b2640';
    const records=view.recordChoices||[],choices=view.choices||[],blockers=view.blockers||[];
    const available=choices.filter(row=>!row.blockers.length),blocked=choices.filter(row=>row.blockers.length);
    const proposed=available.find(row=>row.shiftId===context.proposedShiftId),preferred=proposed?.key||view.recommendedKey;
@@ -37,34 +37,53 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    const rowTime=row=>esc(stamp(row.expectedStartAt))+' → '+esc(stamp(row.expectedEndAt));
    const notes=row=>[
      row.key===proposed?.key?'Requested by employee':'',
+     row.ownerEntered?'Owner-entered hours for this punch.':row.standalone?'No dated roster for this branch. Select these hours only if you can confirm the assignment for this punch.':'',
      row.occupied?'Another employee holds this slot. Confirming records this employee’s duty only.':'',
      row.undatedLeaveIds?.length?'A leave has incomplete dates. Confirm only if you verified this employee worked this date. The leave stays on file.':''
    ].filter(Boolean).map(note=>'<small style="display:block;margin-top:4px">'+esc(note)+'</small>').join('');
    const cards=available.map((row,index)=>'<label style="display:flex;align-items:flex-start;gap:10px;border:1px solid #a9c2b3;border-radius:8px;padding:12px;margin:8px 0;cursor:pointer"><input type="radio" name="workedShiftChoice" data-choice value="'+index+'"><span><strong>'+esc(row.shiftName)+'</strong><br>'+rowTime(row)+notes(row)+'</span></label>').join('');
    const unavailable=blocked.length?'<details'+(available.length?'':' open')+'><summary>Unavailable shifts ('+blocked.length+')</summary>'+blocked.map(row=>'<p><strong>'+esc(row.shiftName)+'</strong><br>'+esc(row.blockers.join(' '))+'</p>').join('')+'</details>':'';
    const options=records.length?'<label>Work record<select data-record style="display:block;width:100%;padding:12px">'+records.map(row=>'<option value="'+esc(row.attendanceLogId)+'">'+esc(stamp(row.timeInAt))+(row.timeOutAt?' → '+esc(stamp(row.timeOutAt)):' · missing Time Out')+'</option>').join('')+'</select></label>':'<fieldset style="padding:0;border:0"><legend>Which shift did this employee work?</legend>'+cards+'</fieldset>'+unavailable;
-   node.innerHTML='<header style="padding:16px 20px;background:#173f32;color:white;display:flex;justify-content:space-between;align-items:center"><h2 id="workedShiftTitle" style="margin:0;font-size:21px">Choose the worked shift</h2><button type="button" data-close aria-label="Close">×</button></header><div style="padding:16px 20px;overflow:auto;max-height:calc(100dvh - 190px)"><strong>'+esc(view.staffName||'Saved employee')+'</strong> · '+esc(context.branch||view.branch||'')+'<p>'+(view.timeInAt&&view.timeOutAt?'Recorded: '+esc(stamp(view.timeInAt))+' → '+esc(stamp(view.timeOutAt)):'Choose the exact saved work record.')+'</p>'+options+'<p data-status role="status">'+esc(blockers.join(' '))+'</p></div><footer style="display:flex;gap:10px;justify-content:end;border-top:1px solid #dce8de;padding:12px"><button type="button" data-close>Cancel</button><button type="button" data-apply style="padding:12px;border:0;border-radius:8px;background:#16634e;color:white;font-weight:bold">'+(records.length?'Choose record':'Confirm worked shift')+'</button></footer>';
+   const allowManual=!!view.timeInAt&&!context.proposedShiftId&&(!available.length||view.choices?.some(row=>row.standalone)||context.allowManual);
+   const dateInManila=view.timeInAt?new Date(Date.parse(view.timeInAt)+8*3600000).toISOString().slice(0,10):'';
+   const manual=allowManual?'<details class="worked-manual"'+(!available.length?' open':'')+'><summary>Enter assigned hours for this punch</summary><label>Work date<input type="date" data-manual-date value="'+dateInManila+'"></label><label>Shift name<input data-manual-name maxlength="120"></label><label>Category<select data-manual-kind><option value="">Select category</option><option value="morning">Morning</option><option value="mid">Mid</option><option value="night">Night</option><option value="other">Other</option></select></label><label>Assigned start<input type="time" data-manual-start></label><label>Assigned finish<input type="time" data-manual-end></label><button type="button" data-manual-review>Review these hours</button></details>':'';
+   node.innerHTML='<header style="padding:16px 20px;background:#173f32;color:white;display:flex;justify-content:space-between;align-items:center"><h2 id="workedShiftTitle" style="margin:0;font-size:21px;color:inherit">Choose the worked shift</h2><button type="button" data-close aria-label="Close worked shift">&times;</button></header><div style="padding:16px 20px;overflow:auto;max-height:calc(100dvh - 190px)"><strong>'+esc(view.staffName||'Saved employee')+'</strong> · '+esc(context.branch||view.branch||'')+'<p>'+(view.timeInAt&&view.timeOutAt?'Recorded: '+esc(stamp(view.timeInAt))+' → '+esc(stamp(view.timeOutAt)):'Choose the exact saved work record.')+'</p>'+options+manual+'<p data-status role="status" aria-live="polite">'+esc(blockers.join(' '))+'</p></div><footer style="display:flex;gap:10px;justify-content:end;border-top:1px solid #dce8de;padding:12px"><button type="button" data-close>Cancel</button><button type="button" data-apply style="padding:12px;border:0;border-radius:8px;background:#16634e;color:white;font-weight:bold">'+(records.length?'Choose record':'Confirm worked shift')+'</button></footer>';
    d.body.append(node);node.showModal();node.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>{if(!saving)node.close();});node.addEventListener('close',()=>{node.remove();if(dialog===node)dialog=null;});
    const button=node.querySelector('[data-apply]'),status=node.querySelector('[data-status]');
-   const refresh=()=>{button.disabled=pending||(!records.length&&(!selected||!!blockers.length));};
+   const manualReview=node.querySelector('[data-manual-review]');
+   if(manualReview)manualReview.onclick=async()=>{
+    if(saving||pending)return;
+    const value=key=>node.querySelector('[data-manual-'+key+']').value;
+    const manualDuty={name:value('name'),shiftType:value('kind'),startTime:value('start'),endTime:value('end')},workDate=value('date');
+    if(!workDate||Object.values(manualDuty).some(v=>!v?.trim())){status.textContent='Complete the work date, name, category, start and finish.';return;}
+    await open({...context,attendanceLogId:view.attendanceLogId,workDate,manualDuty},{assertCurrent,onApplied});
+   };
+   const refresh=()=>{button.disabled=saving||(!records.length&&(!selected||!!blockers.length));};
    function select(row){
     selected=row;
     status.textContent=blockers.join(' ')||(row.attendanceOnly?'Confirm the recorded duty. All plotted assignments stay in place.':'Confirm this employee’s assignment for '+row.workDate+'.');
+    if(!blockers.length){
+      const minutes=Math.max(0,Math.floor((Date.parse(view.timeInAt)-Date.parse(row.expectedStartAt))/60000));
+      status.textContent+=' Arrival against this shift: '+minutes+' min late. Any saved waiver still applies.';
+    }
     refresh();
    }
    node.querySelectorAll('[data-choice]').forEach((radio,index)=>{
     const row=available[index];radio.onchange=()=>select(row);
     if(row.key===preferred&&!row.attendanceOnly){radio.checked=true;select(row);}
    });
-   button.disabled=!records.length&&(!selected||!!blockers.length);
+   refresh();
+   if(!records.length&&!available.length)button.hidden=true;
+   if(!selected&&!records.length&&!blockers.length&&available.length)status.textContent='Select the shift you verified for this work date.';
+   if(!selected&&!records.length&&!available.length&&!blockers.length)status.textContent='Open Unavailable shifts to see what needs attention.';
    button.onclick=async()=>{
     if(pending||button.disabled)return;
-    pending=true;saving=true;button.disabled=true;
+    pending=true;saving=true;button.disabled=true;status.textContent='Checking the saved records and confirming the shift…';
     try{
      current();
      if(records.length){const id=node.querySelector('[data-record]').value;node.close();pending=false;return await open({...context,attendanceLogId:id},{assertCurrent,onApplied});}
      await save(selected.key);
-    }catch(error){status.textContent=error.message||'Could not save this shift. Reopen it to check the current record.';}
+    }catch(error){const message=error.message||'Could not save this shift. Reopen it to check the current record.';status.textContent=message;if(!node.open)tell(message,true);}
     finally{pending=false;saving=false;if(node.open)refresh();}
    };
    return node;

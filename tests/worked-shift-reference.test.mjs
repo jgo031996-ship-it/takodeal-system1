@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createScheduleRevision} from '../takodeal-manager/schedule-history.js';
-import {captureAttendanceSchedule,resolveAttendanceShift,latePay,calculateShiftEarnings} from '../takodeal-manager/payroll-safety.js';
+import {captureAttendanceSchedule,resolveAttendanceShift,latePay,calculateShiftEarnings,attendanceLateMinutes} from '../takodeal-manager/payroll-safety.js';
 import {planWorkedShiftCorrection,createWorkedShiftRevision,workedShiftSourceFingerprint} from '../takodeal-manager/worked-shift-correction-model.js';
 import {workedShiftLatenessReference} from '../takodeal-manager/worked-shift-reference.js';
 const branch='Fictional Branch',name='Fictional Crew',staffId='fictional-staff',owner='jgo031996@gmail.com',at=value=>new Date(value+'+08:00');
@@ -17,8 +17,12 @@ function fixture({two=false}={}){
  return {profile,snapshot,revision,history,start,out,before,correction,corrected,apply};
 }
 const resolve=f=>resolveAttendanceShift(f.start,f.corrected,{[name]:f.profile});
-test('a genuine correction changes its assigned reference while preserving the original monetary lateness rate and wage date',()=>{
- const f=fixture(),after=resolve(f);assert.equal(after.workedShiftCorrectionId,f.correction.revisionId);assert.equal(after.shiftType,'night');assert.equal(after.lateMinutes,37);assert.deepEqual(latePay(after.lateMinutes,f.profile,after),latePay(f.before.lateMinutes,f.profile,f.before));assert.equal(latePay(after.lateMinutes,f.profile,after).amount,56.25);assert.equal(workedShiftLatenessReference(after).isNightShift,false);assert.equal(workedShiftLatenessReference({...after}).isNightShift,true);
+test('the confirmed Night shift recalculates an old automatic charge in an unpaid payslip',()=>{
+ const f=fixture();f.start.lateMinutes=472;
+ const after=resolve(f);
+ assert.equal(after.shiftId,'night');assert.equal(after.lateMinutes,0);
+ assert.equal(attendanceLateMinutes(f.start,after),0);assert.equal(latePay(after.lateMinutes,f.profile,after).amount,0);
+ assert.equal(f.start.lateMinutes,472);
 });
 for(const field of ['bounds','type','rule-type','rule-config','audit'])test('inconsistent '+field+' is held rather than falling back to an old payable assignment',()=>{
  const f=fixture(),marker=f.correction.snapshot.workedShiftCorrections[f.start.id];
@@ -27,7 +31,7 @@ for(const field of ['bounds','type','rule-type','rule-config','audit'])test('inc
 });
 test('a second employee correction on the same date retains the first independent immutable correction and lateness basis',()=>{
  const f=fixture({two:true}),secondName='Second Fictional Crew',profile={...f.profile,id:'second-fictional',staffId:'second-fictional',cashierName:secondName},start={...f.start,id:'second-in',staffId:profile.staffId,staffName:secondName,timestamp:at('2026-10-17T17:12:00')};start.scheduleSnapshot=captureAttendanceSchedule(start.timestamp,branch,secondName,f.history,{[secondName]:profile});const out={...f.out,id:'second-out',staffId:profile.staffId,staffName:secondName,timeInLogId:start.id,timeInAt:start.timestamp,timestamp:at('2026-10-18T02:07:00')};
- const next=f.apply(start,out,profile,f.corrected,'night-two','second-operation');f.corrected.historyMonths['2026-10'].revisions.push(next);const first=resolve(f),second=resolveAttendanceShift(start,f.corrected,{[secondName]:profile});assert.equal(first.workedShiftCorrectionId,f.correction.revisionId);assert.equal(second.workedShiftCorrectionId,next.revisionId);assert.equal(first.shiftId,'night');assert.equal(second.shiftId,'night-two');assert.equal(latePay(first.lateMinutes,f.profile,first).amount,56.25);assert.deepEqual(f.history.historyMonths['2026-10'].revisions[0],f.revision);
+ const next=f.apply(start,out,profile,f.corrected,'night-two','second-operation');f.corrected.historyMonths['2026-10'].revisions.push(next);const first=resolve(f),second=resolveAttendanceShift(start,f.corrected,{[secondName]:profile});assert.equal(first.workedShiftCorrectionId,f.correction.revisionId);assert.equal(second.workedShiftCorrectionId,next.revisionId);assert.equal(first.shiftId,'night');assert.equal(second.shiftId,'night-two');assert.equal(latePay(first.lateMinutes,f.profile,first).amount,0);assert.deepEqual(f.history.historyMonths['2026-10'].revisions[0],f.revision);
  // A forged copy of a valid old marker without its ancestry cannot inherit it.
  next.historicalWorkedShiftReview.sourceRevisionId=f.revision.revisionId;const held=resolve(f);assert.equal(held.needsScheduleReview,true);assert.equal(held.assignmentReconciliationRequired,true);
 });

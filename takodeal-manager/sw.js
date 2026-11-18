@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v168-payroll-pos-config-20261118-r4';
+const CACHE_NAME = 'takodeal-manager-core-v168-payroll-worked-shifts-20261118-r5';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
