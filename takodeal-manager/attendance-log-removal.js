@@ -42,14 +42,16 @@ export async function removeAttendancePunch(api,selected){
  if(!same(source))throw Error('This punch changed. Refresh the feed and select the saved entry again.');
  if(reviewed(source))throw Error('This punch has a saved HR decision. Open HR Review Center to review that decision.');
  const isStart=attendanceKind(source)==='TIME IN';
- const [people,linked,begin]=await Promise.all([
+ const [people,linked,begin,startBonuses]=await Promise.all([
   source.staffId?read(ref('cashiers',source.staffId)).then(row=>row?[row]:[]):search('cashiers','cashierName',source.staffName),
   isStart?search('attendance_logs','timeInLogId',source.id):[],
-  !isStart&&source.timeInLogId?read(ref('attendance_logs',source.timeInLogId)):null
+  !isStart&&source.timeInLogId?read(ref('attendance_logs',source.timeInLogId)):null,
+  isStart?search('staff_bonuses','timeInLogId',source.id):[]
  ]);
  if(people.length!==1)throw Error('The employee for this punch could not be uniquely identified. Review the staff profile first.');
  const profile=people[0],id=profile.id;
  if(linked.some(active))throw Error('A saved Time Out refers to this Time In. Review that departure before removing its start.');
+ if(startBonuses.some(row=>row.status!=='Cancelled'))throw Error('A saved OT bonus refers to this Time In. Review its OT history before removing the punch.');
  if(begin?.reliefScheduleReview)throw Error('This departure belongs to an HR-reviewed cover shift. Open HR Review Center for the original Time In.');
  if(source.timeInLogId&&(!active(begin)||begin.branch!==source.branch||begin.staffId&&begin.staffId!==id))throw Error('The linked Time In needs HR review.');
  const names=new Set([source.staffName,profile.cashierName,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(Boolean));

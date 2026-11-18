@@ -51,3 +51,9 @@ test('a linked start and a departure reviewed for branch cover report the specif
  f.h.put('attendance_logs/start',{...f.row,type:'TIME IN'});
  await assert.rejects(f.remove('start'),/saved Time Out refers/);
 });
+test('an OT award for a legacy unlinked departure still protects its source Time In',async()=>{
+ const f=setup();f.h.put('attendance_logs/start',{...f.row,type:'TIME IN'});
+ f.h.put('staff_bonuses/granted',{type:'Overtime',timeInLogId:'start',timeOutLogId:f.id,status:'Unpaid'});
+ await assert.rejects(f.remove('start'),/OT bonus refers/);
+ assert.equal(f.h.get('attendance_logs/start').deleted,undefined);
+});
