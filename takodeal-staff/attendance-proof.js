@@ -147,8 +147,9 @@ export function installAttendanceProofUploader(api, document, {
 }) {
     let active = null;
     const bytesLabel = bytes => Math.max(0, Math.round(bytes / 1024)) + ' KB';
-    api.uploadAttendanceProof = async ({file, path, metadata, assertCurrent = () => {}}) => {
+    api.uploadAttendanceProof = async ({file, path,metadata={contentType:'image/jpeg'}, assertCurrent = () => {}}) => {
         if (active) throw Error('A screenshot is already being prepared. Please wait or cancel it.');
+        if(typeof path!=='string'||!/^staff_requests\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{1,128}\/(?:activated_)?late_[A-Za-z0-9_-]{1,128}\.jpg$/.test(path))throw proofError('attendance/proof-update-required','This Time Clock is using older screenshot files. Your attendance has not been saved. Keep your reason, cancel Time In, and check for Staff app updates before choosing the screenshot again.');
         const operation = {cancelled: false, finished: false, upload: null};
         active = operation;
         const preparationListeners = new Set();
@@ -180,7 +181,7 @@ export function installAttendanceProofUploader(api, document, {
             Swal.update({title: 'Uploading screenshot…'});
             text('attendanceProofSize', bytesLabel(prepared.originalBytes) + ' reduced to ' + bytesLabel(prepared.uploadBytes) + '. Keep this screen open.');
             const reference = ref(api.storage || getStorage(api.db.app), path);
-            operation.upload = createUpload({uploadBytesResumable, getDownloadURL, reference, blob: prepared.blob, ...(metadata?{metadata}:{}),assertCurrent: current,
+            operation.upload = createUpload({uploadBytesResumable, getDownloadURL, reference, blob: prepared.blob,metadata, assertCurrent: current,
                 onProgress: progress => text('attendanceProofProgress', progress.stage === 'url' ? 'Upload complete. Confirming screenshot…' : 'Uploading: ' + progress.percent + '% · ' + bytesLabel(progress.bytesTransferred) + ' of ' + bytesLabel(progress.totalBytes))});
             const result = await operation.upload.promise;
             current();

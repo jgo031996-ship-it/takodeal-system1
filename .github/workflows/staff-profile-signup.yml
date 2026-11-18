@@ -1,0 +1,41 @@
+name: Staff profile and signup release
+on:
+  push:
+    branches: [fix/staff-profile-signup-20261118]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  staff-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Profile, payroll, schedule, PIN and signed contract regression tests
+        run: |
+          node --test \
+          tests/staff-self-service.test.mjs \
+          tests/staff-private-profile-ui.test.mjs \
+          tests/staff-private-profile-client.test.mjs \
+          tests/staff-pay-phone.test.mjs \
+          tests/staff-vault-recovery-ui.test.mjs \
+          tests/staff-employee-access.test.mjs \
+          tests/employee-profile-live.test.mjs \
+          tests/owner-contract-print.test.mjs \
+          tests/staff-rate.test.mjs \
+          tests/staff-rate-effective.test.mjs \
+          tests/staff-payroll-reader.test.mjs \
+          tests/payroll-safety.test.mjs \
+          tests/schedule-staff-directory.test.mjs \
+          tests/staff-profile-save-lifecycle.test.mjs
+      - name: Install locked backend dependencies
+        working-directory: functions/cash-remittance-review
+        run: npm ci --ignore-scripts
+      - name: Load production function entry points
+        working-directory: functions/cash-remittance-review
+        run: node -e "import('./index.mjs').then(m => { if (!m.cashRemittanceReview || !m.syncOperationalStaffDirectory) process.exit(1) })"
+

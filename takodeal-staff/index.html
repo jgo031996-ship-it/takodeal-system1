@@ -2,18 +2,496 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- BEGIN GENERATED STAFF STARTUP -->
+    <script>/* Independent Staff startup recovery. No module, account or database dependency. */
+(function (w, d, nav) {
+    'use strict';
+    var release = 'staff-repair-pin-20261117-r1';
+    var key = Symbol.for('takodeal.staff.appUpdate');
+    if (w.staffStartup) return;
+    // Consume the private fragment before any external scripts start.
+    var setupInvite = null;
+    function captureSetupInvite() {
+        if (!w.location || !/^#staff-setup=/.test(w.location.hash)) return;
+        setupInvite = null;
+        var parts = /^#staff-setup=([A-Za-z0-9_-]{1,128})\.(\d{10})$/.exec(w.location.hash);
+        try {
+            w.history.replaceState(w.history.state, '', w.location.pathname + w.location.search);
+            if (parts) setupInvite = {staffId: parts[1], code: parts[2]};
+        } catch (_) { /* Manual setup is available when the fragment cannot be removed. */ }
+        parts = null;
+    }
+    captureSetupInvite();
+    w.addEventListener('hashchange', captureSetupInvite);
+    w.addEventListener('pagehide', function () { setupInvite = null; });
+    var ready = false, updating = false, run = null, banner, bannerText;
+    var timers = [], earlyStatus = 'Staff app is opening. Please wait; your device registration is kept.';
+    var releasedStyles = [];
+    function nodes(selector) { return d.querySelectorAll ? Array.from(d.querySelectorAll(selector)) : []; }
+    function releasePendingStyles() {
+        if (ready) return;
+        nodes('link[rel~="stylesheet"]').forEach(function (link) {
+            try {
+                if (link.sheet !== null || link.disabled || releasedStyles.indexOf(link) !== -1) return;
+                var href = link.getAttribute('href'), media = link.getAttribute('media'), value = String(media || '').trim().toLowerCase();
+                if (!href || ['', 'all', 'screen'].indexOf(value) === -1) return;
+                var base = new URL('./', w.location.href), url = new URL(href, w.location.href);
+                if (url.origin !== base.origin || url.pathname.indexOf(base.pathname) !== 0) return;
+                var marker = 'data-staff-startup-style-release';
+                if (link.hasAttribute(marker)) return;
+                function restore() {
+                    link.removeEventListener('load', restore); link.removeEventListener('error', restore);
+                    if (link.getAttribute(marker) !== release) return;
+                    if (link.getAttribute('media') === 'not all') {
+                        if (media === null) link.removeAttribute('media'); else link.setAttribute('media', media);
+                    }
+                    link.removeAttribute(marker);
+                }
+                link.addEventListener('load', restore); link.addEventListener('error', restore);
+                releasedStyles.push(link); link.setAttribute(marker, release); link.setAttribute('media', 'not all');
+            } catch (_) { /* Unknown stylesheet state stays untouched. */ }
+        });
+    }
+    function status(text) {
+        nodes('[data-staff-update-status]').forEach(function (node) { node.textContent = text; node.hidden = !text; });
+    }
+    function show(text) {
+        releasePendingStyles();
+        if (!banner && d.body) {
+            banner = d.createElement('section'); banner.id = 'staffStartupRecovery';
+            banner.setAttribute('role', 'status'); banner.setAttribute('aria-live', 'polite');
+            banner.style.cssText = 'position:fixed;top:12px;left:12px;right:12px;max-width:560px;margin:auto;padding:16px;border:2px solid #c65c24;border-radius:14px;background:#fffaf4;color:#243b36;z-index:1000001;box-shadow:0 4px 24px #0003;font:15px/1.5 system-ui,sans-serif';
+            var heading = d.createElement('strong'); heading.textContent = 'Staff app connection';
+            bannerText = d.createElement('p'); bannerText.style.margin = '8px 0';
+            var button = d.createElement('button'); button.type = 'button'; button.textContent = 'Repair and reopen';
+            button.setAttribute('data-staff-repair', ''); button.style.cssText = 'padding:10px 16px;border:0;border-radius:8px;background:#173f35;color:white;font:600 15px system-ui,sans-serif';
+            button.addEventListener('click', function () { if (w.staffSelfRepair) w.staffSelfRepair.refreshFiles(); else check(); });
+            banner.appendChild(heading); banner.appendChild(bannerText); banner.appendChild(button); d.body.appendChild(banner);
+        }
+        if (banner) { banner.hidden = false; bannerText.textContent = text; }
+        status(text);
+    }
+    function progress() {
+        var target = d.getElementById && d.getElementById('deviceRegistrationStatus');
+        if (target) { target.textContent = earlyStatus; target.setAttribute('data-staff-startup-status', ''); }
+        show(earlyStatus + ' If this does not finish, use Repair and reopen. No new device approval is requested by repair.');
+        return false;
+    }
+    ['requestDeviceAccess', 'retryDeviceRegistration', 'loginStaff'].forEach(function (name) {
+        if (typeof w[name] !== 'function') w[name] = progress;
+    });
+    d.addEventListener('click', function (event) {
+        if (ready) return;
+        var target = event.target;
+        while (target && target !== d && String(target.tagName || '').toLowerCase() !== 'button') target = target.parentElement;
+        if (!target || target === d) return;
+        var ids = ['usePersonalSetupCode', 'usePersonalSetupCodePending', 'usePersonalSetupCodeLogin', 'cancelPersonalSetup', 'setupStaffReload', 'deviceRetryButton'];
+        var action = target.getAttribute && target.getAttribute('onclick') || '';
+        if (ids.indexOf(target.id) !== -1 || /window\.(?:requestDeviceAccess|retryDeviceRegistration|loginStaff)\(/.test(action)) {
+            event.preventDefault(); event.stopImmediatePropagation(); progress();
+        }
+    }, true);
+    function protectedWork() {
+        if (w.staffSelfRepair && typeof w.staffSelfRepair.blockReason === 'function') { var repairBlock = w.staffSelfRepair.blockReason({filesOnly: true}); if (repairBlock) return repairBlock; }
+        if (w.staffPunchBusy) return 'Attendance is saving. Wait for it to finish before repairing the app.';
+        if (w.staffSwapWritePending || w.pendingSwapData && w.pendingSwapData.sendUnconfirmed) return 'Your swap request is sending or its result is not confirmed. Check its result with your co-worker or Owner before repairing the app.';
+        if (w.staffDeviceRegistrationBusy) return 'Your device request is sending. Wait for its result before repairing the app.';
+        var draft = w.staffLateProofDraft;
+        if (draft && (draft.file || typeof draft.reason === 'string' && draft.reason.trim())) return 'Your unsent Time In reason and screenshot are kept. Finish or cancel that Time In before repairing the app.';
+        var reason = d.getElementById && d.getElementById('lateReason');
+        if (reason && typeof reason.value === 'string' && reason.value.trim()) return 'Your unsent Time In reason is kept. Finish or cancel that Time In before repairing the app.';
+        if (nodes('input[type="file"]').some(function (input) { return input.files && input.files.length; })) return 'A selected file is still on this page. Finish its upload or remove the selection before repairing the app.';
+        return '';
+    }
+    if (nav.serviceWorker && nav.serviceWorker.addEventListener) nav.serviceWorker.addEventListener('message', function (event) {
+        if (!event.data || event.data.type !== 'TAKODEAL_STAFF_CAN_UPDATE' || !event.ports || !event.ports[0]) return;
+        var safe = false; try { var base = new URL('./', w.location.href); safe = Object.keys(event.data).length === 1 && event.ports.length === 1 && event.origin === base.origin && validWorker(event.source, base) && (ready || updating && run && !run.cancelled) && !protectedWork(); } catch (_) { /* Unknown work must hold activation. */ }
+        event.ports[0].postMessage({safe: safe});
+    });
+    function current(operation) {
+        if (run !== operation || operation.cancelled) throw Error('The repair check ended. Keep this page open and try again.');
+    }
+    function deadline(promise, ms, text, operation) {
+        return new Promise(function (resolve, reject) {
+            var timer = w.setTimeout(function () { reject(Error(text)); }, ms);
+            operation.cleanup.push(function () { w.clearTimeout(timer); });
+            Promise.resolve(promise).then(function (value) { w.clearTimeout(timer); resolve(value); }, function (error) { w.clearTimeout(timer); reject(error); });
+        });
+    }
+    function waitState(worker, states, operation) {
+        return new Promise(function (resolve, reject) {
+            function changed() {
+                if (worker.state === 'redundant') { remove(); reject(Error('The app update did not finish. Keep this page open and retry.')); }
+                else if (states.indexOf(worker.state) !== -1) { remove(); resolve(worker); }
+            }
+            function remove() { worker.removeEventListener('statechange', changed); }
+            worker.addEventListener('statechange', changed); operation.cleanup.push(remove); changed();
+        });
+    }
+    function message(worker, type, operation, expected) {
+        if (typeof w.MessageChannel !== 'function') return Promise.reject(Error('This browser cannot safely confirm an app repair. Keep your saved data and try an updated browser.'));
+        return deadline(new Promise(function (resolve, reject) {
+            var channel = new w.MessageChannel(), finished = false;
+            function close() { if (finished) return; finished = true; channel.port1.onmessage = null; channel.port1.close(); channel.port2.close(); }
+            operation.cleanup.push(close);
+            channel.port1.onmessage = function (event) { if (finished) return; var value = event.data; close(); resolve(value); };
+            try { worker.postMessage(expected ? {type: type, release: expected.release, cohortHash: expected.cohortHash} : {type: type}, [channel.port2]); } catch (error) { close(); reject(error); }
+        }), 4000, 'The app update could not be confirmed. Close other Staff windows, check your connection and retry.', operation);
+    }
+    function validWorker(worker, base) {
+        if (!worker || typeof worker.scriptURL !== 'string') return false;
+        var url = new URL(worker.scriptURL, base);
+        return url.origin === base.origin && url.pathname === new URL('sw.js', base).pathname && !url.search && !url.hash;
+    }
+    function validCohort(state) {
+        return state && Object.keys(state).sort().join(',') === 'cohortHash,release' && typeof state.release === 'string' && /^[a-z][a-z0-9-]{1,119}$/.test(state.release) && typeof state.cohortHash === 'string' && /^[a-f0-9]{64}$/.test(state.cohortHash);
+    }
+    var watchedRegistration = null, updateNotice = false;
+    function offerUpdate(registration) {
+        var worker=registration && registration.waiting, base=new URL('./',w.location.href);
+        if(!ready || updating || !worker || worker.state!=='installed' || !validWorker(worker,base))return;
+        updateNotice=true;
+        show('New Staff app files are ready. Tap Repair and reopen to use the latest branch pins and phone checks. Your saved records stay on this phone. Enter your Staff PIN after repair.');
+    }
+    function watchUpdates() {
+        if(!ready || updating || protectedWork() || nav.onLine===false || !nav.serviceWorker || typeof nav.serviceWorker.getRegistration!=='function')return;
+        Promise.resolve(nav.serviceWorker.getRegistration(new URL('./',w.location.href).href)).then(function(registration){
+            if(!registration || new URL(registration.scope).href!==new URL('./',w.location.href).href)return;
+            offerUpdate(registration);
+            if(watchedRegistration===registration || typeof registration.addEventListener!=='function')return;
+            watchedRegistration=registration;
+            registration.addEventListener('updatefound',function(){
+                var worker=registration.installing;if(!worker || !validWorker(worker,new URL('./',w.location.href)))return;
+                worker.addEventListener('statechange',function(){offerUpdate(registration);});
+            });
+        }).catch(function(){/* A notice never changes phone access or interrupts current work. */});
+    }
+    w.addEventListener('focus',watchUpdates);
+    d.addEventListener('visibilitychange',function(){if(!d.hidden)watchUpdates();});
+    async function update(operation) {
+        var base = new URL('./', w.location.href), registration = await deadline(nav.serviceWorker.getRegistration(base.href), 15000, 'Finding the app update took too long. Check your connection and retry.', operation);
+        current(operation);
+        var fresh = false;
+        if (!registration) { if (typeof nav.serviceWorker.register !== 'function') throw Error('This browser cannot prepare an app repair. Keep your saved data and reconnect.'); registration = await deadline(nav.serviceWorker.register(new URL('sw.js', base).href, {scope: base.href, updateViaCache: 'none'}), 15000, 'Preparing the app update took too long. Reconnect and retry.', operation); fresh = true; }
+        current(operation);
+        if (!registration || new URL(registration.scope).href !== base.href) throw Error('The Staff app update scope could not be confirmed. Keep this page open and retry.');
+        if (!fresh) await deadline(registration.update(), 120000, 'Downloading the Staff app took too long. Check your connection and retry.', operation);
+        current(operation);
+        var worker = registration.installing || registration.waiting, incoming = null;
+        if (worker) {
+            if (!validWorker(worker, base)) throw Error('The Staff update identity could not be confirmed.');
+            await deadline(waitState(worker, ['installed', 'activated'], operation), 120000, 'Installing the Staff app took too long. Keep this page open and retry.', operation);
+            current(operation);
+            if (worker.state !== 'activated') {
+                incoming = await message(worker, 'TAKODEAL_STAFF_STATUS', operation); current(operation);
+                if (!validCohort(incoming)) throw Error('The incoming Staff app files could not be confirmed. Keep your saved data and retry.');
+                var blocked = protectedWork(); if (blocked) throw Error(blocked);
+                var approval = await message(worker, 'TAKODEAL_STAFF_ACTIVATE', operation, incoming); current(operation);
+                if (!approval || approval.ok !== true) throw Error('Finish attendance and uploads, then close other Staff windows before repairing this one. No saved data was removed.');
+                await deadline(waitState(worker, ['activated'], operation), 15000, 'The new Staff app has not activated yet. Close other Staff windows and retry.', operation);
+                current(operation);
+            }
+        } else worker = registration.active;
+        if (!validWorker(worker, base) || worker.state !== 'activated') throw Error('No active Staff update could be confirmed. Keep this page open and retry.');
+        var state = await message(worker, 'TAKODEAL_STAFF_STATUS', operation); current(operation);
+        if (!validCohort(state) || incoming && (state.release !== incoming.release || state.cohortHash !== incoming.cohortHash)) throw Error('The latest Staff app files could not be confirmed. Check your connection and retry; your device data is kept.');
+        var work = protectedWork(); if (work) throw Error(work);
+        if (nav.onLine === false) throw Error('The connection was lost. Reconnect and try the repair again.');
+        status('Reopening the Staff app. Your device registration and saved data stay here.');
+        if (typeof operation.beforeReload === 'function') operation.beforeReload();
+        w.location.reload(); return true;
+    }
+    async function check(options) {
+        if (updating) return false;
+        var blocked = protectedWork(); if (blocked) { show(blocked); return false; }
+        if (nav.onLine === false) { show('Connect to the internet to repair the Staff app. Your saved device data is kept.'); return false; }
+        if (!nav.serviceWorker || typeof nav.serviceWorker.getRegistration !== 'function') { show('This browser cannot check app updates. Reopen the Staff app online; do not clear its saved data.'); return false; }
+        updating = true; var operation = {cancelled: false, cleanup: [], beforeReload: options && options.beforeReload}; run = operation;
+        var buttons = nodes('[data-staff-update], [data-staff-repair], [data-staff-self-repair]'), previous = buttons.map(function (button) { return {button: button, disabled: button.disabled, text: button.textContent}; });
+        previous.forEach(function (row) { row.button.disabled = true; row.button.textContent = 'Checking app files…'; row.button.setAttribute('aria-busy', 'true'); });
+        status('Checking app files. No device approval, attendance or saved data will be reset.');
+        try { return await deadline(update(operation), 180000, 'The repair check took too long. Keep this page open, close other Staff windows and retry.', operation); }
+        catch (error) { show(error && error.message || 'The app repair could not be confirmed. Check your connection and retry.'); return false; }
+        finally { operation.cancelled = true; operation.cleanup.forEach(function (cleanup) { cleanup(); }); if (run === operation) run = null; updating = false; previous.forEach(function (row) { row.button.disabled = row.disabled; row.button.textContent = row.text; row.button.removeAttribute('aria-busy'); }); }
+    }
+    Object.defineProperty(w, key, {value: check, configurable: true});
+    // An older optional module may assign its former update action. Keep every
+    // button on this independent, data-preserving implementation on this page.
+    Object.defineProperty(w, 'forceUpdateApp', {get: function () { return check; }, set: function () {}, configurable: true});
+    w.staffStartup = {showStatus: show, takeSetupInvite: function () { var value = setupInvite; setupInvite = null; return value; }, ready: function () { ready = true; timers.forEach(function (timer) { w.clearTimeout(timer); }); if (banner && !updateNotice) banner.hidden = true; var node = d.getElementById && d.getElementById('deviceRegistrationStatus'); if (node && node.hasAttribute('data-staff-startup-status')) { node.textContent = ''; node.removeAttribute('data-staff-startup-status'); } Promise.resolve().then(watchUpdates); }};
+    timers.push(w.setTimeout(function () { if (!ready) { earlyStatus = 'The Staff app is still opening. Your phone has not been reset.'; show(earlyStatus + ' If it stays here, use Repair and reopen.'); } }, 15000));
+    timers.push(w.setTimeout(function () { if (!ready) { earlyStatus = 'The Staff app could not finish opening. Your device registration and saved data are kept.'; show(earlyStatus + ' Use Repair and reopen while connected.'); } }, 30000));
+    w.addEventListener('error', function (event) {
+        if (ready) return;
+        var target = event.target, source = target && String(target.tagName || '').toLowerCase() === 'script' ? target.src : event.filename;
+        try { var url = new URL(source, w.location.href); if (!source || url.origin !== w.location.origin || !/\.js$/.test(url.pathname)) return; }
+        catch (_) { return; }
+        earlyStatus = 'Some Staff app files could not open. Your device registration and saved data are kept.'; show(earlyStatus + ' Use Repair and reopen while connected.');
+    }, true);
+}(window, document, navigator));
+</script>
+    <!-- END GENERATED STAFF STARTUP -->
+    <!-- BEGIN GENERATED STAFF SELF REPAIR -->
+    <script>/* Staff self-repair. Classic script: the file-repair option needs no app/SDK. */
+(function (w, d, nav) {
+    'use strict';
+    if (w.staffSelfRepair) return;
+    var JOURNAL = 'takodeal_staff_self_repair_v1', HISTORY = 'takodeal_staff_previous_device_v1';
+    var ACCOUNT = ['takodeal_staff_id', 'takodeal_staff_name', 'takodeal_staff_pic', 'takodeal_staff_session_id'];
+    var PHASES = ['activation-pending', 'activated', 'handoff-pending', 'complete'];
+    var FIELDS = ['schemaVersion', 'phase', 'primaryUid', 'privateUid', 'staffId', 'deviceId', 'candidateUid', 'candidateDeviceId', 'operationId', 'createdAt'];
+    var sdk = null, flight = null, panel = null, text = null, codeInput = null, resumeButton = null, resetButton = null;
+    var storage = null; try { storage = w.localStorage; } catch (_) { /* File-repair UI remains independent of browser account storage. */ }
+    function exact(value, fields) { return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === fields.slice().sort().join(','); }
+    function id(value) { return typeof value === 'string' && /^[-A-Za-z0-9_]{1,128}$/.test(value); }
+    function device(value) { return typeof value === 'string' && /^DEV-[A-Z0-9-]{6,50}$/.test(value); }
+    function readJournal() {
+        if (!storage) throw Error('Saved phone data is unavailable. Refresh app files; sign-in reset is held.');
+        var raw = storage.getItem(JOURNAL); if (raw === null) return null;
+        var row; try { row = JSON.parse(raw); } catch (_) { throw Error('The previous reset reference needs review. Keep this phone’s data and use Refresh app files.'); }
+        if (!exact(row, FIELDS) || row.schemaVersion !== 1 || PHASES.indexOf(row.phase) === -1 || !id(row.primaryUid) || !(row.privateUid === null || id(row.privateUid)) || !id(row.staffId) || !device(row.deviceId) || !id(row.candidateUid) || !device(row.candidateDeviceId) || !id(row.operationId) || row.primaryUid === row.candidateUid || row.deviceId === row.candidateDeviceId || !Number.isSafeInteger(row.createdAt) || row.createdAt < 1) throw Error('The previous reset reference could not be confirmed. Keep this phone’s data and ask the Owner for help.');
+        return row;
+    }
+    function save(row) {
+        storage.setItem(JOURNAL, JSON.stringify(row));
+        if (storage.getItem(JOURNAL) !== JSON.stringify(row)) throw Error('This browser could not save the reset reference. Your current sign-in has been kept.');
+        notify(); return row;
+    }
+    function notify() { if (typeof w.CustomEvent === 'function' && w.dispatchEvent) w.dispatchEvent(new w.CustomEvent('takodeal-staff-repair-state')); }
+    function requiresCode() {
+        try { var row = readJournal(); return !!row && ['activated', 'handoff-pending'].indexOf(row.phase) !== -1; }
+        catch (_) { return true; }
+    }
+    function nodes(selector) { return d.querySelectorAll ? Array.from(d.querySelectorAll(selector)) : []; }
+    function visible(node) {
+        for (var currentNode = node; currentNode && currentNode !== d; currentNode = currentNode.parentElement) {
+            if (currentNode.hidden || currentNode.style && currentNode.style.display === 'none') return false;
+            if (typeof w.getComputedStyle === 'function') { var style = w.getComputedStyle(currentNode); if (style.display === 'none' || style.visibility === 'hidden') return false; }
+        }
+        return true;
+    }
+    function blockReason(options) {
+        if (w.staffPunchBusy) return 'Attendance is saving. Wait for a confirmed result before repairing or resetting.';
+        if (w.staffSwapWritePending || w.pendingSwapData && w.pendingSwapData.sendUnconfirmed) return 'A swap send is pending or unconfirmed. Check its result with your co-worker or Owner. Its reference must be kept.';
+        if (w.staffSwapSubmitting || w.staffSwapWorkflow && w.staffSwapWorkflow.phase === 'checking') return 'A swap check is running. Finish or cancel the check first.';
+        if (w.pendingSwapData) return 'A swap draft is open. Send it or cancel the draft first.';
+        if (w.staffDeviceRegistrationBusy) return 'Phone setup is sending. Wait for a confirmed result first.';
+        var draft = w.staffLateProofDraft;
+        if (draft && (draft.file || typeof draft.reason === 'string' && draft.reason.trim())) return 'Your unsent Time In reason or screenshot is kept. Finish or cancel that action first.';
+        if (nodes('input[type="file"]').some(function (input) { return input.files && input.files.length; })) return 'An unsent file is selected. Finish its upload or remove that selection first.';
+        if (nodes('textarea, [data-staff-unsent]').some(function (input) { return !insidePanel(input) && visible(input) && !input.disabled && !input.readOnly && typeof input.value === 'string' && input.value.trim(); })) return 'An unsent form is still on this page. Finish it or cancel the form first.';
+        if (d.getElementById && ['reqAmount', 'reqMealReceiptCode', 'reqStart', 'reqEnd'].some(function (key) { var input = d.getElementById(key); return input && visible(input) && typeof input.value === 'string' && input.value.trim(); })) return 'An unsent request is still open. Finish it or cancel the form first.';
+        // File refresh retains every stored operation and identity. Those
+        // references prohibit identity replacement, not data-preserving repair.
+        if (options && options.filesOnly === true) return '';
+        try {
+            if (storage.getItem('takodeal_staff_registration_draft') !== null || storage.getItem('takodeal_staff_setup_draft_v1') !== null) return 'An earlier phone setup reference is kept. Finish or recover that exact setup before resetting.';
+            for (var at = 0; at < storage.length; at++) {
+                var key = storage.key(at);
+                if (key && (/^takodeal_staff_session_pending_v1:/.test(key) || /^takodeal_sop_draft_/.test(key) || /^takodeal_(?:staff_)?(?:outbox|pending_operation|operation_journal)/.test(key))) return 'Saved or unconfirmed work is still on this phone. Confirm it before resetting; its data has not been removed.';
+            }
+        } catch (_) { return 'Saved work could not be checked safely. Use Refresh app files; do not clear browser data.'; }
+        return '';
+    }
+    function insidePanel(node) { while (node) { if (node === panel) return true; node = node.parentElement; } return false; }
+    function message(value) { if (text) text.textContent = value; return value; }
+    function needSDK() {
+        if (!sdk) throw Error('The Staff app must finish opening before sign-in can be reset safely. Use Refresh app files first. Your current sign-in is kept.');
+        return sdk;
+    }
+    function capture() {
+        var row = needSDK().capture();
+        if (!exact(row, ['primaryUid', 'privateUid', 'staffId', 'deviceId']) || !id(row.primaryUid) || !(row.privateUid === null || id(row.privateUid)) || !id(row.staffId) || !device(row.deviceId)) throw Error('Your current Staff phone and account could not be confirmed. Refresh app files first.');
+        return row;
+    }
+    function sameContext(row) {
+        var current = capture(), handed = row.phase === 'handoff-pending' || row.phase === 'complete';
+        if (current.privateUid !== row.privateUid || current.primaryUid !== row.primaryUid && !(handed && current.primaryUid === row.candidateUid) || current.staffId !== row.staffId || current.deviceId !== row.deviceId && !(handed && current.deviceId === row.candidateDeviceId)) throw Error('The Staff account or phone changed. Keep the saved reset reference and reopen it under the original account.');
+    }
+    function current(row, operation) {
+        if (flight !== operation || operation.cancelled) throw Error('This reset check ended. Reopen the saved reset reference.');
+        var saved = readJournal();
+        if (!saved || JSON.stringify(saved) !== JSON.stringify(row)) throw Error('Another Staff window changed the reset reference. Close other Staff windows and resume this exact reset.');
+        sameContext(row);
+        var blocked = blockReason(); if (blocked) throw Error(blocked);
+        if (nav.onLine === false) throw Error('Reconnect before continuing. The original sign-in and reset reference are kept.');
+    }
+    function deadline(work, ms, operation, label) {
+        return new Promise(function (resolve, reject) {
+            var timer = w.setTimeout(function () { operation.cancelled = true; reject(Error(label)); }, ms);
+            operation.timers.push(timer);
+            Promise.resolve(work).then(function (value) { w.clearTimeout(timer); resolve(value); }, function (error) { w.clearTimeout(timer); reject(error); });
+        });
+    }
+    async function awaitStep(method, input, operation) {
+        var work = Promise.resolve().then(function () {
+            if (operation.cancelled || flight !== operation) throw Error('The reset check ended. Resume its saved reference.');
+            return needSDK()[method](input);
+        });
+        if (method === 'handoffPrimary') {
+            // SDK account adoption has no abort API. Keep the physical promise
+            // single-flight until its real terminal result, including after a
+            // slow-operation notice; a UI timeout cannot make it safe to retry.
+            var notice = w.setTimeout(function () { message('The phone sign-in switch is still finishing. Keep this screen open. Its exact reset reference is saved; do not start another reset.'); }, 15000);
+            operation.timers.push(notice);
+            return work.finally(function () { w.clearTimeout(notice); });
+        }
+        return deadline(work, method === 'activateCandidate' ? 25000 : 15000, operation, 'This check took too long. The saved reset reference is kept. Resume the same reset; do not start another phone setup.');
+    }
+    function verified(value, row) { return exact(value, ['active', 'uid', 'deviceId', 'staffId']) && value.active === true && value.uid === row.candidateUid && value.deviceId === row.candidateDeviceId && value.staffId === row.staffId; }
+    function localHandoff(row) {
+        // This is a recoverable account-selection handoff, never an Auth/DB wipe.
+        storage.setItem(HISTORY, JSON.stringify({schemaVersion: 1, uid: row.primaryUid, deviceId: row.deviceId, replacedAt: Date.now()}));
+        storage.setItem('takodeal_device_id', row.candidateDeviceId);
+        ACCOUNT.forEach(function (key) { storage.removeItem(key); });
+        if (storage.getItem('takodeal_device_id') !== row.candidateDeviceId || ACCOUNT.some(function (key) { return storage.getItem(key) !== null; })) throw Error('The new sign-in selection was not saved completely. Keep the reset reference and resume it.');
+    }
+    async function perform(code, confirmed, resumeOnly) {
+        if (flight) return false;
+        var operation = {cancelled: false, timers: []}, row, original;
+        try {
+            var blocked = blockReason(); if (blocked) throw Error(blocked);
+            needSDK();
+            if (nav.onLine === false) throw Error('Connect to the internet before using a personal setup code.');
+            row = readJournal();
+            if (row && row.phase === 'complete') {
+                var completed = capture();
+                if (completed.primaryUid !== row.candidateUid || completed.privateUid !== row.privateUid || completed.staffId !== row.staffId || completed.deviceId !== row.candidateDeviceId) throw Error('The completed reset belongs to another phone account. Ask the Owner to check it; no saved data was removed.');
+                if (resumeOnly) { message('The confirmed phone activation is saved. Continue with your usual Staff login PIN.'); return true; }
+                row = null;
+            }
+            if (!resumeOnly && (confirmed !== true || typeof code !== 'string' || !/^\d{10}$/.test(code.replace(/[ -]/g, '')))) throw Error('Confirm the reset information and enter your current 10-digit Owner-issued personal setup code. Your daily PIN is different.');
+            original = capture(); flight = operation; if (resetButton) resetButton.disabled = true;
+            if (!row) {
+                if (resumeOnly) throw Error('There is no unfinished reset on this phone.');
+                var guard = function () {
+                    var value = capture();
+                    if (operation.cancelled || flight !== operation || ['primaryUid', 'privateUid', 'staffId', 'deviceId'].some(function (key) { return value[key] !== original[key]; })) throw Error('Your Staff phone changed. Reopen reset from the original account.');
+                    var reason = blockReason(); if (reason) throw Error(reason);
+                };
+                guard();
+                await awaitStep('drainPendingWrites', {assertCurrent: guard}, operation); guard();
+                if (await awaitStep('assertSingleWindow', {assertCurrent: guard}, operation) !== true) throw Error('Close every other Staff window before resetting sign-in.'); guard();
+                var candidate = await awaitStep('createCandidate', {staffId: original.staffId, assertCurrent: guard}, operation); guard();
+                if (!exact(candidate, ['uid', 'deviceId', 'operationId']) || !id(candidate.uid) || !device(candidate.deviceId) || !id(candidate.operationId) || candidate.uid === original.primaryUid || candidate.deviceId === original.deviceId) throw Error('The replacement phone identity could not be prepared. Your current sign-in is kept.');
+                row = save({schemaVersion: 1, phase: 'activation-pending', primaryUid: original.primaryUid, privateUid: original.privateUid, staffId: original.staffId, deviceId: original.deviceId, candidateUid: candidate.uid, candidateDeviceId: candidate.deviceId, operationId: candidate.operationId, createdAt: Date.now()});
+            }
+            var check = function () { current(row, operation); };
+            check(); message('Checking the saved personal-code activation. Your existing sign-in is still kept.');
+            var result = await awaitStep('verifyCandidate', {journal: Object.assign({}, row), assertCurrent: check}, operation); check();
+            if (!verified(result, row)) {
+                if (row.phase !== 'activation-pending') throw Error('The confirmed replacement could not be verified. Keep the saved reset reference and ask the Owner for help.');
+                if (resumeOnly) throw Error('Activation is not confirmed yet. Enter the same personal code to retry this exact reset. Your original sign-in is kept.');
+                if (!exact(result, ['active', 'uid', 'deviceId', 'staffId']) || result.active !== false || result.uid !== row.candidateUid || result.deviceId !== row.candidateDeviceId || result.staffId !== row.staffId) throw Error('The replacement status could not be confirmed safely. Keep the same reset reference.');
+                message('Confirming your personal code. An incorrect or disabled code does not erase your existing sign-in.');
+                result = await awaitStep('activateCandidate', {journal: Object.assign({}, row), code: code.replace(/[ -]/g, ''), assertCurrent: check}, operation); check();
+                if (!verified(result, row)) throw Error('Activation was not confirmed. Your existing sign-in is kept; resume this same reset.');
+                result = await awaitStep('verifyCandidate', {journal: Object.assign({}, row), assertCurrent: check}, operation); check();
+                if (!verified(result, row)) throw Error('HQ has not confirmed the replacement as Active. Your old sign-in is kept.');
+            }
+            if (row.phase === 'activation-pending') row = save(Object.assign({}, row, {phase: 'activated'}));
+            check(); message('The code is confirmed. Checking saved work before safely switching this phone.');
+            await awaitStep('drainPendingWrites', {assertCurrent: check}, operation); check();
+            if (await awaitStep('assertSingleWindow', {assertCurrent: check}, operation) !== true) throw Error('Close every other Staff window before finishing this reset.'); check();
+            if (row.phase !== 'handoff-pending') row = save(Object.assign({}, row, {phase: 'handoff-pending'}));
+            check();
+            await awaitStep('handoffPrimary', {journal: Object.assign({}, row), assertCurrent: check}, operation); check();
+            if (capture().primaryUid !== row.candidateUid) throw Error('The new phone sign-in was not confirmed. Keep this reference and resume reset.');
+            localHandoff(row);
+            // After this point the adapter must capture selected staff from the
+            // durable reset reference while the normal login selection is blank.
+            row = save(Object.assign({}, row, {phase: 'complete'}));
+            message('Staff sign-in was reset after the personal code was confirmed. Your private-document approval and saved work are kept. Continue with your usual Staff login PIN.');
+            notify(); return true;
+        } catch (error) { message(error && error.message || 'The reset was not confirmed. Keep this phone’s saved data and use Refresh app files.'); return false; }
+        finally {
+            code = ''; if (codeInput) codeInput.value = '';
+            operation.cancelled = true; operation.timers.forEach(function (timer) { w.clearTimeout(timer); });
+            if (flight === operation) flight = null; if (resetButton) resetButton.disabled = false;
+        }
+    }
+    var PIN_REQUIRED = 'takodeal_staff_repair_pin_required';
+    function needsPin() {
+        try { return w.sessionStorage.getItem(PIN_REQUIRED) === '1'; } catch (_) { return false; }
+    }
+    function pinAccepted() {
+        if (needsPin()) w.sessionStorage.removeItem(PIN_REQUIRED);
+    }
+    function lockForPin() {
+        // Preserve the phone registration, attendance session and operation journals.
+        if (!storage) throw Error('Allow app storage and try Repair again so this phone can ask for your PIN.');
+        try { w.sessionStorage.setItem(PIN_REQUIRED, '1'); } catch (_) { /* The saved login selection is also removed. */ }
+        ['takodeal_staff_id','takodeal_staff_name','takodeal_staff_pic'].forEach(function (key) { storage.removeItem(key); });
+        if (storage.getItem('takodeal_staff_id') || storage.getItem('takodeal_staff_name')) throw Error('Sign-in could not be locked. Reopen the Staff app and try again.');
+    }
+    function showRepairStatus(value) {
+        message(value);
+        if (w.staffStartup && w.staffStartup.showStatus) w.staffStartup.showStatus(value);
+    }
+    async function refreshFiles() {
+        if (flight) { showRepairStatus('Finish the current personal-code check, then tap Repair again.'); return false; }
+        var reason = blockReason({filesOnly: true}); if (reason) { showRepairStatus(reason); return false; }
+        var updater = w[Symbol.for('takodeal.staff.appUpdate')];
+        if (typeof updater !== 'function') { showRepairStatus('App-file repair is not available yet. Reopen the official Staff link online. No sign-in data was removed.'); return false; }
+        showRepairStatus('Refreshing Staff app files. Afterward, sign in with your Staff PIN.');
+        try { return await updater({beforeReload: lockForPin}); } catch (_) { showRepairStatus('The app files could not be confirmed. Reconnect and try again; your saved data is kept.'); return false; }
+    }
+    function append(tag, value, parent) { var node = d.createElement(tag); if (value) node.textContent = value; if (tag === 'button') node.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;margin:12px 0 0;padding:12px 16px;border:1px solid #166534;border-radius:12px;background:#f0fdf4;color:#14532d;font:inherit;font-weight:700;line-height:1.35;cursor:pointer;touch-action:manipulation'; (parent || panel).appendChild(node); return node; }
+    function open() {
+        if (!panel && d.body) {
+            panel = d.createElement('section'); panel.id = 'staffSelfRepair'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Recover phone sign-in');
+            panel.style.cssText = 'position:fixed;inset:0;width:min(420px,calc(100% - 32px));height:fit-content;max-height:85vh;box-sizing:border-box;overflow:auto;margin:auto;padding:20px;border:1px solid #b4cbbb;border-radius:16px;background:#fff;color:#193a30;z-index:1000010;box-shadow:0 8px 48px #0005;font:16px/1.45 system-ui,sans-serif';
+            append('h2', 'Recover phone sign-in');
+            append('p', 'Use your personal setup code to replace this phone registration, then sign in with your Staff PIN. A free phone slot is required for a replacement.');
+            var codeLabel = append('label', 'Personal setup code'); codeLabel.htmlFor = 'staffSelfRepairCode';
+            codeInput = append('input'); codeInput.id = 'staffSelfRepairCode'; codeInput.type = 'password'; codeInput.inputMode = 'numeric'; codeInput.autocomplete = 'off'; codeInput.maxLength = 14;
+            codeInput.style.cssText = 'display:block;box-sizing:border-box;width:100%;min-height:48px;margin:6px 0;padding:10px;border:1px solid #55836a;border-radius:10px;font:inherit';
+            resetButton = append('button', 'Confirm code and replace registration'); resetButton.type = 'button';
+            resetButton.addEventListener('click', function () { void perform(codeInput.value, true, false).then(closeOnSuccess); });
+            resumeButton = append('button', 'Continue saved recovery'); resumeButton.type = 'button';
+            resumeButton.addEventListener('click', function () { void perform('', false, true).then(closeOnSuccess); });
+            text = append('p'); text.setAttribute('role', 'status'); text.setAttribute('aria-live', 'polite');
+            var close = append('button', 'Back'); close.type = 'button';
+            close.addEventListener('click', function () { if (flight) return message('Wait for this check to finish.'); codeInput.value = ''; panel.hidden = true; });
+            d.body.appendChild(panel);
+        }
+        if (panel) {
+            var saved = null;
+            try { saved = readJournal(); } catch (error) { message(error.message); }
+            resumeButton.hidden = !saved || saved.phase === 'complete';
+            resumeButton.style.display = resumeButton.hidden ? 'none' : 'block';
+            panel.hidden = false;
+        }
+        return panel;
+    }
+    function closeOnSuccess(ok) {
+        if (ok && panel) { panel.hidden = true; if (w.startStaffDeviceSetup) w.startStaffDeviceSetup(); }
+    }
+    function configureSDK(adapter) {
+        var names = ['capture', 'createCandidate', 'activateCandidate', 'verifyCandidate', 'drainPendingWrites', 'assertSingleWindow', 'handoffPrimary'];
+        if (!adapter || names.some(function (name) { return typeof adapter[name] !== 'function'; })) throw Error('Staff reset support is incomplete.');
+        if (flight) throw Error('Wait for the current reset check to finish.');
+        sdk = adapter; notify(); return api;
+    }
+    var api = {open: open, needsPin: needsPin, pinAccepted: pinAccepted, refreshFiles: refreshFiles, startReset: function (input) { return perform(input && input.code, input && input.confirmed, false); }, resumeReset: function () { return perform('', false, true); }, blockReason: function (options) { return flight ? 'A personal-code reset is still finishing. Keep this screen open and its saved reference intact.' : blockReason(options); }, requiresCode: requiresCode, configureSDK: configureSDK};
+    w.staffSelfRepair = Object.freeze(api);
+    d.addEventListener('click', function (event) { var target = event.target; while (target && target !== d) { if (target.getAttribute && target.hasAttribute('data-staff-self-repair')) { event.preventDefault(); void refreshFiles(); return; } if (target.hasAttribute && target.hasAttribute('data-staff-resume-recovery')) { event.preventDefault(); open(); return; } target = target.parentElement; } });
+    w.addEventListener('storage', function (event) { if (event.key === JOURNAL) notify(); });
+}(window, document, navigator));
+</script>
+    <!-- END GENERATED STAFF SELF REPAIR -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Takodeál Staff Portal</title>
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-security-loans-20261109">
+    <meta name="takodeal-release" content="staff-repair-pin-20261117-r1">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
     <link rel="stylesheet" href="style.css?v=staff-device-fleet-20261004-r3">
     <link rel="stylesheet" href="staff-theme.css?v=staff-device-fleet-20261004-r3">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     
     <style>
@@ -26,6 +504,7 @@
 <link rel="stylesheet" href="leave-ui.css">
 <link rel="stylesheet" href="onboarding.css?v=20261021">
 <link rel="stylesheet" href="staff-setup.css?v=20261025">
+    <link rel="stylesheet" href="staff-employee.css">
     <link rel="stylesheet" href="staff-loan-ledger.css">
 </head>
 <body>
@@ -35,13 +514,14 @@
         
         <!-- Step 1: Request Access Card -->
         <div class="login-card" id="registerCard">
-            <div class="login-header">
+            <a href="signup.html" style="display:block;text-align:center;margin-bottom:16px">New employee? Sign up here</a><div class="login-header">
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
                 <span class="eyebrow">TAKODEÁL TEAM</span><h2>Set up your device</h2>
                 <p id="deviceSetupIntro" style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Connect to HQ to check how to set up this phone.</p>
             </div>
             
-            <label class="field-label" for="deviceNameInput">Device name</label><input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
+            <button type="button" class="setup-personal-action" id="usePersonalSetupCode">Use my personal setup code</button>
+            <label class="field-label" id="deviceNameLabel" for="deviceNameInput">Device name</label><input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
             
             <div id="staffSetupFields" hidden>
                 <label for="setupStaffInput">Your staff account</label>
@@ -50,19 +530,21 @@
                 <label for="staffSetupCode">Personal setup code</label>
                 <input id="staffSetupCode" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="10-digit code" aria-describedby="staffSetupHelp">
                 <p id="staffSetupHelp" class="setup-help">Use the personal code the Owner gave you. A correct code activates this phone automatically. Then sign in with your normal Staff login PIN.</p>
+                <button type="button" id="cancelPersonalSetup" hidden>Back to existing device access</button>
             </div>
             <div id="legacyBranchFields"><label class="field-label" for="deviceBranchInput">Your branch</label><select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
-                <option value="Auto">📍 Auto-Detect Branch via GPS</option>
+                <option value="">Choose your branch</option>
+                <option value="Agdao">Agdao Branch</option>
                 <option value="Cabantian">📍 Cabantian Branch</option>
                 <option value="Citygate">📍 Citygate Branch</option>
                 <option value="Maa">📍 Maa Branch</option>
                 <option value="Main Office">🏢 Main Office / Roving</option>
-            </select></div>
+            </select><button type="button" class="btn-outline" id="detectRegistrationBranch">Use my location</button></div>
 
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
 
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
-            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-registration">Check for app updates</button><p id="staffUpdateHelp-registration" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
+            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-registration">Check for app updates</button><button type="button" class="btn-outline" data-staff-self-repair>Repair Staff app</button><p id="staffUpdateHelp-registration" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
 
         <div class="login-card" id="pendingCard" style="display:none;">
@@ -70,36 +552,49 @@
             <p id="devicePendingText" role="status" aria-live="polite">Connecting to HQ.</p>
             <p id="devicePendingId" class="device-registration-id"></p>
             <button class="btn-primary" id="deviceRetryButton" onclick="window.retryDeviceRegistration()" hidden>Check again</button>
-            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-pending">Check for app updates</button><p id="staffUpdateHelp-pending" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
+            <button type="button" class="btn-outline" id="resumeStaffRecovery" data-staff-resume-recovery hidden>Continue saved recovery</button>
+            <button type="button" class="btn-outline" id="usePersonalSetupCodePending">Activate with my personal code</button>
+            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-pending">Check for app updates</button><button type="button" class="btn-outline" data-staff-self-repair>Repair Staff app</button><p id="staffUpdateHelp-pending" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
 
     <!-- 🔒 LOGIN OVERLAY -->
     <div id="loginOverlay" class="overlay" style="display: none; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.95)), url('logo.jpg'); background-size: cover; background-position: center; background-attachment: fixed;">
         <div class="login-card">
-            <div class="login-header">
+            <a href="signup.html" style="display:block;text-align:center;margin-bottom:16px">New employee? Sign up here</a><div class="login-header">
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
                 <span class="eyebrow">TAKODEÁL TEAM</span><h2>Welcome to your portal</h2>
                 <p>Your workday, schedule, and requests in one place.</p>
             </div>
             <label class="field-label" for="loginPin">Staff login PIN</label><input type="password" inputmode="numeric" id="loginPin" placeholder="Enter PIN" autocomplete="off">
-            <button class="btn-primary" onclick="window.loginStaff()">Secure Login</button>
+            <button class="btn-primary" onclick="window.loginStaff()">Sign in with PIN</button>
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
             
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM LOGIN -->
-            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-login">Check for app updates</button><p id="staffUpdateHelp-login" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
+            <button type="button" class="btn-outline" id="usePersonalSetupCodeLogin">Use a personal setup code</button><p id="loginSetupStatus" role="status" aria-live="polite"></p>
+            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-login">Check for app updates</button><button type="button" class="btn-outline" data-staff-self-repair>Repair Staff app</button><p id="staffUpdateHelp-login" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
 
     <!-- 👤 MY PROFILE MODAL -->
     <div id="profileModal" class="overlay" style="display: none; z-index: 10000;">
-        <div class="modal-card" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
+        <div class="modal-card" style="max-width: 840px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
             <div style="background: #0f766e; color: white; padding: 15px 20px; border-radius: 20px 20px 0 0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10;">
                 <h2 style="margin: 0; font-size: 18px;">📋 Employee Profile</h2>
-                <button onclick="window.closeStaffProfile()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
+                <button type="button" aria-label="Close employee profile" onclick="window.closeStaffProfile()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
             </div>
-            <div style="padding: 20px; overflow-y: auto; flex: 1; text-align: left;">
-                <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
+            <div class="staff-profile-navigation">
+                <div class="staff-profile-heading"><strong id="staffProfileName"></strong><span id="staffProfileAssignment"></span></div>
+                <nav class="staff-profile-tabs" aria-label="Employee information sections">
+                    <button type="button" data-profile-tab="personal" aria-controls="staffPanelPersonal" aria-pressed="true">Personal</button>
+                    <button type="button" data-profile-tab="employment" aria-controls="staffPanelEmployment" aria-pressed="false">Employment</button>
+                    <button type="button" data-profile-tab="contact" aria-controls="staffPanelContact" aria-pressed="false">Contact</button>
+                    <button type="button" data-profile-tab="pay" aria-controls="staffPanelPay" aria-pressed="false">Pay</button>
+                    <button type="button" data-profile-tab="documents" aria-controls="staffPanelDocuments" aria-pressed="false">Documents</button>
+                    <button type="button" data-profile-tab="security" aria-controls="staffPanelSecurity" aria-pressed="false">Security</button>
+                </nav>
+            </div>
+            <div class="staff-profile-body"><section id="staffPanelPersonal" data-profile-panel="personal" aria-label="Personal">                <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
                     <img id="profilePreview" src="" alt="Profile" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none; margin: 0 auto 10px auto;">
                     <div id="profilePlaceholder" style="width: 100px; height: 100px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 10px auto; border: 4px solid #ccfbf1;">👤</div>
                     <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
@@ -110,22 +605,33 @@
                     </div>
                 </div>
 
-                <section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use it to unlock your rate and payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button></section>
-                <section class="staff-rate-card" aria-labelledby="profileRateTitle"><div><span class="document-eyebrow">YOUR PAY</span><h3 id="profileRateTitle">Daily rate</h3><p id="profileRateState">Private · Payslip PIN required</p></div><strong id="profileDailyRate">Locked</strong><div class="document-actions"><button id="profileRateUnlock" type="button" onclick="window.ensureStaffRateUnlocked()">Unlock rate</button><button id="profileRateLock" type="button" onclick="window.lockProfileRate()" hidden>Lock rate</button></div><p id="profileRateCongratulations" class="rate-congratulations" hidden></p></section>
-                <section id="staffDocumentsPanel" class="staff-documents-panel" aria-labelledby="staffDocumentsTitle"><div class="document-section-heading"><div><span class="document-eyebrow">EMPLOYEE RECORDS</span><h3 id="staffDocumentsTitle">Required documents</h3></div><button id="staffDocumentRefresh" type="button">Refresh</button></div><p>Upload a clear photo of your Valid ID, Health Card and either NBI or Police Clearance. HQ can download these for your employment records.</p><p id="staffDocumentsStatus" role="status" aria-live="polite">Open your profile to check required documents.</p><button id="staffDocumentDeviceRequest" type="button" hidden>Ask HQ to approve this phone for uploads</button><div id="staffDocumentCards" class="staff-document-grid"></div></section>
+
 
                 <h3 style="color: #0f766e; font-size: 14px; margin: 0 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">👤 Personal Details</h3>
                 <div class="profile-grid">
                     <div class="form-group">
-                        <label>Full Name (Manager Edits Only) 🔒</label>
-                        <input type="text" id="profFullName" placeholder="e.g. Alwinna Carupo" readonly style="background: #f1f5f9; color: #64748b; cursor: not-allowed; border: 1px solid #cbd5e1; outline: none;">
+                        <label for="profFullName">Full name</label>
+                        <input type="text" id="profFullName" placeholder="e.g. Alwinna Carupo" maxlength="160" disabled>
                     </div>
                     <div class="form-group">
-                        <label>Schedule Nickname 🔒</label>
-                        <input type="text" id="profNickname" placeholder="e.g. Wenna" readonly style="background: #f1f5f9; color: #64748b; cursor: not-allowed; border: 1px solid #cbd5e1; outline: none;">
+                        <label for="profNickname">Schedule nickname</label>
+                        <input type="text" id="profNickname" placeholder="e.g. Wenna" maxlength="160" disabled>
                     </div>
                 </div>
-                <div class="profile-grid">
+                <p>Your employee ID stays the same. Previous names stay linked to your schedules and payslips.</p><button type="button" class="btn-primary" onclick="window.saveProfileData()">Save personal details</button>
+</section>
+<section id="staffPanelEmployment" data-profile-panel="employment" aria-label="Employment" hidden><dl class="staff-service-fields"><div><dt>Home branch</dt><dd id="staffHomeBranch"></dd></div><div><dt>Date hired</dt><dd id="staffHireDate"></dd></div><div><dt>Employee service</dt><dd id="staffService"></dd></div><div><dt>Contract status</dt><dd id="staffContractState"></dd></div></dl><h3 style="color: #0f766e; font-size: 14px; margin: 25px 0 10px 0; border-bottom: 2px solid #ccfbf1; padding-bottom: 5px;">🏢 Position & Promotion History</h3>
+                <div id="profRoleHistory" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; color: #475569; max-height: 150px; overflow-y: auto; margin-bottom: 20px;">
+                    Loading history...
+                </div>
+
+                <h3 style="color: #0284c7; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📄 My Signed Contracts</h3>
+                <div id="profContracts" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                    Loading contracts...
+                </div>
+
+                </section>
+<section id="staffPanelContact" data-profile-panel="contact" aria-label="Contact" hidden><div class="profile-grid">
                     <div class="form-group"><label>Phone Number</label><input type="text" id="profPhone" placeholder="09xxxxxxxxx"></div>
                     <div class="form-group"><label>Home Address</label><input type="text" id="profAddress" placeholder="Street, Barangay..."></div>
                 </div>
@@ -144,6 +650,8 @@
                     </div>
                 </div>
 
+                </section>
+<section id="staffPanelPay" data-profile-panel="pay" aria-label="Pay" hidden><section class="staff-rate-card" aria-labelledby="profileRateTitle"><div><span class="document-eyebrow">YOUR PAY</span><h3 id="profileRateTitle">Daily rate</h3><p id="profileRateState">Private · Payslip PIN required</p></div><strong id="profileDailyRate">Locked</strong><div class="document-actions"><button id="profileRateUnlock" type="button" onclick="window.ensureStaffRateUnlocked()">Unlock rate</button><button id="profileRateLock" type="button" onclick="window.lockProfileRate()" hidden>Lock rate</button></div><p id="profileRateCongratulations" class="rate-congratulations" hidden></p></section>
                 <h3 style="color: #0284c7; font-size: 14px; margin: 15px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📱 Disbursement Accounts</h3>
                 <div class="profile-grid">
                     <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
@@ -158,54 +666,59 @@
                     </div>
                 </div>
 
+                <h3 style="color: #b45309; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">💸 Loan Ledger & Agreements</h3>
+                <div id="profLoans" style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; font-size: 13px; color: #92400e; margin-bottom: 25px;">
+                    <p>Loan agreements are not shown in this section yet. Check the deductions in your Payslip Vault or ask HQ for your loan agreement and current balance.</p>
+                </div>
+
+                </section>
+<section id="staffPanelDocuments" data-profile-panel="documents" aria-label="Documents" hidden><section id="staffDocumentsPanel" class="staff-documents-panel" aria-labelledby="staffDocumentsTitle"><div class="document-section-heading"><div><span class="document-eyebrow">EMPLOYEE RECORDS</span><h3 id="staffDocumentsTitle">Required documents</h3></div><button id="staffDocumentRefresh" type="button">Refresh</button></div><p>Upload a clear photo of your Valid ID, Health Card and either NBI or Police Clearance. HQ can download these for your employment records.</p><p id="staffDocumentsStatus" role="status" aria-live="polite">Open your profile to check required documents.</p><button id="staffDocumentDeviceRequest" type="button" hidden>Ask HQ to approve this phone for uploads</button><div id="staffDocumentCards" class="staff-document-grid"></div></section>
                 <h3 style="color: #d97706; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">🏛️ Government IDs</h3>
                 <div class="profile-grid" style="grid-template-columns: 1fr 1fr 1fr;">
                     <div class="form-group">
                         <label>SSS Number</label>
                         <input type="text" id="profSss" placeholder="00-0000000-0">
-                        <input type="file" id="imgSss" accept="image/*" style="font-size: 10px; margin-top: 8px; width: 100%;">
-                        <a id="linkSss" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; margin-top:5px; font-weight:bold; text-decoration: none;">🖼️ View Uploaded ID</a>
+                        <input type="file" id="imgSss" accept="image/jpeg,image/png,image/webp" style="font-size: 10px; margin-top: 8px; width: 100%;">
+                        <button type="button" class="btn-outline" id="upload-sss_id">Upload private photo</button>
+                        <p id="status-sss_id" role="status" style="font-size:11px">Optional private photo · Saves separately.</p>
+                        <button type="button" id="linkSss" class="btn-outline" style="display:none; font-size:11px; margin-top:5px;">View private SSS ID</button>
                     </div>
                     <div class="form-group">
                         <label>PhilHealth</label>
                         <input type="text" id="profPhilhealth" placeholder="00-000000000-0">
-                        <input type="file" id="imgPhilhealth" accept="image/*" style="font-size: 10px; margin-top: 8px; width: 100%;">
-                        <a id="linkPhilhealth" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; margin-top:5px; font-weight:bold; text-decoration: none;">🖼️ View Uploaded ID</a>
+                        <input type="file" id="imgPhilhealth" accept="image/jpeg,image/png,image/webp" style="font-size: 10px; margin-top: 8px; width: 100%;">
+                        <button type="button" class="btn-outline" id="upload-philhealth_id">Upload private photo</button>
+                        <p id="status-philhealth_id" role="status" style="font-size:11px">Optional private photo · Saves separately.</p>
+                        <button type="button" id="linkPhilhealth" class="btn-outline" style="display:none; font-size:11px; margin-top:5px;">View private PhilHealth ID</button>
                     </div>
                     <div class="form-group">
                         <label>Pag-IBIG</label>
                         <input type="text" id="profPagibig" placeholder="0000-0000-0000">
-                        <input type="file" id="imgPagibig" accept="image/*" style="font-size: 10px; margin-top: 8px; width: 100%;">
-                        <a id="linkPagibig" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; margin-top:5px; font-weight:bold; text-decoration: none;">🖼️ View Uploaded ID</a>
+                        <input type="file" id="imgPagibig" accept="image/jpeg,image/png,image/webp" style="font-size: 10px; margin-top: 8px; width: 100%;">
+                        <button type="button" class="btn-outline" id="upload-pagibig_id">Upload private photo</button>
+                        <p id="status-pagibig_id" role="status" style="font-size:11px">Optional private photo · Saves separately.</p>
+                        <button type="button" id="linkPagibig" class="btn-outline" style="display:none; font-size:11px; margin-top:5px;">View private Pag-IBIG ID</button>
                     </div>
                 </div>
 
                 <!-- 🔥 NEW: HR PROMOTION & CONTRACT VAULT -->
-                <h3 style="color: #0f766e; font-size: 14px; margin: 25px 0 10px 0; border-bottom: 2px solid #ccfbf1; padding-bottom: 5px;">🏢 Position & Promotion History</h3>
-                <div id="profRoleHistory" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; color: #475569; max-height: 150px; overflow-y: auto; margin-bottom: 20px;">
-                    Loading history...
-                </div>
-
-                <h3 style="color: #0284c7; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 5px;">📄 My Signed Contracts</h3>
-                <div id="profContracts" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-                    Loading contracts...
-                </div>
-
-                <h3 style="color: #b45309; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">💸 Loan Ledger & Agreements</h3>
-                <div id="profLoans" style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; font-size: 13px; color: #92400e; margin-bottom: 25px;">
-                    <p>Loan agreements are not shown in this section yet. Check the deductions in your Payslip Vault or ask HQ for your loan agreement and current balance.</p>
-                </div>
-                
+                </section>
+<section id="staffPanelSecurity" data-profile-panel="security" aria-label="Security" hidden><section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use it to unlock your rate and payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button></section>
                 <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security & System</h3>
                 <div class="form-group">
                     <label>Change Login PIN</label>
-                    <input type="password" inputmode="numeric" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
+                    <input type="password" inputmode="numeric" autocomplete="new-password" maxlength="10" id="profPin" placeholder="New daily PIN · 4–10 digits" style="border-color: #86efac; background: #f0fdf4;">
+                    <button type="button" class="btn-outline" id="btnChangeDailyPin">Change daily PIN</button>
                 </div>
 
 
+</section>
             </div>
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
-                <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">💾 Save Employee Data</button>
+                <p id="staffProfileStatus" role="status" aria-live="polite">Contact details, daily PIN and photos save separately.</p>
+                <button type="button" class="btn-outline" id="activateProfilePhone" hidden>Use my personal setup code</button>
+                <button type="button" class="btn-outline" id="retryStaffProfile" hidden>Reload my profile</button>
+                <button type="button" class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">Save contact details</button>
             </div>
         </div>
     </div>
@@ -271,7 +784,7 @@
                     <strong id="loggedInName">Staff Name</strong><span id="staffProfileMeta">Your staff portal</span><span class="profile-hint">View profile &amp; security →</span>
                 </div>
             </button>
-            <div class="header-actions"><button class="btn-logout" onclick="window.logoutStaff()">Sign out</button></div>
+            <div class="header-actions"><button type="button" class="btn-logout" data-staff-self-repair>Repair</button><button class="btn-logout" onclick="window.logoutStaff()">Sign out</button></div>
         </header>
 
         <button type="button" id="staffDocumentReminder" class="document-alert" hidden>Required documents need attention</button>
@@ -498,7 +1011,7 @@
                 <label class="field-label" id="vaultCurrentLabel" for="vaultCurrentPin">Payslip PIN</label><input type="password" id="vaultCurrentPin" inputmode="numeric" autocomplete="off" required>
                 <div id="vaultNewFields" hidden><label class="field-label" for="vaultNewPin">New Payslip PIN · 6–8 digits</label><input type="password" id="vaultNewPin" inputmode="numeric" maxlength="8" autocomplete="new-password"><label class="field-label" for="vaultConfirmPin">Confirm new PIN</label><input type="password" id="vaultConfirmPin" inputmode="numeric" maxlength="8" autocomplete="new-password"></div>
                 <button type="submit" class="btn-primary" id="vaultSubmit">Unlock vault</button>
-            </form><p id="vaultError" class="form-error" role="alert" hidden></p><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
+            </form><button type="button" class="btn-outline" id="activateVaultPhone" hidden>Use my personal setup code</button><button type="button" class="btn-outline" id="vaultRetryCheck" hidden>Retry phone check</button><p id="vaultError" class="form-error" role="alert" hidden></p><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
         </div>
     </div>
 
@@ -662,10 +1175,6 @@
   </div>
 
     <dialog id="staffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="staffDocumentPreviewTitle">Document photo</h3><button type="button" id="staffDocumentPreviewClose">Close</button></div><img id="staffDocumentPreviewImage" alt="Private document photo"></dialog>
-      <script type="module">
-        import {installStaffAppUpdate} from "./staff-phone.js";
-        installStaffAppUpdate();
-      </script>
-      <script type="module" src="app.js?v=staff-security-loans-20261109"></script>
-</body>
+      <script type="module" src="app.js?v=staff-repair-pin-20261117-r1"></script>
+<a href="signup.html" style="position:fixed;right:14px;bottom:14px;z-index:99999;padding:10px 14px;border:1px solid #b6cdbb;border-radius:12px;background:#fff;color:#15543e;font-size:13px" id="staffHiringEntry" hidden>New employee signup</a></body>
 </html>

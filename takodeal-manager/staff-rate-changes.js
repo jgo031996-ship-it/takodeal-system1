@@ -58,6 +58,12 @@ export async function saveStaffProfileAtomic(api,staffId,payload,{operationId,ex
         if(audit.exists()) {const previous=audit.data();if(previous.actorUid!==actor.uid || previous.staffId!==staffId || previous.inputHash!==inputHash)throw Error('This save reference belongs to different staff edits. Reopen the profile.');return {staffId,alreadySaved:true,eventType:previous.eventType,profile:old?.salaryRateVersion===1&&salary?.exists()?{...old,salaryRateTimeline:salary.data()}:old};}
         if(shared&&Object.hasOwn(payload,'pin')&&expectedPinVersion!==undefined&&(old?.loginPinVersion??0)!==expectedPinVersion)throw Error('The employee changed their login PIN. Reopen this profile before setting a new PIN.');
         const safePayload=protectStaffEdits(payload,shared,old);
+        if(old&&(Object.hasOwn(safePayload,'cashierName')||Object.hasOwn(safePayload,'scheduleNickname'))){
+            const names=['cashierName','fullName','name','scheduleNickname','scheduleName','nickname'];
+            safePayload.scheduleAliases=[...new Set([...(old.scheduleAliases||[]),...names.map(k=>old[k]),safePayload.cashierName,safePayload.scheduleNickname].filter(v=>typeof v==='string'&&v.trim()).map(v=>v.trim()))];
+            if(Object.hasOwn(safePayload,'cashierName'))safePayload.fullName=safePayload.name=safePayload.cashierName;
+            if(Object.hasOwn(safePayload,'scheduleNickname'))safePayload.scheduleName=safePayload.nickname=safePayload.scheduleNickname;
+        }
         const oldRate=dailyStaffRate(old);
         const today=staffRateDate(now()),timeline=old?.salaryRateVersion===1?(salary?.exists()?validateSalaryTimeline(salary.data()):null):null;
         if(old?.salaryRateVersion===1&&(!timeline||timeline.staffId!==staffId||timeline.branch!==old.branch))throw Error('The private salary history is missing or does not match this staff member. Reopen the profile.');

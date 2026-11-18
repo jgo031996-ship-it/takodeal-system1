@@ -1,5 +1,40 @@
 // Bounded location waits; one visible Clock watch keeps verified fixes current.
 export const LOCATION_MAX_AGE = 60000;
+// Refresh the shared map in place so the visible GPS watch and attendance
+// rechecks always assess the same saved branch pins, including new branches.
+export function createBranchZoneLoader({read,zones,now=Date.now,delay=setTimeout,cancelDelay=clearTimeout,timeoutMs=15000,maxAge=60000}) {
+    const fallback=Object.assign(Object.create(null),zones);let pending=null,loadedAt=null;
+    const coordinate=value=>(typeof value==='number'||typeof value==='string'&&value.trim()!=='')?Number(value):NaN;
+    return async function load({force=false}={}) {
+        if(pending)return pending;
+        if(!force&&loadedAt!==null&&now()-loadedAt>=0&&now()-loadedAt<maxAge)return zones;
+        loadedAt=null;
+        pending=(async()=>{
+            let timer;
+            try {
+                const snapshot=await Promise.race([Promise.resolve().then(read),new Promise((_,reject)=>{timer=delay(()=>reject(Error('Branch locations could not be refreshed. Check your connection and tap Refresh location.')),timeoutMs);})]);
+                if(snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||!Array.isArray(snapshot.docs))throw Error('Connect to HQ to refresh the saved branch locations.');
+                const next=Object.create(null),names=new Set();
+                for(const document of snapshot.docs) {
+                    const row=document.data(),name=typeof row.name==='string'?row.name.trim():'';
+                    if(!name)continue;
+                    if(['__proto__','prototype','constructor'].includes(name))throw Error('HQ needs to review an invalid branch name.');
+                    if(names.has(name))throw Error('HQ needs to review duplicate branch names before location can be verified.');
+                    names.add(name);
+                    // Preserve established pins only for existing records with
+                    // neither coordinate saved. Deleted branches never return.
+                    const prior=row.lat==null&&row.lng==null?fallback[name]:null;
+                    const lat=coordinate(prior?.lat??row.lat),lng=coordinate(prior?.lng??row.lng);
+                    if(Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180)next[name]={lat,lng};
+                }
+                if(!Object.keys(next).length)throw Error('No saved branch GPS pins are available. Ask HQ to check Branch Settings.');
+                for(const name of Object.keys(zones))delete zones[name];
+                Object.assign(zones,next);loadedAt=now();return zones;
+            } finally {cancelDelay(timer);}
+        })();
+        try{return await pending;}finally{pending=null;}
+    };
+}
 export function distanceMeters(a, b) {
     const radians = x => x * Math.PI / 180;
     const h = Math.sin(radians(b.lat - a.lat) / 2) ** 2 + Math.cos(radians(a.lat)) * Math.cos(radians(b.lat)) * Math.sin(radians(b.lng - a.lng) / 2) ** 2;
@@ -122,9 +157,10 @@ export function createClockCamera({mediaDevices, onStream, onStatus}) {
     return {start,stop};
 }
 
-export function installStaffLocation() {
+export function installStaffLocation({loadBranches}={}) {
     const el = id => document.getElementById(id);
     const clockVisible = () => !document.hidden && el('view-timeclock')?.classList.contains('active') && el('profileModal')?.style.display !== 'flex';
+    const loadZones=loadBranches?createBranchZoneLoader({read:loadBranches,zones:window.BRANCH_ZONES}):null;
     const show = state => {
         window.currentLat = window.currentLng = null;
         window.staffLocationFix = state.state === 'verified' ? state : null;
@@ -133,22 +169,36 @@ export function installStaffLocation() {
         if (!badge) return;
         badge.dataset.state = state.state;
         const accuracy = Math.ceil(state.accuracy || 0), distance = Math.round(state.distance || 0);
-        badge.textContent = state.title || (state.state === 'verified' ? `${state.branch} verified · ${distance} m away` : state.state === 'outside' ? `${state.branch} is ${distance} m away` : `Improving location accuracy · ±${accuracy} m`);
-        if (hint) hint.textContent = state.hint || (state.state === 'verified' ? `Accuracy ±${accuracy} m. Location is checked again before attendance is saved.` : state.state === 'outside' ? `Clock in or out within ${window.ALLOWED_RADIUS_METERS} m of the branch. Refresh when you arrive.` : `Your phone has a location, but it is too approximate for attendance. Try near a window. Required accuracy: ${window.ALLOWED_RADIUS_METERS} m or better.`);
+        badge.textContent = state.title || (state.state === 'verified' ? `${state.branch} verified · ${distance} m away` : state.state === 'outside' ? `Nearest saved branch: ${state.branch} · ${distance} m away` : `Improving location accuracy · ±${accuracy} m`);
+        if (hint) hint.textContent = state.hint || (state.state === 'verified' ? `Accuracy ±${accuracy} m. Location is checked again before attendance is saved.` : state.state === 'outside' ? `Your phone is outside all loaded branch pins. Tap Refresh location. If your branch is missing or its pin is wrong, ask HQ to check Branch Settings. Required distance: ${window.ALLOWED_RADIUS_METERS} m.` : `Your phone has a location, but it is too approximate for attendance. Try near a window. Required accuracy: ${window.ALLOWED_RADIUS_METERS} m or better.`);
     };
     const gps = createLocationSession({geolocation:navigator.geolocation,zones:window.BRANCH_ZONES,radius:window.ALLOWED_RADIUS_METERS,onState:show,keepWatching:true});
     const camera = createClockCamera({mediaDevices:navigator.mediaDevices,onStream:stream => {window.invalidateAttendanceCamera?.();window.cameraStream = stream; if (el('clockVideo')) {el('clockVideo').srcObject = stream;if(stream)el('clockVideo').play?.()?.catch?.(()=>{});}},onStatus:(text,ready) => {const node=el('cameraStatus');if(node){node.textContent=text;node.style.background=ready?'#23744f':'#677a70';}}});
-    window.refreshGPS = () => gps.acquire({force:true});
+    const acquireLocation=async force=>{
+        if(!clockVisible())return {state:'cancelled'};
+        if(loadZones) {
+            show({state:'loading-branches',title:'Checking saved branch locations…',hint:'Loading the current branch GPS pins from HQ.'});
+            try {await loadZones({force});}
+            catch(error) {
+                gps.stop();
+                const state={state:'branches',title:'Branch locations need attention',hint:error.message||'Check your connection, then tap Refresh location.'};
+                if(clockVisible())show(state);return state;
+            }
+        }
+        if(!clockVisible())return {state:'cancelled'};
+        return gps.acquire({force});
+    };
+    window.refreshGPS = () => acquireLocation(true);
     window.startCameraAndGPS = () => { if (!clockVisible()) return; window.refreshGPS(); window.prepareAttendanceCamera?.().catch(()=>{}); return camera.start(); };
     window.restartAttendanceCamera = () => { if (!clockVisible()) return; camera.stop(); return camera.start(); };
     window.stopCamera = () => { camera.stop(); gps.stop(); window.currentLat = window.currentLng = window.staffLocationFix = null; };
     window.getAttendanceLocation = async () => {
         if (!clockVisible()) throw Error('Open Clock and keep the app visible while recording attendance.');
-        const fix = await gps.acquire();
+        const fix = await acquireLocation(false);
         if(!clockVisible())throw Error('Open Clock and keep the app visible while recording attendance.');
         if(fix.state==='verified'&&locationAssessment({timestamp:fix.timestamp,coords:{latitude:fix.lat,longitude:fix.lng,accuracy:fix.accuracy}},window.BRANCH_ZONES,window.ALLOWED_RADIUS_METERS).state!=='verified')throw Object.assign(Error('Location verification expired. Tap Refresh location and wait for the branch to be verified again.'),{code:'attendance/location-expired',locationState:'stale'});
         if (fix.state !== 'verified') {
-            const problem=fix.title?fix:fix.state==='outside'?{title:`You must be within ${window.ALLOWED_RADIUS_METERS} m of ${fix.branch}.`,hint:'Return to the recorded branch and wait for the verified location badge before trying again.'}:{title:'An accurate location is needed.',hint:'Keep Clock open near a window. Turn on phone Location and Wi-Fi, then tap Refresh location.'};
+            const problem=fix.title?fix:fix.state==='outside'?{title:'Your phone is outside the saved branch locations.',hint:`Nearest saved branch: ${fix.branch}, ${Math.round(fix.distance)} m away. Tap Refresh location. If you are at a branch already, ask HQ to check its saved GPS pin. Attendance still requires a verified location within ${window.ALLOWED_RADIUS_METERS} m.`}:{title:'An accurate location is needed.',hint:'Keep Clock open near a window. Turn on phone Location and Wi-Fi, then tap Refresh location.'};
             throw Object.assign(Error(problem.title+' '+(problem.hint||'')),{code:'attendance/location-'+fix.state,locationState:fix.state});
         }
         return fix;

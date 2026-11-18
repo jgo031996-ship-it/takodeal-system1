@@ -1,7 +1,6 @@
 // Setup-code verification is performed by the trusted service. No code or
 // verifier is written to browser storage, public profiles or the device mirror.
 export const STAFF_SETUP_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDeviceSetup';
-export const STAFF_OPTIONS_ENDPOINT='https://asia-southeast1-takodeal-pos.cloudfunctions.net/cashRemittanceReview/access/staff-options';
 export const STAFF_SETUP_DRAFT='takodeal_staff_setup_draft_v1';
 const key=value=>typeof value==='string' && /^[-A-Za-z0-9_]{1,128}$/.test(value);
 const deviceKey=value=>typeof value==='string' && /^DEV-[A-Z0-9-]{6,50}$/.test(value);
@@ -31,7 +30,7 @@ export function createStaffSetupTransport({auth,ensureUser,fetcher=fetch,delay=s
                 const response=await fetcher(STAFF_SETUP_ENDPOINT+route,{method:'POST',cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),signal});guard();
                 let data;try{data=await response.json();}catch{guard();throw Error('The Staff setup service is not available. Check your connection and choose Check again.');}guard();
                 if(auth.currentUser?.uid!==uid)throw Error('The staff device session changed. Check again.');
-                if(!response.ok){const message=typeof data?.error==='string'?data.error:typeof data?.error?.message==='string'?data.error.message:null,error=Error(message?.slice(0,350)||'Device setup could not be confirmed. Check your code or contact the Owner.');error.status=response.status;throw error;}
+                if(!response.ok){const message=typeof data?.error==='string'?data.error:typeof data?.error?.message==='string'?data.error.message:null,error=Error(message?.slice(0,350)||'Device setup could not be confirmed. Check your code or contact the Owner.');error.status=response.status;error.code=data?.error?.code;throw error;}
                 return data;
             },timing,'HQ has not confirmed this action yet. Check again before starting another setup.');
         }catch(error){if(error.name==='AbortError')throw Error('HQ has not confirmed this action yet. Check again before starting another setup.');throw error;}
@@ -47,11 +46,21 @@ export function validateSetupStatus(data,deviceId){
     return {enabled:data.enabled,mode:'protected',device:{staffId:d.staffId,staffName:d.staffName,branch:d.branch,deviceId:d.deviceId,status:d.status}};
 }
 export function createStaffSetupAuthority({transport,getUid,now=Date.now,maxAgeMs=60000}){
-    let state=null,authorityEpoch=0,readEpoch=0;
-    function invalidate(){state=null;authorityEpoch++;readEpoch++;}
+    let state=null,authorityEpoch=0,readEpoch=0,pendingRead=null;
+    function invalidate(){pendingRead=null;state=null;authorityEpoch++;readEpoch++;}
     const current=()=>state && state.uid===getUid() && now()-state.checkedAt>=0 && now()-state.checkedAt<=maxAgeMs ? state : null;
     const isVerified=()=>{const value=current();return !!value && (value.mode==='legacy' || value.device?.status==='Active');};
-    async function confirm(deviceId){
+    function confirm(deviceId,{join=false}={}){
+        const uid=getUid();
+        if(join && pendingRead?.deviceId===deviceId && pendingRead.uid===uid)return pendingRead.promise;
+        const promise=readStatus(deviceId);
+        const entry={uid,deviceId,promise};
+        pendingRead=entry;
+        const release=()=>{if(pendingRead===entry)pendingRead=null;};
+        promise.then(release,release);
+        return promise;
+    }
+    async function readStatus(deviceId){
         if(!deviceKey(deviceId))throw Error('This phone’s setup ID is invalid. Contact the Owner.');
         const token=++readEpoch;
         try{
@@ -68,13 +77,19 @@ export function createStaffSetupAuthority({transport,getUid,now=Date.now,maxAgeM
     return {confirm,invalidate,isVerified,assertStaff,capture,assert,binding:()=>current()?.mode==='protected'&&current().device?{...current().device}:null,mode:()=>current()?.mode||null};
 }
 export async function readSetupStaffDirectory({projectId,apiKey,getToken,fetcher=fetch,Controller=AbortController,delay=setTimeout,cancelDelay=clearTimeout}){
+    const rows=[];
+    const fields=['cashierName','branch','status','active','archived','blocked'];let pageToken='';
     try{
       return await withinSetupDeadline(async({signal,guard})=>{
-        const token=await getToken();guard();if(typeof token!=='string'||!token)throw Error('Reconnect to verify your Staff setup.');
-        const response=await fetcher(STAFF_OPTIONS_ENDPOINT,{method:'POST',cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}',signal});guard();
-        if(response.redirected||response.url&&response.url!==STAFF_OPTIONS_ENDPOINT)throw Error('The Staff setup list could not be verified.');
-        const data=await response.json();guard();if(!response.ok||!data||Object.keys(data).sort().join(',')!=='schemaVersion,staff'||data.schemaVersion!==1||!Array.isArray(data.staff)||data.staff.length>2000||data.staff.some(row=>!row||Object.keys(row).sort().join(',')!=='branch,name,staffId'||!key(row.staffId)||typeof row.name!=='string'||!row.name.trim()||row.name.length>200||typeof row.branch!=='string'||!row.branch.trim()||row.branch.length>200)||new Set(data.staff.map(row=>row.staffId)).size!==data.staff.length)throw Error('The Staff setup list could not be confirmed. Reconnect or ask HQ to review it.');
-        return data.staff.map(row=>({...row})).sort((a,b)=>a.name.localeCompare(b.name)||a.branch.localeCompare(b.branch));
+        const token=await getToken();guard();
+        for(let page=0;page<20;page++){
+            const params=new URLSearchParams({key:apiKey,pageSize:'100'});for(const field of fields)params.append('mask.fieldPaths',field);if(pageToken)params.set('pageToken',pageToken);
+            const response=await fetcher(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashiers?${params}`,{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token},signal});guard();
+            const data=await response.json();guard();if(!response.ok)throw Error('The staff list could not load. Check your connection and try again.');
+            for(const doc of data.documents||[]){const f=doc.fields||{},staffId=doc.name?.split('/').pop(),name=f.cashierName?.stringValue,branch=f.branch?.stringValue,status=f.status?.stringValue||'';if(key(staffId)&&name?.trim()&&branch?.trim()&&f.active?.booleanValue!==false&&f.archived?.booleanValue!==true&&f.blocked?.booleanValue!==true&&!/^(Blocked|Revoked|Terminated|Resigned|Inactive|Disabled|Archived|Deleted)$/i.test(status))rows.push({staffId,name,branch});}
+            pageToken=data.nextPageToken||'';if(!pageToken)return rows.sort((a,b)=>a.name.localeCompare(b.name)||a.branch.localeCompare(b.branch));
+        }
+        throw Error('The staff list is too large to load safely. Contact the Owner.');
       },{delay,cancelDelay,Controller},'The staff list took too long to load. Check your connection and try again.');
     }catch(error){if(error.name==='AbortError')throw Error('The staff list took too long to load. Check your connection and try again.');throw error;}
 }
@@ -83,16 +98,22 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     const el=id=>d.getElementById(id),transport=createStaffSetupTransport({...config,fetcher:config.fetcher||environment.fetch?.bind(environment)});
     const authority=createStaffSetupAuthority({transport,getUid:()=>config.auth.currentUser?.uid});
     w.staffSetupAccess=authority;
-    let busy=false,startFlight=null,pollTimer,visibleEpoch=0,protectedMode=false,directoryEpoch=0,enteredKey='';
+    let busy=false,checkingRequest=false,choosingCode=false,startFlight=null,pollTimer,visibleEpoch=0,protectedMode=false,personalEnrollment=false,directoryEpoch=0,enteredKey='';
+    let invitation=w.staffStartup?.takeSetupInvite?.()||null;
+    const setLabel=personal=>{const label=el('deviceNameLabel');if(label)label.textContent=personal?'Device name (optional)':'Device name';};
     const saved=()=>{try{return JSON.parse(ls.getItem(STAFF_SETUP_DRAFT)||'null');}catch{return null;}};
-    const message=text=>{if(el('deviceRegistrationStatus'))el('deviceRegistrationStatus').textContent=text;};
+    const message=text=>{
+        const status=el('deviceRegistrationStatus');if(status)status.textContent=text;
+        if(el('pendingCard')?.style.display==='block'&&el('devicePendingText'))el('devicePendingText').textContent=text;
+        if(el('loginOverlay')?.style.display==='flex'&&el('loginSetupStatus'))el('loginSetupStatus').textContent=text;
+    };
     const clearCode=()=>{if(el('staffSetupCode'))el('staffSetupCode').value='';};
     function stop(){visibleEpoch++;directoryEpoch++;clearTimeout(pollTimer);stopLegacy?.();authority.invalidate();clearCode();startFlight=null;enteredKey='';}
     function lock(){w.stopStaffLiveListeners?.();w.lockPayslipVault?.();for(const id of ['appContainer','loginOverlay','deviceBlockedOverlay'])if(el(id))el(id).style.display='none';if(el('deviceAuthOverlay'))el('deviceAuthOverlay').style.display='flex';}
     function checking(text){lock();if(el('registerCard'))el('registerCard').style.display='none';if(el('pendingCard'))el('pendingCard').style.display='block';if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Checking your device';if(el('devicePendingText'))el('devicePendingText').textContent=text;if(el('deviceRetryButton'))el('deviceRetryButton').hidden=false;}
     function deviceId(){const draft=saved(),value=(draft?.setupVersion===1?draft.deviceId:null)||ls.getItem('takodeal_device_id')||draft?.deviceId;if(deviceKey(value))return value;const id='DEV-'+freshSetupId(w.crypto).toUpperCase();ls.setItem(STAFF_SETUP_DRAFT,JSON.stringify({deviceId:id,setupVersion:1}));return id;}
     function enrollmentId(previousId){const draft=saved();if(draft?.setupVersion===1&&deviceKey(draft.deviceId))return draft.deviceId;const id='DEV-'+freshSetupId(w.crypto).toUpperCase();ls.setItem(STAFF_SETUP_DRAFT,JSON.stringify({deviceId:id,setupVersion:1,...(previousId?{previousLegacyDeviceId:previousId}:{})}));return id;}
-    function form(required){protectedMode=required;lock();if(el('pendingCard'))el('pendingCard').style.display='none';if(el('registerCard'))el('registerCard').style.display='block';if(el('staffSetupFields'))el('staffSetupFields').hidden=!required;if(el('legacyBranchFields'))el('legacyBranchFields').hidden=required;if(el('deviceSetupIntro'))el('deviceSetupIntro').textContent=required?'Choose your staff account and enter the personal setup code given to you by the Owner. A correct code activates this phone automatically.':'Give this device a name and choose your branch. HQ will review your request before you sign in.';const button=d.querySelector('#registerCard .btn-primary');if(button)button.textContent=required?'Activate my Staff app':'Request access';}
+    function form(required){setLabel(required);protectedMode=required;lock();if(el('pendingCard'))el('pendingCard').style.display='none';if(el('registerCard'))el('registerCard').style.display='block';if(el('staffSetupFields'))el('staffSetupFields').hidden=!required||!!invitation;if(el('legacyBranchFields'))el('legacyBranchFields').hidden=required;if(el('cancelPersonalSetup'))el('cancelPersonalSetup').hidden=!personalEnrollment;if(el('usePersonalSetupCode'))el('usePersonalSetupCode').hidden=required;if(el('deviceSetupIntro'))el('deviceSetupIntro').textContent=required?(invitation?'Your private setup link is ready. Tap Activate my Staff app, then sign in with the PIN from your Owner.':'Choose your name and enter your personal setup code. Naming this phone is optional.'):'Have a personal setup code? Use it to activate this phone. For a shared device, enter its name and branch to request access.';const button=d.querySelector('#registerCard .btn-primary');if(button)button.textContent=required?'Activate my Staff app':'Request access';}
     async function directory(){
         const token=++directoryEpoch,select=el('setupStaffInput');if(!select)return;
         select.disabled=true;message('Loading staff accounts…');
@@ -101,17 +122,24 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
         finally{if(token===directoryEpoch)select.disabled=false;}
     }
     function apply(result,id){
+        if(invitation && (w.staffPunchBusy||ls.getItem('takodeal_staff_id')&&ls.getItem('takodeal_staff_id')!==invitation.staffId)){
+            invitation=null;message('This phone is already in use. Open your private link on your own phone.');
+        }
         if(result.mode==='legacy'){
+            if(invitation){personalEnrollment=true;enrollmentId(ls.getItem('takodeal_device_id'));stopLegacy?.();}
+            if(personalEnrollment){form(true);if(!invitation&&el('setupStaffInput')?.disabled)void directory();return;}
             protectedMode=false;if(el('staffSetupFields'))el('staffSetupFields').hidden=true;if(el('legacyBranchFields'))el('legacyBranchFields').hidden=false;
             const legacyId=ls.getItem('takodeal_device_id');
             if(legacyId){if(enteredKey==='legacy:'+legacyId)return;enteredKey='legacy:'+legacyId;return legacyListen(legacyId);}
             form(false);return;
         }
         protectedMode=true;
+        personalEnrollment=false;
         // Invalidate the preceding public mirror subscription even when this
         // transition was discovered by a quiet policy/status refresh.
         stopLegacy?.();
-        if(!result.device){enrollmentId(ls.getItem('takodeal_device_id'));enteredKey='';form(true);const draft=saved();if(draft?.deviceName&&el('deviceNameInput'))el('deviceNameInput').value=draft.deviceName;void directory();return;}
+        if(!result.device){enrollmentId(ls.getItem('takodeal_device_id'));enteredKey='';form(true);const draft=saved();if(draft?.deviceName&&el('deviceNameInput'))el('deviceNameInput').value=draft.deviceName;if(!invitation)void directory();return;}
+        if(invitation){const sameStaff=result.device.staffId===invitation.staffId;invitation=null;if(!sameStaff)message('This device already belongs to a different employee. Open the link on your own phone.');}
         if(result.device.status!=='Active'){checking('This phone’s access is paused. Contact the Owner before signing in.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Device access paused';return;}
         const old=ls.getItem('takodeal_staff_id'),wrongStaff=old&&old!==result.device.staffId;if(wrongStaff){w.stopStaffLiveListeners?.();for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic'])ls.removeItem(key);}
         ls.setItem('takodeal_device_id',id);if(saved()?.deviceId===id)ls.removeItem(STAFF_SETUP_DRAFT);if(el('deviceAuthOverlay'))el('deviceAuthOverlay').style.display='none';
@@ -120,20 +148,60 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
     function schedule(){clearTimeout(pollTimer);if(!d.hidden&&authority.isVerified())pollTimer=setTimeout(()=>start(false),30000);}
     async function run(showChecking){
         const token=++visibleEpoch;if(showChecking){enteredKey='';stopLegacy?.();checking('Connecting to HQ to confirm this phone.');}
-        try{const id=deviceId(),result=await authority.confirm(id);if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
+        const pendingRecovery=w.staffSelfRepair?.requiresCode();
+        if(el('resumeStaffRecovery'))el('resumeStaffRecovery').hidden=!pendingRecovery;
+        if(pendingRecovery){authority.invalidate();enteredKey='';checking('Choose Continue saved recovery to finish the phone sign-in you already started.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Finish the saved sign-in reset';return;}
+        try{const id=deviceId(),result=await authority.confirm(id,{join:!showChecking});if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
         catch(error){if(token===visibleEpoch&&!d.hidden){checking(error.message||'HQ could not confirm this phone. Reconnect and choose Check again.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Connection to HQ needed';}}
         finally{if(token===visibleEpoch)schedule();}
     }
     function start(showChecking=true){if(startFlight)return startFlight;let pending;pending=run(showChecking).finally(()=>{if(startFlight===pending)startFlight=null;});startFlight=pending;return pending;}
     w.startStaffDeviceSetup=start;
+    w.addEventListener('hashchange',()=>{
+        const incoming=w.staffStartup?.takeSetupInvite?.();
+        if(!incoming||busy||w.staffPunchBusy||w.staffDeviceRegistrationBusy)return;
+        invitation=incoming;void start();
+    });
     w.listenToDeviceStatus=()=>start();
+    w.choosePersonalCodeActivation=async()=>{
+        if(busy||w.staffDeviceRegistrationBusy||w.staffPunchBusy){message('Finish or cancel the current attendance action before activating this phone.');return false;}
+        if(choosingCode||checkingRequest)return false;
+        choosingCode=true;
+        try{
+        const id=ls.getItem('takodeal_device_id'),uid=(await transport.ready()).uid,result=await authority.confirm(deviceId());
+        if(busy||w.staffDeviceRegistrationBusy||w.staffPunchBusy||config.auth.currentUser?.uid!==uid||ls.getItem('takodeal_device_id')!==id){message('Your attendance or phone session changed. Finish that action before activating this phone.');return false;}
+        if(result.mode==='protected'&&result.device){
+            if(result.device.status==='Active'&&el('loginOverlay')?.style.display==='flex'&&w.staffSelfRepair?.open){w.staffSelfRepair.open();return true;}
+            message('Check this phone’s registration before continuing.');return false;
+        }
+        if(result.mode==='protected'&&!result.device){await apply(result,id);return true;}
+        if(result.mode!=='legacy'||result.enabled!==false){message('Check this phone again before starting setup.');return false;}
+        personalEnrollment=true;stopLegacy?.();enteredKey='';enrollmentId(id);form(true);await directory();return true;
+        }finally{choosingCode=false;}
+    };
+    w.cancelPersonalCodeActivation=()=>{if(busy)return false;invitation=null;personalEnrollment=false;clearCode();return start();};
+    for(const id of ['usePersonalSetupCode','usePersonalSetupCodePending','usePersonalSetupCodeLogin'])el(id)?.addEventListener('click',()=>{void w.choosePersonalCodeActivation().catch(error=>message(error.message||'Reconnect to confirm this phone.'));});
+    el('cancelPersonalSetup')?.addEventListener('click',()=>w.cancelPersonalCodeActivation());
     w.requestDeviceAccess=async()=>{
-        if(busy)return;
-        if(authority.mode()==='legacy'&&!protectedMode)return legacyRequest();
-        const deviceName=el('deviceNameInput')?.value.trim(),staffId=el('setupStaffInput')?.value;
-        if(!deviceName || !key(staffId)){message('Enter a device name and choose your staff account.');return;}
-        let code;try{code=normalizeSetupCode(el('staffSetupCode')?.value);}catch(error){message(error.message);return;}
-        busy=true;w.staffDeviceRegistrationBusy=true;const button=d.querySelector('#registerCard .btn-primary');if(button){button.disabled=true;button.textContent='Activating securely…';}const token=++visibleEpoch;
+        if(busy||checkingRequest||choosingCode){message(busy?'Activating this phone. Please wait.':'Checking your phone. Please wait.');return;}
+        if(!protectedMode){
+            if(authority.mode()==='legacy')return legacyRequest();
+            checkingRequest=true;
+            const token=visibleEpoch;
+            try{
+                const id=deviceId(),result=await authority.confirm(id);
+                if(token!==visibleEpoch||d.hidden||protectedMode)return;
+                if(result.mode==='legacy')return await legacyRequest();
+                await apply(result,id);
+            }catch{message('Reconnect to check this phone, then retry your request.');}
+            finally{checkingRequest=false;}
+            return;
+        }
+        const deviceName=el('deviceNameInput')?.value.trim()||'Personal phone',staffId=invitation?.staffId||el('setupStaffInput')?.value;
+        if(!key(staffId)){message('Choose your staff account to activate this phone.');el('setupStaffInput')?.focus?.();return;}
+        let code;try{code=normalizeSetupCode(invitation?.code||el('staffSetupCode')?.value);}catch(error){message(error.message);el('staffSetupCode')?.focus?.();return;}
+        message('Activating this phone. Please wait.');
+        clearTimeout(pollTimer);busy=true;w.staffDeviceRegistrationBusy=true;const button=d.querySelector('#registerCard .btn-primary');if(button){button.disabled=true;button.textContent='Activating securely…';}const token=++visibleEpoch;
         try{
             if(nav?.onLine===false)throw Error('Connect to the internet to activate this Staff app.');
             const user=await transport.ready(),uid=user.uid,id=enrollmentId(ls.getItem('takodeal_device_id')),previous=saved();
@@ -144,16 +212,16 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
             const result=await authority.confirm(id);
             if(token!==visibleEpoch||uid!==config.auth.currentUser?.uid)return;
             if(result.mode!=='protected'||result.device?.status!=='Active'||result.device.staffId!==staffId)throw Error('HQ has not confirmed activation for this staff account. Check again.');
-            ls.setItem('takodeal_device_id',id);ls.removeItem(STAFF_SETUP_DRAFT);message('This phone is activated. Continue with your Staff login PIN.');await apply(result,id);schedule();
-        }catch(error){if(token===visibleEpoch)message(error.message||'Activation was not confirmed. Check again or re-enter your setup code.');}
-        finally{code='';clearCode();busy=false;w.staffDeviceRegistrationBusy=false;if(button){button.disabled=false;button.textContent=protectedMode?'Activate my Staff app':'Request access';}}
+            ls.setItem('takodeal_device_id',id);ls.removeItem(STAFF_SETUP_DRAFT);invitation=null;message('This phone is activated. Continue with your Staff login PIN.');await apply(result,id);schedule();
+        }catch(error){if(token===visibleEpoch){if(error.code==='setup-code-invalid'&&invitation){invitation=null;form(true);await directory();}if(token===visibleEpoch)message(error.message||'Activation was not confirmed. Check again or re-enter your setup code.');}}
+        finally{code='';clearCode();busy=false;w.staffDeviceRegistrationBusy=false;if(button){button.disabled=false;button.textContent=protectedMode?'Activate my Staff app':'Request access';}if(token!==visibleEpoch&&!d.hidden)void start();} 
     };
     w.retryDeviceRegistration=()=>start();
     el('setupStaffReload')?.addEventListener('click',()=>directory());
     el('setupStaffInput')?.addEventListener('change',clearCode);
     d.addEventListener('visibilitychange',()=>{if(d.hidden){stop();lock();}else if(!busy)void start();});
     w.addEventListener('online',()=>{if(!busy)void start();});
-    w.addEventListener('pagehide',()=>{stop();lock();});
+    w.addEventListener('pagehide',()=>{invitation=null;stop();lock();});
     config.onAuthChange?.(()=>{stop();checking('The device session changed. Choose Check again to reconnect.');});
     return {authority,start,stop,transport};
 }

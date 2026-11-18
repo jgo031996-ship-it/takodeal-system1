@@ -155,7 +155,11 @@ test('legacy matching keeps ambiguous entries separate and filters unrelated att
     assert.deepEqual(payroll.legacyAttendanceCandidates(req,rows).map(x=>x.id),['a','b']);
     assert.throws(()=>payroll.requestLateMinutes({...req,explanationMessage:'no minutes'},{}),/no recorded/);
 });
-const source=restoreAttendanceOvertime(readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),'takodeal-manager/main.js');
+const currentManager=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
+// Remove only this release's independent signup installer before the historical
+// exact-source proof. Payroll functions remain byte-for-byte the deployed source.
+const withoutSignup=currentManager.replace("import {installEmployeeSignup} from './employee-signup.js';\n",'').replace(/\ninstallEmployeeSignup\(window,document\);\n$/,'');
+const source=restoreAttendanceOvertime(withoutSignup,'takodeal-manager/main.js');
 function extract(name) {
     const start=source.indexOf(`
 window.${name} = `) + 1;

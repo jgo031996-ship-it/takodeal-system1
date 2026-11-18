@@ -1,9 +1,14 @@
+import {createStaffSelfService,createDailyPinRecoveryClient,createPersonalPhonePreparation} from './staff-self-service.js';
+import {payslipText,payslipWorkRows} from './staff-payslip-work.js';
+import {createPlottedTimeInBatch} from './plotted-time-in.js';
+import {createStaffPayPhoneClient} from './staff-pay-phone.js';
+import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
 import {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';
 import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
 import {createStaffPayrollAttendanceReader} from './staff-payroll-reader.js';
-import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged,updateCurrentUser} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {installStaffOnboarding} from './onboarding-ui.js';
 import {onboardingDay} from './onboarding-model.js';
 import {contractOfferFingerprint,reviewedContractRate,signOfferedContract} from './onboarding-service.js';
@@ -18,20 +23,20 @@ import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import {payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
 import {payslipSavedAmounts,savedPayslipCents} from './staff-payslip-snapshot.js';
 import {readStaffSavedPayslips,installStaffSavedPayslipViews} from './staff-saved-payslips.js';
+import {createStaffPrivateProfileClient} from './staff-private-profile-client.js';
+import {installStaffPrivateProfileUI} from './staff-private-profile-ui.js';
+import {createStaffAccessClient} from './staff-access.js';
 import {createStaffVaultRecoveryForPhone} from './staff-vault-recovery.js';
 import {installStaffVaultRecovery} from './staff-vault-recovery-ui.js';
 import {createStaffLoanLedgerClient} from './staff-loan-ledger-client.js';
 import {installStaffLoanLedger} from './staff-loan-ledger-ui.js';
-import {createStaffAccessClient,operationalStaffProfile} from './staff-access.js';
-import {createStaffPrivateProfileAccess} from './staff-private-profile.js';
-import {operationalRecordsSnapshot} from './staff-operational-records.js';
-import {readStaffAnnouncements,announcementImage} from './staff-announcements.js';
 import {isPayrollAdjustment,payrollAdjustmentDetailsHTML,payrollAdjustmentHistoryHTML} from './payroll-adjustment-model.js';
 import {readStaffPayrollAdjustments,staffPayrollAdjustmentEstimate} from './staff-payroll-adjustments.js';
 import {readStaffPayrollRecoveryHistory} from './payroll-adjustment-history.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
+import {createClockUploadAccess} from './clock-upload-access.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, sopCoversShift, closeAttendanceShift} from './attendance-reconcile.js';
 import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
@@ -40,7 +45,8 @@ import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
 import {installStaffDocuments} from './staff-documents.js';
-import {createStaffDocumentFirebase} from './staff-document-firebase.js';
+import {createStaffDocumentFirebase,readInitializedStaffDocumentClient,documentSdk} from './staff-document-firebase.js';
+import {createStaffSelfRepairSDK} from './staff-self-repair-sdk.js';
 import {profileDailyRate} from './staff-rate-privacy.js';
 import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, calculateShiftEarnings, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
@@ -57,9 +63,9 @@ import {savedShiftChoices,savedShiftChoicesHTML,selectedSavedShiftChoice,makeSav
 import {chooseClockInSchedule} from './attendance-shift-declaration-ui.js';
 import {revalidateClockInScheduleDeclaration,clockInDeclarationSavedProposal,clockInDeclarationRequest} from './attendance-shift-declaration.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeApp,getApps } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction,waitForPendingWrites } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -73,22 +79,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const staffPrimaryAuth = getAuth(app);
-const ensureStaffPrimaryUser=async({guard=()=>{}}={})=>{await staffPrimaryAuth.authStateReady();guard();if(staffPrimaryAuth.currentUser)return staffPrimaryAuth.currentUser;await setPersistence(staffPrimaryAuth,browserLocalPersistence);guard();const result=await signInAnonymously(staffPrimaryAuth);guard();return result.user;};
-window.staffAccessClient=createStaffAccessClient({auth:staffPrimaryAuth,ensureUser:ensureStaffPrimaryUser,deviceId:()=>localStorage.getItem('takodeal_device_id'),sessionId:()=>localStorage.getItem('takodeal_staff_session_id'),fetcher:window.fetch.bind(window)});
-window.verifyStaffPin=input=>window.staffAccessClient.verifyPin(input);
-window.staffProfileCollection='staff_directory';
-window.staffPinActor=()=>({uid:staffPrimaryAuth.currentUser?.uid,deviceId:localStorage.getItem('takodeal_device_id'),app:'staff',sessionId:localStorage.getItem('takodeal_staff_session_id')});
-const privateProfileAccess=createStaffPrivateProfileAccess({identity:()=>localStorage.getItem('takodeal_staff_id'),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
-window.readPrivateStaffProfile=(staffId=localStorage.getItem('takodeal_staff_id'),options)=>privateProfileAccess.read(staffId,options);
-window.patchOwnStaffProfile=(patch,options={})=>privateProfileAccess.update(localStorage.getItem('takodeal_staff_id'),patch,options);
-const boundedStaffOperationalRead=async read=>{let timer;try{return await Promise.race([Promise.resolve().then(read),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Your Staff check took too long. Reconnect and sign in again.')),20000);})]);}finally{clearTimeout(timer);}};
-window.readStaffDirectoryProfile=async(staffId,{assertCurrent=()=>{}}={})=>{const user=await boundedStaffOperationalRead(()=>ensureStaffPrimaryUser({guard:assertCurrent}));assertCurrent();const snap=await boundedStaffOperationalRead(()=>getDocFromServer(doc(db,'staff_directory',staffId)));assertCurrent();if(staffPrimaryAuth.currentUser!==user||!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Your operational Staff profile could not be confirmed. Reconnect and sign in.');const {profileRevision,syncedAt,schemaVersion,updatedAt,...profile}=snap.data();operationalStaffProfile(profile,staffId);return snap;};
-window.readStaffPaidHistory=options=>window.staffAccessClient.payroll({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
-window.readPrivatePayrollInputs=options=>window.staffAccessClient.payrollInputs({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
-window.restoreStaffLoginSession=async staffId=>{const user=await boundedStaffOperationalRead(()=>ensureStaffPrimaryUser()),deviceId=localStorage.getItem('takodeal_device_id'),sessionId=localStorage.getItem('takodeal_staff_session_id'),current=()=>{if(staffPrimaryAuth.currentUser!==user||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_device_id')!==deviceId||localStorage.getItem('takodeal_staff_session_id')!==sessionId)throw Error('Your Staff session changed. Sign in again.');};current();await window.staffAccessClient.flushCancellations(current);current();const session=await boundedStaffOperationalRead(()=>getDocFromServer(doc(db,'staff_login_sessions',user.uid)));current();const saved=session.exists()?session.data():null;if(!sessionId||session.metadata?.fromCache||session.metadata?.hasPendingWrites||saved?.schemaVersion!==1||saved.uid!==user.uid||saved.staffId!==staffId||saved.deviceId!==deviceId||saved.sessionId!==sessionId||saved.app!=='staff'||!(saved.expiresAt?.toMillis?.()>Date.now()))throw Error('Your Staff sign-in expired. Enter your PIN again.');const profile=await window.readStaffDirectoryProfile(staffId,{assertCurrent:current});current();if(profile.data().branch!==saved.branch||!activeStaffProfile(profile.data()))throw Error('Your Staff profile changed. Sign in again.');return profile.data();};
-window.readOperationalRecords=async(table,{assertCurrent=()=>{}}={})=>{const staffId=localStorage.getItem('takodeal_staff_id'),sessionId=localStorage.getItem('takodeal_staff_session_id'),guard=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_session_id')!==sessionId)throw Error('Your Staff session changed. Sign in again.');assertCurrent();};guard();const value=await window.staffAccessClient.operational({staffId,table,assertCurrent:guard});guard();return operationalRecordsSnapshot(value.records);};
 window.readStaffMetadata = createAttendanceMetadataReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
-window.readStaffPayrollAttendance=({staffId,assertCurrent=()=>{}}={})=>window.readOperationalRecords('attendance_logs',{assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your private Pay identity changed. Reopen Pay.');assertCurrent();}});
+window.readStaffPayrollAttendance = createStaffPayrollAttendanceReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
 
 // 🔥 UPGRADE: This activates the "Indestructible Offline Mode" on the Staff App!
 const db = initializeFirestore(app, {
@@ -125,7 +117,6 @@ window.disableNetwork = disableNetwork;
 // before detaching so a previous account cannot update the next account's screen.
 window.staffLiveListenerEpoch = 0;
 window.stopStaffLiveListeners = function() {
-    window.staffAccessClient?.invalidate();window.clearPrivateStaffProfile?.();
     window.staffLiveListenerEpoch++;
     window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
     window.pendingSwapData=null;
@@ -164,20 +155,18 @@ window.TK_CACHE = {
 };
 
 window.fetchCachedAnnouncements = async function() {
-    const staffId=localStorage.getItem('takodeal_staff_id'),sessionId=localStorage.getItem('takodeal_staff_session_id'),key=staffId+'|'+sessionId,current=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_session_id')!==sessionId)throw Error('Your Staff account changed. Open announcements again.');};
     let now = Date.now();
-    if (window.TK_CACHE.announcementScope===key && window.TK_CACHE.announcements && (now - window.TK_CACHE.lastAnnouncements < window.TK_CACHE.ttl)) {
+    if (window.TK_CACHE.announcements && (now - window.TK_CACHE.lastAnnouncements < window.TK_CACHE.ttl)) {
         console.log(`📦 Loaded ANNOUNCEMENTS from RAM (0 Firebase Reads)`);
         return window.TK_CACHE.announcements;
     }
     console.log(`☁️ Fetching ANNOUNCEMENTS from Firebase...`);
-    const profile=(await window.readStaffDirectoryProfile(staffId,{assertCurrent:current})).data();current();
-    const snap = await readStaffAnnouncements(window,{staffId,staffName:profile.cashierName,branch:profile.branch,assertCurrent:current});current();
+    const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+    const snap = await window.getDocs(q);
     let data = [];
     snap.forEach(doc => data.push({id: doc.id, ...doc.data()}));
     
     window.TK_CACHE.announcements = data;
-    window.TK_CACHE.announcementScope=key;
     window.TK_CACHE.lastAnnouncements = now;
     return data;
 };
@@ -234,20 +223,21 @@ window.getClosestBranch = function() {
     return closestBranch;
 };
 
-window.checkNormalLogin = async function() {
+window.checkNormalLogin = function() {
+    if(window.staffSelfRepair?.requiresCode()){window.startStaffDeviceSetup?.();return false;}
     if(!window.staffSetupAccess?.isVerified()){window.startStaffDeviceSetup?.();return false;}
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedId = localStorage.getItem('takodeal_staff_id');
     const setupBinding=window.staffSetupAccess.binding();
     if(setupBinding && savedId!==setupBinding.staffId){
         window.stopStaffLiveListeners();window.lockPayslipVault?.();
-        for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic','takodeal_staff_session_id'])localStorage.removeItem(key);
+        for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic'])localStorage.removeItem(key);
         savedName=null;savedId=null;
     }
-    if(savedId){const restoringId=savedId;try{window.staffSetupAccess.assertStaff(savedId);const profile=await window.restoreStaffLoginSession(savedId);if(localStorage.getItem('takodeal_staff_id')!==restoringId)return false;savedName=profile.cashierName;localStorage.setItem('takodeal_staff_name',savedName);localStorage.setItem('takodeal_staff_pic',profile.profilePicUrl||'');}catch{if(localStorage.getItem('takodeal_staff_id')!==restoringId)return false;window.stopStaffLiveListeners();window.lockPayslipVault?.();for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic','takodeal_staff_session_id'])localStorage.removeItem(key);savedId=null;savedName=null;}}
+    if(savedId){window.staffSetupAccess.assertStaff(savedId);if(setupBinding){savedName=setupBinding.staffName;localStorage.setItem('takodeal_staff_name',savedName);}}
     
     // 🚀 AUTO-LOGIN ENGINE
-    if (savedName && savedId) {
+    if (savedName && savedId && !window.staffSelfRepair?.needsPin?.()) {
         document.getElementById('loggedInName').innerText = savedName;
         let pic = localStorage.getItem('takodeal_staff_pic');
         if (pic && pic.length > 5) {
@@ -266,6 +256,7 @@ window.checkNormalLogin = async function() {
         
         // 🚨 THE GATEKEEPER: Instantly block access if they have a pending NTE!
         window.startSanctionListener(savedName);
+        void window.staffPrivateProfileUI?.resume();
         
     } else {
         window.stopStaffLiveListeners();
@@ -279,6 +270,7 @@ window.checkNormalLogin = async function() {
 };
 
 window.loginStaff = async function() {
+    if(window.staffSelfRepair?.requiresCode()){window.staffSelfRepair.open();return false;}
     let pinInput = document.getElementById('loginPin').value.trim();
     let errorMsg = document.getElementById('loginError');
     let btn = document.querySelector('#loginOverlay .btn-primary');
@@ -296,16 +288,35 @@ window.loginStaff = async function() {
         const deviceId=localStorage.getItem('takodeal_device_id');
         await window.staffSetupAccess.confirm(deviceId);
         const setupSession=window.staffSetupAccess.capture(),setupBinding=window.staffSetupAccess.binding();
-        const login=await window.staffAccessClient.login({pin:pinInput,...(setupBinding?{selectedStaffId:setupBinding.staffId}:{}),assertCurrent:()=>window.staffSetupAccess.assert(setupSession,setupBinding?.staffId)});
-        const staffData=login.profile,docId=login.staffId,loginUser=staffPrimaryAuth.currentUser;
+        let staffData = null; let docId = null;
+        if(setupBinding){
+            const profile=await getDocFromServer(doc(db,'cashiers',setupBinding.staffId));
+            const data=profile.exists()?profile.data():null;
+            if(data && (data.branch!==setupBinding.branch || data.cashierName!==setupBinding.staffName))throw Error('Your staff profile changed. Check this phone’s setup again before signing in.');
+            const pinMatches=data && (String(data.pin)===pinInput || typeof data.pin==='number'&&Number.isSafeInteger(data.pin)&&/^\d+$/.test(pinInput)&&Number(pinInput)===data.pin);
+            if(data && data.active!==false && data.archived!==true && data.blocked!==true && !/^(Blocked|Revoked|Terminated|Resigned|Inactive|Disabled|Archived|Deleted)$/i.test(String(data.status||'')) && !/^(REVOKED|BLOCKED)$/i.test(String(data.pin)) && pinMatches){staffData=data;docId=setupBinding.staffId;}
+        } else {
+            const qStr = query(collection(db, "cashiers"), where("pin", "==", pinInput));
+            const snapStr = await getDocs(qStr);
+            if (!snapStr.empty) {staffData=snapStr.docs[0].data();docId=snapStr.docs[0].id;}
+            else {
+                let pinNum = /^\d+$/.test(pinInput) ? Number(pinInput) : NaN;
+                if (!isNaN(pinNum)) {
+                    const qNum = query(collection(db, "cashiers"), where("pin", "==", pinNum));
+                    const snapNum = await getDocs(qNum);
+                    if (!snapNum.empty) { staffData = snapNum.docs[0].data(); docId = snapNum.docs[0].id; }
+                }
+            }
+        }
 
         if (staffData) {
             window.staffSetupAccess.assert(setupSession,docId);
             if (localStorage.getItem('takodeal_staff_id') !== docId) window.stopStaffLiveListeners();
+            window.staffSelfRepair?.pinAccepted?.();
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);
-            localStorage.setItem('takodeal_staff_session_id',login.sessionId);
+            document.getElementById('staffHiringEntry')?.setAttribute('hidden','');
             localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
             localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
             
@@ -317,7 +328,7 @@ window.loginStaff = async function() {
             
             document.getElementById('loginOverlay').style.opacity = '0';
             setTimeout(() => {
-                try{window.staffSetupAccess.assert(setupSession,docId);if(localStorage.getItem('takodeal_staff_session_id')!==login.sessionId||staffPrimaryAuth.currentUser!==loginUser)return;}catch{window.stopStaffLiveListeners();window.startStaffDeviceSetup?.();return;}
+                try{window.staffSetupAccess.assert(setupSession,docId);}catch{window.stopStaffLiveListeners();window.startStaffDeviceSetup?.();return;}
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('appContainer').style.display = 'flex';
                 document.getElementById('loginPin').value = ''; 
@@ -338,7 +349,6 @@ window.loginStaff = async function() {
     } catch (e) {
         errorMsg.innerText = e.message || "Connection error. Check again before signing in."; errorMsg.style.display = 'block';
     } finally {
-        document.getElementById('loginPin').value='';
         btn.innerText = "Secure Login"; btn.disabled = false;
     }
 };
@@ -350,12 +360,11 @@ window.logoutStaff = function() {
         showCancelButton: true, confirmButtonColor: '#0f766e', confirmButtonText: 'Yes, sign out'
     }).then(async(result) => {
         if (result.isConfirmed) {
-            try{await window.staffAccessClient.logout();}catch{}
+            try{await window.staffSelfService.logout();}catch{}
             window.stopStaffLiveListeners();
             localStorage.removeItem('takodeal_staff_name');
             localStorage.removeItem('takodeal_staff_id');
             localStorage.removeItem('takodeal_staff_pic');
-            localStorage.removeItem('takodeal_staff_session_id');
             location.reload(); 
         }
     });
@@ -365,174 +374,8 @@ window.logoutStaff = function() {
 // 📋 PROFILE ENGINE
 // ==========================================
 window.selectedProfileFile = null;
-window.staffPrivateProfileEpoch=0;
-window.clearPrivateStaffProfile=function(){window.staffPrivateProfileEpoch++;for(const id of ['profFullName','profNickname','profPhone','profAddress','profEmergName','profEmergNum','profEmail','profGcashName','profGcashNum','profGotymeName','profGotymeNum','profSss','profPhilhealth','profPagibig','profPin']){const field=document.getElementById(id);if(field)field.value='';}for(const id of ['linkSss','linkPhilhealth','linkPagibig']){const link=document.getElementById(id);if(link){link.removeAttribute('href');link.style.display='none';}}for(const id of ['profRoleHistory','profContracts']){const box=document.getElementById(id);if(box)box.replaceChildren();}const modal=document.getElementById('profileModal');if(modal)modal.style.display='none';};
 
-window.openProfile = async function() {
-    window.clearPrivateStaffProfile();const profileEpoch=window.staffPrivateProfileEpoch;
-    let pic = localStorage.getItem('takodeal_staff_pic');
-    let preview = document.getElementById('profilePreview');
-    let placeholder = document.getElementById('profilePlaceholder');
-    let staffId = localStorage.getItem('takodeal_staff_id');
-    
-    if (pic && pic.length > 5) {
-        preview.src = pic; preview.style.display = 'block'; placeholder.style.display = 'none';
-    } else {
-        preview.style.display = 'none'; placeholder.style.display = 'flex';
-    }
-    
-    window.selectedProfileFile = null;
-    document.getElementById('profPin').value = ''; 
-    
-    try {
-        const docSnap = await window.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(window.staffPrivateProfileEpoch!==profileEpoch||document.hidden)throw Error('Your profile view closed. Reopen it.');}});
-        if(window.staffPrivateProfileEpoch!==profileEpoch||localStorage.getItem('takodeal_staff_id')!==staffId||document.hidden)return;
-        window.staffLoginPinVersion=docSnap.data().loginPinVersion??0;
-        
-        if (docSnap.exists()) {
-            let d = docSnap.data();
-            document.getElementById('profFullName').value = d.cashierName || '';
-            document.getElementById('profNickname').value = d.scheduleNickname || '';
-            document.getElementById('profPhone').value = d.phone || '';
-            document.getElementById('profAddress').value = d.address || '';
-            document.getElementById('profEmergName').value = d.emergencyName || '';
-            document.getElementById('profEmergNum').value = d.emergencyNumber || '';
-            document.getElementById('profEmail').value = d.email || '';
-            document.getElementById('profGcashName').value = d.gcashName || '';
-            document.getElementById('profGcashNum').value = d.gcashNumber || '';
-            document.getElementById('profGotymeName').value = d.gotymeName || '';
-            document.getElementById('profGotymeNum').value = d.gotymeNumber || '';
-            document.getElementById('profSss').value = d.sssNumber || '';
-            document.getElementById('profPhilhealth').value = d.philhealthNumber || '';
-            document.getElementById('profPagibig').value = d.pagibigNumber || '';
-
-            // Show uploaded ID links if they exist!
-            const setupIdLink = (linkId, url) => {
-                let el = document.getElementById(linkId);
-                if (el && url) { el.href = url; el.style.display = 'inline-block'; }
-            };
-            setupIdLink('linkSss', d.sssIdUrl);
-            setupIdLink('linkPhilhealth', d.philhealthIdUrl);
-            setupIdLink('linkPagibig', d.pagibigIdUrl);
-            
-            // Payroll deductions are rendered only inside the locked Pay vault.
-            // 🔥 LOAD PROMOTION HISTORY
-            let historyHtml = "";
-            if (d.roleHistory && d.roleHistory.length > 0) {
-                historyHtml = `<ul style="margin: 0; padding-left: 20px; line-height: 1.6;">`;
-                d.roleHistory.forEach(h => {
-                    historyHtml += `<li>Promoted to <b>${h.role}</b> <br><span style="color: #94a3b8; font-size: 11px;">(Effective: ${h.date})</span></li>`;
-                });
-                historyHtml += `</ul>`;
-            } else {
-                historyHtml = `<span>Current Role: <b>${d.role || 'Crew'}</b></span>`;
-            }
-            let elRoleHist = document.getElementById('profRoleHistory');
-            if(elRoleHist) elRoleHist.innerHTML = historyHtml;
-
-            // 🔥 LOAD SIGNED CONTRACTS VAULT
-            let contractsHtml = "";
-            if (d.signedContracts && Object.keys(d.signedContracts).length > 0) {
-                let safeData = encodeURIComponent(staffId);
-                if (d.signedContracts.initial) {
-                    contractsHtml += `<button type="button" onclick="window.reprintContract('Initial', '${safeData}', '${d.signedContracts.initial}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>📄 Initial Employment Contract</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.initial}</span></button>`;
-                }
-                if (d.signedContracts.extension) {
-                    contractsHtml += `<button type="button" onclick="window.reprintContract('Extension', '${safeData}', '${d.signedContracts.extension}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>📄 6-Month Extension</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.extension}</span></button>`;
-                }
-                if (d.signedContracts.regularization) {
-                    contractsHtml += `<button type="button" onclick="window.reprintContract('Regularization', '${safeData}', '${d.signedContracts.regularization}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>🌟 Regularization Contract</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.regularization}</span></button>`;
-                }
-            } else {
-                contractsHtml = `<span style="color: #94a3b8; font-size: 13px;"><i>No signed contracts on file yet.</i></span>`;
-            }
-            let elContracts = document.getElementById('profContracts');
-            if(elContracts) elContracts.innerHTML = contractsHtml;
-        }
-    } catch(e) {if(window.staffPrivateProfileEpoch!==profileEpoch||localStorage.getItem('takodeal_staff_id')!==staffId)return;return Swal.fire('Private profile unavailable',e.message||'Use your approved private Staff phone and reconnect.','info');}
-
-    document.getElementById('profileModal').style.display = 'flex';
-};
-
-window.saveProfileData = async function() {
-    let staffId = localStorage.getItem('takodeal_staff_id');
-    let btn = document.getElementById('btnSaveProfileData');
-    
-    // Grab the values from the boxes first
-    let sssVal = document.getElementById('profSss').value.trim();
-    let philVal = document.getElementById('profPhilhealth').value.trim();
-    let pagVal = document.getElementById('profPagibig').value.trim();
-    let gotymeNameVal = document.getElementById('profGotymeName').value.trim();
-    let gotymeNumVal = document.getElementById('profGotymeNum').value.trim();
-    let emergNumVal = document.getElementById('profEmergNum').value.trim();
-    let currentFullName = document.getElementById('profFullName').value.trim();
-    
-    let payload = {
-        phone: document.getElementById('profPhone').value.trim(),
-        address: document.getElementById('profAddress').value.trim(),
-        emergencyName: document.getElementById('profEmergName').value.trim(),
-        
-        // 🚨 EMERGENCY NUMBER Y-SPLITTER (Covers all possible Manager App names)
-        emergencyNumber: emergNumVal,
-        emergencyPhone: emergNumVal,
-        emergencyContact: emergNumVal,
-        emergencyContactNumber: emergNumVal,
-        emergNum: emergNumVal,
-        
-        email: document.getElementById('profEmail').value.trim(),
-        gcashName: document.getElementById('profGcashName').value.trim(),
-        gcashNumber: document.getElementById('profGcashNum').value.trim(),
-        
-        // 💳 GOTYME Y-SPLITTER (Covers all case-sensitive variations)
-        gotymeName: gotymeNameVal,
-        gotyme: gotymeNameVal,
-        goTymeName: gotymeNameVal,
-        
-        gotymeNumber: gotymeNumVal,
-        gotymeNum: gotymeNumVal,
-        gotymeAcc: gotymeNumVal,
-        gotymeAccount: gotymeNumVal,
-        goTymeNumber: gotymeNumVal,
-        goTymeAccount: gotymeNumVal,
-        gotymeAccountNumber: gotymeNumVal,
-        
-        sss: sssVal,
-        sssNumber: sssVal,
-        
-        philhealth: philVal,
-        philhealthNumber: philVal,
-        
-        pagibig: pagVal,
-        pagibigNumber: pagVal
-    };
-
-    let newPin = document.getElementById('profPin').value.trim();
-    if(newPin&&!/^\d{4,8}$/.test(newPin))return Swal.fire('Check Staff PIN','Use 4–8 digits for your Staff login PIN.','warning');
-
-    btn.innerText = "⏳ Saving Secure Files..."; btn.disabled = true;
-
-    try {
-        if(['imgSss','imgPhilhealth','imgPagibig'].some(id=>document.getElementById(id)?.files?.length))throw Error('Government ID uploads use the private Required documents section. No files or profile changes were saved.');
-        const profileEpoch=window.staffPrivateProfileEpoch,assertCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||window.staffPrivateProfileEpoch!==profileEpoch||document.hidden)throw Error('Your profile view changed. Reopen it.');};
-        await window.patchOwnStaffProfile(payload,{assertCurrent});
-        if(newPin){await window.staffAccessClient.changePin({staffId,newPin,operationId:crypto.randomUUID(),expectedVersion:window.staffLoginPinVersion??0,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent});window.staffLoginPinVersion=(window.staffLoginPinVersion??0)+1;}
-        assertCurrent();
-        // Use the variable we stored earlier to update their screen
-        localStorage.setItem('takodeal_staff_name', currentFullName);
-        document.getElementById('loggedInName').innerText = currentFullName;
-
-        let successMsg = newPin ? 'Your profile, files, and PIN have been saved.' : 'Your HR profile and IDs have securely synced to HQ.';
-        Swal.fire('✅ Saved', successMsg, 'success');
-        window.closeStaffProfile();
-        void window.refreshStaffOnboarding?.({force:true});
-        document.getElementById('profPin').value = ''; 
-    } catch (e) {
-        console.error("Save Profile Error:", e);
-        Swal.fire('Profile save needs confirmation',e.message||'Reconnect and refresh your private profile before retrying.','error');
-    } finally {
-        btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
-    }
-};
+// Contact, daily-PIN and private-ID actions are installed separately below.
 
 // Personal reminders never issue a contract offer or change employment by a timer.
 window.checkContractLifecycle = function(staffId) {
@@ -849,7 +692,7 @@ window.reprintContract = async function(type, encodedData, signDate) {
     const staffId=decodeURIComponent(encodedData);
     if(staffId!==localStorage.getItem('takodeal_staff_id') || !await window.ensureStaffRateUnlocked())return;
     try {
-        const snap=await window.readPrivateStaffProfile(staffId);
+        const snap=await getDocFromServer(doc(db,'cashiers',staffId));
         if(staffId!==localStorage.getItem('takodeal_staff_id') || !window.staffRateSession?.allows(staffId) || !snap.exists())return;
         let data = snap.data();const key={Initial:'initial',Extension:'extension',Regularization:'regularization'}[type];
         const savedSignDate=key && data.signedContracts?.[key];
@@ -915,19 +758,17 @@ window.previewProfileImage = async function(event) {
 
 window.uploadProfilePicture = async function() {
     if (!window.selectedProfileFile) return;
+    let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
-    const file=window.selectedProfileFile;let uploadUser;
-    const current=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||document.hidden||window.selectedProfileFile!==file||uploadUser&&staffPrimaryAuth.currentUser!==uploadUser)throw Error('Your private profile or selected photo changed. Reopen it.');};
 
     try {
-        current();uploadUser=await boundedStaffOperationalRead(()=>ensureStaffPrimaryUser({guard:current}));current();
-        const fileExt = file.name.split('.').pop().toLowerCase();if(!/^(jpe?g|png|webp)$/.test(fileExt)||!/^image\/(jpeg|png|webp)$/.test(file.type))throw Error('Choose a JPG, PNG or WebP profile photo.');
-        const fileName = `staff_profiles/${uploadUser.uid}/${staffId}/${crypto.randomUUID()}.${fileExt}`;
+        const fileExt = window.selectedProfileFile.name.split('.').pop();
+        const fileName = `staff_profiles/${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
         const storageReference = ref(storage, fileName);
-        const snapshot = await boundedStaffOperationalRead(()=>uploadBytes(storageReference,file,{contentType:file.type,customMetadata:{staffUploadUid:uploadUser.uid,staffId}}));current();
-        const photoUrl = await boundedStaffOperationalRead(()=>getDownloadURL(snapshot.ref));current();
+        const snapshot = await uploadBytes(storageReference, window.selectedProfileFile);
+        const photoUrl = await getDownloadURL(snapshot.ref);
 
-        await window.patchOwnStaffProfile({profilePicUrl:photoUrl},{assertCurrent:current});current();
+        await updateDoc(doc(db, "cashiers", staffId), { profilePicUrl: photoUrl });
         localStorage.setItem('takodeal_staff_pic', photoUrl);
         document.getElementById('topAvatar').innerText = '';
         document.getElementById('topAvatar').style.backgroundImage = `url('${photoUrl}')`;
@@ -975,12 +816,15 @@ window.loadAnnouncements = async function() {
         // 🔥 GET STAFF BRANCH: Required to route branch-specific announcements
         let staffBranch = "Unknown";
         if (staffId) {
-            const staffDoc = await window.readStaffDirectoryProfile(staffId);
+            const staffDoc = await window.getDoc(window.doc(window.db, "cashiers", staffId));
             if (staffDoc.exists()) staffBranch = staffDoc.data().branch || "Unknown";
         }
 
-        const current=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==cashierName)throw Error('Your Staff account changed. Open announcements again.');};
-        const [snap,ackSnap] = await Promise.all([readStaffAnnouncements(window,{staffId,staffName:cashierName,branch:staffBranch,assertCurrent:current}),window.readOperationalRecords('acknowledgments',{assertCurrent:current})]);current();
+        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+        const snap = await window.getDocs(q);
+
+        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", cashierName));
+        const ackSnap = await window.getDocs(ackQ);
 
         let signatures = {};
         ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
@@ -1027,26 +871,25 @@ window.loadAnnouncements = async function() {
                 hasSignature: !!sigData,
                 signatureImg: sigData ? sigData.signature : '',
                 signatureDate: sigDateStr,
-                targetType: ann.targetType || 'All',
-                isSchedule:ann.isSchedule===true
+                targetType: ann.targetType || 'All'
             };
             
-            let modalData = encodeURIComponent(JSON.stringify(safeData)).replace(/'/g,'%27');
+            let modalData = encodeURIComponent(JSON.stringify(safeData));
 
             if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
                 <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${swapEscape(ann.title)}</h3>
+                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
                         <div style="margin-left: 10px; display: flex; flex-direction: column; align-items: flex-end;">
                             ${statusBadge}
                             ${targetBadge}
                         </div>
                     </div>
-                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${swapEscape(ann.subHeadline)}</div>` : ''}
+                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${ann.subHeadline}</div>` : ''}
                     <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
-                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${swapEscape(shortMsg)}</p>
+                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
                     <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details &rarr;</div>
                 </div>
             `;
@@ -1068,7 +911,6 @@ window.loadAnnouncements = async function() {
 };
 
 window.showExtraLargeImage = function(imgSrc) {
-    imgSrc=announcementImage(imgSrc);if(!imgSrc)return;
     let existing = document.getElementById('announceImageOverlay');
     if (existing) existing.remove();
     
@@ -1078,7 +920,7 @@ window.showExtraLargeImage = function(imgSrc) {
     
     overlay.innerHTML = `
         <button onclick="document.getElementById('announceImageOverlay').remove()" style="position: absolute; top: 20px; right: 20px; background: #ef4444; color: white; border: 2px solid white; border-radius: 50%; width: 45px; height: 45px; font-size: 22px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: 0.2s;">✖</button>
-        <img src="${swapEscape(imgSrc)}" style="max-width: 95%; max-height: 80vh; object-fit: contain; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
+        <img src="${imgSrc}" style="max-width: 95%; max-height: 80vh; object-fit: contain; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.6);">
         <div style="color: white; margin-top: 20px; font-size: 14px; font-weight: bold; background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.2);">Tap the ✖ in the top right to read details and sign</div>
     `;
     document.body.appendChild(overlay);
@@ -1096,8 +938,7 @@ window.viewAnnouncement = function(encodedData) {
     if (data.images && data.images.length > 0) {
         imagesHtml = `<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-bottom: 5px;">`;
         data.images.forEach(img => {
-            img=announcementImage(img);if(!img)return;
-            imagesHtml += `<img src="${swapEscape(img)}" style="width: 100%; max-height: 250px; border-radius: 8px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onclick="window.showExtraLargeImage(${swapEscape(JSON.stringify(img))})">
+            imagesHtml += `<img src="${img}" style="width: 100%; max-height: 250px; border-radius: 8px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onclick="window.showExtraLargeImage('${img}')">
             <div style="text-align: center; font-size: 10px; color: #94a3b8; font-weight: bold;">Tap image to enlarge 🔍</div>`;
         });
         imagesHtml += `</div>`;
@@ -1107,8 +948,8 @@ window.viewAnnouncement = function(encodedData) {
     if (data.hasSignature) {
         sigHtml = `
             <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px; border: 1px solid #bbf7d0;">
-                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${swapEscape(data.signatureDate)}</span>
-                ${announcementImage(data.signatureImg,{signature:true})?`<img src="${swapEscape(announcementImage(data.signatureImg,{signature:true}))}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">`:''}
+                <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
+                <img src="${data.signatureImg}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">
             </div>`;
     } else {
         sigHtml = `
@@ -1120,13 +961,13 @@ window.viewAnnouncement = function(encodedData) {
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
                     <button onclick="window.clearSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear</button>
-                    <button onclick="window.submitSignature(${swapEscape(JSON.stringify(data.id))})" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
+                    <button onclick="window.submitSignature('${data.id}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
                 </div>
             </div>`;
     }
 
-    let subHeadlineHtml = data.subHeadline ? `<div style="font-size: 16px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px; line-height: 1.3;">${swapEscape(data.subHeadline)}</div>` : '';
-    let footerHtml = data.footerMessage ? `<div style="font-size: 12px; color: #64748b; margin-top: 25px; padding-top: 15px; border-top: 2px dashed #e2e8f0; text-align: center; font-style: italic; font-weight: bold;">${swapEscape(data.footerMessage)}</div>` : '';
+    let subHeadlineHtml = data.subHeadline ? `<div style="font-size: 16px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px; line-height: 1.3;">${data.subHeadline}</div>` : '';
+    let footerHtml = data.footerMessage ? `<div style="font-size: 12px; color: #64748b; margin-top: 25px; padding-top: 15px; border-top: 2px dashed #e2e8f0; text-align: center; font-style: italic; font-weight: bold;">${data.footerMessage}</div>` : '';
 
     // 🔥 MODAL TARGET BADGES
     let targetBanner = '';
@@ -1134,12 +975,12 @@ window.viewAnnouncement = function(encodedData) {
     if (data.targetType === 'Individual') targetBanner = `<div style="background: #f5f3ff; color: #7c3aed; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; margin-bottom: 12px; border: 1px solid #ddd6fe; display: inline-block;">👤 Private Individual Notice</div>`;
 
     Swal.fire({
-        title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px; line-height: 1.2; text-transform: uppercase;">${swapEscape(data.title)}</div>`,
+        title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px; line-height: 1.2; text-transform: uppercase;">${data.title}</div>`,
         html: `<div style="text-align: left; max-height: 75vh; overflow-y: auto; padding-right: 5px;">
-                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${swapEscape(data.dateStr)}</div>
+                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${data.dateStr}</div>
                 ${targetBanner}
                 ${subHeadlineHtml}
-                <div style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${swapEscape(data.message || '')}</div>
+                <div style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
                 ${imagesHtml}
                 ${sigHtml}
                 ${footerHtml}
@@ -1245,7 +1086,6 @@ window.submitSignature = async function(announcementId) {
         await addDoc(collection(db, "acknowledgments"), {
             announcementId: announcementId,
             staffName: staffName,
-            staffId:localStorage.getItem('takodeal_staff_id'),
             signature: sigDataUrl,
             timestamp: serverTimestamp()
         });
@@ -1281,6 +1121,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 
 installAttendanceCamera(window, document);
 installAttendanceProofUploader(window, document, {uploadBytesResumable, getDownloadURL, ref, getStorage});
+window.authorizeAttendanceUpload=createClockUploadAccess({auth:staffPrimaryAuth,deviceId:()=>localStorage.getItem('takodeal_device_id'),authority:()=>window.staffSetupAccess,Swal,fetcher:window.fetch.bind(window)});
 window.punchTime = async function(type) {
     if (!['TIME IN', 'TIME OUT'].includes(type)) return Swal.fire('Attendance not saved', 'Choose Time In or Time Out using the attendance buttons.', 'warning');
     let staffName = localStorage.getItem('takodeal_staff_name');
@@ -1359,7 +1200,7 @@ window.punchTime = async function(type) {
         if (type === "TIME IN") {
             try {
                 let staffProfiles = {}; 
-                const staffDocSnap = await window.readStaffDirectoryProfile(punchStaffId,{assertCurrent:assertPunchIdentity});
+                const staffDocSnap = await getDocFromServer(doc(db, "cashiers", punchStaffId));
                 assertPunchIdentity();
                 if (staffDocSnap.exists()) {
                     staffProfiles[staffName] = {...staffDocSnap.data(),id:punchStaffId,staffId:punchStaffId};
@@ -1429,12 +1270,13 @@ window.punchTime = async function(type) {
 
                         window.staffLateProofDraft = {staffId:punchStaffId, branch:closestBranch, reason:lateForm.reason, file:lateForm.file, staffShiftChoice:lateForm.staffShiftChoice, savedAt:Date.now()};
                         pendingStaffShiftChoice=lateForm.staffShiftChoice;
-                        const proofUser=await ensureStaffPrimaryUser({guard:assertPunchIdentity});assertPunchIdentity();
+                        const uploadAccess=await window.authorizeAttendanceUpload({staffId:punchStaffId,attendanceId:attendanceRef.id,assertCurrent:assertPunchIdentity});
+                        if(!uploadAccess)return;
                         const proof = await window.uploadAttendanceProof({
-                            file:lateForm.file, path:`staff_requests/${proofUser.uid}/${punchStaffId}/late_${attendanceRef.id}.jpg`,
-                            metadata:{contentType:'image/jpeg',customMetadata:{staffUploadUid:proofUser.uid,staffId:punchStaffId}},
+                            file:lateForm.file, path:uploadAccess.path,metadata:uploadAccess.metadata,
                             assertCurrent:()=>{
-                                if (staffPrimaryAuth.currentUser!==proofUser || localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again before uploading or recording attendance.');
+                                uploadAccess.assertCurrent();
+                                if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again before uploading or recording attendance.');
                             }
                         });
                         const proofUrl = proof.url;
@@ -1477,14 +1319,20 @@ window.punchTime = async function(type) {
         let faceResult = null;
         if (type === 'TIME IN') {
             if (typeof window.verifyAttendanceFace !== 'function') throw Error('The camera check is unavailable. Refresh while online before Time In.');
-            Swal.fire({title:'Checking your current camera photo…',text:'Keep your face in the camera frame.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-            faceResult = await window.verifyAttendanceFace();
+            // Finish remote roster checks before starting the photo's 15-second
+            // validity window. Its current-time checks still run below.
+            Swal.fire({title:'Confirming your saved shift…',text:'Checking the latest assigned hours before capturing your attendance photo.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+            punchScheduleData = await readFreshPunchSchedule(new Date());
+            assertPunchIdentity();
             Swal.fire({title:'Confirming your branch location…',text:'Checking the location saved with this attendance.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
             const finalLocation = await window.getAttendanceLocation();
             if (finalLocation.branch !== closestBranch) throw Error('Your branch changed. Please record attendance again.');
             if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
-            window.assertAttendanceFaceFresh(faceResult);
             punchLocation = finalLocation; minDistance = finalLocation.distance;
+            Swal.fire({title:'Checking your current camera photo…',text:'Keep your face in the camera frame.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+            faceResult = await window.verifyAttendanceFace();
+            assertPunchIdentity();
+            window.assertAttendanceFaceFresh(faceResult);
         }
         const assertClockCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId || localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');};
         let earlyClockOut=null,timeOutResult=null;
@@ -1508,9 +1356,8 @@ window.punchTime = async function(type) {
         };
         if (type === 'TIME IN') {
             attendance.faceCheck = faceResult.faceCheck;
-            // Slow proof, HR and camera checks must not save an earlier roster.
-            Swal.fire({title:'Confirming your saved shift…',text:'Checking the latest assigned hours before HQ saves attendance.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-            punchScheduleData = await readFreshPunchSchedule(new Date());
+            // Recalculate with the current time and the freshly confirmed
+            // roster. No remote history read may age this final camera photo.
             assertPunchIdentity();
             window.assertAttendanceFaceFresh(faceResult);
             const clockDate = new Date();
@@ -1537,7 +1384,7 @@ window.punchTime = async function(type) {
             timeOutResult=await earlyClockOut.service.close({start:activeTimeIn,staffId:punchStaffId,staffName,attendance,reliefForReview:earlyClockOut.reliefForReview===true,assertCurrent:assertClockCurrent});
             assertClockCurrent();
         } else {
-        const batch = writeBatch(db);
+        const batch = createPlottedTimeInBatch({db,doc,runTransaction},{attendanceRef,attendance,profile:punchScheduleProfiles[staffName],assertCurrent:()=>{assertClockCurrent();window.assertAttendanceFaceFresh(faceResult);if(Date.now()-punchLocation.timestamp>60000)throw Error('Location verification expired. Reopen Clock to refresh your branch location.');}});
         if (pendingLateRequest) {
             if (Number.isFinite(attendance.lateMinutes)) {
                 pendingLateRequest.lateMinutes = attendance.lateMinutes;
@@ -1558,7 +1405,11 @@ window.punchTime = async function(type) {
 
     } catch(e) { 
         console.error(e); 
-        Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
+        if(e.staffAccessRecovery){
+            const help=e.staffAccessRecovery;
+            const answer=await Swal.fire({titleText:help.title,text:help.message,icon:'warning',showCancelButton:help.action==='phone',confirmButtonText:'Back to Time Clock',cancelButtonText:'Phone setup help',footer:'Your saved attendance, reason and selected screenshot are kept.'});
+            if(help.action==='phone'&&answer.dismiss===Swal.DismissReason?.cancel)window.staffSelfRepair?.open();
+        }else Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
     } 
     finally { 
         window.staffPunchBusy = false;
@@ -1590,7 +1441,7 @@ window.openReqForm = function(type) {
     } else if (type === 'Staff Meal') {
         // 🔥 THE NEW DUAL-VERIFICATION UI 🔥
         formHtml = `<div style="margin-bottom: 15px;">
-                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">Ask HQ to review a meal receipt. Enter the exact POS Receipt OR#. This sends a zero-value receipt review; the saved POS meal remains the source for any authorized payroll charge.</p>
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">To authorize your payroll deduction, please enter the exact POS Receipt OR# generated when you punched your meal.</p>
             </div>
             <div class="form-group">
                 <label>POS Receipt OR#</label>
@@ -1604,7 +1455,8 @@ window.openReqForm = function(type) {
 
 window.submitStaffRequest = async function() {
     if(window.currentReqType==='Leave')return window.getStaffLeaveUI().submitFromForm();
-    let payload = { type: window.currentReqType, staffId:localStorage.getItem('takodeal_staff_id'),staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
+    const requestStaffId=localStorage.getItem('takodeal_staff_id'),requestStaffName=localStorage.getItem('takodeal_staff_name'),requestType=window.currentReqType,requestUser=staffPrimaryAuth.currentUser;
+    let payload = { type: requestType, staffId:requestStaffId, staffName: requestStaffName, status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
     let fileToUpload = null;
 
     if (payload.type === 'Cash Advance') {
@@ -1620,10 +1472,9 @@ window.submitStaffRequest = async function() {
             return Swal.fire('Required', '❌ Please enter the exact Receipt OR# from the POS.', 'warning');
         }
         
-        payload.type='Meal Receipt Review';
-        payload.item = "Meal receipt for HQ review: " + receiptCode;
-        payload.receiptId = receiptCode;
-        payload.amount = 0;
+        payload.item = "Meal Verification OR#: " + receiptCode; 
+        payload.receiptId = receiptCode; // Links this securely to the Cashier App transaction!
+        payload.amount = 0; // The Manager App will pull the real amount automatically!
     }
 
     // 🛡️ THE BULLETPROOF FIX: Deep clean undefined values before sending to Firebase!
@@ -1636,24 +1487,37 @@ window.submitStaffRequest = async function() {
 
     let btn = document.getElementById('btnSubmitReq');
     btn.innerText = fileToUpload ? "⏳ Uploading Photo..." : "⏳ Sending..."; btn.disabled = true;
+    const requestModal=document.getElementById('requestModal'),formValues=()=>JSON.stringify(['reqAmount','reqReason','reqMealReceiptCode'].map(id=>document.getElementById(id)?.value??null)),requestForm=formValues();
+    let requestDispatched=false;
+    const requestProblem=message=>Object.assign(Error(message),{staffRequestSafe:true});
+    const assertRequestCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==requestStaffId||localStorage.getItem('takodeal_staff_name')!==requestStaffName||window.currentReqType!==requestType||staffPrimaryAuth.currentUser!==requestUser||document.getElementById('requestModal')!==requestModal||requestModal?.style.display==='none'||formValues()!==requestForm)throw requestProblem(requestDispatched?'Your Staff account or request changed after sending. Check the original account’s inbox before sending it again.':'Your Staff account or request changed. Reopen the request; nothing was sent.');};
 
     try {
-        const person=(await window.readStaffDirectoryProfile(cleanPayload.staffId,{assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==cleanPayload.staffId)throw Error('Your Staff account changed. Reopen the request.');}})).data();cleanPayload.branch=person.branch;cleanPayload.staffName=person.cashierName;
+        assertRequestCurrent();
+        if(typeof requestStaffId!=='string'||!requestStaffId||requestStaffId.length>128||requestStaffId.includes('/'))throw requestProblem('Sign in to your Staff account again before sending this request.');
+        if(payload.type==='Cash Advance'){
+            let profileTimer;const profile=await Promise.race([getDocFromServer(doc(db,'cashiers',requestStaffId)),new Promise((_,reject)=>{profileTimer=setTimeout(()=>reject(requestProblem('HQ did not confirm your current Staff profile in time. Nothing was sent; reconnect and try again.')),20000);})]).finally(()=>clearTimeout(profileTimer));assertRequestCurrent();
+            const person=profile.exists()?profile.data():null;
+            if(profile.metadata?.fromCache===true||profile.metadata?.hasPendingWrites===true||!person||!activeStaffProfile(person)||typeof person.cashierName!=='string'||!person.cashierName.trim()||typeof person.branch!=='string'||!person.branch.trim())throw requestProblem('Your current Staff name and home branch could not be confirmed. Reconnect or ask HQ to review the profile; no request was sent.');
+            cleanPayload.staffName=person.cashierName;cleanPayload.branch=person.branch;
+        }
         if (fileToUpload) {
-            const uploadUser=await ensureStaffPrimaryUser();if(localStorage.getItem('takodeal_staff_id')!==cleanPayload.staffId)throw Error('Your Staff account changed. Reopen the request.');
-            const fileName = `staff_requests/${uploadUser.uid}/${cleanPayload.staffId}/meal_${crypto.randomUUID()}.${fileToUpload.name.split('.').pop()}`;
-            const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload,{customMetadata:{staffUploadUid:uploadUser.uid,staffId:cleanPayload.staffId}});
+            const fileName = `staff_requests/meal_${cleanPayload.staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileToUpload.name.split('.').pop()}`;
+            const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload);
             cleanPayload.proofImageUrl = await getDownloadURL(snapshot.ref);
         }
         
+        assertRequestCurrent();
+        requestDispatched=true;
         await window.addDoc(window.collection(window.db, "staff_requests"), cleanPayload);
+        assertRequestCurrent();
         
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Submitted to HQ!', showConfirmButton: false, timer: 2000});
         document.getElementById('requestModal').style.display = 'none';
         
     } catch(e) { 
         console.error(e); 
-        Swal.fire('Error', 'Failed to send request.', 'error'); 
+        if(localStorage.getItem('takodeal_staff_id')===requestStaffId&&localStorage.getItem('takodeal_staff_name')===requestStaffName)Swal.fire('Request not confirmed', e.staffRequestSafe?e.message:requestDispatched?'The request could not be confirmed with HQ. Check your inbox before sending it again.':'HQ could not confirm your current request details. Nothing was sent; reconnect and try again.', 'warning');
     } finally { 
         btn.innerText = "🚀 Submit to HQ"; btn.disabled = false; 
     }
@@ -1684,14 +1548,12 @@ window.startInboxListener = function() {
     // 🔥 OPTIMIZED QUERY: Only fetch requests that have NOT been acknowledged yet!
     const inboxQ = window.query(
         window.collection(window.db, "staff_requests"), 
-        window.where("staffId", "==", staffId),
+        window.where("staffName", "==", staffName),
         window.where("staffAcknowledged", "==", false)
     );
 
-    let inboxRead=0;
-    window.staffInboxUnsubscribe = window.onSnapshot(inboxQ, async (snapshot) => {
+    window.staffInboxUnsubscribe = window.onSnapshot(inboxQ, (snapshot) => {
         if (!current()) return;
-        const read=++inboxRead;if(typeof window.readOperationalRecords==='function'){try{snapshot=await window.readOperationalRecords('staff_requests',{assertCurrent:()=>{if(!current()||read!==inboxRead)throw Error('Your Staff inbox changed.');}});}catch(error){if(current()&&read===inboxRead){const badge=document.getElementById('navReqBadge');if(badge){badge.style.display='block';badge.innerText='!';badge.title='Request history could not refresh. Open Inbox to retry.';}}return;}if(!current()||read!==inboxRead)return;}
         let unreadCount = 0;
         snapshot.forEach(doc => { 
             let d = doc.data(); 
@@ -1728,7 +1590,7 @@ window.loadInbox = async function() {
 
     try {
         const [snap,leaveRows] = await Promise.all([
-            window.readOperationalRecords('staff_requests',{assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId)throw Error('Your Staff account changed. Reopen Inbox.');}}),
+            getDocs(query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name')))),
             window.getStaffLeaveUI().list()
         ]);
         if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId||localStorage.getItem('takodeal_staff_name')!==inboxStaffName)return;
@@ -2082,7 +1944,7 @@ window.loadPayslipVault = async function() {
     try {
         let staffProfile={staffId,cashierName:staffName},salaryHistoryUnavailable=false;
         try {
-            const staffRef = await window.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed.');}});
+            const staffRef = await window.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(!stillOpen())throw Error('The private Pay view changed.');}});
             if(!staffRef.exists()||staffRef.metadata?.fromCache||staffRef.metadata?.hasPendingWrites)throw Error('Salary profile is not confirmed.');
             staffProfile={...staffRef.data(),staffId};
         } catch {salaryHistoryUnavailable=true;}
@@ -2130,9 +1992,9 @@ window.loadPayslipVault = async function() {
         if(!stillOpen())return;
         
         const financialInputs=await window.readPrivatePayrollInputs({staffId,assertCurrent:()=>{if(!stillOpen())throw Error('The private Pay view changed.');}});
-        if(financialInputs.complete!==true)throw Object.assign(Error('Your complete private deduction and bonus records need HQ review.'),{code:'staff-financial-inputs/unavailable'});
-        const inputSnapshot=records=>({docs:records.map(row=>({id:row.id,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}})),forEach:fn=>records.forEach(row=>fn({id:row.id,data:()=>row}))});
-        const bonusSnap=inputSnapshot(financialInputs.staffBonuses);
+        if(financialInputs.complete!==true)throw Error('Your private payroll inputs are incomplete. Ask HQ to review saved records.');
+        const privateSnapshot=rows=>({docs:rows.map(row=>({id:row.id,data:()=>row})),forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>row}))});
+        const bonusSnap=privateSnapshot(financialInputs.staffBonuses);
         if (!stillOpen()) return;
         const payrollAdjustmentHistory=await readStaffPayrollAdjustments({readPrivatePayrollInputs:async()=>financialInputs},{staffId,stillCurrent:stillOpen});
         if (!stillOpen()) return;
@@ -2169,7 +2031,7 @@ window.loadPayslipVault = async function() {
             bonusSnap.forEach(docSnap => {
                 let b = docSnap.data();
                 if(isPayrollAdjustment({...b,id:docSnap.id}))return;
-                if (b.dateAdded && (b.staffId?b.staffId===staffId:isMatch(b.staffName))) {
+                if (b.dateAdded && isMatch(b.staffName)) {
                     let t = safeDate(b.dateAdded);
                     if (t >= startT && t <= endT) { tBonuses += (parseFloat(b.amount) || 0); fBonuses.push(b); }
                 }
@@ -2280,9 +2142,9 @@ window.loadPayslipVault = async function() {
                 let existingLog = sPairs.find(l => l.in && l.in.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) === dateStr);
                 if (existingLog) {
                     if (existingLog.remark.includes('Complete')) existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
-                    existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${swapEscape(b.remarks || 'Bonus')})</span>`;
+                    existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
                 } else {
-                    sPairs.push({ dateObj: bDate, in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${swapEscape(b.remarks || 'Bonus')})</span>`, lateMins: 0 });
+                    sPairs.push({ dateObj: bDate, in: null, out: null, hrs: 0, remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`, lateMins: 0 });
                 }
             });
 
@@ -2295,11 +2157,11 @@ window.loadPayslipVault = async function() {
         let estGross = currentData.basicPay;
         let prevEstGross = prevData.basicPay;
 
-        const dedSnap=inputSnapshot(financialInputs.staffDeductions);
+        const dedSnap=privateSnapshot(financialInputs.staffDeductions);
         if (!stillOpen()) return;
         let liveUnpaidVales = 0; let liveActiveDeductions = [];
         const onlineStaffId=localStorage.getItem('takodeal_staff_id');
-        const onlineSnap=inputSnapshot(financialInputs.staffDeductions.filter(row=>row.staffId===onlineStaffId));
+        const onlineSnap=privateSnapshot(financialInputs.staffDeductions.filter(row=>row.staffId===onlineStaffId));
         if(!stillOpen())return;
         const onlineRows=onlineSnap.docs.map(row=>({id:row.id,...row.data()})).filter(row=>row.type==='Online Order Refund'&&row.staffId===onlineStaffId);
         const hasCashShortageReview=onlineSnap.docs.some(row=>{const item=row.data();return item.staffId===onlineStaffId&&(item.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))&&['Pending Review','Unpaid'].includes(item.status);});
@@ -2328,20 +2190,12 @@ window.loadPayslipVault = async function() {
             }
         });
 
-        const loanSnapshot=await window.readMyLoanLedgerSnapshot({assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
-        if (!stillOpen()) return;
-        if(loanSnapshot.reviewRequired)throw Object.assign(Error('Loan records need an HQ review.'),{code:'loan-ledger-review'});
+        const loanSnapshot=await window.readMyLoanLedgerSnapshot({assertCurrent:()=>{if(!stillOpen())throw Error('The private Pay view changed.');}});
+        if(!stillOpen())return;
+        if(loanSnapshot.reviewRequired||loanSnapshot.historyComplete!==true)throw Object.assign(Error('Ask HQ to confirm your private loan balance before using the live estimate.'),{code:'loan-ledger-review'});
         const loanData=loanSnapshot.ledger;
-
-        let cutoffLoanDeduction = 0; let remBal = 0;
-        if (loanData) {
-            remBal = loanData.remainingBalance;
-            if (remBal > 0) {
-                if(loanData.cutoffDeduction===null)throw Object.assign(Error('The loan deduction setting is not recorded.'),{code:'loan-ledger-review'});
-                cutoffLoanDeduction = loanData.cutoffDeduction;
-                if (cutoffLoanDeduction > remBal) cutoffLoanDeduction = remBal; 
-            }
-        }
+        let cutoffLoanDeduction=0,remBal=loanData?.remainingBalance??0;
+        if(loanData&&remBal>0){if(loanData.cutoffDeduction===null)throw Object.assign(Error('Your saved loan cutoff deduction needs HQ review.'),{code:'loan-ledger-review'});cutoffLoanDeduction=Math.min(loanData.cutoffDeduction,remBal);}
 
         const onlineDue=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=cutoffEndTimestamp);
         const onlineDueAmount=onlineDue.reduce((sum,row)=>sum+(Number(row.amount)||0),0);
@@ -2520,7 +2374,7 @@ window.loadPayslipVault = async function() {
     } catch (e) {
         if (!stillOpen()) return;
         console.error("Payslip Fetch Error:", e);
-        const loanUnavailable=e?.code?.startsWith('loan-ledger-'),financialUnavailable=e?.code?.startsWith('staff-financial-inputs/')||e?.code?.startsWith('staff-access/');
+        const loanUnavailable=e?.code?.startsWith('loan-ledger-'),financialUnavailable=e?.code?.startsWith('staff-financial-inputs/')||e?.code?.startsWith('staff-access/')||e?.code?.startsWith('private-profile/');
         document.getElementById('liveEstNetPay').innerText = loanUnavailable||financialUnavailable?'Unavailable':"Error";
         renderSaved();
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
@@ -2541,7 +2395,7 @@ window.viewPastPayslip = function(encodedData) {
     let disbursedDateStr = 'Pending';
     if (d.processedAt) {
         let pDate = d.processedAt.seconds ? new Date(d.processedAt.seconds * 1000) : new Date(d.processedAt);
-        disbursedDateStr = pDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        disbursedDateStr = pDate.toLocaleDateString('en-PH', { timeZone:'Asia/Manila',year: 'numeric', month: '2-digit', day: '2-digit' });
     } else {
         disbursedDateStr = d.recordState==='shared'?'Awaiting payment':'Not recorded';
     }
@@ -2557,7 +2411,7 @@ window.viewPastPayslip = function(encodedData) {
     let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
 
     let sigHtml = '';
-    if (d.staffSignature) {
+    if (typeof d.staffSignature==='string' && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(d.staffSignature)) {
         sigHtml = `
             <div style="margin-top: 25px; padding-top: 15px; text-align: center;">
                 <span style="font-size: 11px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Digitally Acknowledged & Signed</span>
@@ -2567,70 +2421,11 @@ window.viewPastPayslip = function(encodedData) {
     }
 
     // 🔥 THE NEW ATTENDANCE SUMMARY GENERATOR
-    let attendanceHtml = "";
-    let logsArray = d.shiftPairs || d.logs || [];
-    if (logsArray.length > 0) {
-        logsArray.forEach(log => {
-            const parseDate = (val) => {
-                if (!val) return null;
-                if (val.seconds) return new Date(val.seconds * 1000);
-                if (val.toDate) return val.toDate();
-                let parsed = new Date(val);
-                return isNaN(parsed.getTime()) ? null : parsed;
-            };
-
-            // 1. DATE COLUMN: Check for pre-formatted strings first!
-            let dateStr = log.date || log.dateString; 
-            if (!dateStr) {
-                let logDate = parseDate(log.dateObj || log.timestamp) || new Date();
-                dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            }
-
-            // 2. TIME IN COLUMN: Support both text strings and raw dates!
-            let inTime = '---';
-            if (log.in) {
-                if (typeof log.in === 'string' && !log.in.includes('T') && !log.in.includes('-')) {
-                    inTime = log.in; // Use text directly
-                } else {
-                    let inDate = parseDate(log.in);
-                    inTime = inDate ? inDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
-                }
-            }
-
-            // 3. TIME OUT COLUMN: Support both text strings and raw dates!
-            let outTime = '---';
-            if (log.out) {
-                if (typeof log.out === 'string' && !log.out.includes('T') && !log.out.includes('-')) {
-                    outTime = log.out; // Use text directly
-                } else {
-                    let outDate = parseDate(log.out);
-                    outTime = outDate ? outDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
-                }
-            }
-
-            let inColor = (log.lateMins > 0) ? '#dc2626' : '#16a34a';
-            let outColor = (outTime.includes('MISSED') || outTime === '---' || (log.remark && log.remark.includes('Short'))) ? '#dc2626' : '#16a34a';
-
-            let hrs = parseFloat(log.hrs || 0).toFixed(2) + 'h';
-            if (hrs === '0.00h' || isNaN(parseFloat(hrs))) hrs = '---';
-
-            attendanceHtml += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 10px 4px; color: #334155; text-align: center;">${dateStr}</td>
-                    <td style="padding: 10px 4px; color: ${inColor}; font-weight: bold; text-align: center;">${inTime}</td>
-                    <td style="padding: 10px 4px; color: ${outColor}; font-weight: bold; text-align: center;">${outTime}</td>
-                    <td style="padding: 10px 4px; color: #334155; font-weight: bold; text-align: center;">${hrs}</td>
-                    <td style="padding: 10px 4px; font-size: 10px; color: #64748b; text-align: right;">${log.remark || ''}</td>
-                </tr>
-            `;
-        });
-    } else {
-        attendanceHtml = `<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px; font-style: italic;">No attendance records found for this cutoff.</td></tr>`;
-    }
+    const attendanceHtml=payslipWorkRows(d);
 
     // THE FULL PDF LAYOUT
     let html = `
-        <div style="overflow-x: auto; width: 100%; background: #f1f5f9; padding: 15px; border-radius: 8px;">
+        <div class="staff-slip-view" style="overflow-x: auto; width: 100%; background: #f1f5f9; padding: 15px; border-radius: 8px;">
             <div style="text-align: right; margin-bottom: 15px; position: sticky; top: 0; left: 0; z-index: 50;">
                 <button id="btnDownloadStaffPayslip" onclick="window.downloadStaffPayslipImage('${encodedData}')" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">⬇️ Download HD Image</button>
             </div>
@@ -2650,20 +2445,20 @@ window.viewPastPayslip = function(encodedData) {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
+                        <div class="staff-slip-columns" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
                             <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
-                                <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${d.name || d.staffName}</span>
-                                <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${d.branch || 'N/A'}</span>
-                                <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${d.dateHired || '---'}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${payslipText(d.name || d.staffName)}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${payslipText(d.branch || 'Not recorded')}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${payslipText(d.dateHired || d.profile?.dateHired || 'Not recorded')}</span>
                             </div>
                             <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
-                                <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${d.start || d.startDate}</span>
-                                <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${d.end || d.endDate}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${payslipText(d.start || d.startDate)}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${payslipText(d.end || d.endDate)}</span>
                                 <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span style="border-bottom: 1px solid black;">${disbursedDateStr}</span>
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
+                        <div class="staff-slip-columns" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
                             <div style="border-right: 1px solid black;">
                                 <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">INCOME</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
@@ -2709,8 +2504,8 @@ window.viewPastPayslip = function(encodedData) {
                         <!-- 🔥 ATTENDANCE SUMMARY TABLE -->
                         <div style="margin-top: 35px;">
                             <div style="border-top: 2px dashed #0f172a; margin-bottom: 20px;"></div>
-                            <h4 style="text-align: center; color: #475569; font-size: 13px; letter-spacing: 1px; margin: 0 0 15px 0; text-transform: uppercase;">ATTENDANCE SUMMARY (CURRENT CUTOFF)</h4>
-                            <table style="width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                            <h4 style="text-align: center; color: #475569; font-size: 13px; letter-spacing: 1px; margin: 0 0 15px 0; text-transform: uppercase;">Attendance for this cutoff</h4>
+                            <table class="staff-slip-attendance" style="width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
                                 <thead style="border-bottom: 2px solid #cbd5e1; background: #f8fafc;">
                                     <tr>
                                         <th style="padding: 10px 4px; color: #0f172a; text-align: center;">Date</th>
@@ -2837,7 +2632,7 @@ window.loadStaffSchedule = async function() {
         const selected = monthKey(requestedMonth);
         const [year, month] = selected.split('-').map(Number);
         if (picker) picker.value = selected;
-        const staffSnap = await window.readStaffDirectoryProfile(staffId,{assertCurrent:()=>{if(!stillCurrent())throw Error('The Schedule view changed.');}});
+        const staffSnap = await window.getDocFromServer(window.doc(window.db, 'cashiers', staffId));
         if (!stillCurrent()) return;
         
         let nickname = staffName;
@@ -2986,31 +2781,61 @@ window.loadStaffSchedule = async function() {
 };
 
 window.cancelSwapRequest = function() {
-    if(window.staffSwapSubmitting)return;
+    if(window.staffSwapWritePending)return staffSwapMessage('Request is sending','Wait for HQ to confirm the request. Closing or retrying now could hide its result.','info');
+    if(window.pendingSwapData?.sendUnconfirmed)return staffSwapMessage('Keep the previous send reference','Its result is not confirmed. Check with your co-worker or Owner before closing or starting another request.','warning');
+    const workflow=window.staffSwapWorkflow;if(workflow){workflow.cancelled=true;finishStaffSwapProgress(workflow);}
     window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
     window.pendingSwapData=null;
+    window.staffSwapSubmitting=null;
+    const button=document.getElementById('btnSendSwap'),cancel=document.getElementById('btnCancelSwap');if(button){button.disabled=false;button.textContent='Send Request';}if(cancel)cancel.disabled=false;
     const modal=document.getElementById('swapRequestModal');if(modal)modal.style.display='none';
 };
 
+function staffSwapMessage(title,text,icon){
+    const modal=document.getElementById('swapRequestModal');
+    return Swal.fire({...modal&&modal.style.display!=='none'?{target:modal}:{},titleText:title,text,icon});
+}
+function beginStaffSwapProgress(title){
+    const modal=document.getElementById('swapRequestModal'),workflow={phase:'checking',cancelled:false,popup:null};window.staffSwapWorkflow=workflow;
+    Promise.resolve(Swal.fire({...modal&&modal.style.display!=='none'?{target:modal}:{},titleText:title,text:'Confirming the current saved evidence. Slow connections can take up to 45 seconds. Nothing has been sent yet.',allowOutsideClick:false,allowEscapeKey:true,showCancelButton:true,cancelButtonText:'Cancel check',didOpen:popup=>{if(window.staffSwapWorkflow!==workflow||workflow.phase!=='checking'||workflow.cancelled)return;const currentPopup=Swal.getPopup?.();if(popup&&currentPopup!==popup)return;workflow.popup=currentPopup;Swal.showLoading();}})).then(result=>{
+        if(window.staffSwapWorkflow===workflow&&workflow.phase==='checking'&&['cancel','esc'].includes(result?.dismiss))window.cancelSwapRequest();
+    }).catch(()=>{if(window.staffSwapWorkflow===workflow&&workflow.phase==='checking')window.cancelSwapRequest();});
+    return workflow;
+}
+function updateStaffSwapProgress(workflow,text,writing=false){
+    if(window.staffSwapWorkflow!==workflow||workflow.cancelled)return;
+    if(workflow.popup&&Swal.getPopup?.()!==workflow.popup)return;
+    Swal.update?.({titleText:writing?'Sending your swap request…':text,text:writing?'Keep this screen open until HQ confirms the send. Do not send the request again while its result is unknown.':'Checking fresh saved evidence across all branches. Nothing has been sent yet.',showCancelButton:!writing,allowEscapeKey:!writing});
+}
+function finishStaffSwapProgress(workflow){
+    if(window.staffSwapWorkflow!==workflow)return;
+    workflow.phase='finished';window.staffSwapWorkflow=null;
+    if(!workflow.popup||Swal.getPopup?.()===workflow.popup)Swal.close?.();
+}
+
 window.initiateSwapRequest = async function(day,dateStr,branch,myShiftId,myShiftName) {
-    if(window.staffSwapSubmitting)return Swal.fire('Sending request','Wait for your current request to finish.','info');
+    if(window.pendingSwapData?.sendUnconfirmed)return staffSwapMessage('Check the previous send','Its result is not confirmed. Check with your co-worker or Owner before starting another request.','warning');
+    if(window.staffSwapSubmitting||window.staffSwapWritePending)return staffSwapMessage('Sending request','Wait for your current request to finish.','info');
+    if(window.staffSwapWorkflow?.phase==='checking')return;
     const staffId=localStorage.getItem('takodeal_staff_id'),staffName=localStorage.getItem('takodeal_staff_name');
+    const user=staffPrimaryAuth.currentUser,deviceId=localStorage.getItem('takodeal_device_id');
     const scheduleToken=window.staffScheduleSync?.token();
     const generation=window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
     window.pendingSwapData=null;
+    let workflow;
     const assertCurrent=()=>{
-        if(window.staffSwapRequestGeneration!==generation||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff account or swap selection changed. Open the request again.');
+        if(window.staffSwapRequestGeneration!==generation||workflow?.cancelled||staffPrimaryAuth.currentUser!==user||localStorage.getItem('takodeal_device_id')!==deviceId||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff account or swap selection changed. Open the request again.');
         if(window.staffScheduleSync&&!window.staffScheduleSync.current(scheduleToken))throw Error('The schedule view changed. Open the request again.');
         if(document.getElementById('staffMonthPicker')?.value!==monthKey(dateStr))throw Error('The selected schedule month changed. Open the request again.');
     };
     try {
         const date=scheduleDateKey(dateStr);
         if(Number(day)!==Number(date.slice(-2))||date<scheduleDateKey(new Date()))throw Error('Choose a current or future work date.');
-        Swal.fire({title:'Checking all branch schedules…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-        const context=await loadStaffSwapContext(window,{staffId,staffName,workDate:date,assertCurrent});
+        workflow=beginStaffSwapProgress('Checking all branch schedules…');
+        const context=await loadStaffSwapContext(window,{staffId,staffName,workDate:date,assertCurrent,onProgress:text=>updateStaffSwapProgress(workflow,text)});
         const candidates=swapCandidates({snapshot:context.snapshot,daySnapshots:context.daySnapshots,workDate:date,requesterBranch:branch,requesterShiftId:myShiftId,requesterAliases:context.requesterAliases,requesterStaffId:staffId});
-        assertCurrent();Swal.close?.();
-        if(!candidates.length)return Swal.fire('No eligible co-workers','No eligible scheduled or standby staff were found across the saved branch schedules for this date. HQ can review missing or conflicting assignments.','info');
+        assertCurrent();finishStaffSwapProgress(workflow);
+        if(!candidates.length)return staffSwapMessage('No eligible co-workers','No eligible scheduled or standby staff were found across the saved branch schedules for '+date+'. No request was sent. Ask HQ to check your exact assignment, staff links, saved hours and overnight conflicts.','info');
         const select=document.getElementById('swapCandidateSelect'),placeholder=document.createElement('option');
         placeholder.value='';placeholder.textContent='-- Choose Co-Worker --';select.replaceChildren(placeholder);
         for(const kind of ['scheduled','standby']){
@@ -3025,32 +2850,38 @@ window.initiateSwapRequest = async function(day,dateStr,branch,myShiftId,myShift
         }
         const assigned=context.snapshot.currentSchedule[context.day][branch].scheduled[myShiftId];
         const rule=context.snapshot.branchConfig[branch].find(shift=>shift.id===myShiftId);
-        window.pendingSwapData={day:context.day,dateStr:date,workDate:date,branch,myShiftId,myShiftName:rule.name||myShiftName,sourceScheduleMonth:context.sourceScheduleMonth,sourceRevisionId:context.sourceRevisionId,requesterAssignedName:assigned,staffId,staffName,generation,contextKey:staffSwapContextKey(context),candidates};
+        window.pendingSwapData={day:context.day,dateStr:date,workDate:date,branch,myShiftId,myShiftName:rule.name||myShiftName,sourceScheduleMonth:context.sourceScheduleMonth,sourceRevisionId:context.sourceRevisionId,requesterAssignedName:assigned,staffId,staffName,user,deviceId,generation,contextKey:staffSwapContextKey(context),candidates};
         document.getElementById('swapModalDetails').textContent='You are requesting to trade '+(rule.name||myShiftName)+' at '+branch+' on '+date+'. Branches are shown beside each co-worker.';
         document.getElementById('swapRequestModal').style.display='flex';
     }catch(error){
+        if(workflow)finishStaffSwapProgress(workflow);
         if(window.staffSwapRequestGeneration!==generation)return;
-        Swal.fire('Could not prepare swap',error.message,'warning');
+        staffSwapMessage('Could not prepare swap',error.message+' No request was sent.','warning');
     }
 };
 
 window.submitSwapRequest = async function() {
     const select=document.getElementById('swapCandidateSelect'),selectedValue=select.value,d=window.pendingSwapData,index=Number(selectedValue);
-    if(!d||!selectedValue||!Number.isSafeInteger(index)||String(index)!==selectedValue||!d.candidates[index])return Swal.fire('Required','Please select a co-worker from this request.','warning');
+    if(!d||!selectedValue||!Number.isSafeInteger(index)||String(index)!==selectedValue||!d.candidates[index])return staffSwapMessage('Required','Please select a co-worker from this request.','warning');
     if(window.staffSwapSubmitting)return;
+    if(window.staffSwapWritePending)return staffSwapMessage('Check the previous send','A previous send is still pending or unconfirmed. Check with your co-worker or Owner before sending again.','warning');
+    if(d.sendUnconfirmed)return staffSwapMessage('Check the previous send','Its result was not confirmed. Check with your co-worker or Owner before starting another request.','warning');
     const candidate=d.candidates[index],button=document.getElementById('btnSendSwap'),cancel=document.getElementById('btnCancelSwap');
+    let workflow,writeStarted=false,writeAcknowledged=false;
     const assertCurrent=()=>{
-        if(window.pendingSwapData!==d||window.staffSwapRequestGeneration!==d.generation||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||document.getElementById('staffMonthPicker')?.value!==d.sourceScheduleMonth||select.value!==selectedValue||document.getElementById('swapRequestModal').style.display==='none')throw Error('Your staff account, date or selected co-worker changed. Open the request again.');
+        if(window.pendingSwapData!==d||window.staffSwapRequestGeneration!==d.generation||workflow?.cancelled||staffPrimaryAuth.currentUser!==d.user||localStorage.getItem('takodeal_device_id')!==d.deviceId||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||document.getElementById('staffMonthPicker')?.value!==d.sourceScheduleMonth||select.value!==selectedValue||document.getElementById('swapRequestModal').style.display==='none')throw Error('Your staff account, date or selected co-worker changed. Open the request again.');
     };
-    window.staffSwapSubmitting=d;if(button){button.disabled=true;button.textContent='Checking and sending…';}if(cancel)cancel.disabled=true;
+    window.staffSwapSubmitting=d;if(button){button.disabled=true;button.textContent='Checking current schedule…';}if(cancel)cancel.disabled=false;
     try {
         assertCurrent();
         if(d.workDate<scheduleDateKey(new Date()))throw Error('Past schedules stay unchanged. Choose a current or future work date.');
-        const context=await loadStaffSwapContext(window,{staffId:d.staffId,staffName:d.staffName,workDate:d.workDate,assertCurrent});
+        workflow=beginStaffSwapProgress('Checking before sending…');
+        const context=await loadStaffSwapContext(window,{staffId:d.staffId,staffName:d.staffName,workDate:d.workDate,assertCurrent,onProgress:text=>updateStaffSwapProgress(workflow,text)});
         if(staffSwapContextKey(context)!==d.contextKey)throw Error('HQ changed the schedule while this request was open. Refresh and choose again.');
         const fresh=swapCandidates({snapshot:context.snapshot,daySnapshots:context.daySnapshots,workDate:d.workDate,requesterBranch:d.branch,requesterShiftId:d.myShiftId,requesterAliases:context.requesterAliases,requesterStaffId:d.staffId}).find(row=>swapCandidateKey(row)===swapCandidateKey(candidate));
         if(!fresh)throw Error('This co-worker is no longer eligible for this swap. Refresh and choose again.');
         assertCurrent();
+        workflow.phase='writing';writeStarted=true;window.staffSwapWritePending=true;if(cancel)cancel.disabled=true;if(button)button.textContent='Waiting for HQ confirmation…';updateStaffSwapProgress(workflow,'',true);
         await addDoc(collection(db,'shift_swaps'),{
             requesterName:context.requesterName,requesterStaffId:d.staffId,requesterAssignedName:d.requesterAssignedName,
             targetName:fresh.targetName||fresh.targetAssignedName,targetAssignedName:fresh.targetAssignedName,
@@ -3060,13 +2891,17 @@ window.submitSwapRequest = async function() {
             requesterShiftId:d.myShiftId,requesterShiftName:d.myShiftName,targetShiftId:fresh.targetShiftId,targetShiftName:fresh.targetShiftName,
             requestVersion:SWAP_REQUEST_VERSION,status:SWAP_PENDING_STATUS,timestamp:serverTimestamp()
         });
-        if(window.pendingSwapData!==d||localStorage.getItem('takodeal_staff_id')!==d.staffId)return;
-        document.getElementById('swapRequestModal').style.display='none';window.pendingSwapData=null;
-        Swal.fire('Request sent','Your request was sent to '+(fresh.targetName||fresh.targetAssignedName)+'. The schedule changes only after their acceptance and HQ approval.','success');
+        writeAcknowledged=true;window.staffSwapWritePending=false;finishStaffSwapProgress(workflow);
+        const ownsWindow=window.pendingSwapData===d;if(ownsWindow)window.pendingSwapData=null;
+        if(!ownsWindow||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||staffPrimaryAuth.currentUser!==d.user)return;
+        document.getElementById('swapRequestModal').style.display='none';
+        staffSwapMessage('Request sent','Your request was sent to '+(fresh.targetName||fresh.targetAssignedName)+'. The schedule changes only after their acceptance and HQ approval.','success');
     }catch(error){
-        if(window.pendingSwapData===d&&localStorage.getItem('takodeal_staff_id')===d.staffId)Swal.fire('Could not send request',error.message,'warning');
+        const unconfirmed=writeStarted&&!writeAcknowledged;if(unconfirmed)d.sendUnconfirmed=true;
+        window.staffSwapWritePending=unconfirmed;if(workflow)finishStaffSwapProgress(workflow);
+        if(localStorage.getItem('takodeal_staff_id')===d.staffId&&localStorage.getItem('takodeal_staff_name')===d.staffName&&staffPrimaryAuth.currentUser===d.user&&(window.pendingSwapData===d||writeAcknowledged))staffSwapMessage(writeAcknowledged?'Request saved':unconfirmed?'Send not confirmed':'Could not send request',writeAcknowledged?'HQ confirmed the send, but this screen could not finish refreshing. Check with your co-worker; do not send it again.':unconfirmed?'The send was not confirmed. Check with your co-worker or Owner before starting another request; it may already be saved.':error.message+' No request was sent.','warning');
     }finally{
-        if(window.staffSwapSubmitting===d){window.staffSwapSubmitting=null;if(button){button.disabled=false;button.textContent='Send Request';}if(cancel)cancel.disabled=false;}
+        if(window.staffSwapSubmitting===d){window.staffSwapSubmitting=null;if(button){button.disabled=d.sendUnconfirmed===true;button.textContent=d.sendUnconfirmed?'Check previous send':'Send Request';}if(cancel)cancel.disabled=false;}
     }
 };
 
@@ -3084,7 +2919,7 @@ window.listenToIncomingSwaps = async function() {
 
     let nickname = staffName,swapAliases=[staffName];
     try {
-        const docSnap = await window.readStaffDirectoryProfile(staffId);
+        const docSnap = await getDoc(doc(db, "cashiers", staffId));
         if(docSnap.exists()){nickname=docSnap.data().scheduleNickname||staffName;swapAliases=staffSwapAliases(docSnap.data());}
     } catch(e) {}
     if (!current()) return;
@@ -3095,10 +2930,8 @@ window.listenToIncomingSwaps = async function() {
         return swapAliases.some(name=>name.toLowerCase().trim()===aName);
     };
 
-    let swapRead=0;
-    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where('targetStaffId','==',staffId),where("status", "in", ["Pending",SWAP_PENDING_STATUS])), async (snap) => {
+    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where("status", "in", ["Pending",SWAP_PENDING_STATUS])), (snap) => {
         if (!current()) return;
-        const read=++swapRead;if(typeof window.readOperationalRecords==='function'){try{snap=await window.readOperationalRecords('shift_swaps',{assertCurrent:()=>{if(!current()||read!==swapRead)throw Error('Your Staff swap view changed.');}});}catch(error){if(current()&&read===swapRead){const badge=document.getElementById('navSchedBadge');if(badge){badge.style.display='inline-block';badge.textContent='!';badge.title='Swap history could not refresh. Reconnect and reopen Schedule.';}}return;}if(!current()||read!==swapRead)return;}
         
         // 🔥 DYNAMIC UI INJECTOR: Ensure the container exists and doesn't get wiped!
         let container = document.getElementById('incomingSwapsContainer');
@@ -3169,7 +3002,7 @@ window.handleIncomingSwap = async function(swapId, action) {
     Swal.fire({title:'Processing...', allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
     try {
         const result = await runTransaction(db, async transaction => {
-            const requestRef = doc(db,'shift_swaps',swapId), profileRef = doc(db,'staff_directory',staffId);
+            const requestRef = doc(db,'shift_swaps',swapId), profileRef = doc(db,'cashiers',staffId);
             const [request, profile] = await Promise.all([transaction.get(requestRef),transaction.get(profileRef)]);
             if (localStorage.getItem('takodeal_staff_id') !== staffId) throw Error('Your staff account changed. Sign in again.');
             if (!request.exists() || !profile.exists()) throw Error('This request or staff profile is no longer available.');
@@ -3211,7 +3044,7 @@ window.viewAnnouncement = async function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
     
     // Quick fetch to check if it has the secret "isSchedule" flag!
-    let isSchedule = data.isSchedule===true;
+    let isSchedule = false;
     try {
         const docSnap = await window.getDoc(window.doc(window.db, "announcements", data.id));
         if (docSnap.exists() && docSnap.data().isSchedule) {
@@ -3221,11 +3054,11 @@ window.viewAnnouncement = async function(encodedData) {
 
     // 🔥 THE NEW SCHEDULE IMAGE POPUP ENGINE 🔥
     if (isSchedule) {
-        let imgUrl = data.images && data.images.length > 0 ? announcementImage(data.images[0]) : '';
+        let imgUrl = data.images && data.images.length > 0 ? data.images[0] : '';
         
         let ackBtnHtml = data.hasSignature 
             ? `<div style="width: 100%; background: #dcfce7; color: #16a34a; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; text-align: center; border: 2px solid #bbf7d0;">✅ You acknowledged this schedule on ${data.signatureDate}</div>`
-            : `<button onclick="window.submitScheduleAck(${swapEscape(JSON.stringify(data.id))})" id="btnAckSched" style="width: 100%; background: #10b981; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 18px; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 163, 74, 0.3);">✅ I ACKNOWLEDGE MY SHIFTS</button>`;
+            : `<button onclick="window.submitScheduleAck('${data.id}')" id="btnAckSched" style="width: 100%; background: #10b981; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 18px; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 163, 74, 0.3);">✅ I ACKNOWLEDGE MY SHIFTS</button>`;
 
         let modalHtml = `
             <div id="schedulePopupOverlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
@@ -3235,7 +3068,7 @@ window.viewAnnouncement = async function(encodedData) {
                         ${data.hasSignature ? `<button onclick="document.getElementById('schedulePopupOverlay').remove()" style="background: #ef4444; color: white; border: none; width: 30px; height: 30px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖</button>` : ''}
                     </div>
                     <div style="flex: 1; overflow-y: auto; width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; background: #f8fafc;">
-                        <img src="${swapEscape(imgUrl)}" style="width: 100%; height: auto; display: block;">
+                        <img src="${imgUrl}" style="width: 100%; height: auto; display: block;">
                     </div>
                     ${ackBtnHtml}
                 </div>
@@ -3262,7 +3095,6 @@ window.submitScheduleAck = async function(announcementId) {
         await window.addDoc(window.collection(window.db, "acknowledgments"), {
             announcementId: announcementId,
             staffName: cashierName,
-            staffId:localStorage.getItem('takodeal_staff_id'),
             signature: quickSigImg,
             timestamp: window.serverTimestamp()
         });
@@ -3400,11 +3232,9 @@ window.startSanctionListener = function(staffName) {
     if (window.staffSanctionUnsubscribe) window.staffSanctionUnsubscribe();
     window.staffSanctionListenerKey = key;
     const current = () => epoch === window.staffLiveListenerEpoch && window.staffSanctionListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
-    const q = query(collection(db, 'hr_sanctions'), where('staffId', '==', staffId));
-    let sanctionRead=0;
-    window.staffSanctionUnsubscribe = onSnapshot(q, async snap => {
+    const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName));
+    window.staffSanctionUnsubscribe = onSnapshot(q, snap => {
         if (!current()) return;
-        const read=++sanctionRead;if(typeof window.readOperationalRecords==='function'){try{snap=await window.readOperationalRecords('hr_sanctions',{assertCurrent:()=>{if(!current()||read!==sanctionRead)throw Error('Your Staff HR view changed.');}});}catch(error){if(current()&&read===sanctionRead){window.staffSanctionCachedSnapshot=null;console.error('Staff HR history:',error);}return;}if(!current()||read!==sanctionRead)return;}
         window.staffSanctionCachedSnapshot = snap;
         window.renderActiveSanctions(snap, staffName);
         if (!window.staffSanctionDayStop) window.staffSanctionDayStop = startPhilippineDayTimer(()=>{if(current() && window.staffSanctionCachedSnapshot)window.renderActiveSanctions(window.staffSanctionCachedSnapshot,staffName);});
@@ -3420,9 +3250,9 @@ window.checkActiveSanctions = async function(staffName, {requireFresh = false} =
     const staffId = localStorage.getItem('takodeal_staff_id'), epoch = window.staffLiveListenerEpoch;
     try {
         if (!staffId || !staffName || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
-        const q = query(collection(db, 'hr_sanctions'), where('staffId', '==', staffId));
+        const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName));
         // Clock-in and explicit acknowledgement checks must see HQ's current state.
-        const snap = typeof window.readOperationalRecords==='function'?await window.readOperationalRecords('hr_sanctions',{assertCurrent:()=>{if(epoch!==window.staffLiveListenerEpoch||localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your staff session changed.');}}):await getDocsFromServer(q);
+        const snap = await getDocsFromServer(q);
         if (epoch !== window.staffLiveListenerEpoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
         const restricted = clockInRestriction(snap.docs.map(entry=>({...entry.data(),id:entry.id})).filter(row=>!row.staffId || row.staffId===staffId));
         if (requireFresh && restricted && !restricted.replyRequired) throw Error(restricted.message);
@@ -3460,7 +3290,7 @@ window.submitStaffAppSanctionReply = async function() {
         const canvas = document.getElementById('staffAppSignatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp,readOperationalRecords:window.readOperationalRecords},{id:sanctionId,staffName:localStorage.getItem('takodeal_staff_name'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('takodeal_staff_name'),staffId:localStorage.getItem('takodeal_staff_id')})});
+        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp},{id:sanctionId,staffName:localStorage.getItem('takodeal_staff_name'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('takodeal_staff_name'),staffId:localStorage.getItem('takodeal_staff_id')})});
 
         Swal.fire({
             title: '✅ Notice Acknowledged', 
@@ -3685,7 +3515,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                     if (!signatureCurrent()) return;
                     await acknowledgeCashShortagePayslip(vault,{recordId,staffId:payStaffId,signature:res.value,stillCurrent:signatureCurrent});
                 } else {
-                    await window.staffAccessClient.acknowledgePayroll({staffId:payStaffId,recordId,signatureBase64:res.value,expectedFingerprint:d.staffPayrollFingerprint,operationId:crypto.randomUUID(),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!signatureCurrent())throw Error('The private payslip view changed. Reopen it.');}});
+                    await window.staffAccessClient.acknowledgePayroll({staffId:payStaffId,recordId,signatureBase64:res.value,expectedFingerprint:d.staffPayrollFingerprint,operationId:crypto.randomUUID(),createPrivateClient:createPrivateStaffClient,assertCurrent:()=>{if(!signatureCurrent())throw Error('The private payslip view changed. Reopen it.');}});
                 }
                 if (!signatureCurrent()) return;
                 Swal.fire({title: '✅ Payslip Acknowledged!', text: 'Your signed record has been securely moved to the Past Payslips vault.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
@@ -3701,7 +3531,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
 // ========================================================
 // 💳 STAFF APP: MY LOAN LEDGER VIEWER
 // ========================================================
-// Installed below with the approved private-phone client and the Payslip PIN gate.
+// My loans uses the approved private-phone client installed below.
 
 // ==========================================
 // 🎓 END OF CONTRACT & COE ENGINE (BYPASS & DOWNLOAD FIX)
@@ -3778,7 +3608,7 @@ window.generateVirtualID = async function() {
     Swal.fire({title: 'Generating Virtual ID...', text: 'Fetching your verified records from HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        const docSnap = await window.readPrivateStaffProfile(staffId);
+        const docSnap = await window.getDoc(window.doc(window.db, "cashiers", staffId));
         if (!docSnap.exists()) return Swal.fire('Error', 'Profile not found.', 'error');
         
         let data = docSnap.data();
@@ -3953,10 +3783,35 @@ window.acknowledgeMeal = async function(docId) {
 // ==========================================
 // 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
 // ==========================================
+const createDocumentClient=()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
+window.staffSelfService=createStaffSelfService({auth:staffPrimaryAuth,ensureUser:async()=>{await staffPrimaryAuth.authStateReady();if(!staffPrimaryAuth.currentUser)await signInAnonymously(staffPrimaryAuth);return staffPrimaryAuth.currentUser;},identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),prompt:async()=>{const reply=await Swal.fire({title:'Confirm your Staff PIN',text:'Enter your daily login PIN to load your own profile and contact details.',input:'password',inputAttributes:{autocomplete:'off',inputmode:'numeric'},showCancelButton:true,confirmButtonText:'Load my profile'});return reply.isConfirmed?reply.value:null;}});
+window.prepareStaffProfilePhone=createPersonalPhonePreparation({auth:staffPrimaryAuth,ensureUser:async()=>{await staffPrimaryAuth.authStateReady();if(!staffPrimaryAuth.currentUser)await signInAnonymously(staffPrimaryAuth);return staffPrimaryAuth.currentUser;},identity:()=>localStorage.getItem('takodeal_staff_id'),storage:localStorage,authority:()=>window.staffSetupAccess,createPrivateClient:createDocumentClient,prompt:async()=>{const reply=await Swal.fire({title:'Activate your personal profile',text:'Enter your 10-digit personal setup code once on this phone. Your details and Payslip PIN recovery will open automatically. No HQ approval is needed.',input:'password',inputAttributes:{autocomplete:'off',inputmode:'numeric',maxlength:12},showCancelButton:true,confirmButtonText:'Activate my profile'});return reply.isConfirmed?reply.value:null;},reload:()=>location.reload()});
+const createPrivateStaffClient=(options={})=>createStaffPayPhoneClient({auth:staffPrimaryAuth,db,sdk:documentSdk,authority:()=>window.staffSetupAccess,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),createPrivateClient:createDocumentClient,...options});
+window.staffPrivateProfileClient=createStaffPrivateProfileClient({identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),account:()=>staffPrimaryAuth.currentUser,onInvalidate:()=>window.staffPrivateProfileUI?.clear(),createPrivateClient:createPrivateStaffClient,fetcher:window.fetch.bind(window)});
+window.staffAccessClient=createStaffAccessClient({auth:staffPrimaryAuth,ensureUser:async()=>{if(!staffPrimaryAuth.currentUser)throw Error('Reconnect your Staff phone.');return staffPrimaryAuth.currentUser;},deviceId:()=>localStorage.getItem('takodeal_device_id'),sessionId:()=>localStorage.getItem('takodeal_staff_session_id'),fetcher:window.fetch.bind(window)});
+window.readPrivateStaffProfile=async(staffId,options={})=>{const value=await window.staffPrivateProfileClient.read(staffId,options);return{id:staffId,exists:()=>true,data:()=>value.profile,metadata:{fromCache:false,hasPendingWrites:false},expectedFingerprint:value.expectedFingerprint};};
+window.loadPrivateStaffSalaryProfile=async profile=>(await window.readPrivateStaffProfile(profile.staffId||profile.id)).data();
+window.readStaffPaidHistory=options=>window.staffAccessClient.payroll({...options,createPrivateClient:createPrivateStaffClient});
+window.readPrivatePayrollInputs=options=>window.staffAccessClient.payrollInputs({...options,createPrivateClient:createPrivateStaffClient});
+window.readMyLoanLedgerSnapshot=async options=>{const client=createStaffLoanLedgerClient({createPrivateClient:createPrivateStaffClient,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')});try{return await client.read(options);}finally{client.invalidate();}};
+window.readPrivateVaultSettings=options=>window.staffPrivateProfileClient.vaultSettings(options.staffId,{assertCurrent:options.assertCurrent});
+window.savePrivateVaultPin=(input,options)=>window.staffPrivateProfileClient.vaultSave(input,options);
+window.staffPrivateProfileUI=installStaffPrivateProfileUI(window,document,{client:window.staffPrivateProfileClient,access:window.staffAccessClient,createPinClient:createPrivateStaffClient,createPrivateClient:createDocumentClient});
 installStaffPortal();
-installStaffLocation();
+installStaffLoanLedger(window,document,{createClient:options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')})});
+window.staffBranchDirectory=installLiveBranchDirectory(window,document,{kind:'staff',subscribe:(next,error)=>onSnapshot(collection(db,'branches'),{includeMetadataChanges:true},next,error)});
+installStaffLocation({loadBranches:()=>getDocsFromServer(collection(db,'branches'))});
 installPayrollVaultFreshness(window,document);
 let setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;
+if(window.staffSelfRepair){
+    let repairStateKey='';
+    window.addEventListener('takodeal-staff-repair-state',()=>{
+        if(window.staffSelfRepair.requiresCode()){window.staffSetupAccess?.invalidate();window.startStaffDeviceSetup?.();return;}
+        let row;try{row=JSON.parse(localStorage.getItem('takodeal_staff_self_repair_v1')||'null');}catch{return;}
+        if(row?.phase==='complete'&&row.candidateUid===staffPrimaryAuth.currentUser?.uid&&row.candidateDeviceId===localStorage.getItem('takodeal_device_id')&&repairStateKey!==row.operationId){repairStateKey=row.operationId;window.staffSetupAccess?.invalidate();window.startStaffDeviceSetup?.();}
+    });
+    window.staffSelfRepair.configureSDK(createStaffSelfRepairSDK({app,auth:staffPrimaryAuth,db,config:firebaseConfig,sdk:{getApps,initializeApp,getAuth,setPersistence,browserLocalPersistence,signInAnonymously,updateCurrentUser,waitForPendingWrites},readPrivateClient:readInitializedStaffDocumentClient,window}));
+}
 installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,setup:{
     auth:staffPrimaryAuth,
     ensureUser:async({guard=()=>{}}={})=>{
@@ -3971,14 +3826,11 @@ installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConf
     })
 }});
 window.getStaffVaultRecoveryClient=(options={})=>createStaffVaultRecoveryForPhone({...options,auth:staffPrimaryAuth,authority:()=>window.staffSetupAccess,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
-installStaffVaultRecovery(window,document,{createClient:options=>window.getStaffVaultRecoveryClient(options)});
+installStaffVaultRecovery(window,document,{createClient:async options=>{await window.prepareStaffProfilePhone(options);return createDailyPinRecoveryClient({profile:window.staffPrivateProfileClient,identity:()=>localStorage.getItem('takodeal_staff_id')});}});
 installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 
 installDeductionInbox(window,{createClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
-const privateLoanClient=options=>createStaffLoanLedgerClient({...options,createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id')});
-window.readMyLoanLedgerSnapshot=async options=>{const client=privateLoanClient();try{return await client.read(options);}finally{client.invalidate();}};
-installStaffLoanLedger(window,document,{createClient:privateLoanClient});
 installStaffOnboarding(window,document,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 window.staffScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')
@@ -3990,3 +3842,17 @@ window.staffScheduleSync = installScheduleViewSync(window, {window, document,
     error: () => { const box=document.getElementById('scheduleContainer');if(box)box.setAttribute('aria-label','Schedule connection interrupted. Reopen Schedule to refresh.'); }
 });
 window.loadStaffSchedule = window.staffScheduleSync.wrap(window.loadStaffSchedule);
+window.staffStartup?.ready();
+
+const legacyReprintContract=window.reprintContract;
+window.reprintContract=async function(type,encodedId,...rest){
+ const staffId=decodeURIComponent(encodedId);
+ if(type!=='Initial')return legacyReprintContract?.call(this,type,encodedId,...rest);
+ let popup;
+ try{if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Open your own employee profile.');popup=window.open('','','width=850,height=900');if(!popup)throw Error('Allow the document window to view your signed contract.');popup.document.write('<p>Loading your saved contract…</p>');const result=await window.staffSelfService.call('contract',{staffId,deviceId:localStorage.getItem('takodeal_device_id')});if(localStorage.getItem('takodeal_staff_id')!==staffId)throw Error('Your account changed.');if(!result.found){popup.close();return legacyReprintContract?.call(this,type,encodedId,...rest);}popup.document.open();popup.document.write('<!doctype html><meta charset="utf-8"><title>Signed employment contract</title>'+result.html);popup.document.close();popup.focus();popup.print();}
+ catch(error){popup?.close();await Swal.fire('Contract unavailable',error.message,'warning');}
+};
+
+const hiringEntry=document.getElementById('staffHiringEntry');
+const updateHiringEntry=()=>{if(hiringEntry)hiringEntry.hidden=!!localStorage.getItem('takodeal_staff_id');};
+updateHiringEntry();window.addEventListener('storage',updateHiringEntry);

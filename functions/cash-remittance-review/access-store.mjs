@@ -1,9 +1,11 @@
+import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {isIP} from 'node:net';
 import {ACCESS_OWNER,accessId,accessDocumentId,accessText,activeAccessStaff,operationalStaffProfile,isAccessOwner} from './access-model.mjs';
 import {hqSourceAccess} from './company-access-index.mjs';
 import {mealRole,savedPin,resolveHQAccount} from './relief-core/hq-account-model.js';
 import {activeStaffProfile} from './relief-core/staff-lifecycle-model.js';
+import {freshOwnerDesktopAuthority} from './owner-desktop-authority.mjs';
 import {requireMealLevel} from './relief-core/pos-config-model.js';
 const fail=(status,code,message)=>{throw Object.assign(Error(message),{status,code});};
 const denied=()=>fail(403,'access/approval','This account or device needs HQ confirmation. Keep saved orders on this device and check its approval.');
@@ -13,6 +15,8 @@ const hash=value=>createHash('sha256').update(value).digest('hex');
 const stamp=value=>value?.toMillis?.()??(value instanceof Date?+value:Date.parse(value));
 const millisToken=value=>value?String(value.seconds??value._seconds)+'|'+String(value.nanoseconds??value._nanoseconds):'';
 const exactPin=(saved,input)=>typeof saved==='string'?saved===input:typeof saved==='number'&&Number.isSafeInteger(saved)&&Number(input)===saved;
+const numericDailyPin=input=>/^\d+$/.test(input)&&Number.isSafeInteger(Number(input))?Number(input):null;
+const exactNewDailyPin=(saved,input)=>typeof saved==='string'?saved===input:typeof saved==='number'&&Number.isSafeInteger(saved)&&numericDailyPin(input)!==null&&numericDailyPin(input)===saved;
 const data=snap=>snap?.exists?snap.data():null;
 const privateConfig=row=>row?.enabled===true&&row.policyVersion===2&&row.brokerEndpoint==='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
 const equalJSON=(a,b)=>{const sort=value=>Array.isArray(value)?value.map(sort):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,sort(value[key])])):value;return JSON.stringify(sort(a))===JSON.stringify(sort(b));};
@@ -23,12 +27,18 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
   const snap=await tx.get(db.collection(table).where(field,op,value).limit(cap));
   if(snap.docs.length>=cap)review();return snap.docs;
  };
- async function resolveDevice(tx,body,actor,profile){
+ async function resolveDevice(tx,body,actor,profile,ownerDesktop){
   if(body.app==='cashier'){
    if(!accessText(body.branch))denied();
    if(isAccessOwner(actor)){
     const records=await query(tx,'pos_devices','deviceId','==',body.deviceId);
-    if(records.length!==1||records[0].data().status!=='Active'||records[0].data().branch!==body.branch||String(records[0].data().appType||'').trim().toLowerCase()==='staff')denied();
+    const active=records.filter(snap=>snap.data().status==='Active');
+    if(ownerDesktop&&active.length===1&&active[0].data().branch==='Main Office'){
+     const rows=values=>values.map(snap=>({...snap.data(),id:snap.id}));
+     ownerDesktop.value=await freshOwnerDesktopAuthority({actor,deviceId:body.deviceId,branch:body.branch,owners:async()=>rows(await query(tx,'hq_managers','email','==',ACCESS_OWNER)),devices:async()=>rows(await query(tx,'pos_devices','deviceId','==',body.deviceId)),branches:async()=>rows(await query(tx,'branches','name','==',body.branch))});return body.branch;
+    }
+    if(records.length!==1||records[0].data().status!=='Active'||String(records[0].data().appType||'').trim().toLowerCase()==='staff')denied();
+    if(records[0].data().branch!==body.branch)denied();
     return body.branch;
    }
    const binding=data(await read(tx,'pos_bindings/'+actor.uid));
@@ -62,8 +72,7 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
   if(selected&&snap.id!==selected)badPin();return{id:snap.id,row:snap.data(),revision:millisToken(snap.updateTime)};
  }
  async function privateProfile(tx,body,actor){
-  const [configSnap,bindingSnap,profileSnap]=await Promise.all([read(tx,'staff_document_config/current'),read(tx,'staff_document_devices/'+actor.uid),read(tx,'cashiers/'+body.staffId)]),binding=data(bindingSnap),profile=data(profileSnap);
-  if(!privateConfig(data(configSnap))||binding?.active!==true||binding.uid!==actor.uid||binding.staffId!==body.staffId||binding.deviceId!==body.deviceId||!activeAccessStaff(profile)||binding.branch!==profile.branch)denied();
+  const profileSnap=await readPrivateStaffPhone(tx,db,{uid:actor.uid,...body},denied),profile=data(profileSnap);
   return{id:body.staffId,row:profile,revision:millisToken(profileSnap.updateTime)};
  }
  async function currentSession(tx,body,actor,branch){
@@ -85,15 +94,17 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
   async login(body,actor){
    return db.runTransaction(async tx=>{
     if(data(await read(tx,'staff_session_cancellations/'+hash(actor.uid+'|'+body.sessionId))))fail(409,'access/cancelled','This sign-in was cancelled. Start a new sign-in.');
-    const profile=await profileForPin(tx,body.pin,body.selectedStaffId),branch=await resolveDevice(tx,body,actor,profile),expiresAt=new Date(now()+12*60*60*1000);
-    const session={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,issuedAt:new Date(now()),expiresAt,profileRevision:profile.revision,sessionId:body.sessionId};
+    const ownerDesktop={},profile=await profileForPin(tx,body.pin,body.selectedStaffId),branch=await resolveDevice(tx,body,actor,profile,ownerDesktop),expiresAt=new Date(now()+12*60*60*1000);
+    const session={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,issuedAt:new Date(now()),expiresAt,profileRevision:profile.revision,sessionId:body.sessionId,...(ownerDesktop.value?{ownerDesktopAuthority:ownerDesktop.value}:{})};
     tx.set(ref('staff_directory/'+profile.id),{...operationalStaffProfile(profile.id,profile.row),profileRevision:profile.revision,syncedAt:serverTimestamp()});
     tx.set(ref('staff_login_sessions/'+actor.uid),session);return response(profile,branch,expiresAt,body.sessionId);
    });
   },
   async verifyPin(body,actor){
    return db.runTransaction(async tx=>{
-    const profile=await profileForPin(tx,body.pin,body.staffId);let branch=await resolveDevice(tx,body,actor,profile);
+    const receiptVoid=body.purpose==='receipt-void',ownerDesktop=receiptVoid?{}:undefined;
+    if(receiptVoid&&(body.app!=='cashier'||body.sessionId!==undefined||typeof body.scope!=='string'||!/^[a-f0-9]{64}$/.test(body.scope)))denied();
+    const profile=await profileForPin(tx,body.pin,body.staffId);let branch=await resolveDevice(tx,body,actor,profile,ownerDesktop);
     if(body.app==='staff'){
      const session=await currentSession(tx,body,actor,branch);if(session.staffId!==body.staffId)denied();
      if(body.branch!==undefined){
@@ -101,12 +112,12 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
       if(branches.length!==1||branches[0].data().active===false||branches[0].data().archived===true)denied();branch=body.branch;
      }
     }
-    if(body.app==='cashier'&&body.sessionId)await currentSession(tx,body,actor,branch);
+    if(!receiptVoid&&body.app==='cashier'&&body.sessionId)await currentSession(tx,body,actor,branch);
     const verificationId='pin-'+randomUUID(),expiresAt=new Date(now()+120000);
-    const proof={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,purpose:body.purpose,scope:body.scope||'',profileRevision:profile.revision,sessionId:body.sessionId||null,source:'cashiers',profile:operationalStaffProfile(profile.id,profile.row),issuedAt:new Date(now()),expiresAt};
-    tx.set(ref('staff_directory/'+profile.id),{...proof.profile,profileRevision:profile.revision,syncedAt:serverTimestamp()});
+    const proof={schemaVersion:1,uid:actor.uid,staffId:profile.id,deviceId:body.deviceId,app:body.app,branch,purpose:body.purpose,scope:body.scope||'',profileRevision:profile.revision,sessionId:receiptVoid?null:(body.sessionId||null),...(receiptVoid?{sessionMode:'receipt-only'}:{}),source:'cashiers',profile:operationalStaffProfile(profile.id,profile.row),issuedAt:new Date(now()),expiresAt,...(ownerDesktop?.value?{ownerDesktopAuthority:ownerDesktop.value}:{})};
+    if(!receiptVoid)tx.set(ref('staff_directory/'+profile.id),{...proof.profile,profileRevision:profile.revision,syncedAt:serverTimestamp()});
     tx.create(ref('staff_pin_verifications/'+verificationId),proof);
-    tx.set(ref('staff_pin_contexts/'+actor.uid+'_'+body.purpose),{...proof,verificationId});
+    if(!receiptVoid)tx.set(ref('staff_pin_contexts/'+actor.uid+'_'+body.purpose),{...proof,verificationId});
     return{schemaVersion:1,staffId:profile.id,profile:operationalStaffProfile(profile.id,profile.row),branch,verificationId,expiresAt:expiresAt.toISOString()};
    });
   },
@@ -125,13 +136,14 @@ export function createAccessStore(db,{now=Date.now,serverTimestamp,payrollReader
    return{schemaVersion:1,staff:staff.sort((a,b)=>a.name.localeCompare(b.name)||a.branch.localeCompare(b.branch))};
   },
   async changePin(body,actor){
+   if(typeof body.newPin!=='string'||!/^\d{4,10}$/.test(body.newPin))fail(400,'access/request','Use 4–10 digits for your daily Staff PIN.');
    return db.runTransaction(async tx=>{
     const profile=await privateProfile(tx,body,actor),version=profile.row.loginPinVersion??0,opPath='staff_access_operations/'+hash(actor.uid+'|'+body.operationId),prior=data(await read(tx,opPath));
-    if(prior){if(prior.uid!==actor.uid||prior.staffId!==body.staffId||prior.deviceId!==body.deviceId||prior.expectedVersion!==body.expectedVersion||prior.version!==version||!exactPin(profile.row.pin,body.newPin))review();return{schemaVersion:1,staffId:body.staffId,version,changed:true,alreadySaved:true};}
+    if(prior){if(prior.uid!==actor.uid||prior.staffId!==body.staffId||prior.deviceId!==body.deviceId||prior.expectedVersion!==body.expectedVersion||prior.version!==version||!exactNewDailyPin(profile.row.pin,body.newPin))review();return{schemaVersion:1,staffId:body.staffId,version,changed:true,alreadySaved:true};}
     if(!Number.isSafeInteger(version)||version<0||body.expectedVersion!==version)review();
-    const others=(await Promise.all([query(tx,'cashiers','pin','==',body.newPin),query(tx,'cashiers','pin','==',Number(body.newPin))])).flat().filter(row=>row.id!==body.staffId&&activeAccessStaff(row.data())&&exactPin(row.data().pin,body.newPin));
+    const numeric=numericDailyPin(body.newPin),others=(await Promise.all([query(tx,'cashiers','pin','==',body.newPin),...(numeric!==null?[query(tx,'cashiers','pin','==',numeric)]:[])])).flat().filter(row=>row.id!==body.staffId&&activeAccessStaff(row.data())&&exactNewDailyPin(row.data().pin,body.newPin));
     const pinPath='staff_pin_index/'+hash('staff-login-pin|'+body.newPin),pinIndex=data(await read(tx,pinPath));let occupied=false;
-    if(pinIndex&&pinIndex.staffId!==body.staffId){if(!accessId(pinIndex.staffId))review();const person=data(await read(tx,'cashiers/'+pinIndex.staffId));occupied=activeAccessStaff(person)&&exactPin(person.pin,body.newPin);}
+    if(pinIndex&&pinIndex.staffId!==body.staffId){if(!accessId(pinIndex.staffId))review();const person=data(await read(tx,'cashiers/'+pinIndex.staffId));occupied=activeAccessStaff(person)&&exactNewDailyPin(person.pin,body.newPin);}
     if(others.length||occupied)fail(409,'access/pin-in-use','Choose another daily Staff PIN. That PIN is already assigned.');
     tx.set(ref(pinPath),{staffId:body.staffId,updatedAt:serverTimestamp()});
     tx.update(ref('cashiers/'+body.staffId),{pin:body.newPin,loginPinVersion:version+1,pinUpdatedAt:serverTimestamp()});

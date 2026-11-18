@@ -1,3 +1,4 @@
+import {readPrivateStaffPhone} from './personal-vault-phone.mjs';
 import {activeAccessStaff,accessId} from './access-model.mjs';
 import {PRIVATE_PAYROLL_INPUT_FIELDS,projectPrivatePayrollInput} from './access-payroll-store.mjs';
 const fields=['cashierName','fullName','name','scheduleNickname','scheduleName','nickname'],text=value=>typeof value==='string'?value.trim():'';
@@ -6,10 +7,8 @@ export function createAccessPayrollInputsReader(db,{now=Date.now}={}){
  return async({uid,staffId,deviceId}={})=>{
   if(!accessId(uid)||!accessId(staffId)||!/^DEV-[A-Z0-9-]{6,80}$/.test(deviceId||''))fail(403,'access/approval','Use your approved private Staff phone.');
   return db.runTransaction(async tx=>{
-   const [configDoc,grantDoc,profileDoc]=await Promise.all(['staff_document_config/current','staff_document_devices/'+uid,'cashiers/'+staffId].map(path=>tx.get(db.doc(path))));
-   const config=configDoc.exists?configDoc.data():null,grant=grantDoc.exists?grantDoc.data():null,profile=profileDoc.exists?profileDoc.data():null;
-   if(config?.enabled!==true||config.policyVersion!==2||config.brokerEndpoint!=='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'||grant?.active!==true||grant.uid!==uid||grant.staffId!==staffId||grant.deviceId!==deviceId||!activeAccessStaff(profile)||grant.branch!==profile.branch)fail(403,'access/approval','Use your approved private Staff phone.');
-   const names=[...fields.map(key=>profile[key]),...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(value=>typeof value==='string'&&text(value)),aliases=[...new Set(names.flatMap(value=>[value,text(value)]))];if(aliases.length>10||aliases.some(value=>value.length>200))fail(409,'access/payroll-review','The saved financial identity needs HQ review.');
+   const profileDoc=await readPrivateStaffPhone(tx,db,{uid,staffId,deviceId},()=>fail(403,'access/approval','Use your approved private Staff phone.')),profile=profileDoc.data();
+   const names=[...fields.map(key=>profile[key]),...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(value=>typeof value==='string'&&text(value)),aliases=[...new Set(names.flatMap(value=>[value,text(value)]))];if(aliases.length>110||aliases.some(value=>value.length>200))fail(409,'access/payroll-review','The saved financial identity needs HQ review.');
    let complete=true,totalBytes=0;const unique=new Map();
    async function ownedName(name){
     if(unique.has(name))return unique.get(name);const owners=new Set();let ambiguous=false;
@@ -18,7 +17,7 @@ export function createAccessPayrollInputsReader(db,{now=Date.now}={}){
    }
    async function collection(table){
     const metadata=new Map();
-    for(const [field,op,value]of [['staffId','==',staffId],['staffName','in',aliases]]){
+    for(const [field,op,value]of [['staffId','==',staffId],...Array.from({length:Math.ceil(aliases.length/10)},(_,i)=>['staffName','in',aliases.slice(i*10,i*10+10)])]){
      let cursor=null;
      for(let page=0;page<20;page++){
       let query=db.collection(table).where(field,op,value).limit(25).select('staffId','staffName');if(cursor)query=query.startAfter(cursor);

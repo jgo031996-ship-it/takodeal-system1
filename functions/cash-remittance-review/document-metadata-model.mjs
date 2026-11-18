@@ -3,7 +3,7 @@ export const DOCUMENT_IMAGE_ENDPOINT='https://asia-southeast1-takodeal-pos.cloud
 export const DOCUMENT_MAX_BYTES=2*1024*1024;
 export const documentId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
 export const documentHash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
-export const documentGroup=value=>['valid_id','health_card','clearance'].includes(value);
+export const documentGroup=value=>['valid_id','health_card','clearance','sss_id','philhealth_id','pagibig_id'].includes(value);
 export const documentBranch=value=>typeof value==='string'&&value.trim().length>0&&value.length<=128;
 export const documentObject=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 export class DocumentMetadataError extends Error {constructor(status,code,message){super(message);this.status=status;this.code='document-metadata/'+code;}}

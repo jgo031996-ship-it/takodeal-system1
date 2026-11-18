@@ -40,6 +40,11 @@ export function installOwnerContractPrinting(api=window,d=document){
    if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Reconnect to confirm the saved employee contract.');
    let data={...snap.data(),staffId};if(api.isBranchAllowed?.(data.branch)!==true)throw Error('This employee branch is outside your Staff & Security access.');
    const signDate=data.signedContracts?.[types[type].key];if(typeof signDate!=='string'||!signDate.trim())throw Error('This saved contract has no employee acceptance on file.');
+   if(type==='Initial'&&data.signupContractId){
+    const saved=await api.readSignedSignupContract(staffId);current();if(!saved.found)throw Error('The signed contract snapshot is unavailable.');
+    if(api.isBranchAllowed?.(data.branch)!==true)throw Error('This employee branch is outside your Staff & Security access.');
+    if(popup.closed)throw Error('The document window was closed.');popup.document.open();popup.document.write('<!doctype html><meta charset="utf-8"><title>Signed employment contract</title>'+saved.html);popup.document.close();popup.focus?.();popup.print();return true;
+   }
    data=await loadStaffSalaryTimeline(api,data);current();
    const rateDate=onboardingDay(data.contractTerms?.[types[type].key]?.startDate)||onboardingDay(signDate);
    if(data.salaryRateVersion===1&&!rateDate)throw Error('The saved contract date needs HR review before its historical wage can be printed.');

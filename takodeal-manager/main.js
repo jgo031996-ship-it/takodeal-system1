@@ -1,3 +1,4 @@
+import {installEmployeeSignup} from './employee-signup.js';
 import {repairApprovedStaffPhoneLabels} from './staff-phone-compatibility.js';
 import {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';
 import {installBranchInventorySetup,branchInventoryActor} from './branch-inventory-setup.js';
@@ -26728,3 +26729,5 @@ installDispatchDeliveryRadar(window,document);
 // Existing Owner-approved legacy phones retain their status and PINs.
 window.repairApprovedStaffPhones=()=>repairApprovedStaffPhoneLabels(window,{auth:window.auth});
 Promise.resolve().then(()=>window.repairApprovedStaffPhones()).then(result=>{window.staffPhoneCompatibilityResult=result;}).catch(error=>console.warn('Existing Staff phone check is awaiting Owner connection:',error.message));
+
+installEmployeeSignup(window,document);
