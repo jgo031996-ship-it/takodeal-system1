@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-cashier-workstation-receipts-20261117-r3';
+const CORE = 'takodeal-pos-core-payment-sync-20261118-r4';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -19,7 +19,7 @@ required.push('./sales-actions.js','./sales-actions.css','./cancelled-orders.js'
 required.push('./cancelled-food-portions.js');
 required.push('./attendance-reconcile.js');
 required.push('./printer-logo.js');
-required.push('./checkout-controls.js');
+required.push('./checkout-controls.js','./pos-config-sync.js');
 required.push('./attendance-camera.js','./attendance-camera.css','./stock-report-units.js');
 required.push('./schedule-sync.js','./schedule-view-sync.js');
 required.push('./pos-settings-model.js','./pos-settings-hub.js','./pos-settings.css','./pos-parked-recovery.js','./leave-model.js','./leave-request-actions.js','./leave-request-ui.js');

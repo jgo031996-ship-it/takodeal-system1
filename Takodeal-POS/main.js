@@ -1,3 +1,4 @@
+import {posList,startPosConfigSync} from './pos-config-sync.js';
 import {enrollOwnerWorkstation} from './cashier-workstation.js';
 import {createCashierStaffAccess} from './cashier-staff-access.js';
 import {mobileOwnerContext} from './mobile-order-actions.js';
@@ -585,25 +586,7 @@ window.loadPOSData = async function() {
                 }
             }
 
-            const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
-            if(window.isCashierOwnerToolsMode?.())return;
-            if (configSnap.exists()) {
-                let configData = configSnap.data();
-                window.masterPOSData.settings = {
-                    orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery", "Grab"],
-                    payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
-                    // 🔥 FETCH THE SPLIT PERCENTAGES!
-                    staffMealTakoPct: configData.staffMealTakoPct !== undefined ? configData.staffMealTakoPct : 20,
-                    staffMealOtherPct: configData.staffMealOtherPct !== undefined ? configData.staffMealOtherPct : 10,
-                    // 🔥 THE NEW MANAGER VARIABLES
-                    managerMealTakoPct: configData.managerMealTakoPct !== undefined ? configData.managerMealTakoPct : 100,
-                    managerMealOtherPct: configData.managerMealOtherPct !== undefined ? configData.managerMealOtherPct : 100,
-                    ...(Array.isArray(configData.mealDiscountLevels) ? {mealDiscountLevels:configData.mealDiscountLevels} : {}),
-                    customCheckoutFields: configData.customCheckoutFields || []
-                };
-                localStorage.setItem('takodeal_cached_settings', JSON.stringify(window.masterPOSData.settings));
-            }
-            
+            // POS settings use the fresh live configuration feed below.
             const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
             if(window.isCashierOwnerToolsMode?.())return;
             if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
@@ -639,7 +622,7 @@ window.loadPOSData = async function() {
             }
 
             // If it's the very first time booting, draw the UI after the background sync finishes
-            if (!cachedMenu || cachedMenu.length === 0) window.renderOrderAndPaymentUI();
+            window.renderOrderAndPaymentUI();
 
         } catch(e) { console.warn("Cloud sync paused. Using local tablet storage.", e); }
     })();
@@ -647,6 +630,7 @@ window.loadPOSData = async function() {
     // ========================================================================
     // 📡 3. THE LIVE MENU LISTENER (CACHES EVERY CHANGE IMMEDIATELY)
     // ========================================================================
+    startPosConfigSync(window,{assertCurrent:()=>{if(window.isCashierOwnerToolsMode?.())throw Error('POS session changed');}});
     if (window.menuListenerUnsubscribe) window.menuListenerUnsubscribe();
     const menuQ = window.query(window.collection(window.db, "menu"));
     
@@ -679,12 +663,23 @@ window.loadPOSData = async function() {
 // 🎨 4. OFFLINE UI RENDERER FOR PAYMENTS & ORDER TYPES
 // ========================================================================
 window.renderOrderAndPaymentUI = function() {
+    const escapeOption=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const previousType=document.getElementById('mainOrderType')?.value||'';
+    const splitChoices=['splitMethod1','splitMethod2'].map(id=>document.getElementById(id)?.value||'');
+    const settings=window.masterPOSData.settings;
+    const methods=posList(settings.payMethods,['Cash','GCash']);
+    const orderTypes=posList(settings.orderTypes,['Dine-In','Take-Out','Delivery','Grab']);
+    const checkoutOpen=document.getElementById('checkoutModal')?.style.display==='flex';
+    if(checkoutOpen)for(const selected of [window.selectedPaymentMethod,...splitChoices])if(selected&&selected!=='Split'&&!methods.some(value=>value.toLowerCase()===selected.toLowerCase()))methods.push(selected);
+    if(previousType&&!orderTypes.includes(previousType))orderTypes.push(previousType);
+    const selectedMethod=methods.some(value=>value.toLowerCase()===String(window.selectedPaymentMethod||'').toLowerCase())||checkoutOpen&&window.selectedPaymentMethod==='Split'?window.selectedPaymentMethod:methods[0];
+    window.selectedPaymentMethod=selectedMethod;
     let otHtml = '<option value="" disabled selected>-- Select Type --</option>'; 
-    window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
+    orderTypes.forEach(t => otHtml += `<option value="${escapeOption(t)}">${escapeOption(t)}</option>`); 
     let otSelect = document.getElementById('mainOrderType');
     if(otSelect) {
         otSelect.innerHTML = otHtml;
-        otSelect.value = ""; 
+        otSelect.value = previousType; 
         
         otSelect.removeEventListener('change', window.handleOrderTypeChange); 
         window.handleOrderTypeChange = function() {
@@ -703,11 +698,10 @@ window.renderOrderAndPaymentUI = function() {
     let pmHtml = ''; 
     let optHtml = '';
 
-    window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
-        let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
-        // Added 'window.' before setPaymentMethod
-        pmHtml += `<button class="pay-btn ${act}" data-payment-method="${m.toLowerCase()}" onclick="window.setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${window.paymentButtonContent(m)}</button>`; 
-        optHtml += `<option value="${m}">${m}</option>`;
+    methods.forEach(m => {
+        const act=selectedMethod.toLowerCase()===m.toLowerCase()?'active':'';
+        pmHtml += `<button type="button" class="pay-btn ${act}" data-payment-value="${escapeOption(m)}" data-payment-method="${escapeOption(m.toLowerCase())}">${window.paymentButtonContent(m)}</button>`;
+        optHtml += `<option value="${escapeOption(m)}">${escapeOption(m)}</option>`;
     });
     
     pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
@@ -715,6 +709,7 @@ window.renderOrderAndPaymentUI = function() {
     let payGrid = document.querySelector('.payment-grid');
     if (payGrid) {
         payGrid.innerHTML = pmHtml;
+        payGrid.querySelectorAll('[data-payment-value]').forEach(button=>button.onclick=()=>{window.setPaymentMethod(button,button.dataset.paymentValue);const split=document.getElementById('splitPaymentContainer');if(split)split.style.display='none';});
         if (!document.getElementById('splitPaymentContainer')) {
             payGrid.insertAdjacentHTML('afterend', `
                 <div id="splitPaymentContainer" style="display:none; margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 2px dashed #8b5cf6;">
@@ -733,6 +728,7 @@ window.renderOrderAndPaymentUI = function() {
         } else {
             let m1 = document.getElementById('splitMethod1'); if(m1) m1.innerHTML = optHtml;
             let m2 = document.getElementById('splitMethod2'); if(m2) m2.innerHTML = optHtml;
+            ['splitMethod1','splitMethod2'].forEach((id,index)=>{const select=document.getElementById(id);if(select&&methods.includes(splitChoices[index]))select.value=splitChoices[index];});
         }
     }
 };
