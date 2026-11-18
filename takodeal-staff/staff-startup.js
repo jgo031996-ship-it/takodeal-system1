@@ -1,7 +1,7 @@
 /* Independent Staff startup recovery. No module, account or database dependency. */
 (function (w, d, nav) {
     'use strict';
-    var release = 'staff-repair-pin-20261117-r1';
+    var release = 'staff-signup-repair-20261118-r2';
     var key = Symbol.for('takodeal.staff.appUpdate');
     if (w.staffStartup) return;
     // Consume the private fragment before any external scripts start.

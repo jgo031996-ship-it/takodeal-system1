@@ -1,7 +1,7 @@
-const STAFF_RELEASE = 'staff-profile-signup-20261118-r1';
-const CACHE_NAME = 'takodeal-staff-v69-profile-signup-20261118-r1';
+const STAFF_RELEASE = 'staff-signup-repair-20261118-r2';
+const CACHE_NAME = 'takodeal-staff-v70-signup-repair-20261118-r2';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
-SHELL.push('./live-branch-directory.js','./staff-self-service.js','./employment-contract.mjs');
+SHELL.push('./live-branch-directory.js','./staff-self-service.js','./employment-contract.mjs','./contract-logo.mjs');
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./staff-self-repair.js','./staff-self-repair-sdk.js');
 SHELL.push('./worked-shift-reference.js');
@@ -44,12 +44,12 @@ SHELL.push('./staff-startup.js','./staff-pay-phone.js','./staff-employee-section
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "30684289d57d90d2c9180e5be0abb6fe0a2935be8c29c182bd031a14f3632ae2",
-    "bytes": 110536
+    "sha256": "9e4f4622f8784c8d5ff8d6573cb0f5455109329456695a0637e2f8d77cfd3345",
+    "bytes": 112217
   },
   "./index.html": {
-    "sha256": "30684289d57d90d2c9180e5be0abb6fe0a2935be8c29c182bd031a14f3632ae2",
-    "bytes": 110536
+    "sha256": "9e4f4622f8784c8d5ff8d6573cb0f5455109329456695a0637e2f8d77cfd3345",
+    "bytes": 112217
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -60,8 +60,8 @@ const SHELL_INTEGRITY = {
     "bytes": 18549
   },
   "./app.js": {
-    "sha256": "5e3cbc2d0396c8f19de4ddd7fd3b1bb4e5515552908ca239064c132c444d37c6",
-    "bytes": 268685
+    "sha256": "7d9ff657fffeef897a418d27001e7698357b50fa72570e2004865a55967a7f7d",
+    "bytes": 272172
   },
   "./staff-portal.js": {
     "sha256": "1acd4d52f23bc52b1ec57183b2f4c4734c30b92011052b56ace6090af0daca0c",
@@ -88,8 +88,8 @@ const SHELL_INTEGRITY = {
     "bytes": 4331
   },
   "./payroll-safety.js": {
-    "sha256": "7abcceabe6d33bc438d8b03f0d9316ec84e6f8f55c3b2e173599ad1a519f2e5d",
-    "bytes": 53933
+    "sha256": "77b49f64d7f646474f7e576cf88a11804241389550502ba1f671ca50debeb375",
+    "bytes": 54991
   },
   "./schedule-history.js": {
     "sha256": "07b6752918d47cb4fa5c5cbf273d71a2f15ff5c6baf25f9ec8bfc9429915616c",
@@ -118,6 +118,18 @@ const SHELL_INTEGRITY = {
   "./live-branch-directory.js": {
     "sha256": "79f46d3cd5892d89d40a42a6d7b56ab5cb9046fb5096c54b57a97194cd602aaa",
     "bytes": 7967
+  },
+  "./staff-self-service.js": {
+    "sha256": "e06b6f7470322ce4b3c46ba4f24f918feea3f3be9c7668abe01e393cf159f6c8",
+    "bytes": 6445
+  },
+  "./employment-contract.mjs": {
+    "sha256": "bbec3e4919d7db1e0801c177a25e392896d26772c455505c903299381fbb0dc0",
+    "bytes": 12607
+  },
+  "./contract-logo.mjs": {
+    "sha256": "eb5c690837d9e67e149658542c3fd69ca4ec94daf36bf9c7c07bff1db81187e3",
+    "bytes": 74550
   },
   "./schedule-swap-model.js": {
     "sha256": "4f737b1bf15ebfe7451b884132180a27a8fe169f07cde6185c14a483168f2b72",
@@ -164,8 +176,8 @@ const SHELL_INTEGRITY = {
     "bytes": 5719
   },
   "./staff-setup-access.js": {
-    "sha256": "e3536ff3a7866d0f397f04b1e8e04699a08541fdb98029377d649f2c8ad64449",
-    "bytes": 25236
+    "sha256": "a173b42355f4923afe30765814ad938528e704acca7e092e6fb2f6e376ac9e44",
+    "bytes": 26366
   },
   "./staff-setup.css": {
     "sha256": "13153f185be6c464f40b70ee46af1325236a2c6b5ee4e972e375667491a82f01",
@@ -224,8 +236,8 @@ const SHELL_INTEGRITY = {
     "bytes": 1632
   },
   "./private-phone-identity.js": {
-    "sha256": "a7903ef74c507f9009290dcefa1f916a10f33f87e29edac0ef7520311d37d2ff",
-    "bytes": 2519
+    "sha256": "efe9362d6f597132c9f4d6397494d8bf5f401c495454dd562afedb9ad0e8e937",
+    "bytes": 3108
   },
   "./document-metadata-client.js": {
     "sha256": "50792a6b71069a8073984b07ae3064cda6707a8304b7a6b37f49b93dbcdf305b",
@@ -412,8 +424,8 @@ const SHELL_INTEGRITY = {
     "bytes": 13104
   },
   "./staff-vault-recovery-ui.js": {
-    "sha256": "f2b5949c07f054dcd147c418a2ad7f367de73f9f793c7b31b47549542fc3f45c",
-    "bytes": 6046
+    "sha256": "594519c31c2bdad41ffca0c24e8698b73d4e9b3bd38501dcac4d788c54520eac",
+    "bytes": 6007
   },
   "./staff-payslip-snapshot.js": {
     "sha256": "74474a653f0c041a13478104bf8144ca3a35e3ad4bad73e03ae70ffd0651f822",
@@ -424,20 +436,20 @@ const SHELL_INTEGRITY = {
     "bytes": 11436
   },
   "./staff-private-profile-client.js": {
-    "sha256": "88b3c421009cee52aa80420af1644aa5c3115db3d0add336990d784b84a272d7",
-    "bytes": 7899
+    "sha256": "2f4a49b658b2f307dc0b4bfdbc016c651025468448f19aea0be9e5646335f10d",
+    "bytes": 8071
   },
   "./staff-private-profile-ui.js": {
-    "sha256": "e7abaf839ef1ad92edc4c53c48457f3b6cc97e9c6dcd557043a82b22702cc901",
-    "bytes": 17918
+    "sha256": "787c3fdf2a468ba434b15367ce342d0ebc8b5c13a5cb824d0db698c04c70abbd",
+    "bytes": 19217
   },
   "./staff-startup.js": {
-    "sha256": "4f0451dd1bea979b3c7cfd9195fda78ac603c01bacb886ea8cbad326af0fa60c",
-    "bytes": 19678
+    "sha256": "2324d696ef62b9588ce59bd01f306f09bd13418b75ecef6ca111bdc9b6a1ca38",
+    "bytes": 19907
   },
   "./staff-pay-phone.js": {
-    "sha256": "1478ebf90b8cbea092e6e28385814c518a87d475ac99218227a08f22f888ef23",
-    "bytes": 1059
+    "sha256": "e69c03e17a7454b3e835299e7aa82b752077bc543dbdc727e38040a21285ba75",
+    "bytes": 1242
   },
   "./staff-employee-sections.js": {
     "sha256": "365251e956fafe36701e5a91d5d6d8e9d1ba19c037bb1d42dfb8ed8de5ab970d",
@@ -452,7 +464,7 @@ const SHELL_INTEGRITY = {
     "bytes": 3998
   }
 };
-const COHORT_HASH = "1aae8279114c66afd6907ecdcfaa518464070042593e7af72a9140028d8ed145";
+const COHORT_HASH = "f196d594fbd4f49229c36e9ae7a7b9188b06507027cd5176aa37a0d2bb288c1a";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces
@@ -463,8 +475,9 @@ const shellPaths = new Set(SHELL);
 const hex = bytes => Array.from(new Uint8Array(bytes),value=>value.toString(16).padStart(2,'0')).join('');
 function canonicalShellPath(url,navigation=false){
     if(url.origin!==SHELL_ROOT.origin||!url.pathname.startsWith(SHELL_ROOT.pathname))return null;
-    if(navigation)return './index.html';
     const relative='./'+url.pathname.slice(SHELL_ROOT.pathname.length);
+    // Signup and other independent pages must never receive the cached login HTML.
+    if(navigation)return relative==='./'||relative==='./index.html'?'./index.html':null;
     return shellPaths.has(relative)?relative:null;
 }
 async function verifiedShellResponse(path,signal){

@@ -151,7 +151,22 @@ export function installStaffSetupGate(config,{legacyRequest,legacyListen,stopLeg
         const pendingRecovery=w.staffSelfRepair?.requiresCode();
         if(el('resumeStaffRecovery'))el('resumeStaffRecovery').hidden=!pendingRecovery;
         if(pendingRecovery){authority.invalidate();enteredKey='';checking('Choose Continue saved recovery to finish the phone sign-in you already started.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Finish the saved sign-in reset';return;}
-        try{const id=deviceId(),result=await authority.confirm(id,{join:!showChecking});if(token!==visibleEpoch||d.hidden)return;await apply(result,id);}
+        try{
+            let id=deviceId(),result;
+            try{result=await authority.confirm(id,{join:!showChecking});}
+            catch(error){
+                // Signup may have completed after an older setup draft was saved.
+                // Only an independently confirmed active phone can replace that draft.
+                const committed=ls.getItem('takodeal_device_id');
+                if(!deviceKey(committed)||committed===id||saved()?.deviceId!==id)throw error;
+                const confirmed=await authority.confirm(committed,{join:false});
+                if(token!==visibleEpoch||d.hidden)return;
+                if(ls.getItem('takodeal_device_id')!==committed||saved()?.deviceId!==id)throw Error('The phone setup changed. Check again.');
+                if(confirmed.mode!=='protected'||confirmed.device?.status!=='Active')throw error;
+                id=committed;result=confirmed;ls.removeItem(STAFF_SETUP_DRAFT);
+            }
+            if(token!==visibleEpoch||d.hidden)return;await apply(result,id);
+        }
         catch(error){if(token===visibleEpoch&&!d.hidden){checking(error.message||'HQ could not confirm this phone. Reconnect and choose Check again.');if(el('devicePendingTitle'))el('devicePendingTitle').textContent='Connection to HQ needed';}}
         finally{if(token===visibleEpoch)schedule();}
     }
