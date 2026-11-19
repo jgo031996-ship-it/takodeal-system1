@@ -23,8 +23,10 @@ const time=value=>{const match=typeof value==='string'&&value.trim().match(/^(\d
 const kind=rule=>['morning','mid','night','other'].includes(rule.shiftType)?rule.shiftType:/\bnight\b/i.test(rule.name||'')||/^n\d/i.test(rule.id)?'night':/\bmid(?:shift|-shift)?\b/i.test(rule.name||'')||/^mid/i.test(rule.id)?'mid':/\bmorning\b/i.test(rule.name||'')||/^m\d/i.test(rule.id)?'morning':'other';
 function identity(profile,start){
     if(!activeStaffProfile(profile))throw Error('The active staff profile must be confirmed before changing this roster.');
-    const person=leavePerson(profile,start.staffId),aliases=new Set([...person.aliases,start.staffName].map(leaveNameKey));
-    return {...person,aliases:[...new Set([...person.aliases,start.staffName])],matches:value=>aliases.has(leaveNameKey(value))};
+    const person=leavePerson(profile,start.staffId);
+    const names=[...person.aliases,start.staffName,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(value=>typeof value==='string'&&value.trim());
+    const aliases=new Set(names.map(leaveNameKey));
+    return {...person,aliases:[...new Set(names)],matches:value=>aliases.has(leaveNameKey(value))};
 }
 export function workedShiftPair(records,start){
     if(!present(start)||attendanceKind(start)!=='TIME IN'||!workedShiftValidId(start.id)||!workedShiftValidId(start.staffId)||typeof start.branch!=='string'||!start.branch.trim()||start.branch.length>120||!start.staffName)throw Error('Select the original saved Time In with its stable employee and branch.');
@@ -58,6 +60,31 @@ function leaveOnWorkDate(row,workDate){
         return null;
     }
 }
+// A dated roster describes the plan. A verified pair can establish an exception
+// for this punch while both the roster and all independent HR decisions survive.
+function workedDutyRosterContext(dated,workDate,branch,person,leaves,sanctions){
+    const otherBranches=[],unavailableBranches=[],blockers=new Set();
+    const matches=(marker,name)=>marker?.staffId?marker.staffId===person.staffId:person.matches(name);
+    const sourceMatches=row=>matches(row,row.staffName);
+    function checkLinks(marker){
+        if(marker?.leaveRequestId&&!leaves.some(row=>row.id===marker.leaveRequestId&&row.type==='Leave'&&sourceMatches(row)))
+            blockers.add('The leave linked to this roster entry could not be verified for this employee.');
+        if(marker?.sanctionId&&!sanctions.some(row=>row.id===marker.sanctionId&&sourceMatches(row)))
+            blockers.add('The suspension linked to this roster entry could not be verified for this employee.');
+    }
+    const branches=dated?.currentSchedule?.[Number(workDate.slice(-2))]||{};
+    for(const [location,roster] of Object.entries(branches)){
+        if(location!==branch&&Object.values(roster?.scheduled||{}).some(person.matches))otherBranches.push(location);
+        const markers=(roster?.unavailable||[]).filter(row=>matches(row,typeof row==='string'?row:row?.name));
+        if(markers.length)unavailableBranches.push(location);
+        markers.forEach(checkLinks);
+    }
+    const flags=Object.entries(dated?.unavailability?.[workDate]||{}).filter(([name,marker])=>matches(marker,name));
+    for(const [,marker] of flags)checkLinks(marker);
+    const exception=otherBranches.length||unavailableBranches.length||flags.length
+        ?{sourceRevisionId:dated.scheduleRevisionId,otherBranches:otherBranches.sort(),unavailableBranches:unavailableBranches.sort(),dateRestriction:flags.length>0}:null;
+    return {exception,blockers:[...blockers]};
+}
 export function planWorkedShiftCorrection({start,out,profile,history,attendance=[],leaves=[],sanctions=[],payroll=[],claims=null,matchedShift,context={},now=new Date()}={}){
     const person=identity(profile,start),pair=workedShiftPair(attendance,start);
     if(pair.out.id!==out.id||workedShiftCanonical(workedShiftAttendanceEvidence(pair.out))!==workedShiftCanonical(workedShiftAttendanceEvidence(out)))throw Error('The saved Time Out changed. Reopen this worked shift.');
@@ -78,6 +105,7 @@ export function planWorkedShiftCorrection({start,out,profile,history,attendance=
         if(!basis?.scheduleRevisionId||!Array.isArray(rules))continue;
         const dayBranches=basis.currentSchedule?.[day],branch=dayBranches?.[start.branch];
         if(!branch||!branch.scheduled||typeof branch.scheduled!=='object'||Array.isArray(branch.scheduled))continue;
+        const rosterContext=workedDutyRosterContext(dated,workDate,start.branch,person,leaves,sanctions);
         const ids=new Set(),duplicate=new Set();for(const rule of rules){if(ids.has(rule?.id))duplicate.add(rule.id);ids.add(rule?.id);}
         if(rules.some(rule=>rule?.active!==false&&(!rule||!workedShiftValidId(rule.id)||duplicate.has(rule.id)||rule.active!==undefined&&rule.active!==true||rule.name!==undefined&&typeof rule.name!=='string'||rule.shiftType!==undefined&&!['morning','mid','night','other'].includes(rule.shiftType)||rule.days!==undefined&&(!Array.isArray(rule.days)||rule.days.some(day=>!Number.isInteger(day)||day<0||day>6))||time(rule.startTime)==null||time(rule.endTime)==null||(time(rule.endTime)-time(rule.startTime)+1440)%1440<60||(time(rule.endTime)-time(rule.startTime)+1440)%1440>1080))){blockers.push('Saved shift windows are incomplete or conflicting for '+workDate+'.');continue;}
         for(const rule of rules){
@@ -85,22 +113,17 @@ export function planWorkedShiftCorrection({start,out,profile,history,attendance=
             if(!workedShiftValidId(rule?.id)||duplicate.has(rule.id)||rule.active===false||rule.active!==undefined&&rule.active!==true||duration<60||duration>1080||Array.isArray(rule.days)&&!rule.days.includes(new Date(workDate+'T00:00:00Z').getUTCDay()))continue;
             const expectedStartAt=dayStart+begin*MINUTE,expectedEndAt=expectedStartAt+duration*MINUTE,overlap=Math.max(0,Math.min(finish,expectedEndAt)-Math.max(actual,expectedStartAt));
             if(overlap<=0)continue;
-            const issues=[],occupant=branch.scheduled[rule.id],previousShiftIds=Object.entries(branch.scheduled).filter(([,name])=>person.matches(name)).map(([id])=>id);
+            const issues=[...rosterContext.blockers],occupant=branch.scheduled[rule.id],previousShiftIds=Object.entries(branch.scheduled).filter(([,name])=>person.matches(name)).map(([id])=>id);
             if(overlap<=(finish-actual)/2)issues.push('This saved window does not cover a majority of the actual worked hours.');
             const occupied=!empty(occupant)&&!person.matches(occupant);
             const undatedLeaveIds=[];
-            for(const [otherBranch,roster]of Object.entries(dayBranches||{})){
-                if(!context.coverReview&&otherBranch!==start.branch&&Object.values(roster?.scheduled||{}).some(person.matches))issues.push('This employee also has an assignment at '+otherBranch+' on this work date.');
-                if((roster?.unavailable||[]).some(row=>person.matches(typeof row==='string'?row:row?.name)))issues.push('This date has a saved unavailable, leave or suspension marker.');
-            }
-            if(Object.keys(basis.unavailability?.[workDate]||{}).some(person.matches))issues.push('This date has a saved availability restriction.');
             if(claims?.dates?.[workDate])issues.push('An approved leave owns this date. Review that leave separately.');
             for(const row of leaves.filter(row=>samePerson(row)&&row.type==='Leave'&&row.status==='Approved')){
                 const active=leaveOnWorkDate(row,workDate);
                 if(active===true)issues.push('An approved leave covers this date.');
                 if(active===null)undatedLeaveIds.push(row.id);
             }
-            const attendanceOnly=standalone||occupied||undatedLeaveIds.length>0||context.coverReview===true;
+            const attendanceOnly=standalone||occupied||undatedLeaveIds.length>0||context.coverReview===true||!!rosterContext.exception;
             for(const row of sanctions.filter(samePerson)){try{if(suspensionDates(row).includes(workDate))issues.push('A reviewed suspension covers this date.');}catch{issues.push('A saved suspension needs review.');}}
             if(payroll.some(row=>samePerson(row)&&(row.frozenData||row.isPaid===true||Number.isFinite(row.finalNetPay))&&row.startDate<=workDate&&row.endDate>=workDate))issues.push('A paid payslip covers this work date. Its figures stay frozen.');
             const separate=linkedAttendanceHistory(attendance,person.staffId,start.staffName).filter(item=>item.in?.id!==start.id&&item.out&&present(item.in)&&present(item.out));
@@ -109,7 +132,7 @@ export function planWorkedShiftCorrection({start,out,profile,history,attendance=
             const alreadyAssigned=previousShiftIds.length===1&&previousShiftIds[0]===rule.id,marker=basis.workedShiftCorrections?.[start.id],authorized=history.historyMonths?.[workDate.slice(0,7)]?.revisions?.find(row=>row.revisionId===marker?.correctionId);
             const alreadyCorrected=(alreadyAssigned||attendanceOnly&&marker?.attendanceOnly===true)&&marker?.version===1&&marker.staffId===start.staffId&&marker.staffName===start.staffName&&marker.branch===start.branch&&marker.workDate===workDate&&marker.timeInLogId===start.id&&marker.timeOutLogId===out.id&&marker.timeInAt===pair.timeInAt&&marker.timeOutAt===pair.timeOutAt&&marker.sourceFingerprint===emergencyShiftSourceFingerprint(start)&&marker.shiftId===rule.id&&marker.expectedStartAt===new Date(expectedStartAt).toISOString()&&marker.expectedEndAt===new Date(expectedEndAt).toISOString()&&marker.shiftType===kind(rule)&&marker.reviewedByEmail===OWNER_EMAIL&&authorized?.source==='owner-worked-shift'&&workedShiftCanonical(authorized.historicalWorkedShiftReview)===workedShiftCanonical(marker);
             const slotAmendmentIds=(basis.scheduleAmendments||[]).filter(event=>event.branch===start.branch&&event.changes?.some(change=>change.shiftId===rule.id)).map(event=>event.id);
-            choices.push({key,standalone,ownerEntered:!!context.manualDuty,slotAmendmentIds,attendanceOnly,occupied,plottedName:typeof occupant==='string'?occupant.trim():null,reportedRevisionId:alreadyCorrected?marker.sourceRevisionId:basis.scheduleRevisionId,undatedLeaveIds,shiftId:rule.id,shiftName:String(rule.name||rule.id).slice(0,160),shiftType:kind(rule),workDate,expectedStartAt:new Date(expectedStartAt).toISOString(),expectedEndAt:new Date(expectedEndAt).toISOString(),sourceRevisionId:basis.scheduleRevisionId,overlapHours:overlap/3600000,overlapRatio:overlap/(finish-actual),blockers:[...new Set(issues)],alreadyAssigned,alreadyCorrected:!!alreadyCorrected,existingCorrectionId:alreadyCorrected?marker.correctionId:null,previousShiftIds,basis});
+            choices.push({key,standalone,ownerEntered:!!context.manualDuty,slotAmendmentIds,attendanceOnly,rosterException:rosterContext.exception,occupied,plottedName:typeof occupant==='string'?occupant.trim():null,reportedRevisionId:alreadyCorrected?marker.sourceRevisionId:basis.scheduleRevisionId,undatedLeaveIds,shiftId:rule.id,shiftName:String(rule.name||rule.id).slice(0,160),shiftType:kind(rule),workDate,expectedStartAt:new Date(expectedStartAt).toISOString(),expectedEndAt:new Date(expectedEndAt).toISOString(),sourceRevisionId:basis.scheduleRevisionId,overlapHours:overlap/3600000,overlapRatio:overlap/(finish-actual),blockers:[...new Set(issues)],alreadyAssigned,alreadyCorrected:!!alreadyCorrected,existingCorrectionId:alreadyCorrected?marker.correctionId:null,previousShiftIds,basis});
         }
     }
     // Prefer an archived work date over a template for an adjacent overnight window.
@@ -129,6 +152,7 @@ export function createWorkedShiftRevision(plan,choiceKey,{operationId,actor,at,i
         const rule=choice.basis.branchConfig[plan.branch].find(row=>row.id===choice.shiftId);
         const marker={version:1,preservedLateness:copy(plan.preservedLateness),correctionId:revisionId,staffId:plan.staffId,workDate:choice.workDate,branch:plan.branch,timeInLogId:plan.attendanceLogId,timeOutLogId:plan.timeOutLogId,timeInAt:plan.timeInAt,timeOutAt:plan.timeOutAt,sourceFingerprint:plan.sourceFingerprint,shiftId:choice.shiftId,shiftName:choice.shiftName,shiftType:choice.shiftType,expectedStartAt:choice.expectedStartAt,expectedEndAt:choice.expectedEndAt,reviewedAt,reviewedByUid:actor.uid,reviewedByEmail:actor.email};
         if(choice.ownerEntered&&plan.reviewedApprovalKey)marker.reviewedApprovalKey=plan.reviewedApprovalKey;
+        if(choice.rosterException)marker.rosterException=copy(choice.rosterException);
         return {schemaVersion:1,kind:'schedule-revision',source:'owner-attendance-only',revisionId,month:choice.workDate.slice(0,7),effectiveFrom:choice.workDate,effectiveTo:choice.workDate,savedAt:reviewedAt,actor:actor.email,daySnapshots:{},snapshot:{currentYear:Number(choice.workDate.slice(0,4)),currentMonth:Number(choice.workDate.slice(5,7)),branchConfig:{[plan.branch]:[copy(rule)]}},historicalWorkedShiftReview:marker};
     }
     const revisionId='worked-'+operationId,day=Number(choice.workDate.slice(-2)),basis=choice.basis,fields=['branchConfig','employees','unavailability','currentYear','currentMonth','holidays','workedShiftCorrections'];
@@ -145,6 +169,7 @@ export function createWorkedShiftRevision(plan,choiceKey,{operationId,actor,at,i
     }
     const marker={version:1,correctionId:revisionId,operationId,staffId:plan.staffId,staffName:plan.staffName,branch:plan.branch,workDate:choice.workDate,timeInLogId:plan.attendanceLogId,timeInAt:plan.timeInAt,timeOutLogId:plan.timeOutLogId,timeOutAt:plan.timeOutAt,sourceFingerprint:plan.sourceFingerprint,sourceRevisionId:choice.sourceRevisionId,shiftId:choice.shiftId,shiftName:choice.shiftName,shiftType:choice.shiftType,expectedStartAt:choice.expectedStartAt,expectedEndAt:choice.expectedEndAt,previousShiftIds:[...choice.previousShiftIds],preservedLateness:copy(plan.preservedLateness),reviewedByUid:actor.uid,reviewedByEmail:actor.email,reviewedAt:new Date(at).toISOString(),reason:'Owner applied the saved worked shift to this work date.'};
     if(choice.attendanceOnly)Object.assign(marker,{attendanceOnly:true,plottedEmployee:roster.scheduled[choice.shiftId]??null,undatedLeaveIds:[...choice.undatedLeaveIds],reason:'Owner confirmed the recorded duty for this employee. Original roster retained.'});
+    if(choice.rosterException)marker.rosterException=copy(choice.rosterException);
     snapshot.workedShiftCorrections={...(snapshot.workedShiftCorrections||{}),[plan.attendanceLogId]:marker};
     const revision={schemaVersion:1,kind:'schedule-revision',revisionId,month:choice.workDate.slice(0,7),effectiveFrom:choice.workDate,effectiveTo:choice.workDate,savedAt:marker.reviewedAt,actor:actor.email,source:'owner-worked-shift',payrollHistoryEnforcedFrom:cutover||choice.workDate,snapshot,daySnapshots:{[choice.workDate]:{configRevisionId:revisionId,daySchedule:copy(snapshot.currentSchedule[day])}},historicalWorkedShiftReview:copy(marker),sequence:(index?.revisionIds?.length||0)+1};
     if(new TextEncoder().encode(JSON.stringify(revision)).length>950000)throw Error('This dated correction is too large to save safely.');

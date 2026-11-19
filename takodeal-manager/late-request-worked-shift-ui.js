@@ -21,7 +21,7 @@ export async function reviewLateRequestWorkedShift(api,d,context,attendance){
  };
  try{
   const ui=api.workedShiftCorrectionUI||(api.workedShiftCorrectionUI=installWorkedShiftCorrectionUI(api,d));
-  const result=await ui.open(input,{assertCurrent:current,onApplied:async()=>{current();applied=true;api.invalidateCache?.('global_schedule');api.invalidateCache?.('attendance_logs');await reopen();}});
+  const result=await ui.open(input,{refreshCutoff:true,assertCurrent:current,onApplied:async()=>{current();applied=true;api.invalidateCache?.('global_schedule');api.invalidateCache?.('attendance_logs');await reopen();}});
   if(result?.addEventListener)result.addEventListener('close',()=>{if(!applied&&result.dataset?.workedShiftSaved!=='true')void reopen(true).catch(()=>{});},{once:true});
   else if(!applied)await reopen(true);
   return result;

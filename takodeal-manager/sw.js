@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v172-attendance-punch-void-20261119-r2';
+const CACHE_NAME = 'takodeal-manager-core-v173-worked-duty-roster-exception-20261119-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [

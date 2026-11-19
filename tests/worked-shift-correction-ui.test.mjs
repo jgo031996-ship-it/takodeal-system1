@@ -74,6 +74,24 @@ test('manual hours stay in the open dialog through validation and a failed write
  const record=f.get(revisions(f)[0]).historicalWorkedShiftReview;
  assert.equal(record.expectedEndAt,at('02:00',18).toISOString());assert.equal(record.timeOutLogId,f.out.id);
 });
+
+test('one confirmation at the punched branch saves an availability exception and refreshes the open cutoff once',async()=>{
+ const f=uiFixture({extraDay:{unavailable:['CREW']}}),date='2026-10-17';
+ const roster=f.get('settings/schedule_revision_original-october').daySnapshots[date].daySchedule;
+ roster.Citygate={scheduled:{mid:'CREW'},rest:[],unavailable:[]};
+ for(const [id,value] of [['payrollStart',f.context.from],['payrollEnd',f.context.to]]){
+  const field=f.document.createElement('input');field.setAttribute('id',id);field.value=value;f.document.body.append(field);
+ }
+ let reloads=0;f.api.refreshPayrollAfterAttendanceCorrection=async()=>{reloads++;assert.equal(revisions(f).length,1);};
+ await f.ui.open(f.context,{onApplied:f.onApplied,refreshCutoff:true});
+ enterHours(f,{name:'Mid',kind:'mid',start:'16:00',end:'00:30'});
+ const status=f.node('[data-status]').textContent;
+ assert.ok(status.includes(branch));assert.ok(status.includes('Citygate'));assert.ok(status.includes('unavailable'));
+ const button=f.node('[data-apply]');await Promise.all([button.onclick(),button.onclick()]);
+ assert.equal(reloads,1);assert.equal(f.applied.length,1);assert.equal(f.node('dialog'),null);
+ const marker=f.get(revisions(f)[0]).historicalWorkedShiftReview;
+ assert.equal(marker.branch,branch);assert.equal(marker.shiftType,'mid');assert.equal(marker.workDate,date);
+});
 test('a renamed employee can explicitly update a conflicting prior approval; payroll uses the new assignment until a later approval',async()=>{
  const f=uiFixture(),profile={...f.profile,cashierName:'Current Crew Name',staffId};
  f.put('cashiers/'+staffId,profile);
