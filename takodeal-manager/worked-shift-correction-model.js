@@ -128,6 +128,7 @@ export function createWorkedShiftRevision(plan,choiceKey,{operationId,actor,at,i
         const revisionId='worked-'+operationId,reviewedAt=new Date(at).toISOString();
         const rule=choice.basis.branchConfig[plan.branch].find(row=>row.id===choice.shiftId);
         const marker={version:1,preservedLateness:copy(plan.preservedLateness),correctionId:revisionId,staffId:plan.staffId,workDate:choice.workDate,branch:plan.branch,timeInLogId:plan.attendanceLogId,timeOutLogId:plan.timeOutLogId,timeInAt:plan.timeInAt,timeOutAt:plan.timeOutAt,sourceFingerprint:plan.sourceFingerprint,shiftId:choice.shiftId,shiftName:choice.shiftName,shiftType:choice.shiftType,expectedStartAt:choice.expectedStartAt,expectedEndAt:choice.expectedEndAt,reviewedAt,reviewedByUid:actor.uid,reviewedByEmail:actor.email};
+        if(choice.ownerEntered&&plan.reviewedApprovalKey)marker.reviewedApprovalKey=plan.reviewedApprovalKey;
         return {schemaVersion:1,kind:'schedule-revision',source:'owner-attendance-only',revisionId,month:choice.workDate.slice(0,7),effectiveFrom:choice.workDate,effectiveTo:choice.workDate,savedAt:reviewedAt,actor:actor.email,daySnapshots:{},snapshot:{currentYear:Number(choice.workDate.slice(0,4)),currentMonth:Number(choice.workDate.slice(5,7)),branchConfig:{[plan.branch]:[copy(rule)]}},historicalWorkedShiftReview:marker};
     }
     const revisionId='worked-'+operationId,day=Number(choice.workDate.slice(-2)),basis=choice.basis,fields=['branchConfig','employees','unavailability','currentYear','currentMonth','holidays','workedShiftCorrections'];

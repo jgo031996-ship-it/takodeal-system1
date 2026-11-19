@@ -5,6 +5,7 @@ import {attendanceKind,attendanceMillis} from './attendance-reconcile.js';
 import {OWNER_EMAIL,canOpenWorkspacePage,createWorkspaceSession} from './workspace-access-model.js';
 import {resolveHQAccount,savedPin} from './hq-account-model.js';
 import {validEmergencyReliefMarker} from './relief-attendance-model.js';
+import {workedShiftApprovalKey} from './worked-shift-reference.js';
 import {ordinaryPayrollId} from './payroll-settlement.js';
 import {planWorkedShiftCorrection,createWorkedShiftRevision,workedShiftCanonical,workedShiftValidId,workedShiftPair,workedShiftAttendanceEvidence,workedShiftSourceFingerprint} from './worked-shift-correction-model.js';
 
@@ -30,6 +31,7 @@ function contextOf(input){
         if(!context.attendanceLogId||!context.workDate||typeof name!=='string'||!name.trim()||name.trim().length>120||
            !['morning','mid','night','other'].includes(shiftType)||![startTime,endTime].every(v=>typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(v)))throw Error('Enter the work date, shift name, category and both assigned times.');
         context.manualDuty={id:'owner-entered',name:name.trim(),shiftType,startTime,endTime};
+        if(typeof input.reviewedApproval==='string')context.reviewedApproval=input.reviewedApproval;
     }
     return context;
 }
@@ -108,7 +110,21 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
                 row.alreadyCorrected=true;row.existingCorrectionId=matched.workedShiftCorrectionId;
             }
         }
-        if(matched.payrollHoursConfirmed||matched.reliefReviewVerified)for(const choice of plan.choices)if(attendanceMillis(matched.expectedStartAt)!==Date.parse(choice.expectedStartAt)||attendanceMillis(matched.expectedEndAt)!==Date.parse(choice.expectedEndAt))choice.blockers.push('Existing Owner-confirmed hours differ from this slot. Resolve that saved review separately.');
+        let confirmedDuty=null;
+        if(matched.payrollHoursConfirmed||matched.reliefReviewVerified||matched.workedShiftCorrectionId){
+            const startAt=new Date(matched.expectedStartAt).toISOString(),endAt=new Date(matched.expectedEndAt).toISOString();
+            const approval=workedShiftApprovalKey(head,start.reliefScheduleReview);
+            const token=JSON.stringify([approval,matched.workedShiftCorrectionId||null,startAt,endAt,matched.shiftName,matched.shiftType]);
+            confirmedDuty={token,expectedStartAt:startAt,expectedEndAt:endAt,name:matched.shiftName,shiftType:matched.bonusCategoryVerified===false?'':matched.shiftType};
+            if(context.manualDuty&&context.reviewedApproval===token)plan.reviewedApprovalKey=approval;
+            if(matched.payrollHoursConfirmed||matched.reliefReviewVerified)for(const choice of plan.choices){
+                if(choice.ownerEntered&&context.reviewedApproval===token)continue;
+                if(startAt!==choice.expectedStartAt||endAt!==choice.expectedEndAt)
+                    choice.blockers.push('Existing Owner-confirmed hours differ from this slot. Review changes in the assigned-hours form.');
+            }
+        }
+        if(context.reviewedApproval!==undefined&&context.reviewedApproval!==confirmedDuty?.token)
+            throw Error('The saved approval changed. Reopen this punch to review the latest approved hours.');
         if(plan.recommendedKey&&plan.choices.find(row=>row.key===plan.recommendedKey)?.blockers.length)plan.recommendedKey=null;
         if(plan.sourceFingerprint.length>30000)throw Error('The original punch snapshot is too large for a compact dated correction.');
         for(const id of paymentGuards(staffId,[...new Set([scheduleDateKey(new Date(at)),...plan.choices.map(row=>row.workDate)])],context)){const row=await get('payroll_records',id);if(row&&!payroll.some(saved=>saved.id===id))payroll.push({...row,id});}
@@ -118,7 +134,7 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
         // A historical correction never depends on unrelated current planning.
         if(!plan.choices.some(row=>row.standalone))refs.delete('settings/global_schedule');
         const expectedFingerprint=await digest(workedShiftCanonical([...refs].sort(([a],[b])=>a.localeCompare(b)).map(([path,row])=>[path,row.value])),crypto);guard(key,user,session,start.branch);
-        const view=freeze({status:plan.blockers.length?'blocked':'ready',context:{...context,attendanceLogId:start.id,staffId,branch:start.branch},staffId,staffName:start.staffName,branch:start.branch,attendanceLogId:start.id,timeOutLogId:out.id,timeInAt:plan.timeInAt,timeOutAt:plan.timeOutAt,workedHours:plan.workedHours,preservedLateness:copy(plan.preservedLateness),choices:plan.choices.map(({basis,...choice})=>copy(choice)),recommendedKey:plan.recommendedKey,blockers:[...plan.blockers],expectedFingerprint,recordChoices:[]});
+        const view=freeze({status:plan.blockers.length?'blocked':'ready',context:{...context,attendanceLogId:start.id,staffId,branch:start.branch},staffId,staffName:start.staffName,branch:start.branch,attendanceLogId:start.id,timeOutLogId:out.id,timeInAt:plan.timeInAt,timeOutAt:plan.timeOutAt,workedHours:plan.workedHours,confirmedDuty,preservedLateness:copy(plan.preservedLateness),choices:plan.choices.map(({basis,...choice})=>copy(choice)),recommendedKey:plan.recommendedKey,blockers:[...plan.blockers],expectedFingerprint,recordChoices:[]});
         inspections.set(view,{key,user,session,accounts,refs,plan,history,context:view.context});return view;
     }
     function propose(view,choiceKey=view?.recommendedKey){

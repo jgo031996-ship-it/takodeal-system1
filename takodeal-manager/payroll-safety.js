@@ -7,7 +7,7 @@ import { resolveScheduleForDate, amendmentsForDate } from './schedule-history.js
 import {publishedPayrollTemplates} from './payroll-bonus-templates.js';
 import {staffRateForDate} from './staff-rate-model.js';
 import {applyAttendanceAmendmentReview} from './attendance-amendment-review-model.js';
-import {resolveEmergencyShift} from './emergency-shift-model.js';
+import {resolvePayrollConfirmedHours} from './payroll-confirmed-shifts.js';
 import {attendanceMillis} from './attendance-reconcile.js';
 const payrollOwnerEmail='jgo031996@gmail.com';
 export {staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh} from './staff-rate-model.js';
@@ -290,7 +290,9 @@ export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOv
         if(matches.length===1)staffNameOverride=matches[0][0];
     }
     const finish=shift=>rememberPayrollShift(shift,log,schedule,profiles,staffNameOverride);
-    const relief = resolveReliefScheduleReview(log, profiles[staffNameOverride], staffNameOverride);
+    const person=profiles[staffNameOverride];
+    const punchName=log.staffId&&log.staffId===(person?.staffId||person?.id)?log.staffName:staffNameOverride;
+    const relief = resolveReliefScheduleReview(log, person, punchName);
     const unreviewedRelief=validEmergencyReliefMarker(log.emergencyRelief,log.branch);
     const amended = resolveAttendanceAmendment(log, schedule, profiles, staffNameOverride);
     const priorReview=relief||amended;
@@ -306,13 +308,15 @@ export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOv
     const heads=schedule?.payrollShiftConfirmations;
     if(log.id&&heads&&Object.hasOwn(heads,log.id)){
         try{
-            const head=heads[log.id],confirmed=resolveEmergencyShift(log,profiles[staffNameOverride],head);
+            const head=heads[log.id],confirmed=resolvePayrollConfirmedHours(log,profiles[staffNameOverride],head);
             if(!confirmed||head.reviewedByEmail!==payrollOwnerEmail)throw Error('The saved assigned-hours review is not a verified Owner confirmation.');
             assertPayrollConfirmationOrder(log,schedule,priorReview,head);
             const sameBounds=+confirmed.expectedStartAt===+priorReview?.expectedStartAt&&+confirmed.expectedEndAt===+priorReview?.expectedEndAt;
             const category=sameBounds&&relief?{shiftType:relief.shiftType,isNightShift:relief.isNightShift,bonusCategoryVerified:true}:datedRuleCategory(schedule,log.branch,confirmed.expectedStartAt,confirmed.expectedEndAt);
             const lateMinutes=original.reliefReviewVerified||original.amendmentReviewVerified?original.lateMinutes:attendanceLateMinutes(log,original);
-            return finish({...original,...confirmed,...category,lateMinutes,payrollHoursConfirmed:true,payrollConfirmationRevisionId:head.revisionId,payrollConfirmationVersion:head.version,amendmentNeedsReview:original.amendmentNeedsReview===true,needsScheduleReview:original.amendmentNeedsReview===true,bonusCategoryVerified:category.bonusCategoryVerified,originalExpectedStartAt:original.expectedStartAt,originalExpectedEndAt:original.expectedEndAt});
+            const approved={...original,...confirmed,...category,lateMinutes,payrollHoursConfirmed:true,payrollConfirmationRevisionId:head.revisionId,payrollConfirmationVersion:head.version,amendmentNeedsReview:original.amendmentNeedsReview===true,needsScheduleReview:original.amendmentNeedsReview===true,bonusCategoryVerified:category.bonusCategoryVerified,originalExpectedStartAt:original.expectedStartAt,originalExpectedEndAt:original.expectedEndAt};
+            const updated=resolveWorkedShiftReference(log,schedule,profiles[staffNameOverride],approved);
+            return finish(updated?.workedShiftApprovalKey?updated:approved);
         }catch(error){return {...emptyAttendanceShift(log,'owner-shift-review'),payrollShiftConfirmationError:error.message||'The saved Owner hours need a fresh review.'};}
     }
     const worked=resolveWorkedShiftReference(log,schedule,profiles[staffNameOverride],original);

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {createWorkedShiftCorrectionService} from '../takodeal-manager/worked-shift-correction-service.js';
-import {createScheduleRevision,resolveScheduleForDate} from '../takodeal-manager/schedule-history.js';
-import {captureAttendanceSchedule} from '../takodeal-manager/payroll-safety.js';
+import {createScheduleHistoryStore,createScheduleRevision,resolveScheduleForDate} from '../takodeal-manager/schedule-history.js';
+import {captureAttendanceSchedule,resolveAttendanceShift,payrollReliefHoursVerified} from '../takodeal-manager/payroll-safety.js';
 import {ordinaryPayrollId} from '../takodeal-manager/payroll-settlement.js';
 import {emergencyShiftSourceFingerprint} from '../takodeal-manager/emergency-shift-model.js';
 
@@ -26,6 +26,11 @@ function fixture({rules=[rule('morning','09:00','17:30','morning'),rule('night',
  let counter=0;const service=createWorkedShiftCorrectionService(api,{crypto:webcrypto,now:()=>new Date('2026-11-05T12:00:00+08:00'),makeId:()=> 'operation-'+String(++counter),readAttendance:async()=>[...h.docs].filter(([path])=>path.startsWith('attendance_logs/')).map(([path,row])=>({...structuredClone(row),id:path.slice('attendance_logs/'.length)}))});
  const context={attendanceLogId:start.id,staffId,branch,from:'2026-10-16',to:'2026-10-31'};
  return {...h,api,service,context,profile,snapshot,revision,start,out,calls};
+}
+function enterHours(f,{date='2026-10-17',name='Night kitchen',kind='night',start='17:30',end='02:00'}={}){
+ for(const [field,value] of Object.entries({date,name,kind,start,end})){
+  const input=f.node('[data-manual-'+field+']');input.value=value;input.emit('input');
+ }
 }
 const inspect=f=>f.service.inspect(f.context);
 const apply=async f=>{const view=await inspect(f);return f.service.apply(f.service.propose(view));};
@@ -56,3 +61,48 @@ test('a changed Owner while source inspection is waiting cannot apply, refresh o
 });
 test('a chooser closed without applying has no settings, payment or callback side effects',async()=>{const f=uiFixture({rules:[rule('morning','09:00','17:30','morning'),rule('night1','17:30','02:00','night'),rule('night2','17:30','02:00','night')]}),before=structuredClone([...f.docs]);await f.ui.open(f.context);f.node('[data-close]').click();assert.equal(f.node('dialog'),null);assert.deepEqual([...f.docs],before);assert.equal(f.applied.length+f.events.length,0);});
 test('worked-shift hint is limited to the exact unpaid actual work record and suppresses frozen, missed and already-corrected rows',()=>{const f=uiFixture(),data={staffId,branch,start:f.context.from,end:f.context.to},log={attendanceLogId:f.start.id,branch,timeInAt:at('17:11').toISOString(),timeOutAt:at('02:06',18).toISOString(),expectedStartAt:at('09:00').toISOString(),expectedEndAt:at('17:30').toISOString(),out:'02:06 AM'};const hint=workedShiftActionHint(f.api,data,log);assert.equal(hint.label,'Apply worked shift');assert.deepEqual(hint.context,f.context);assert.equal(workedShiftActionHint(f.api,{...data,isPaid:true},log),null);assert.equal(workedShiftActionHint(f.api,data,{...log,out:'MISSED'}),null);assert.equal(workedShiftActionHint(f.api,data,{...log,workedShiftCorrectionId:'saved'}),null);f.api.paidPayrollSnapshots=new WeakSet([data]);assert.equal(workedShiftActionHint(f.api,data,log),null);});
+
+test('manual hours stay in the open dialog through validation and a failed write, then save the overnight shift once',async()=>{
+ const f=uiFixture({rules:[],missingHistory:true}),dialog=await f.ui.open({...f.context,allowManual:true},{onApplied:f.onApplied});
+ const confirm=f.node('[data-apply]');
+ enterHours(f,{start:'17:30',end:'17:30'});await confirm.onclick();
+ assert.equal(f.node('dialog'),dialog);assert.match(f.node('[data-status]').textContent,/must be different/);
+ enterHours(f);assert.equal(confirm.textContent,'Confirm assigned hours');assert.equal(confirm.hidden,false);
+ f.failNextCommit();await confirm.onclick();assert.equal(f.node('dialog'),dialog);assert.equal(f.node('[data-manual-name]').value,'Night kitchen');
+ assert.match(f.node('[data-status]').textContent,/Commit rejected/);
+ await Promise.all([confirm.onclick(),confirm.onclick()]);assert.equal(f.node('dialog'),null);assert.equal(f.applied.length,1);assert.equal(revisions(f).length,1);
+ const record=f.get(revisions(f)[0]).historicalWorkedShiftReview;
+ assert.equal(record.expectedEndAt,at('02:00',18).toISOString());assert.equal(record.timeOutLogId,f.out.id);
+});
+test('a renamed employee can explicitly update a conflicting prior approval; payroll uses the new assignment until a later approval',async()=>{
+ const f=uiFixture(),profile={...f.profile,cashierName:'Current Crew Name',staffId};
+ f.put('cashiers/'+staffId,profile);
+ const head={schemaVersion:1,status:'Confirmed',revisionId:'original-hours-01',version:1,staffId,staffName:name,branch,timeInLogId:f.start.id,timeInAt:f.start.timestamp,expectedStartAt:at('09:00'),expectedEndAt:at('17:30'),workDate:'2026-10-17',shiftName:'Original duty',sourceFingerprint:emergencyShiftSourceFingerprint(f.start),reviewedByUid:'fictional-owner',reviewedByEmail:owner,reviewedAt:at('18:00')};
+ f.put('attendance_shift_confirmations/'+f.start.id,head);
+ const node=await f.ui.open({...f.context,allowManual:true},{onApplied:f.onApplied}),confirm=f.node('[data-apply]');
+ assert.equal(f.node('[data-manual-start]').value,'09:00');enterHours(f);
+ await confirm.onclick();assert.equal(f.node('dialog'),node);assert.equal(confirm.textContent,'Confirm updated hours');assert.equal(revisions(f).length,0);
+ assert.match(f.node('[data-status]').textContent,/the next day/);await confirm.onclick();assert.equal(f.applied.length,1);
+ const history=await createScheduleHistoryStore(f.api).loadRange(f.start.timestamp,f.out.timestamp);
+ history.payrollShiftConfirmations={[f.start.id]:head};
+ const resolve=()=>resolveAttendanceShift(f.start,history,{[profile.cashierName]:profile},profile.cashierName);
+ const shift=resolve();assert.equal(+shift.expectedStartAt,+at('17:30'));assert.equal(shift.shiftType,'night');assert.equal(shift.lateMinutes,0);assert.equal(payrollReliefHoursVerified(shift,f.out),true);
+ assert.deepEqual(f.get('attendance_shift_confirmations/'+f.start.id),head);assert.deepEqual(f.get('attendance_logs/'+f.start.id),f.start);
+ history.payrollShiftConfirmations[f.start.id]={...head,version:2,revisionId:'later-hours-0002'};
+ assert.equal(+resolve().expectedStartAt,+head.expectedStartAt);
+});
+test('a lost save acknowledgement retries the same overnight correction and reports a refresh failure as saved',async()=>{
+ const f=uiFixture({missingHistory:true});
+ const node=await f.ui.open({...f.context,allowManual:true},{onApplied:async()=>{throw Error('Refresh timed out');}});
+ enterHours(f);f.loseNextAck();const confirm=f.node('[data-apply]');
+ await confirm.onclick();assert.equal(revisions(f).length,1);assert.equal(f.node('dialog'),node);
+ await confirm.onclick();assert.equal(revisions(f).length,1);assert.equal(f.node('dialog'),null);
+ assert.equal(f.events.length,1);assert.match(f.messages.at(-1),/Hours saved.*Generate List/);
+});
+
+test('a new paid cutoff while the owner fills the form preserves the draft and prevents a write',async()=>{
+ const f=uiFixture({missingHistory:true}),node=await f.ui.open({...f.context,allowManual:true},{onApplied:f.onApplied});
+ enterHours(f);f.put('payroll_records/paid',{staffId,staffName:name,startDate:'2026-10-16',endDate:'2026-10-31',isPaid:true,frozenData:{basicPay:450}});
+ await f.node('[data-apply]').onclick();assert.equal(f.node('dialog'),node);assert.equal(f.node('[data-manual-start]').value,'17:30');
+ assert.match(f.node('[data-status]').textContent,/paid payslip/);assert.equal(revisions(f).length,0);assert.equal(f.applied.length,0);
+});

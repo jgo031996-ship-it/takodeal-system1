@@ -4,6 +4,10 @@ import {attendanceMillis} from './attendance-reconcile.js';
 // Matches the existing shared payroll Owner identity; public Staff bundles do
 // not import the Owner workspace authorization module.
 const OWNER_EMAIL='jgo031996@gmail.com';
+// Bind a payroll correction to the exact approvals the Owner saw. Later reviews take precedence.
+export function workedShiftApprovalKey(head,relief){
+ return head||relief?JSON.stringify([head?.revisionId||null,head?.version||null,relief?.auditId||null,relief?.revision||null]):null;
+}
 const lateReferences=new WeakMap();
 export const workedShiftLatenessReference=shift=>lateReferences.get(shift)||shift;
 const minutes=value=>{const match=typeof value==='string'&&value.trim().match(/^(\d{1,2}):(\d{2})$/);return match&&+match[1]<24&&+match[2]<60?+match[1]*60+ +match[2]:null;};
@@ -28,9 +32,12 @@ function standaloneFor(log,history,staffId,actual,dates,original){
  const revisions=dates.flatMap(day=>(history?.historyMonths?.[day.slice(0,7)]?.revisions||[]).filter(row=>row.source==='owner-attendance-only'&&row.effectiveFrom===day&&row.historicalWorkedShiftReview?.timeInLogId===log.id));
  const revision=revisions.sort((a,b)=>String(b.savedAt).localeCompare(String(a.savedAt))||(b.sequence||0)-(a.sequence||0))[0];
  if(!revision)return null;
- const m=revision.historicalWorkedShiftReview,begin=attendanceMillis(m.expectedStartAt),end=attendanceMillis(m.expectedEndAt),out=attendanceMillis(m.timeOutAt),rule=revision.snapshot?.branchConfig?.[log.branch]?.find(row=>row.id===m.shiftId),day=Date.parse(m.workDate+'T00:00:00+08:00'),start=minutes(rule?.startTime),finish=minutes(rule?.endTime),span=(finish-start+1440)%1440;
+ const m=revision.historicalWorkedShiftReview;
+ if(m.reviewedApprovalKey&&m.reviewedApprovalKey!==workedShiftApprovalKey(history?.payrollShiftConfirmations?.[log.id],log.reliefScheduleReview))return null;
+ if(original.payrollHoursConfirmed&&!m.reviewedApprovalKey)return null;
+ const begin=attendanceMillis(m.expectedStartAt),end=attendanceMillis(m.expectedEndAt),out=attendanceMillis(m.timeOutAt),rule=revision.snapshot?.branchConfig?.[log.branch]?.find(row=>row.id===m.shiftId),day=Date.parse(m.workDate+'T00:00:00+08:00'),start=minutes(rule?.startTime),finish=minutes(rule?.endTime),span=(finish-start+1440)%1440;
  if(m.version!==1||m.correctionId!==revision.revisionId||m.workDate!==revision.effectiveFrom||m.workDate!==revision.effectiveTo||m.staffId!==staffId||log.staffId!==staffId||m.branch!==log.branch||m.reviewedByEmail!==OWNER_EMAIL||!m.reviewedByUid||revision.actor!==OWNER_EMAIL||revision.savedAt!==m.reviewedAt||!Number.isFinite(attendanceMillis(m.reviewedAt))||m.sourceFingerprint!==emergencyShiftSourceFingerprint(log)||attendanceMillis(m.timeInAt)!==actual||!m.timeOutLogId||!Number.isFinite(out)||out<=actual||out-actual>18*3600000||!rule||rule.active===false||m.shiftType!==ruleKind(rule)||start==null||finish==null||span<60||span>1080||begin!==day+start*60000||end!==begin+span*60000||Math.min(end,out)-Math.max(actual,begin)<=(out-actual)/2)return {...original,needsScheduleReview:true,assignmentReconciliationRequired:true,workedShiftCorrectionError:'The recorded duty confirmation needs review.'};
- return {...original,shiftId:m.shiftId,shiftName:m.shiftName,shiftType:m.shiftType,isNightShift:['night','mid'].includes(m.shiftType),expectedStartAt:new Date(begin),expectedEndAt:new Date(end),expectedStartHour:start/60,wasScheduled:true,needsScheduleReview:false,scheduleSource:'owner-attendance-only',scheduleRevisionId:revision.revisionId,workDate:m.workDate,workedShiftCorrectionId:revision.revisionId,workedShiftTimeOutAt:m.timeOutAt,workedShiftTimeOutLogId:m.timeOutLogId,...correctedMinutes(log,begin,actual,original,m.preservedLateness)};
+ return {...original,...(m.reviewedApprovalKey?{workedShiftApprovalKey:m.reviewedApprovalKey,bonusCategoryVerified:true}:{}),shiftId:m.shiftId,shiftName:m.shiftName,shiftType:m.shiftType,isNightShift:['night','mid'].includes(m.shiftType),expectedStartAt:new Date(begin),expectedEndAt:new Date(end),expectedStartHour:start/60,wasScheduled:true,needsScheduleReview:false,scheduleSource:'owner-attendance-only',scheduleRevisionId:revision.revisionId,workDate:m.workDate,workedShiftCorrectionId:revision.revisionId,workedShiftTimeOutAt:m.timeOutAt,workedShiftTimeOutLogId:m.timeOutLogId,...correctedMinutes(log,begin,actual,original,m.preservedLateness)};
 }
 // A one-day Owner correction changes the displayed assigned shift. It carries
 // the existing lateness result forward and grants no straight-duty approval.
