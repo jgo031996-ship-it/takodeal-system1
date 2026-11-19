@@ -7,6 +7,7 @@ import {createWorkedShiftCorrectionService} from '../takodeal-manager/worked-shi
 import {createScheduleRevision,resolveScheduleForDate} from '../takodeal-manager/schedule-history.js';
 import {captureAttendanceSchedule,resolveAttendanceShift,payrollReliefHoursVerified,attendanceLateMinutes} from '../takodeal-manager/payroll-safety.js';
 import {ordinaryPayrollId} from '../takodeal-manager/payroll-settlement.js';
+import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {emergencyShiftSourceFingerprint} from '../takodeal-manager/emergency-shift-model.js';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -103,7 +104,15 @@ test('a confirmed leave blocks that date; an old incomplete leave outside it doe
  f.put('staff_requests/active',{...letter,startDate:'2026-10-17',endDate:'2026-10-18'});
  row=(await inspect(f)).choices.find(row=>row.shiftId==='night');assert.match(row.blockers.join(' '),/approved leave covers/i);
 });
-for(const source of ['roster','roster-string','claim','approved-leave'])test(source+' leave blocks the dated assignment without silently cancelling leave',async()=>{const f=fixture();if(source==='roster'||source==='roster-string')f.get('settings/schedule_revision_original-october').daySnapshots['2026-10-17'].daySchedule[branch].unavailable.push(source==='roster' ? {name:'CREW',status:'Leave'}:'CREW');else if(source==='claim')f.put('settings/schedule_leave_staff_'+staffId,{dates:{'2026-10-17':{requestId:'leave-source'}}});else f.put('staff_requests/leave-source',{staffId,staffName:name,type:'Leave',status:'Approved',startDate:'2026-10-17',endDate:'2026-10-17'});const view=await inspect(f),night=view.choices.find(row=>row.shiftId==='night');assert.ok(night.blockers.length);assert.equal(view.recommendedKey,null);assert.throws(()=>f.service.propose(view,night.key));assert.equal(f.calls.writes.length,0);});
+for(const source of ['claim','approved-leave','suspension','unknown-leave','unknown-sanction'])test(source+' keeps a verified Owner from overriding an independent HR record',async()=>{
+ const f=fixture({extraDay:{unavailable:['CREW']}}),day='2026-10-17';
+ if(source==='claim')f.put('settings/schedule_leave_staff_'+staffId,{dates:{[day]:{requestId:'leave-source'}}});
+ if(source==='approved-leave')f.put('staff_requests/leave-source',{staffName:'CREW',type:'Leave',status:'Approved',startDate:day,endDate:day});
+ if(source==='suspension')f.put('hr_sanctions/sanction-source',{staffId,staffName:name,severity:'1 day suspension',effectiveDate:day});
+ if(source.startsWith('unknown-'))f.get('settings/schedule_revision_original-october').daySnapshots[day].daySchedule[branch].unavailable.push({name:'CREW',[source==='unknown-leave'?'leaveRequestId':'sanctionId']:'missing-source'});
+ const view=await inspect(f),night=view.choices.find(row=>row.shiftId==='night');
+ assert.ok(night.blockers.length);assert.equal(view.recommendedKey,null);assert.throws(()=>f.service.propose(view,night.key));assert.equal(f.calls.writes.length,0);
+});
 test('a known paid cutoff is frozen and cannot receive this roster correction',async()=>{const f=fixture();f.put('payroll_records/old-paid',{staffId,staffName:name,startDate:'2026-10-16',endDate:'2026-10-31',frozenData:{basicPay:450},finalNetPay:400});const view=await inspect(f),night=view.choices.find(row=>row.shiftId==='night');assert.match(night.blockers.join(' '),/paid payslip/);assert.throws(()=>f.service.propose(view,night.key),/paid payslip/);assert.equal(f.calls.writes.length,0);});
 test('a payment appearing after inspection is caught by the absent ordinary/refund sentinel inside the transaction',async()=>{for(const prefix of ['','refund-']){const f=fixture(),view=await inspect(f),proposal=f.service.propose(view),id=prefix+ordinaryPayrollId(staffId,'2026-10-16','2026-10-31');f.put('payroll_records/'+id,{staffId,startDate:'2026-10-16',endDate:'2026-10-31',finalNetPay:450,frozenData:{basicPay:450}});await assert.rejects(f.service.apply(proposal),/payment or leave changed/);assert.equal(revisions(f).length,0);}});
 test('a concurrent roster or punch edit rejects the prepared correction before either settings write',async()=>{for(const source of ['index','punch','profile','leave-claim']){const f=fixture(),view=await inspect(f),proposal=f.service.propose(view);if(source==='index')f.put('settings/schedule_month_2026_10',{...f.get('settings/schedule_month_2026_10'),revisionIds:['original-october','new-revision']});else if(source==='punch')f.put('attendance_logs/'+f.out.id,{...f.out,timestamp:at('02:07',18)});else if(source==='profile')f.put('cashiers/'+staffId,{...f.profile,active:false});else f.put('settings/schedule_leave_staff_'+staffId,{dates:{'2026-10-17':{requestId:'new-leave'}}});await assert.rejects(f.service.apply(proposal),/changed|incomplete|active staff/);assert.equal(revisions(f).length,0);assert.equal(f.calls.writes.length,0);}});
@@ -123,7 +132,7 @@ test('historical records far outside this exact duty do not consume transaction 
 for(const change of [{shiftType:'invented-night'},{days:'all'},{days:[7]},{startTime:'25:00'},{active:'true'}])test('malformed saved shift metadata '+JSON.stringify(change)+' cannot become an automatic plotted correction',async()=>{const f=fixture();Object.assign(f.get('settings/schedule_revision_original-october').snapshot.branchConfig[branch][1],change);const view=await inspect(f);assert.equal(view.status,'blocked');assert.equal(view.recommendedKey,null);assert.match(view.blockers.join(' '),/incomplete or conflicting/);assert.throws(()=>f.service.propose(view));assert.equal(f.calls.writes.length,0);});
 test('a sub-hour misclick and future alleged actual departure cannot establish a worked roster',async()=>{const short=fixture();short.put('attendance_logs/'+short.out.id,{...short.out,timestamp:at('17:40')});await assert.rejects(inspect(short),/sub-hour misclick/);const future=fixture({clockNow:at('18:00')});await assert.rejects(inspect(future),/attendance is in the future/);assert.equal(short.calls.writes.length+future.calls.writes.length,0);});
 test('blocked staff, revoked saved Owner access and non-server sources remain non-mutating holds',async()=>{const blocked=fixture();blocked.put('cashiers/'+staffId,{...blocked.profile,blocked:true});await assert.rejects(inspect(blocked),/active staff profile/);const revoked=fixture();revoked.put('hq_managers/fictional-owner',{...revoked.get('hq_managers/fictional-owner'),active:false});await assert.rejects(inspect(revoked),/saved Owner account is inactive/);const cached=fixture(),read=cached.api.getDocFromServer;cached.api.getDocFromServer=async reference=>({...await read(reference),metadata:{fromCache:true,hasPendingWrites:false}});await assert.rejects(inspect(cached),/Reconnect to HQ/);assert.equal(blocked.calls.writes.length+revoked.calls.writes.length+cached.calls.writes.length,0);});
-test('a cross-branch plotted assignment and a separately completed same-day duty are never silently removed',async()=>{const cross=fixture();cross.get('settings/schedule_revision_original-october').daySnapshots['2026-10-17'].daySchedule['Other Branch']={scheduled:{other:'CREW'},rest:[],unavailable:[]};const view=await inspect(cross),choice=view.choices.find(row=>row.shiftId==='night');assert.match(choice.blockers.join(' '),/Other Branch/);assert.throws(()=>cross.service.propose(view,choice.key));const separate=fixture();separate.put('attendance_logs/day-in',{...separate.start,id:'day-in',timestamp:at('09:00')});separate.put('attendance_logs/day-out',{...separate.out,id:'day-out',timestamp:at('17:00'),timeInLogId:'day-in',timeInAt:at('09:00')});const second=await inspect(separate),night=second.choices.find(row=>row.shiftId==='night');assert.match(night.blockers.join(' '),/Another completed duty/);assert.throws(()=>separate.service.propose(second,night.key));assert.equal(cross.calls.writes.length+separate.calls.writes.length,0);});
+test('a separately completed same-day duty is retained',async()=>{const separate=fixture();separate.put('attendance_logs/day-in',{...separate.start,id:'day-in',timestamp:at('09:00')});separate.put('attendance_logs/day-out',{...separate.out,id:'day-out',timestamp:at('17:00'),timeInLogId:'day-in',timeInAt:at('09:00')});const second=await inspect(separate),night=second.choices.find(row=>row.shiftId==='night');assert.match(night.blockers.join(' '),/Another completed duty/);assert.throws(()=>separate.service.propose(second,night.key));assert.equal(separate.calls.writes.length,0);});
 test('a fresh app session recognizes the same already-audited actual pair instead of appending a duplicate correction',async()=>{const f=fixture();await apply(f);const before=f.calls.writes.length,another=f.makeService(),view=await another.inspect(f.context),choice=view.choices.find(row=>row.shiftId==='night');assert.equal(choice.alreadyCorrected,true);const result=await another.apply(another.propose(view));assert.equal(result.alreadySaved,true);assert.equal(result.revisionId,'worked-operation-1');assert.equal(f.calls.writes.length,before);assert.equal(revisions(f).length,1);});
 const windowQueries=f=>f.calls.queries.filter(query=>query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='timestamp'));
 
@@ -233,6 +242,49 @@ test('manually entered overnight duty uses the selected hours for this employee 
  const shift=resolveAttendanceShift(f.start,history,{[name]:{...f.profile,staffId}},name);
  assert.equal(shift.shiftName,'Night 1');assert.equal(attendanceLateMinutes(f.start,shift),0);
  assert.equal(resolveScheduleForDate(history,context.workDate),null);
+});
+
+for(const manual of [false,true])for(const emergency of [false,true]){
+ test('confirming '+(manual?'entered':'selected')+' cross-branch hours uses the Time In location '+(emergency?'with':'without')+' an emergency marker',async()=>{
+  const day='2026-10-17',f=fixture({rules:[rule('mid','16:00','00:30','mid')],extraDay:{unavailable:['CREW']}}),other='Other Branch';
+  const saved=f.get('settings/schedule_revision_original-october'),roster=saved.daySnapshots[day].daySchedule;
+  roster[other]={scheduled:{mid:'CREW'},rest:[],unavailable:[]};
+  const original=structuredClone(roster);
+  const relief=emergency?{emergencyRelief:{version:1,homeBranch:other,branch,requiresReview:true}}:{};
+  const start={...f.start,...relief,timestamp:at('15:41'),lateMinutes:472};
+  const out={...f.out,...relief,...(emergency?{reliefRequestId:'fictional-cover'}:{}),timestamp:at('00:31',18),timeInAt:start.timestamp};
+  f.put('attendance_logs/'+start.id,start);f.put('attendance_logs/'+out.id,out);
+  const profile={...f.profile,branch:other};f.put('cashiers/'+staffId,profile);
+  const manualDuty={name:'Mid kitchen',shiftType:'mid',startTime:'16:00',endTime:'00:30'};
+  const context={...f.context,workDate:day,...(manual?{manualDuty}:{})};
+  const view=await f.service.inspect(context),choice=view.choices.find(row=>manual?row.ownerEntered:row.shiftId==='mid');
+  assert.deepEqual(choice.blockers,[]);assert.equal(choice.attendanceOnly,true);assert.deepEqual(choice.rosterException.otherBranches,[other]);
+  const receipt=await f.service.apply(f.service.propose(view,choice.key)),revision=f.get('settings/schedule_revision_'+receipt.revisionId);
+  const audit=revision.historicalWorkedShiftReview;
+  assert.equal(audit.branch,branch);assert.equal(audit.timeOutLogId,out.id);assert.deepEqual(audit.rosterException.unavailableBranches,[branch]);
+  assert.deepEqual(f.get('attendance_logs/'+start.id),start);assert.deepEqual(f.get('attendance_logs/'+out.id),out);assert.deepEqual(f.get('cashiers/'+staffId),profile);
+  const history=await createScheduleHistoryStore(f.api).loadRange(start.timestamp,out.timestamp);
+  assert.deepEqual(resolveScheduleForDate(history,day).currentSchedule[17],original);
+  const shift=resolveAttendanceShift(start,history,{[name]:{...profile,staffId}},name);
+  assert.equal(shift.workedShiftCorrectionId,receipt.revisionId);assert.equal(shift.shiftType,'mid');assert.equal(shift.workDate,day);
+  assert.equal(+shift.expectedEndAt,+at('00:30',18));assert.equal(attendanceLateMinutes(start,shift),0);
+  if(emergency)assert.equal(payrollReliefHoursVerified(shift,out),true);
+  const payroll=planPayrollAttendance([start,out],{resolveShift:()=>shift});
+  assert.deepEqual(payroll.reviews,[]);assert.deepEqual(payroll.logs.map(log=>log.branch),[branch,branch]);
+  const again=await f.service.inspect(context),same=again.choices.find(row=>row.key===choice.key||row.shiftId===choice.shiftId);
+  assert.equal((await f.service.apply(f.service.propose(again,same.key))).alreadySaved,true);
+ });
+}
+test('legacy date flags and roster names apply only to this employee and work date',async()=>{
+ const f=fixture({extraDay:{unavailable:[{name:'CREW',staffId:'another-id',status:'Leave'}]}}),day='2026-10-17';
+ const source=f.get('settings/schedule_revision_original-october');
+ assert.equal((await inspect(f)).choices.find(row=>row.shiftId==='night').rosterException,null);
+ source.snapshot.unavailability={[day]:{CREW:'Day Off'}};
+ const view=await inspect(f),night=view.choices.find(row=>row.shiftId==='night');
+ assert.equal(night.rosterException.dateRestriction,true);assert.deepEqual(night.rosterException.unavailableBranches,[]);assert.deepEqual(night.blockers,[]);
+ const proposed=f.service.propose(view,night.key);
+ f.put('settings/schedule_leave_staff_'+staffId,{dates:{[day]:{requestId:'new-leave'}}});
+ await assert.rejects(f.service.apply(proposed),/changed/);assert.equal(f.calls.writes.length,0);
 });
 test('a real dated assignment at the cover branch can confirm hours without a staff request decision',async()=>{
  const f=fixture(),profile={...f.profile,staffId,branch:'Home Branch'},marker={version:1,requiresReview:true,homeBranch:'Home Branch',branch};

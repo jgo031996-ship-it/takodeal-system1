@@ -96,7 +96,7 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
         const pair=workedShiftPair(records,start),out=pair.out,at=attendanceMillis(start.timestamp);
         const tracked={...api,getDocFromServer:document},historyPromise=createScheduleHistoryStore(tracked).loadRange(new Date(at-DAY),new Date(at+DAY));
         const search=async table=>{
-            const names=table==='payroll_records'?[...new Set([start.staffName,profile.cashierName,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(v=>typeof v==='string'&&v.trim()))]:[start.staffName];
+            const names=[...new Set([start.staffName,profile.cashierName,profile.fullName,profile.nickname,profile.scheduleName,profile.scheduleNickname,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(v=>typeof v==='string'&&v.trim()).map(v=>v.trim()))];
             const rows=await Promise.all([queryRows(table,[api.where('staffId','==',staffId)]),...names.map(value=>queryRows(table,[api.where('staffName','==',value)]))]);return [...new Map(rows.flat().map(row=>[row.id,row])).values()];};
         const [history,leaves,sanctions,payroll,claims,head]=await Promise.all([historyPromise,search('staff_requests'),search('hr_sanctions'),search('payroll_records'),get('settings','schedule_leave_staff_'+staffId),get('attendance_shift_confirmations',start.id)]);
         if(head)history.payrollShiftConfirmations={[start.id]:head};

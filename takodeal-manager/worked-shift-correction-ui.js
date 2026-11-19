@@ -16,15 +16,23 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
  if(w.workedShiftCorrectionUI)return w.workedShiftCorrectionUI;
  let dialog=null,pending=false,epoch=0;
  const tell=(text,error=false)=>w.ManagerUI?.notify?.(text,error?'warning':undefined);
- async function open(context,{assertCurrent=()=>{},onApplied}={}){
+ // Roster entry points identify a dated cell before choosing its exact Time In.
+ async function open(context,{assertCurrent=()=>{},onApplied,refreshCutoff=!context.attendanceLogId}={}){
   if(pending)return false;
   pending=true;const token=++epoch;let view;
   const current=()=>{assertCurrent();if(token!==epoch)throw Error('The selected work record changed. Open it again.');};
   async function completed(result,node){
    current();
    node.dataset.workedShiftSaved='true';node.close();node.remove();if(dialog===node)dialog=null;
+   w.invalidateCollectionCache?.('settings');
+   w.invalidateCache?.('global_schedule');
    w.dispatchEvent?.(new w.CustomEvent('worked-shift-corrected',{detail:{...result,staffId:context.staffId,branch:context.branch}}));
-   try{await onApplied?.(result);tell('Worked shift confirmed for '+result.workDate+'.');}
+   try{
+    const from=d.getElementById('payrollStart')?.value,to=d.getElementById('payrollEnd')?.value;
+    const reload=refreshCutoff&&from&&to&&from<=result.workDate&&result.workDate<=to;
+    await Promise.all([onApplied?.(result),reload?w.refreshPayrollAfterAttendanceCorrection?.():null]);
+    tell('Worked shift confirmed for '+result.workDate+' at '+view.branch+'.');
+   }
    catch{tell('Hours saved for '+result.workDate+'. Open Payroll and select Generate List to refresh the payslip.',true);}
   }
   function choose(){
@@ -45,7 +53,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    const cards=available.map((row,index)=>'<label style="display:flex;align-items:flex-start;gap:10px;border:1px solid #a9c2b3;border-radius:8px;padding:12px;margin:8px 0;cursor:pointer"><input type="radio" name="workedShiftChoice" data-choice value="'+index+'"><span><strong>'+esc(row.shiftName)+'</strong><br>'+rowTime(row)+notes(row)+'</span></label>').join('');
    const unavailable=blocked.length?'<details><summary>Unavailable shifts ('+blocked.length+')</summary>'+blocked.map(row=>'<p><strong>'+esc(row.shiftName)+'</strong><br>'+esc(row.blockers.join(' '))+'</p>').join('')+'</details>':'';
    const options=records.length?'<label>Work record<select data-record style="display:block;width:100%;padding:12px">'+records.map(row=>'<option value="'+esc(row.attendanceLogId)+'">'+esc(stamp(row.timeInAt))+(row.timeOutAt?' → '+esc(stamp(row.timeOutAt)):' · missing Time Out')+'</option>').join('')+'</select></label>':'<fieldset style="padding:0;border:0"><legend>Which shift did this employee work?</legend>'+cards+'</fieldset>'+unavailable;
-   const allowManual=!records.length&&!!view.timeInAt&&!context.proposedShiftId&&(saved||!available.length||choices.some(row=>row.standalone)||context.allowManual);
+   const allowManual=!records.length&&!!view.timeInAt&&!context.proposedShiftId&&(saved||!available.length||choices.some(row=>row.standalone||row.rosterException)||context.allowManual);
    const useManualFirst=allowManual&&!available.length;
    const local=value=>new Date(Date.parse(value)+8*3600000).toISOString();
    const savedNotice=saved?'<p class="owner-time-out-note"><strong>Previously confirmed</strong><br>'+esc(saved.name)+'<br>'+rowTime(saved)+'</p>':'';
@@ -58,6 +66,14 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    const fields=manualPanel?Object.fromEntries(['date','name','kind','start','end'].map(key=>[key,node.querySelector('[data-manual-'+key+']')])):{};
    const radios=node.querySelectorAll('[data-choice]');
    const values=()=>Object.fromEntries(Object.entries(fields).map(([key,field])=>[key,field.value.trim()]));
+   function payrollLocation(row){
+    const exception=row?.rosterException;
+    if(!exception)return '';
+    const notes=['Payroll will use the Time In branch ('+view.branch+') for this duty.'];
+    if(exception.otherBranches.length)notes.push('Plotted elsewhere at '+exception.otherBranches.join(', ')+'.');
+    if(exception.unavailableBranches.length||exception.dateRestriction)notes.push('The roster lists this employee as unavailable.');
+    return notes.join(' ');
+   }
    const clearDraft=()=>{reviewedChange='';proposal=null;draftKey='';};
    const refresh=()=>{
     const ready=manualMode&&Object.values(values()).every(Boolean);
@@ -69,7 +85,8 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
     manualMode=true;selected=null;clearDraft();radios.forEach(radio=>radio.checked=false);
     const labels={date:'work date',name:'shift name',kind:'category',start:'assigned start',end:'assigned finish'};
     const missing=Object.entries(values()).filter(([,value])=>!value).map(([key])=>labels[key]);
-    status.textContent=missing.length?'Complete the '+missing.join(', ')+'.':'Select Confirm assigned hours to save the entered shift.';
+    const location=payrollLocation(choices.find(row=>row.workDate===fields.date.value&&row.rosterException));
+    status.textContent=[missing.length?'Complete the '+missing.join(', ')+'.':'Select Confirm assigned hours to save the entered shift.',location].filter(Boolean).join(' ');
     refresh();
    }
    if(manualPanel){
@@ -89,7 +106,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    }
    function select(row){
     selected=row;manualMode=false;clearDraft();if(manualPanel)manualPanel.open=false;
-    status.textContent=blockers.join(' ')||(row.attendanceOnly?'Confirm the recorded duty. All plotted assignments stay in place.':'Confirm this employee’s assignment for '+row.workDate+'.');
+    status.textContent=blockers.join(' ')||payrollLocation(row)||(row.attendanceOnly?'Confirm the recorded duty. All plotted assignments stay in place.':'Confirm this employee’s assignment for '+row.workDate+'.');
     if(!blockers.length){
       const minutes=Math.max(0,Math.floor((Date.parse(view.timeInAt)-Date.parse(row.expectedStartAt))/60000));
       status.textContent+=' Arrival against this shift: '+minutes+' min late. Any saved waiver still applies.';
@@ -114,7 +131,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
     pending=true;lock(true);
     try{
      current();
-     if(records.length){const id=node.querySelector('[data-record]').value;node.close();pending=false;return await open({...context,attendanceLogId:id},{assertCurrent,onApplied});}
+     if(records.length){const id=node.querySelector('[data-record]').value;node.close();pending=false;return await open({...context,attendanceLogId:id},{assertCurrent,onApplied,refreshCutoff});}
      if(manualMode){
       const draft=values(),key=JSON.stringify(draft);
       if(draft.start===draft.end)throw Error('Assigned start and finish must be different.');

@@ -7,6 +7,7 @@ import {installDispatchDeliveryRadar} from './dispatch-delivery-radar.js';
 import {installLiveBranchDirectory} from './live-branch-directory.js';
 import {uploadHQImage} from './hq-image-upload.js';
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';
+import {openPayslipWorkedShifts} from './payslip-worked-shifts.js';
 import {projectWorkedShiftCorrections} from './worked-shift-reference.js';
 import {installPayrollAdjustmentRefresh,rememberPayslipInputs} from './payroll-adjustment-refresh.js';
 import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
@@ -143,8 +144,10 @@ window.openPayrollWorkedShift = async function(data,log){
  const actor=payrollActorKey(window),from=data.start,to=data.end;
  const assertCurrent=()=>{if(payrollActorKey(window)!==actor||window.currentPayslipData!==data||window.globalPayrollCache?.[data.name]!==data||data.isPaid||window.paidPayrollSnapshots?.has(data))throw Error('Reopen the selected unpaid payslip before applying its worked shift.');};
  assertCurrent();window.requirePayrollPreview(data);
+ const chooser=window.workedShiftCorrectionUI ||= installWorkedShiftCorrectionUI(window,document);
+ const batch=openPayslipWorkedShifts(window,document,data,log,chooser);if(batch)return batch;
  const context={attendanceLogId:log.attendanceLogId,staffId:data.staffId,branch:log.branch||data.branch,from,to};
- return (window.workedShiftCorrectionUI ||= installWorkedShiftCorrectionUI(window,document)).open(context,{assertCurrent,onApplied:async()=>{
+ return chooser.open(context,{assertCurrent,onApplied:async()=>{
   window.invalidateCache?.('global_schedule');window.invalidateCollectionCache?.('settings');
   window.invalidateCache?.('attendance_logs');invalidatePayrollLoad(window);
   await (window.payrollAdjustmentRefresh ||= installPayrollAdjustmentRefresh(window,document)).refresh({staffId:data.staffId});
