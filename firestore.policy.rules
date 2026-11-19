@@ -3787,5 +3787,41 @@ service cloud.firestore {
         allow update, delete: if false;
       }
     }
+    // A verified Owner can remove a mistaken punch with its complete HR evidence archived atomically.
+    function punchVoidSource(logId) {
+      return /databases/$(database)/documents/attendance_logs/$(logId);
+    }
+    function punchVoidHead(logId) {
+      return /databases/$(database)/documents/attendance_punch_voids/$(logId);
+    }
+    function punchVoidEvent(eventId) {
+      return /databases/$(database)/documents/attendance_punch_void_events/$(eventId);
+    }
+    function punchVoidReceipt(logId, eventId) {
+      let receipt = getAfter(punchVoidEvent(eventId)).data;
+      return eventId is string && eventId.matches('^[A-Za-z0-9]{20}$')
+        && !exists(punchVoidEvent(eventId))
+        && receipt.keys().hasOnly(['logId','original','actorUid','at','reason'])
+        && receipt.logId == logId && receipt.actorUid == request.auth.uid
+        && receipt.at == request.time && receipt.reason == 'Incorrect attendance punch'
+        && receipt.original == get(punchVoidSource(logId)).data;
+    }
+    match /attendance_logs/{logId} {
+      allow delete: if offlineOwner() && punchVoidReceipt(logId,getAfter(punchVoidHead(logId)).data.eventId);
+    }
+    match /attendance_punch_voids/{logId} {
+      allow get: if offlineOwner();
+      allow create, update: if offlineOwner() && request.resource.data.keys().hasOnly(['eventId','at'])
+        && request.resource.data.at == request.time && !existsAfter(punchVoidSource(logId))
+        && punchVoidReceipt(logId,request.resource.data.eventId);
+    }
+    match /attendance_punch_void_events/{eventId} {
+      allow get: if offlineOwner();
+      allow create: if offlineOwner() && request.resource.data.logId is string
+        && request.resource.data.logId.matches('^[^/]{1,200}$')
+        && getAfter(punchVoidHead(request.resource.data.logId)).data.eventId == eventId
+        && !existsAfter(punchVoidSource(request.resource.data.logId))
+        && punchVoidReceipt(request.resource.data.logId,eventId);
+    }
   }
 }

@@ -19,6 +19,18 @@ async function fixture(options={}){
  const ui=installHRReviewCenter(h.api,document,dependencies),context={staffId:h.staffId,staffName:h.name,branch:h.branch,workDate:'2026-10-16',attendanceLogId:h.attendanceId};return {...h,document,calls,ui,context,open:()=>ui.open(context)};
 }
 
+test('HR pairs expose separate removal actions and Cancel keeps both original punches',async()=>{
+ const f=await fixture();await f.open();
+ const buttons=f.document.body.querySelectorAll('[data-remove-punch]');
+ assert.deepEqual(buttons.map(b=>[b.textContent,b.dataset.removePunch]),[['Remove Time In',f.attendanceId],['Remove Time Out','sample-out']]);
+ buttons[1].click();await drain();
+ const dialog=f.document.body.querySelectorAll('dialog').at(-1);
+ assert.equal(dialog.querySelector('[data-confirm]').textContent,'Remove Time Out');
+ dialog.remove=()=>{dialog.parentElement.children=dialog.parentElement.children.filter(n=>n!==dialog);};
+ dialog.querySelectorAll('[data-close]').at(-1).click();await drain();
+ assert.equal(f.get('attendance_logs/sample-out').deleted,undefined);assert.equal(f.get('attendance_logs/'+f.attendanceId).deleted,undefined);
+});
+
 test('opening the linked HR center shows the exact source record and both saved/corrected minutes without any implicit write',async()=>{
  const f=await fixture(),before=structuredClone([...f.docs]);await f.open();assert.equal(f.document.querySelector('dialog').open,true);assert.equal(find(f,'hrRecoveryStaff').value,f.staffId);assert.equal(find(f,'hrRecoveryFrom').value,'2026-10-16');assert.match(find(f,'hrRecoveryContent').textContent,/35 minutes.*0 minutes/);assert.match(find(f,'hrRecoveryContent').textContent,/sample-in/);assert.match(find(f,'hrRecoveryContent').textContent,/Time In \/ Time Out records/);assert.deepEqual([...f.docs],before);assert.deepEqual(f.calls.confirm,[]);assert.deepEqual(f.calls.onboarding,[]);
  node(f,'schedule').click();assert.deepEqual(f.calls.schedule,[{staffId:f.staffId,staffName:f.name,branch:f.branch,workDate:'2026-10-16'}]);find(f,'hrRecoveryProfile').click();assert.deepEqual(f.calls.profile,[f.staffId]);assert.equal(f.document.querySelector('dialog').open,false);

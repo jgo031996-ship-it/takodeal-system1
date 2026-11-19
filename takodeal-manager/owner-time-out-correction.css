@@ -28,3 +28,4 @@
 .payroll-worked-shift .worked-shift-status{margin:0;padding:8px 20px;background:#f3f7ef;color:#244637;line-height:1.45;overflow:auto;max-height:24dvh;flex:0 1 auto}
 .payroll-worked-shift [data-manual] summary{padding:8px 0;color:#185b46;font-weight:700;cursor:pointer}
 .payroll-worked-shift [data-manual] small{display:block;margin-top:8px}
+.punch-removal-dialog{width:min(470px,calc(100vw - 24px))}.punch-removal-dialog [data-confirm]{background:#a9372c;border-color:#a9372c;color:white}.hr-punch-actions button{display:block;white-space:nowrap;margin:4px 0;color:#92382c}

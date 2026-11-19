@@ -1,4 +1,4 @@
-import {removeAttendancePunch} from './attendance-log-removal.js';
+import {requestPunchRemoval} from './attendance-log-removal-ui.js';
 import {installEmployeeSignup} from './employee-signup.js';
 import {repairApprovedStaffPhoneLabels} from './staff-phone-compatibility.js';
 import {branchInventoryId,activeInventoryTemplate} from './branch-inventory-model.js';
@@ -9811,26 +9811,11 @@ window.filterAlertsTable = function() {
 // ==========================================
 // 🗑️ MASTER DELETE FUNCTIONS (ATTENDANCE & BOM)
 // ==========================================
-window.deleteAttendanceLog = async function(row,button) {
-    if(!row||button.disabled)return;
-    button.disabled=true;
-    try{
-        const time=row.timestamp.toDate().toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'});
-        if(!await window.ManagerUI.confirm('Remove '+row.type+' for '+row.staffName+' at '+row.branch+' on '+time+'? The original punch will be kept in attendance history.'))return;
-        const result=await removeAttendancePunch(window,row);
-        window.invalidateCache?.('attendance_logs');
-        invalidatePayrollLoad(window);
-        window.getPayrollPreviewGuard?.().invalidate?.('Attendance changed. Generate the unpaid payroll list again.');
+window.deleteAttendanceLog = function(row,button) {
+    return requestPunchRemoval(window,document,row,button,{afterRemoved:async()=>{
         button.closest('tr')?.remove();
-        window.ManagerUI.notify(result.alreadyRemoved?'This punch was already removed.':'Punch removed. Generate the unpaid payroll list again.');
-        void window.loadAttendanceLogs();
-    }catch(error){
-        const code=String(error?.code||'').split('/').pop();
-        const message=code==='permission-denied'?'HQ declined removal for this record. Check its HR review and the signed-in payroll account.':
-            code==='unauthenticated'?'Sign in again to confirm attendance removal.':
-            error.message||'HQ could not confirm removal. Refresh the attendance feed before retrying.';
-        window.ManagerUI.notify(message,'warning');
-    }finally{button.disabled=false;}
+        await window.loadAttendanceLogs();
+    }});
 };
 
 window.deleteMenuAndBom = async function(docId, name) {

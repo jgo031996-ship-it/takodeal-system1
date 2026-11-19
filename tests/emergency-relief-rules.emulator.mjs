@@ -14,14 +14,22 @@ import {resolveAttendanceShift} from '../takodeal-manager/payroll-safety.js';
 const host='127.0.0.1',port=8871,projectId='demo-emergency-relief-rules',endpoint=host+':'+port;
 if(process.env.FIRESTORE_EMULATOR_HOST&&process.env.FIRESTORE_EMULATOR_HOST!==endpoint)throw Error('Refusing a non-test Firestore endpoint.');
 process.env.FIRESTORE_EMULATOR_HOST=endpoint;
-const root=fileURLToPath(new URL('../',import.meta.url)),tools=resolve(root,'../staff-nextlevel-tools'),req=createRequire(resolve(tools,'package.json'));
+const root=fileURLToPath(new URL('../',import.meta.url)),tools=process.env.TAKODEAL_RULE_TEST_RUNTIME||resolve(root,'../staff-nextlevel-tools'),req=createRequire(resolve(tools,'package.json'));
+function testRules(){
+ if(process.env.TAKODEAL_PUNCH_RULES_FIXTURE!=='active32cdf')return readFileSync(resolve(root,'firestore.rules'),'utf8');
+ const live=readFileSync(resolve(root,'tests/fixtures/hr-request-active32cdf.rules'),'utf8');
+ const policy=readFileSync(resolve(root,'firestore.policy.rules'),'utf8'),marker='    // A verified Owner can remove a mistaken punch';
+ const start=policy.indexOf(marker),end=policy.lastIndexOf('  }\n}'),insert=live.lastIndexOf('  }\n}');
+ assert.ok(start>=0&&end>start&&insert>=0&&!live.includes('punchVoidReceipt'));
+ return live.slice(0,insert)+policy.slice(start,end).replaceAll('offlineOwner()','aZ()')+live.slice(insert);
+}
 const {initializeTestEnvironment,assertSucceeds,assertFails}=req('@firebase/rules-unit-testing'),sdk=req('firebase/firestore');sdk.setLogLevel('silent');
 const {doc,setDoc,updateDoc,deleteDoc,getDocFromServer,writeBatch,serverTimestamp}=sdk;
 const java=JSON.parse(readFileSync(resolve(tools,'runtime.json'))).java,jar=resolve(tools,'emulators/cloud-firestore-emulator-v1.22.0.jar');
 if(!existsSync(java)||!existsSync(jar))throw Error('The local emulator runtime is missing.');
 let env,child,output='';const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const reachable=()=>new Promise(resolve=>{const socket=createConnection({host,port});socket.setTimeout(250);socket.once('connect',()=>{socket.destroy();resolve(true);});socket.once('error',()=>resolve(false));socket.once('timeout',()=>{socket.destroy();resolve(false);});});
-before(async()=>{if(await reachable())throw Error('Refusing an occupied test port.');child=spawn(java,['-jar',jar,'--host',host,'--port',String(port),'--project_id',projectId],{windowsHide:true,stdio:['ignore','pipe','pipe']});for(const stream of [child.stdout,child.stderr])stream.on('data',value=>output=(output+value).slice(-16000));const until=Date.now()+30000;while(!await reachable()){if(child.exitCode!==null||Date.now()>until)throw Error('Local emulator did not start: '+output);await pause(100);}env=await initializeTestEnvironment({projectId,firestore:{host,port,rules:readFileSync(resolve(root,'firestore.rules'),'utf8')}});},{timeout:45000});
+before(async()=>{if(await reachable())throw Error('Refusing an occupied test port.');child=spawn(java,['-jar',jar,'--host',host,'--port',String(port),'--project_id',projectId],{windowsHide:true,stdio:['ignore','pipe','pipe']});for(const stream of [child.stdout,child.stderr])stream.on('data',value=>output=(output+value).slice(-16000));const until=Date.now()+30000;while(!await reachable()){if(child.exitCode!==null||Date.now()>until)throw Error('Local emulator did not start: '+output);await pause(100);}env=await initializeTestEnvironment({projectId,firestore:{host,port,rules:testRules()}});},{timeout:45000});
 after(async()=>{await env?.cleanup();if(child&&child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),pause(3000)]);}});
 const email='jgo031996@gmail.com',staffId='fiction-staff',startId='fiction-relief-in',outId=await linkedTimeOutId(staffId,startId),requestId='early-'+outId.slice('time-out-'.length),auditId='relief-'+startId+'-1';
 const marker={version:1,homeBranch:'Fictional Home',branch:'Fictional Cover',requiresReview:true};
@@ -40,6 +48,27 @@ function batch(db,{change=()=>{},includeMarker=true,includeAudit=true,includeReq
 // Admin seeds below represent the trusted server result only. The actual
 // review-server authentication, transaction and resolver flow has its own E2E suite.
 async function seedReviewed(){await admin(db=>batch(db).commit());}
+
+test('reviewed punches require a verified Owner and a complete immutable archival event in the deletion batch',async()=>{
+ await seedReviewed();
+ const db=owner(),original=(await getDocFromServer(doc(db,'attendance_logs',outId))).data();
+ const eventId=doc(sdk.collection(db,'attendance_punch_void_events')).id;
+ function remove(client,{full=true,copy=original,removeSource=true}={}){
+  const b=writeBatch(client);
+  b.set(doc(client,'attendance_punch_voids',outId),{eventId,at:serverTimestamp()});
+  if(full)b.set(doc(client,'attendance_punch_void_events',eventId),{logId:outId,original:copy,actorUid:'fiction-owner',at:serverTimestamp(),reason:'Incorrect attendance punch'});
+  if(removeSource)b.delete(doc(client,'attendance_logs',outId));
+  return b.commit();
+ }
+ await assertFails(remove(wrong('other')));await assertFails(remove(db,{full:false}));
+ await assertFails(remove(db,{copy:{...original,branch:'Changed'}}));await assertFails(remove(db,{removeSource:false}));
+ await assertSucceeds(remove(db));
+ assert.equal((await getDocFromServer(doc(db,'attendance_logs',outId))).exists(),false);
+ const ref=doc(db,'attendance_punch_void_events',eventId);
+ assert.deepEqual((await getDocFromServer(ref)).data().original,original);
+ await assertFails(updateDoc(ref,{reason:'Changed'}));await assertFails(deleteDoc(ref));
+ await assertFails(getDocFromServer(doc(wrong('other'),'attendance_punch_void_events',eventId)));
+});
 
 test('even the verified Google Owner cannot write review metadata or its private audit from a client',async()=>{await assertFails(batch(owner()).commit());const db=owner();await assertFails(setDoc(doc(db,'attendance_relief_reviews','fiction-forged-audit'),payload().audit));await assertFails(updateDoc(doc(db,'attendance_logs',startId),{reliefScheduleReview:payload().review}));});
 for(const kind of ['anonymous','unverified','other'])test(kind+' cannot create a trusted payroll schedule marker or review audit',async()=>{await assertFails(batch(wrong(kind)).commit());});
