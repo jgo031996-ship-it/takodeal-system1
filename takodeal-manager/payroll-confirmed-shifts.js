@@ -4,6 +4,12 @@
 import {attendanceKind,attendanceMillis,linkedAttendanceHistory} from './attendance-reconcile.js';
 import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
 import {resolveEmergencyShift} from './emergency-shift-model.js';
+// A payroll profile may have a new surname after both the punch and approval were recorded.
+export function resolvePayrollConfirmedHours(start,person,head){
+ const sameId=start?.staffId&&start.staffId===(person?.staffId||person?.id)&&start.staffId===head?.staffId;
+ const payrollPerson=sameId&&person.cashierName!==start.staffName?{...person,cashierName:start.staffName}:person;
+ return resolveEmergencyShift(start,payrollPerson,head);
+}
 const OWNER_EMAIL='jgo031996@gmail.com';
 
 const active=row=>row&&!row.deleted&&!['Voided','Cancelled','Canceled','Deleted'].includes(row.status);
@@ -64,7 +70,7 @@ export async function loadPayrollShiftConfirmations(api,input,{assertCurrent=()=
    assertCurrent();if(typeof api.getDocFromServer!=='function')throw Error(message);
    const snapshot=fresh(await readDocument(api.doc(api.db,'attendance_shift_confirmations',start.id)),start.id);assertCurrent();const head=snapshot.exists()?snapshot.data():null;
    proof.confirmationFingerprint=await fingerprint(head);assertCurrent();
-   if(head){if(head.reviewedByEmail!==OWNER_EMAIL)throw Error('The saved assigned hours need Owner review before they can change unpaid payroll.');resolveEmergencyShift(start,person,head);confirmations[start.id]=head;}
+   if(head){if(head.reviewedByEmail!==OWNER_EMAIL)throw Error('The saved assigned hours need Owner review before they can change unpaid payroll.');resolvePayrollConfirmedHours(start,person,head);confirmations[start.id]=head;}
   }catch(error){assertCurrent();errors[start.id]=error.message||message;proof.readFailed=!proof.confirmationFingerprint;proof.reviewRequired=true;}
   assertCurrent();evidence.push(proof);
  });

@@ -14,7 +14,13 @@ export function installReliefScheduleReviewUI(api=window,d=document,{service=cre
   const message=(text,error=false)=>{status.textContent=text;status.setAttribute('role',error?'alert':'status');status.dataset.tone=error?'warning':'';};
   const duty=el('[data-duty]');
   if(duty)duty.onclick=async()=>{if(!current()||busy||loading)return;const chooser=api.workedShiftCorrectionUI||=installWorkedShiftCorrectionUI(api,d);
-   await chooser.open(context,{assertCurrent:()=>{if(!current())throw Error('Reopen the emergency-cover review.');},onApplied:async()=>{await api.refreshPayrollAfterAttendanceCorrection?.();if(current())node.close();}});
+   await chooser.open(context,{assertCurrent:()=>{if(!current())throw Error('Reopen the emergency-cover review.');},onApplied:async()=>{
+    if(!current())return;
+    node.close();
+    api.getPayrollPreviewGuard?.().invalidate?.('Worked hours confirmed. Refresh the unpaid payroll list.');
+    api.invalidateCache?.('attendance_logs');api.invalidateCache?.('global_schedule');
+    await api.refreshPayrollAfterAttendanceCorrection?.();
+   }});
   };
   const controls=()=>{node.querySelectorAll('button,input,select,textarea').forEach(n=>{n.disabled=n.matches('[data-close]')?false:busy||loading||!view?.canSave&&n!==el('[data-refresh]')&&n!==duty;});};
   node.addEventListener('close',()=>{if(dialog===node){generation++;active=false;}node.remove();});node.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>node.close());

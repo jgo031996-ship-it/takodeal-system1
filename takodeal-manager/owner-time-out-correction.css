@@ -25,3 +25,6 @@
 .attendance-ot-dialog footer{padding:12px 20px}
 .attendance-ot-dialog button:focus-visible,.attendance-ot-dialog summary:focus-visible{outline:3px solid #c79b42;outline-offset:2px}
 .attendance-ot-dialog button:disabled{opacity:.55;cursor:default}
+.payroll-worked-shift .worked-shift-status{margin:0;padding:8px 20px;background:#f3f7ef;color:#244637;line-height:1.45;overflow:auto;max-height:24dvh;flex:0 1 auto}
+.payroll-worked-shift [data-manual] summary{padding:8px 0;color:#185b46;font-weight:700;cursor:pointer}
+.payroll-worked-shift [data-manual] small{display:block;margin-top:8px}
