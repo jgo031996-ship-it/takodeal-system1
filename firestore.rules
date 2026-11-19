@@ -3854,5 +3854,41 @@ function be() { return ['paymentVerified','verifiedBy','verifiedAt','paymentReco
             
       }
     }
+    // A verified Owner can remove a mistaken punch with its complete HR evidence archived atomically.
+    function hR(a) {
+      return ba('attendance_logs',(a));
+    }
+    function hS(a) {
+      return ba('attendance_punch_voids',(a));
+    }
+    function hT(a) {
+      return ba('attendance_punch_void_events',(a));
+    }
+    function hU(a, b) {
+      let c = getAfter(hT(b)).data;
+      return b is string && b.matches('^[A-Za-z0-9]{20}$')
+        && !exists(hT(b))
+        && aZ((c),(['logId','original','actorUid','at','reason']))
+        && c.logId == a && c.actorUid == request.auth.uid
+        && c.at == request.time && c.reason == 'Incorrect attendance punch'
+        && c.original == get(hR(a)).data;
+    }
+    match /attendance_logs/{logId} {
+      allow delete: if bU() && hU(logId,getAfter(hS(logId)).data.eventId);
+    }
+    match /attendance_punch_voids/{logId} {
+      allow get: if bU();
+      allow create, update: if bU() && aZ((request.resource.data),(['eventId','at']))
+        && request.resource.data.at == request.time && !existsAfter(hR(logId))
+        && hU(logId,request.resource.data.eventId);
+    }
+    match /attendance_punch_void_events/{eventId} {
+      allow get: if bU();
+      allow create: if bU() && request.resource.data.logId is string
+        && request.resource.data.logId.matches('^[^/]{1,200}$')
+        && getAfter(hS(request.resource.data.logId)).data.eventId == eventId
+        && !existsAfter(hR(request.resource.data.logId))
+        && hU(request.resource.data.logId,eventId);
+    }
   }
 }
