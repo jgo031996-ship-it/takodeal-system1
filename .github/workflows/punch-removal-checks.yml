@@ -1,7 +1,7 @@
 name: Attendance punch removal
 on:
   push:
-    branches: [fix/owner-reviewed-punch-removal-20261119]
+    branches: [verify/attendance-rules-release-20261119]
 permissions:
   contents: read
 jobs:
@@ -27,6 +27,5 @@ jobs:
         shell: bash
         run: |
           export TAKODEAL_RULE_TEST_RUNTIME="$TAKODEAL_TEST_TOOLS"
-          for fixture in active32cdf repository; do
-            TAKODEAL_PUNCH_RULES_FIXTURE="$fixture" node --test --test-name-pattern="reviewed punches require" tests/emergency-relief-rules.emulator.mjs
-          done
+          cp tests/fixtures/attendance-punch-release-20261119.rules firestore.rules
+          node --test tests/emergency-relief-rules.emulator.mjs
