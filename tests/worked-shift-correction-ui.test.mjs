@@ -38,6 +38,7 @@ const revisions=f=>[...f.docs.keys()].filter(path=>path.startsWith('settings/sch
 
 import {ReviewDocument,ReviewElement,drain,deferred} from './helpers/review-dom.mjs';
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from '../takodeal-manager/worked-shift-correction-ui.js';
+import {openPayslipWorkedShifts} from '../takodeal-manager/payslip-worked-shifts.js';
 Object.defineProperty(ReviewElement.prototype,'style',{configurable:true,get(){return this._style ||= {};}});
 ReviewElement.prototype.remove=function(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(node=>node!==this);this.parentElement=null;};
 function uiFixture(options={}){const f=fixture(options),document=new ReviewDocument(),messages=[],events=[],applied=[];Object.assign(f.api,{ManagerUI:{notify:message=>messages.push(message)},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}},dispatchEvent:event=>events.push(event)});const ui=installWorkedShiftCorrectionUI(f.api,document,{service:f.service}),user=f.api.auth.currentUser,session=f.api.sessionUser;return {...f,ui,document,messages,events,applied,node:selector=>document.querySelector(selector),assertCurrent:()=>{if(f.api.auth.currentUser!==user||f.api.sessionUser!==session)throw Error('Fictional Owner account changed.');},onApplied:result=>applied.push(result)};}
@@ -91,6 +92,32 @@ test('one confirmation at the punched branch saves an availability exception and
  assert.equal(reloads,1);assert.equal(f.applied.length,1);assert.equal(f.node('dialog'),null);
  const marker=f.get(revisions(f)[0]).historicalWorkedShiftReview;
  assert.equal(marker.branch,branch);assert.equal(marker.shiftType,'mid');assert.equal(marker.workDate,date);
+});
+test('the payslip saves two overnight duties through the real chooser and transaction before refreshing once',async()=>{
+ const f=uiFixture({rules:[],missingHistory:true}),w=f.api,d=f.document;
+ const nextIn={...f.start,id:'second-in',timestamp:at('17:14',19)},nextOut={...f.out,id:'second-out',timeInLogId:nextIn.id,timeInAt:nextIn.timestamp,timestamp:at('02:10',20)};
+ f.put('attendance_logs/'+nextIn.id,nextIn);f.put('attendance_logs/'+nextOut.id,nextOut);
+ const logs=[[f.start,f.out],[nextIn,nextOut]].map(([a,b])=>({attendanceLogId:a.id,branch,timeInAt:a.timestamp,timeOutAt:b.timestamp,bonusReviewRequired:true}));
+ const data={name,staffId,start:f.context.from,end:f.context.to,logs},fresh={...data,logs:[]};
+ let refreshes=0,opens=0,inspection;
+ const chooser={open(...args){inspection=f.ui.open(...args);return inspection;}};
+ const guard={invalidate(){w.currentPayslipData=null;w.globalPayrollCache={};},requireReady(){assert.equal(w.globalPayrollCache[name],fresh);}};
+ Object.assign(w,{currentPayslipData:data,globalPayrollCache:{[name]:data},requirePayrollPreview:v=>assert.equal(v,w.currentPayslipData),getPayrollPreviewGuard:()=>guard,
+  refreshPayrollAfterAttendanceCorrection:()=>assert.fail('early payroll refresh'),generateAutoPayslips:async()=>{refreshes++;w.globalPayrollCache={[name]:fresh};},openPayslipModal:async()=>{opens++;w.currentPayslipData=fresh;}});
+ for(const [id,value] of [['payrollStart',data.start],['payrollEnd',data.end]]){const el=d.createElement('input');el.setAttribute('id',id);el.value=value;d.body.append(el);}
+ const batch=openPayslipWorkedShifts(w,d,data,logs[0],chooser);
+ const dates=batch.querySelector('[data-dates]').querySelectorAll('button');
+ for(const [index,date] of ['2026-10-17','2026-10-19'].entries()){
+  if(index)dates[index].click();
+  const child=await inspection;assert.ok(child.open);enterHours(f,{date});
+  await child.querySelector('[data-apply]').onclick();
+  assert.equal(child.open,false,child.querySelector('[data-status]').textContent);
+  assert.equal(dates[index].textContent,'Saved');assert.equal(refreshes,0);
+ }
+ const duties=revisions(f).map(path=>f.get(path).historicalWorkedShiftReview);
+ assert.deepEqual(duties.map(row=>row.timeInLogId).sort(),[f.start.id,nextIn.id].sort());
+ await batch.querySelector('[data-finish]').onclick();
+ assert.equal(refreshes,1);assert.equal(opens,1);assert.equal(w.currentPayslipData,fresh);assert.equal(batch.open,false);
 });
 test('a renamed employee can explicitly update a conflicting prior approval; payroll uses the new assignment until a later approval',async()=>{
  const f=uiFixture(),profile={...f.profile,cashierName:'Current Crew Name',staffId};
