@@ -16267,16 +16267,20 @@ window.openBranchSettings = async function(docId) {
     } else {
         window.removeLogo();
     }
-    if (document.getElementById('settingMallBranch')) document.getElementById('settingMallBranch').checked = loadToken.mallMode;
+    const mallControl=document.getElementById('settingMallBranch');
+    if(mallControl){mallControl.indeterminate=true;mallControl.disabled=true;}
     document.getElementById('branchSettingsModal').style.display = 'flex';
     try{
-        const saved=await readBranchNetworkSettings(window,docId);
+        const [saved,publicBranch]=await Promise.all([readBranchNetworkSettings(window,docId),window.getDocFromServer(window.doc(window.db,'branches',docId))]);
         if(window.branchNetworkSettingsLoad!==loadToken||window.auth?.currentUser!==user||window.sessionUser!==session)return;
-        window.branchNetworkSettingsExpected=saved;
+        if(!publicBranch.exists() || publicBranch.metadata?.fromCache || publicBranch.metadata?.hasPendingWrites || publicBranch.data().name!==d.name) throw Error('The saved branch settings could not be verified.');
+        loadToken.mallMode=publicBranch.data().isMallBranch===true;
+        if(mallControl){mallControl.checked=loadToken.mallMode;mallControl.indeterminate=false;mallControl.disabled=false;}
+        window.branchNetworkSettingsExpected={...saved,mallMode:loadToken.mallMode};
         document.getElementById('settingWifi').value=saved.wifi??d.wifi??'';
         document.getElementById('settingWifi').disabled=false;
         document.getElementById('btnSaveBranchSettings').disabled=branchSettingsSavePending;
-    }catch(error){if(window.branchNetworkSettingsLoad===loadToken)window.ManagerUI.notify('Private branch settings could not be loaded. Reopen this branch before saving.');}
+    }catch(error){if(window.branchNetworkSettingsLoad===loadToken)window.ManagerUI.notify('Branch settings could not be verified. Reconnect and reopen this branch before saving.');}
 };
 
 let branchSettingsSavePending=false;
@@ -26550,7 +26554,12 @@ const tkOwnerTransaction=(...args)=>window.runTransaction(...args),
       settlementNote: note, endTime: row.acceptedAt.toDate() };
     writes.push({ path: shifts.ref.path, mode: 'set', data: tkEncode(closed) });
     const config = await tkOwnerDocs(window.query(window.collection(window.db, 'branches'), window.where('name', '==', targetBranch)));
-    const branchConfig = config.docs[0]?.data() || {}; config.docs.forEach(guard);
+    if (config.docs.length!==1 || config.docs[0].data().name!==targetBranch) throw new Error('Verify the branch settings before settling this shift.');
+    const branchConfig = config.docs[0].data(); config.docs.forEach(guard);
+    closed.isMallBranch = branchConfig.isMallBranch === true;
+    if (typeof shifts.data().isMallBranch==='boolean' && shifts.data().isMallBranch!==closed.isMallBranch) closed.openingMallMode=shifts.data().isMallBranch;
+    if (!closed.isMallBranch && shifts.data().isMallBranch) Object.assign(closed,{mallFloat:0,isFinalShiftOfDay:false});
+    writes.find(write=>write.path===shifts.ref.path).data=tkEncode(closed);
     async function deposit(accountBranch, name, value) {
       if (!value) return;
       const accounts = await tkOwnerDocs(window.query(window.collection(window.db, 'cash_accounts'), window.where('branch', '==', accountBranch), window.where('name', '==', name)));
@@ -26564,7 +26573,7 @@ const tkOwnerTransaction=(...args)=>window.runTransaction(...args),
         amount: value, user: window.auth.currentUser.email, timestamp: new Date(), shiftId: id, operationId: row.id }) });
     }
     for (const [method, value] of Object.entries(digital)) if (!['gcash', 'salary deduction'].includes(method.trim().toLowerCase())) await deposit('Main Office', method, value);
-    if (shifts.data().isMallBranch ?? branchConfig.isMallBranch === true) {
+    if (closed.isMallBranch) {
       const dailyClose = await confirmMallDailyClose(window,{branch:targetBranch,started:shifts.data().startTime,declaredCash:Number(row.evidence.declaredCash)});
       if (!dailyClose) return;
       Object.assign(closed,{isMallBranch:true,...dailyClose,mallFloat:2000,retainedCash:Number(row.evidence.declaredCash),remittedCash:0,remittanceId:'',cashPolicyVersion:2});

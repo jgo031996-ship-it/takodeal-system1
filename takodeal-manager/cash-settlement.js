@@ -45,7 +45,10 @@ export async function closeLegacyShiftAtomic(api,input){
 export async function readBranchPolicy(api, branch) {
     const snap = await (api.getDocsFromServer || api.getDocs)(api.query(api.collection(api.db,'branches'),api.where('name','==',branch)));
     if (snap.docs.length !== 1) throw new Error('Branch settings are missing or duplicated. Ask Manager to check this branch.');
-    return { id:snap.docs[0].id, ...snap.docs[0].data() };
+    const row=snap.docs[0], data=row.data();
+    if (snap.metadata?.fromCache || snap.metadata?.hasPendingWrites || row.metadata?.fromCache || row.metadata?.hasPendingWrites || data.name!==branch)
+        throw new Error('Reconnect to verify the saved settings for this branch.');
+    return { ...data, id:row.id, isMallBranch:data.isMallBranch===true };
 }
 export async function readMallOpeningCash(api, branch) {
     const snap=await api.getDocsFromServer(api.query(api.collection(api.db,'shifts'),api.where('branch','==',branch),api.where('status','==','Closed'),api.orderBy('endTime','desc'),api.limit(1)));
@@ -72,7 +75,9 @@ export async function closeShiftAtomic(api, input) {
         const currentPolicy = await tx.get(ref(api,'branches',policy.id));
         if (!currentPolicy.exists()) throw new Error('Branch settings were removed.');
         if (input.expectedSalesRevision !== undefined && Number(shift.data().salesRevision || 0) !== input.expectedSalesRevision) throw new Error('Sales changed during shift close. Reload the closing review before settling.');
-        const stored = shift.data(), isMall = stored.isMallBranch ?? currentPolicy.data().isMallBranch === true;
+        const stored = shift.data(), isMall = currentPolicy.data().isMallBranch === true;
+        if (currentPolicy.data().name!==branch || isMall !== (input.reviewedMallMode ?? policy.isMallBranch))
+            throw new Error('Branch mode changed during review. Reopen shift closing to confirm the current setting.');
         const isFinalShiftOfDay = isMall && input.isFinalShiftOfDay === true;
         const plan = isFinalShiftOfDay ? mallCashPlan(declaredCash) : null;
         const accountReads = [];
@@ -81,7 +86,9 @@ export async function closeShiftAtomic(api, input) {
         if (isFinalShiftOfDay && (await tx.get(remitRef)).exists()) throw new Error('A mall remittance already exists for this open shift. Ask Manager to review.');
         const expectedCash = money(stored.startingCash ?? 0) + money(totalCashSales) - money(input.cashOut);
         const stamp=api.serverTimestamp(),closedBy=await closeIdentity(tx,api,input,stamp);
-        const closing = {...input.closing,active:false,status:'Closed',endTime:stamp,closedBy,expectedCash,declaredCash:money(declaredCash),totalCashSales:money(totalCashSales),totalDigitalSales:money(totalDigitalSales),digitalBreakdown,cashPolicyVersion:2};
+        const closing = {...input.closing,isMallBranch:isMall,active:false,status:'Closed',endTime:stamp,closedBy,expectedCash,declaredCash:money(declaredCash),totalCashSales:money(totalCashSales),totalDigitalSales:money(totalDigitalSales),digitalBreakdown,cashPolicyVersion:2};
+        if (typeof stored.isMallBranch==='boolean' && stored.isMallBranch!==isMall) closing.openingMallMode=stored.isMallBranch;
+        if (!isMall && stored.isMallBranch) Object.assign(closing,{mallFloat:0,isFinalShiftOfDay:false});
         if (isMall) Object.assign(closing,{isMallBranch:true,isFinalShiftOfDay,businessDay:input.businessDay || businessClock().day,retainedCash:money(declaredCash),remittedCash:0,remittanceId:''});
         if (plan) Object.assign(closing,{isMallBranch:true,mallFloat:2000,retainedCash:plan.retainedCash,remittedCash:plan.remittedCash,floatShortage:plan.floatShortage,remittanceId:plan.remittedCash>0 ? remitRef.id : ''});
         input.assertCurrent?.();tx.update(shiftRef,closing);

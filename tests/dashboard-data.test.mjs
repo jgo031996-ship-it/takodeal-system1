@@ -196,6 +196,7 @@ test('overdue attendance review stays distinct from lateness, and a schedule fai
     const f=fixture();await f.controller.load();
     const log={staffName:'Earlier Staff',branch:'Maa',type:'TIME IN',timestamp:new Date(Date.now()-17*3600000).toISOString()};
     f.emit('attendance_logs',[log]);
+    f.emit('staff_requests',[]);
     assert.match(f.nodes.get('branchTableBody').innerHTML,/Check time out · over 16h/);
     assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/dash-staff-status late/);
     f.listeners.find(l=>l.ref.table==='settings/global_schedule').error(new Error('Offline'));

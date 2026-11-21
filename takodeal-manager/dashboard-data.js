@@ -86,6 +86,17 @@ export function onDuty(logs, branches, now = Date.now()) {
     }
     return duty;
 }
+export function dutyRequestStatus(punch, requests) {
+    if (!punch.id) return '';
+    const linked = requests.filter(row => row.type === 'Early Time Out'
+        && row.timeInLogId === punch.id && row.branch === punch.branch
+        && (punch.staffId ? row.staffId === punch.staffId : punch.staffName && row.staffName === punch.staffName)
+        && milliseconds(row.timeInAt) === milliseconds(punch.timestamp));
+    if (linked.length !== 1) return linked.length ? 'Conflicting Time Out requests · review inbox' : '';
+    if (linked[0].status === 'Pending') return 'Early Time Out requested · awaiting review';
+    if (linked[0].status === 'Approved') return 'Early Time Out approved · awaiting punch';
+    return '';
+}
 export function dutyAttendance(log, schedule, profiles = {}) {
     const at = milliseconds(log.timestamp);
     const validTime = Number.isFinite(at) && at > 0;

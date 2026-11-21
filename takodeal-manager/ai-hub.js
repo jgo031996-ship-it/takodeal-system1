@@ -1,4 +1,4 @@
-import {DRAFT_TYPES, escapeHTML as esc, newDraftId, prepareGuidedDraft, audienceLabel, canPublish, validateDraft,
+import {personalFormat, noticeImagePrompt, staffNoticePrompt, DRAFT_TYPES, escapeHTML as esc, newDraftId, prepareGuidedDraft, audienceLabel, canPublish, validateDraft,
     visibleAnnouncement, uniqueSignatures, createDraftStore, publicationMatches, publishReviewedDraft} from './ai-hub-model.js';
 
 const icon = (name, size = 20) => {
@@ -25,8 +25,9 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
     const draftStore = createDraftStore(storage, uid());
     let draft, attachments = [], imageURLs = [], history = [], signatures = [], loading, busy = false, reviewed = false, activeTab = 'workspace';
     const canWrite = canPublish(user());
+    const activeRecipient = row => !!row.cashierName && row.active !== false && row.isActive !== false && !row.archived && !row.isArchived && !row.offboarded && !row.blocked && !row.revoked && !/resigned|revoked|archived|terminated|inactive|offboarded|blocked/i.test([row.status,row.employmentStatus,row.pin].join(' '));
     root.innerHTML = `<div class="aih-shell">
-        <header class="aih-intro"><div><div class="aih-eyebrow">TEAM COMMUNICATION</div><h2>Company announcements</h2><p>Prepare clear instructions. Review every detail. Keep your team informed.</p></div><div class="aih-mode"><span></span>Built-in drafting<small>Works inside Manager. No external account needed.</small></div></header>
+        <header class="aih-intro"><div><div class="aih-eyebrow">TEAM COMMUNICATION</div><h2>Company announcements</h2><p>Prepare clear instructions. Review every detail. Keep your team informed.</p></div><div class="aih-mode"><span></span>Staff notices<small>Review before publishing</small></div></header>
         <div class="aih-overview"><div><span>ACTIVE ANNOUNCEMENTS</span><strong id="aihActiveCount">—</strong></div><div><span>STAFF SIGNATURES</span><strong id="aihSignatureCount">—</strong></div><div><span>DRAFTS ON THIS DEVICE</span><strong id="aihDraftCount">0</strong></div><p>Brief <span>→</span> Draft <span>→</span> Review <span>→</span> Publish</p></div>
         <div class="aih-tabs" role="tablist" aria-label="AI Hub workspace">
             <button id="aihTab-workspace" role="tab" aria-controls="aihPanel-workspace" aria-selected="true" data-tab="workspace">${icon('edit',17)}Writing workspace</button>
@@ -42,7 +43,9 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
                     <label for="aihBriefFacts">Key facts & instructions</label><textarea id="aihBriefFacts" rows="7" maxlength="11000" placeholder="Include the required actions, responsible people, and any deadlines."></textarea>
                     <label for="aihBriefDate">Effective date <span>(optional)</span></label><input id="aihBriefDate" type="date">
                     <button class="aih-primary aih-wide" data-action="prepare">Prepare draft ${icon('arrow',16)}</button>
-                    <p class="aih-helper">Built-in templates organize your words. They do not call ChatGPT or verify facts.</p>
+                    <button class="aih-secondary aih-wide" data-action="draft-ai">Rewrite with AI</button>
+                    <button class="aih-text-button" data-action="copy-draft">Copy writing prompt for ChatGPT</button>
+                    <p class="aih-helper">Rewrite sends the subject, facts and effective date to the Owner AI service. Review all figures before publishing.</p>
                 </aside>
                 <div class="aih-editor aih-panel"><div class="aih-panel-title"><span class="aih-step">02</span><div><h3>Compose your announcement</h3><p>Edit the draft before it reaches your team.</p></div><button class="aih-text-button" data-action="new">New draft</button></div>
                     <div class="aih-editor-meta"><span id="aihDraftSource">Manual draft</span><span id="aihSaveState">Not saved yet</span></div>
@@ -51,6 +54,8 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
                     <div class="aih-label-row"><label for="announceMessage">Message <span class="aih-required">Required</span></label><span id="aihWordCount">0 words</span></div><textarea id="announceMessage" rows="11" maxlength="12000" placeholder="Write the announcement or prepare a draft from your brief."></textarea>
                     <label for="announceFooter">Issued by <span>(optional)</span></label><input id="announceFooter" maxlength="300" placeholder="TAKODEÁL Management">
                     <div class="aih-section-label">AUDIENCE & DELIVERY</div><div class="aih-target-grid"><div><label for="announceTargetType">Send to</label><select id="announceTargetType"><option value="All">All branches & staff</option><option value="Branch">Specific branch</option><option value="Individual">Individual staff member</option></select></div><div id="aihBranchField" hidden><label for="announceTargetBranch">Branch</label><select id="announceTargetBranch"><option value="">Choose a branch</option></select></div><div id="aihStaffField" hidden><label for="announceTargetStaff">Staff member</label><select id="announceTargetStaff"><option value="">Choose a staff member</option></select></div></div>
+                    <label for="aihVisualSubject">Image subject (optional)</label><input id="aihVisualSubject" maxlength="200" placeholder="e.g. A payslip envelope on the counter"><button class="aih-secondary" data-action="copy-image">Copy image prompt for ChatGPT</button>
+                    <p class="aih-helper">Paste the prompt into ChatGPT, save the image and attach it below.</p>
                     <label class="aih-attachments" for="announceImages">${icon('document',19)}<span>Attach images <small>Optional · JPG, PNG or WebP · up to 8 images, 5 MB each</small></span><input id="announceImages" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><div id="aihFiles" class="aih-files"></div>
                     <div class="aih-editor-actions"><div><strong id="aihAudienceSummary">All branches & staff</strong><small>Staff acknowledgement remains required.</small></div><button class="aih-primary" data-action="review">Review announcement ${icon('arrow',16)}</button></div>
                 </div>
@@ -62,11 +67,20 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
         <dialog id="aihDetailDialog" class="aih-dialog" aria-labelledby="aihDetailHeading"><div class="aih-dialog-heading"><h3 id="aihDetailHeading">Announcement details</h3><button class="aih-icon-button" data-action="close-details" aria-label="Close announcement details">${icon('close')}</button></div><div id="aihDetailBody" class="aih-dialog-body"></div></dialog>
     </div>`;
     const el = id => d.getElementById(id);
-    const fields = {title:'announceTitle',subHeadline:'announceSubHeadline',message:'announceMessage',footerMessage:'announceFooter',targetType:'announceTargetType',targetBranch:'announceTargetBranch',targetStaff:'announceTargetStaff'};
+    const fields = {title:'announceTitle',subHeadline:'announceSubHeadline',message:'announceMessage',footerMessage:'announceFooter',targetType:'announceTargetType',targetBranch:'announceTargetBranch'};
     function status(text, error = false) { el('aihStatus').textContent = text; el('aihStatus').classList.toggle('aih-error',error); }
     function ensureAccount() { if (!uid() || uid() !== identity || !canPublish(user())) throw new Error('Sign in again with an account that can publish announcements.'); }
     const identity = uid();
-    function readFields() { for (const [key,id] of Object.entries(fields)) draft[key] = el(id).value; draft.updatedAt = Date.now(); return draft; }
+    function readFields() {
+        for (const [key,id] of Object.entries(fields)) draft[key] = el(id).value;
+        const selector = el('announceTargetStaff');
+        if (draft.targetType === 'Individual' && !selector.disabled && selector.options.length > 1) {
+            draft.targetStaffId = selector.value;
+            draft.targetStaff = selector.selectedOptions[0]?.dataset.name || '';
+        }
+        draft.visualSubject = el('aihVisualSubject').value;
+        draft.updatedAt = Date.now(); return draft;
+    }
     function save() {
         if (!canWrite || !uid() || uid() !== identity) return;
         readFields(); draft.brief = {type:draft.type, title:el('aihBriefTitle').value, facts:el('aihBriefFacts').value, date:el('aihBriefDate').value};
@@ -84,10 +98,14 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
     function releaseImages(clearInput = true) { imageURLs.forEach(url => w.URL.revokeObjectURL(url)); imageURLs = []; attachments = []; if (clearInput) el('announceImages').value = ''; el('aihFiles').replaceChildren(); }
     function fillDraft(value) {
         draft = {...value}; releaseImages();
+        if (personalFormat(draft.type)) draft.targetType = 'Individual';
+        el('announceTargetType').disabled = personalFormat(draft.type);
+        el('announceTargetStaff').value = draft.targetStaffId || '';
+        el('aihVisualSubject').value = draft.visualSubject || '';
         for (const [key,id] of Object.entries(fields)) el(id).value = draft[key] || (key === 'targetType' ? 'All' : '');
         el('aihBriefTitle').value = draft.brief?.title || ''; el('aihBriefFacts').value = draft.brief?.facts || ''; el('aihBriefDate').value = draft.brief?.date || '';
         root.querySelectorAll('[data-format]').forEach(button => button.setAttribute('aria-pressed',String(button.dataset.format === (draft.type || 'notice'))));
-        el('aihDraftSource').textContent = draft.source === 'guided-template' ? 'Guided draft · editable' : 'Manual draft';
+        el('aihDraftSource').textContent = draft.source === 'owner-ai' ? 'AI rewrite · review wording and figures' : draft.source === 'guided-template' ? 'Guided draft · editable' : 'Manual draft';
         el('aihSaveState').textContent = value.updatedAt ? 'Restored from this device' : 'Not saved yet';
         updateTargets(); updateCounts();
     }
@@ -109,12 +127,13 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
             if (!branches.length) status('Branch names are not loaded yet. Open the branch list, then return here.',true);
         }
         if (type === 'Individual' && el('announceTargetStaff').options.length <= 1 && w.getDocs) {
-            const selected = draft.targetStaff; el('announceTargetStaff').disabled = true;
+            el('announceTargetStaff').disabled = true;
             try {
-                const snap = await w.getDocs(w.collection(w.db,'cashiers'));
+                const snap = await (w.getDocsFromServer || w.getDocs)(w.collection(w.db,'cashiers'));
                 if (uid() !== identity) return;
-                const names = [...new Set(snap.docs.map(row => row.data()).filter(row => row.status !== 'Resigned' && row.pin !== 'REVOKED').map(row => row.cashierName).filter(Boolean))].sort();
-                el('announceTargetStaff').innerHTML = '<option value="">Choose a staff member</option>' + names.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join(''); el('announceTargetStaff').value = selected || '';
+                const people = snap.docs.map(row => ({...row.data(),id:row.id})).filter(activeRecipient).sort((a,b)=>a.cashierName.localeCompare(b.cashierName));
+                el('announceTargetStaff').innerHTML = '<option value="">Choose a staff member</option>' + people.map(person => `<option value="${esc(person.id)}" data-name="${esc(person.cashierName)}">${esc(person.cashierName)} · ${esc(person.branch || 'Unassigned')} · ${esc(person.id.slice(-6))}</option>`).join('');
+                el('announceTargetStaff').value = draft.targetStaffId || '';
                 updateCounts();
             } catch { status('Staff names could not be loaded. Reconnect and choose the audience again.',true); }
             finally { el('announceTargetStaff').disabled = false; }
@@ -148,6 +167,7 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
     }
     function showReview() {
         ensureAccount(); save(); const issues = validateDraft(readFields(),attachments);
+        if (draft.targetType==='Individual' && !draft.targetStaffId) issues.push('Choose the employee account before reviewing.');
         if (issues.length) { status(issues.join(' '),true); return; }
         reviewed = false; el('aihReviewed').checked = false; el('btnPublishAnnounce').disabled = true; el('aihPublishError').textContent = '';
         el('aihReviewAudience').textContent = 'Selected audience: ' + audienceLabel(draft);
@@ -159,13 +179,24 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
         const row = history.find(row => row.id === id && visibleAnnouncement(row,user())); if (!row) return;
         const acks = uniqueSignatures(signatures.filter(ack => ack.announcementId === id));
         el('aihDetailHeading').textContent = row.title || 'Announcement details';
-        const safeImages = (Array.isArray(row.images) ? row.images : []).filter(url => { try { return new URL(url).protocol === 'https:'; } catch { return false; } });
+        const safeImages = (Array.isArray(row.images) ? row.images : []).filter(url => { try { return new URL(url).protocol === 'https:' || (row.targetStaffId && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(url)); } catch { return false; } });
         el('aihDetailBody').innerHTML = `<p class="aih-review-audience">${esc(audienceLabel(row))} · ${esc(formatDate(row.timestamp))}</p><article class="aih-paper"><p>${esc(row.subHeadline || '')}</p><div class="aih-detail-message">${esc(row.message || '')}</div><footer>${esc(row.footerMessage || '')}</footer><div class="aih-review-images">${safeImages.map(url => `<img src="${esc(url)}" alt="Announcement attachment" loading="lazy">`).join('')}</div></article><h4 class="aih-signature-heading">Staff signatures <span>${acks.length}</span></h4>${acks.length ? `<ul class="aih-signature-list">${acks.map(ack => `<li><strong>${esc(ack.staffName)}</strong><span>${esc(formatDate(ack.timestamp))}</span></li>`).join('')}</ul>` : '<p class="aih-helper">No staff signatures yet.</p>'}`;
         el('aihDetailDialog').showModal();
     }
     const adapter = {
         async read(id) { const snap = await w.getDocFromServer(w.doc(w.db,'announcements',id)); return snap.exists() ? snap.data() : null; },
-        async upload(id, index, file) {
+        async upload(id, index, file, payload) {
+            if (payload.targetStaffId) {
+                // Keep individual illustrations in the same access-controlled notice.
+                const bitmap = await w.createImageBitmap(file);
+                try {
+                    const canvas = d.createElement('canvas');
+                    const scale = Math.min(1,900/Math.max(bitmap.width,bitmap.height));
+                    canvas.width = Math.max(1,Math.round(bitmap.width*scale)); canvas.height = Math.max(1,Math.round(bitmap.height*scale));
+                    const ctx = canvas.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+                    return canvas.toDataURL('image/jpeg',0.70);
+                } finally { bitmap.close(); }
+            }
             ensureAccount(); const extension = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];
             const reference = w.ref(w.storage,`announcements/${id}/${index}.${extension}`);
             const result = await w.uploadBytes(reference,file); return w.getDownloadURL(result.ref);
@@ -174,7 +205,12 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
             ensureAccount(); return w.runTransaction(w.db, async tx => {
                 const reference = w.doc(w.db,'announcements',id), prior = await tx.get(reference);
                 if (prior.exists()) { if (!publicationMatches(prior.data(),payload)) throw new Error('This draft is already published. Start a new draft for another announcement.'); return {id,existing:true}; }
-                tx.set(reference,{...payload,timestamp:w.serverTimestamp()}); return {id,existing:false};
+                if (payload.targetStaffId) {
+                    if (payload.images.join('').length > 182000) throw Error('The private illustrations are too large. Use fewer or smaller images and retry.');
+                    const person=await tx.get(w.doc(w.db,'cashiers',payload.targetStaffId));
+                    if (!person.exists() || !activeRecipient(person.data()) || person.data().cashierName!==payload.recipientDisplayName) throw Error('The selected employee profile changed. Choose the employee again.');
+                }
+                ensureAccount(); tx.set(reference,{...payload,timestamp:w.serverTimestamp()}); return {id,existing:false};
             });
         }
     };
@@ -199,22 +235,45 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
         const button = event.target.closest('button'); if (!button) return;
         try {
             if (button.dataset.tab) { showTab(button.dataset.tab); return; }
-            if (button.dataset.format && canWrite) { draft.type = button.dataset.format; root.querySelectorAll('[data-format]').forEach(item => item.setAttribute('aria-pressed',String(item === button))); save(); return; }
+            if (button.dataset.format && canWrite) { draft.type = button.dataset.format;
+                if (personalFormat(draft.type)) el('announceTargetType').value='Individual';
+                el('announceTargetType').disabled=personalFormat(draft.type); readFields(); updateTargets(); root.querySelectorAll('[data-format]').forEach(item => item.setAttribute('aria-pressed',String(item === button))); save(); return; }
             if (button.dataset.openDraft) { const selected = draftStore.list().find(row => row.id === button.dataset.openDraft); if (selected) { if (save() === false) throw new Error(draftStore.error()); fillDraft(selected); showTab('workspace'); status('Draft restored. Reselect any image attachments before publishing.'); } return; }
             if (button.dataset.deleteDraft) { if (w.confirm('Delete this saved draft from this device?')) { draftStore.remove(button.dataset.deleteDraft); renderDrafts(); if (draft.id === button.dataset.deleteDraft) fillDraft(blankDraft()); } return; }
             if (button.dataset.details) { showDetails(button.dataset.details); return; }
             if (button.dataset.toggle) { await toggle(button.dataset.toggle); return; }
             switch (button.dataset.action) {
                 case 'new': ensureAccount(); if (save() === false) throw new Error(draftStore.error()); fillDraft(blankDraft()); showTab('workspace'); status('New draft ready. Your previous draft remains in Saved drafts.'); el('announceTitle').focus(); break;
+                case 'copy-image':
+                case 'copy-draft': {
+                    const brief={type:draft.type,title:el('aihBriefTitle').value,facts:el('aihBriefFacts').value,date:el('aihBriefDate').value};
+                    const prompt = button.dataset.action === 'copy-image' ? noticeImagePrompt(brief.type,el('aihVisualSubject').value) : staffNoticePrompt(brief);
+                    try { await w.navigator.clipboard.writeText(prompt); status('Prompt copied. Paste it into ChatGPT.'); }
+                    catch { w.prompt('Copy this prompt into ChatGPT',prompt); }
+                    break;
+                }
+                case 'draft-ai':
                 case 'prepare': {
                     ensureAccount();
                     const hadMessage = !!(draft.title || draft.message), priorId = draft.id;
                     if (hadMessage && !w.confirm('Prepare a new guided draft? The current draft will remain in Saved drafts.')) return;
                     const generated = prepareGuidedDraft({type:draft.type,title:el('aihBriefTitle').value,facts:el('aihBriefFacts').value,date:el('aihBriefDate').value},{id:newDraftId(w.crypto)});
-                    generated.targetType = draft.targetType; generated.targetBranch = draft.targetBranch; generated.targetStaff = draft.targetStaff;
+                    Object.assign(generated,{targetType:draft.targetType,targetBranch:draft.targetBranch,targetStaff:draft.targetStaff,targetStaffId:draft.targetStaffId,visualSubject:draft.visualSubject});
+                    if (button.dataset.action==='draft-ai') {
+                        const snapshot=JSON.stringify([draft.id,draft.type,draft.targetType,draft.targetStaffId,draft.brief,draft.message]);
+                        button.disabled=true;
+                        try {
+                            const token=await w.auth.currentUser.getIdToken();
+                            const response=await w.fetch('/api/staff-notice',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(generated.brief),cache:'no-store'});
+                            const result=await response.json(); ensureAccount();
+                            if (!response.ok || !result.message) throw Error(result.error || 'AI is unavailable. Use Copy writing prompt for ChatGPT.');
+                            if (snapshot!==JSON.stringify([draft.id,draft.type,draft.targetType,draft.targetStaffId,draft.brief,draft.message])) throw Error('The draft changed during the rewrite. Review your current text and retry.');
+                            generated.message=result.message; generated.source='owner-ai';
+                        } finally {button.disabled=false;}
+                    }
                     if (save() === false) throw new Error(draftStore.error()); fillDraft(generated); const saved = save();
                     if (saved && !hadMessage) { draftStore.remove(priorId); el('aihDraftCount').textContent = draftStore.list().length; }
-                    status('Guided draft prepared. Review and edit the wording and facts before publishing.'); el('announceTitle').focus(); break;
+                    status(generated.source==='owner-ai'?'AI rewrite ready. Check each amount and date before publishing.':'Guided draft prepared. Review and edit the wording and facts before publishing.'); el('announceTitle').focus(); break;
                 }
                 case 'review': showReview(); break;
                 case 'publish': await publish(); break;

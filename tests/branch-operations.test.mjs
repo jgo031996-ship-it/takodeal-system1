@@ -118,7 +118,7 @@ test('owner-reviewed mall settlement preserves interim cash and only final closu
         const docs=new Map([['shifts/one',{branch:'Citygate',active:true,isMallBranch:true,startingCash:2000,startTime:new Date('2026-10-04T02:00:00Z')}],['cashier_presence/device',{pendingSales:0,pendingOperations:0,accepting:false}],['pos_operation_commits/review',{state:'owner_review'}]]);
         const window={db:{},auth:{currentUser:{email:'owner@example.com'}},collection:(db,table)=>({table}),where:(key,op,value)=>({key,value}),query:(query)=>query,Swal:{fire:async()=>({isConfirmed:true})}};
         const context={window,doc:path=>({path}),tkOwnerDoc:async ref=>snapshot(ref.path,docs.get(ref.path)),tkOwnerDocs:async query=>{
-            const rows=query.table==='pos_bindings'?[snapshot('pos_bindings/device',{})]:query.table==='branches'?[snapshot('branches/city',{isMallBranch:true})]:query.table==='expenses'?[snapshot('expenses/fund',{amount:100,paidFrom:'Manager Fund'})]:[];
+            const rows=query.table==='pos_bindings'?[snapshot('pos_bindings/device',{})]:query.table==='branches'?[snapshot('branches/city',{name:'Citygate',isMallBranch:true})]:query.table==='expenses'?[snapshot('expenses/fund',{amount:100,paidFrom:'Manager Fund'})]:[];
             return {docs:rows,empty:!rows.length,size:rows.length};
         },fresh:()=>true,tkEncode:value=>value,tkFingerprint:async()=> 'fingerprint',tkCommitOperation:async record=>{committed=record;},adapter:{},mallCashPlan,businessClock,confirmMallDailyClose:async()=>({isFinalShiftOfDay:final,businessDay:'2026-10-04'}),Date,Number,Object,Math};
         vm.runInNewContext(source.slice(start,end)+'\nwindow.testSettle=settleClearance;',context);

@@ -1,5 +1,5 @@
 import { money, number, escapeHTML as esc, milliseconds, businessDay, calendarDay, dayStart, addDays,
-    dateRange, scopedSales, salesSummary, paymentParts, onDuty, dutyAttendance, branchPerformance, productReport, ballAudit } from './dashboard-data.js';
+    dateRange, scopedSales, salesSummary, paymentParts, onDuty, dutyRequestStatus, dutyAttendance, branchPerformance, productReport, ballAudit } from './dashboard-data.js';
 import { countBalls } from './pos-safety.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
 
@@ -8,6 +8,7 @@ export function createDashboard(w = window, d = document) {
     let generation = 0, stops = [], key = '', state = {}, reportGeneration = 0;
     const cache = new Map();
     const pendingHistory = new Map();
+    const dutyRequests = new Map();
     const el = id => d.getElementById(id);
     const text = (id, value) => { if (el(id)) el(id).textContent = value; };
     const rows = snap => snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -39,7 +40,7 @@ export function createDashboard(w = window, d = document) {
             if(job.next?.current===generation&&job.next.scope===accountScope()&&visible())requestDutyHistory(job.next.current);
         });
     }
-    function stop() { generation++; stops.splice(0).forEach(off => off()); key = ''; }
+    function stop() { generation++; for (const entry of dutyRequests.values()) entry.off?.(); dutyRequests.clear(); stops.splice(0).forEach(off => off()); key = ''; }
     function visible() { return el('view-dashboard')?.classList.contains('active'); }
     function message() {
         const problems = Object.values(state.errors || {});
@@ -181,9 +182,43 @@ export function createDashboard(w = window, d = document) {
         text('dashUpdated', 'Updated ' + new Date().toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour:'2-digit', minute:'2-digit' }));
         renderCharts(); renderProducts(); renderTarget();
     }
+    function syncDutyRequests(staff) {
+        const current = generation;
+        const open = new Map(staff.filter(p => p.id).map(p => [p.id, p]));
+        for (const [id, entry] of dutyRequests) {
+            if (!open.has(id)) { dutyRequests.delete(id); entry.off?.(); }
+        }
+        for (const [id, punch] of open) {
+            if (dutyRequests.has(id)) continue;
+            const entry = {rows: [], state:'loading'};
+            dutyRequests.set(id, entry);
+            const valid = () => current === generation && dutyRequests.get(id) === entry;
+            const unavailable = () => {
+                if (!valid()) return;
+                entry.state = 'unavailable'; entry.rows = []; renderOperations();
+            };
+            try {
+                const q = w.query(collection('staff_requests'), w.where('branch','==',punch.branch), w.where('timeInLogId','==',id));
+                entry.off = w.onSnapshot(q, {includeMetadataChanges:true}, snap => {
+                    if (!valid()) return;
+                    entry.rows = rows(snap);
+                    entry.state = snap.metadata?.fromCache || snap.metadata?.hasPendingWrites ? 'unavailable' : 'ready';
+                    renderOperations();
+                }, unavailable);
+            } catch { unavailable(); }
+        }
+    }
     function renderOperations() {
         if (!state.scope) return;
         const staff = onDuty(state.attendance, state.scope);
+        syncDutyRequests(staff);
+        for (const punch of staff) {
+            const entry = dutyRequests.get(punch.id);
+            const notice = entry?.state === 'ready' ? dutyRequestStatus(punch,entry.rows) : '';
+            if (notice) { punch.needsReview = true; punch.reviewReason = notice; }
+            else if (entry && entry.state !== 'ready' && punch.needsReview && !punch.reviewReason)
+                punch.reviewReason = entry.state === 'loading' ? 'Checking Time Out requests…' : 'Time Out request status unavailable';
+        }
         text('dashDutyCount', staff.filter(s => !s.needsReview).length + ' staff on duty');
         text('dashActiveCount', state.shifts.filter(s => state.operatingBranches.includes(s.branch) && s.active && s.status !== 'Closed').length + ' active shifts');
         el('branchTableBody').innerHTML = state.operatingBranches.map(branch => {

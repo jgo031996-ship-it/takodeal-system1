@@ -11,6 +11,8 @@ export async function saveBranchNetworkSettings(api,{id,branch,expected,wifi,pay
     return api.runTransaction(api.db,async transaction=>{
         assertCurrent();const [publicSnap,privateSnap]=await Promise.all([transaction.get(publicRef),transaction.get(privateRef)]);
         if(!publicSnap.exists()||publicSnap.data().name!==branch)throw Error('This branch changed. Reopen its settings.');
+        if (Object.hasOwn(payload,'isMallBranch') && typeof expected.mallMode==='boolean' && (publicSnap.data().isMallBranch===true)!==expected.mallMode)
+            throw Error('Mall Branch Mode changed after opening settings. Reopen this branch to verify it.');
         const prior=privateSnap.exists()?privateSnap.data():null;
         if(!!prior!==expected.exists||(prior?.wifi??null)!==expected.wifi)throw Error('Another person changed the private network settings. Reopen this branch before saving.');
         assertCurrent();
