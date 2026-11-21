@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v176-branch-notices-20261121-r2';
+const CACHE_NAME = 'takodeal-manager-core-v176-sales-recovery-20261121-r3';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -42,7 +42,7 @@ CORE_ASSETS.push('./payroll-loading.js','./payroll-attendance-reader.js','./payr
 CORE_ASSETS.push('./payroll-deduction-details.js');
 CORE_ASSETS.push('./recipe-bulk-model.js','./recipe-bulk.js','./recipe-changes.js','./sanction-schedule.js','./sanction-actions.js','./sanction-scheduling-ui.js');
 CORE_ASSETS.push('./audit-modal.css','./audit-modal-layout.js','./manager-mobile.css');
-CORE_ASSETS.push('./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');
+CORE_ASSETS.push('./sales-report-recovery.js','./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');
 CORE_ASSETS.push('./owner-stock-audits.js','./stock-audit-model.js','./stock-audit-reader.js','./stock-audit-ui.js','./stock-audit-ui.css','./payment-reconciliation-model.js','./payment-reconciliation-service.js','./payment-reconciliation-ui.js','./payment-reconciliation-ui.css','./payment-statement-file.js','./payment-statement-worker.js','./pending-payment-reader.js');
 CORE_ASSETS.push('./gcash-reconciliation-client.js');
 CORE_ASSETS.push('./commissary-model.js','./commissary-service.js','./commissary-ui.js','./commissary.css');
