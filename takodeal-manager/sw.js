@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v176-branch-duty-vault-20261121';
+const CACHE_NAME = 'takodeal-manager-core-v176-branch-notices-20261121-r2';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [

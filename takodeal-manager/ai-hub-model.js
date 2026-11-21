@@ -1,5 +1,8 @@
 // Built-in drafting: deterministic templates, never presented as a model response.
 export const DRAFT_TYPES = Object.freeze({
+    increase: {label:'Salary increase', note:'Explain the new rate and when it starts.', opening:'Your pay rate is being updated.', closing:'Please acknowledge receipt of this pay notice.'},
+    deduction: {label:'Deduction notice', note:'Explain the amount, reason and pay period.', opening:'Please review your deduction details.', closing:'Contact management with questions and acknowledge receipt.'},
+    personal: {label:'Individual notice', note:'Write privately to one staff member.', opening:'A personal update from management.', closing:'Please acknowledge receipt.'},
     notice: { label: 'Operational notice', note: 'Share a clear update with your team.', opening: 'Please review the following operational update.', closing: 'Review these instructions and acknowledge this notice.' },
     policy: { label: 'Policy & standards', note: 'Document expectations and required actions.', opening: 'The following standards apply to the selected team.', closing: 'Follow these requirements and acknowledge that you have read this notice.' },
     schedule: { label: 'Schedule update', note: 'Communicate dates, assignments, and changes.', opening: 'Please review the following schedule update.', closing: 'Check your assigned schedule. Contact your manager if a clarification is needed, then acknowledge this notice.' },
@@ -7,6 +10,14 @@ export const DRAFT_TYPES = Object.freeze({
 });
 export const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 export const cleanText = (value, max = 12000) => String(value ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim().slice(0, max);
+export const personalFormat = type => ['increase','deduction','personal'].includes(type);
+export function noticeImagePrompt(type, subject='') {
+    const idea = {increase:'a rising stack of coins and a small upward arrow to represent a pay increase', deduction:'a receipt and calculator to explain a pay adjustment, using a neutral and respectful tone', personal:'a sealed envelope at a restaurant counter for a private staff update',schedule:'a restaurant shift calendar', training:'a staff training checklist',policy:'a staff handbook'}[type] || 'a restaurant team notice board';
+    return 'Create one square illustration to accompany a TAKODEÁL staff notice. Show '+idea+'. Use a warm cream background, dark green details and a restrained orange accent. Keep the central subject clear on a phone. Include no names, faces, text, pay amounts or personal information.'+(subject.trim()?' Additional visual direction: '+subject.trim().slice(0,200)+'.':'');
+}
+export function staffNoticePrompt(brief) {
+    return 'Rewrite these supplied facts as a short, respectful private staff message. Preserve each amount, date, condition, and whether a change is proposed or confirmed. Do not invent policy, payroll periods or a reason. Address the recipient as “you”. Return only the message.\n'+JSON.stringify({format:DRAFT_TYPES[brief.type]?.label,subject:brief.title,facts:brief.facts,effectiveDate:brief.date});
+}
 export function newDraftId(crypto = globalThis.crypto) {
     return 'hub-' + (crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`);
 }
@@ -25,12 +36,12 @@ export function prepareGuidedDraft(brief, { id = newDraftId(), now = Date.now() 
     return { id, type, brief: {type, title, facts, date:brief.date || ''}, title,
         subHeadline: effective ? `Effective ${effective}` : template.label,
         message: `${template.opening}\n\n${facts}\n\n${template.closing}`,
-        footerMessage: 'TAKODEÁL Management', targetType:'All', targetBranch:'', targetStaff:'',
+        footerMessage: 'TAKODEÁL Management', targetType:personalFormat(type)?'Individual':'All', targetBranch:'', targetStaff:'',
         createdAt:now, updatedAt:now, source:'guided-template' };
 }
 export function audienceLabel(draft) {
     return draft.targetType === 'Branch' ? draft.targetBranch || 'Choose a branch'
-        : draft.targetType === 'Individual' ? draft.targetStaff || 'Choose a staff member' : 'All branches & staff';
+        : draft.targetType === 'Individual' ? draft.recipientDisplayName || draft.targetStaff || 'Choose a staff member' : 'All branches & staff';
 }
 export function canPublish(user) {
     return !!user && !user.isFranchisee && (user.isOwner || user.permissions?.includes('all') || user.permissions?.includes('bulletin'));
@@ -41,7 +52,8 @@ export function validateDraft(draft, files = []) {
     if (!cleanText(draft.message)) issues.push('Add the announcement message.');
     if (!['All','Branch','Individual'].includes(draft.targetType)) issues.push('Choose a valid audience.');
     if (draft.targetType === 'Branch' && !cleanText(draft.targetBranch)) issues.push('Choose the target branch.');
-    if (draft.targetType === 'Individual' && !cleanText(draft.targetStaff)) issues.push('Choose the target staff member.');
+    if (personalFormat(draft.type) && (draft.targetType!=='Individual' || !draft.targetStaffId)) issues.push('Select one employee for this private notice.');
+    if (draft.targetType === 'Individual' && !cleanText(draft.targetStaff) && !draft.targetStaffId) issues.push('Choose the target staff member.');
     if (String(draft.title || '').length > 180 || String(draft.message || '').length > 12000) issues.push('Keep the title within 180 characters and the message within 12,000 characters.');
     if (files.length > 8) issues.push('Attach up to 8 images.');
     if (files.some(file => !['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) issues.push('Use JPG, PNG, or WebP images up to 5 MB each.');
@@ -50,7 +62,7 @@ export function validateDraft(draft, files = []) {
 export function visibleAnnouncement(row, user) {
     if (!user) return false;
     if (!user.isFranchisee) return canPublish(user);
-    if (row.targetType === 'Individual') return row.targetStaff === user.cashierName;
+    if (row.targetType === 'Individual') return row.targetStaffId ? row.targetStaffId === user.staffId : row.targetStaff === user.cashierName;
     return !row.targetType || row.targetType === 'All' || row.targetType === 'Branch' && user.allowedBranches?.includes(row.targetBranch);
 }
 export function uniqueSignatures(rows = []) {
@@ -84,7 +96,7 @@ export function createDraftStore(storage, identity) {
         remove(id) { return write(read().filter(row => row.id !== id)); }, error:() => lastError };
 }
 export function publicationMatches(row, payload) {
-    return ['title','subHeadline','message','footerMessage','targetType','targetBranch','targetStaff','publisherUid'].every(key => (row[key] ?? null) === (payload[key] ?? null));
+    return ['title','subHeadline','message','footerMessage','targetType','targetBranch','targetStaff','targetStaffId','publisherUid'].every(key => (row[key] ?? null) === (payload[key] ?? null));
 }
 // Use one document ID for retries, with a final transaction check. A failed or
 // uncertain connection must never overwrite an existing notice or publish twice.
@@ -97,15 +109,16 @@ export async function publishReviewedDraft(draft, files, {user, uid, online, rev
     const payload = { title:cleanText(draft.title,180), subHeadline:cleanText(draft.subHeadline,300), message:cleanText(draft.message),
         footerMessage:cleanText(draft.footerMessage,300), targetType:draft.targetType,
         targetBranch:draft.targetType === 'Branch' ? cleanText(draft.targetBranch,180) : null,
-        targetStaff:draft.targetType === 'Individual' ? cleanText(draft.targetStaff,180) : null,
+        targetStaff:draft.targetType === 'Individual' && !draft.targetStaffId ? cleanText(draft.targetStaff,180) : null,
+        ...(draft.targetType === 'Individual' && draft.targetStaffId ? {targetStaffId:draft.targetStaffId,recipientDisplayName:cleanText(draft.targetStaff,180)} : {}),
         isPrivateMessage:draft.targetType === 'Individual', active:true, publisher:cleanText(user.cashierName,180) || 'Manager',
-        publisherUid:uid, source:draft.source === 'guided-template' ? 'guided-template' : 'manager-editor' };
+        publisherUid:uid, source:['guided-template','owner-ai'].includes(draft.source) ? draft.source : 'manager-editor' };
     const existing = await adapter.read(draft.id);
     if (existing) {
         if (!publicationMatches(existing, payload)) throw new Error('This draft has already been published. Start a new draft for another announcement.');
         return { id:draft.id, existing:true };
     }
     const images = [];
-    for (let i = 0; i < files.length; i++) images.push(await adapter.upload(draft.id, i, files[i]));
+    for (let i = 0; i < files.length; i++) images.push(await adapter.upload(draft.id, i, files[i], payload));
     return adapter.commit(draft.id, {...payload, images});
 }
