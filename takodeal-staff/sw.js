@@ -45,12 +45,12 @@ SHELL.push('./staff-startup.js','./staff-pay-phone.js','./staff-employee-section
 // BEGIN GENERATED STAFF COHORT
 const SHELL_INTEGRITY = {
   "./": {
-    "sha256": "7f07170939fdb90020cd74211d9e60e5e1f68a35069fc273143f0ec0f322e2d8",
-    "bytes": 112244
+    "sha256": "466c983915a3bec3dccf48e78a5f63de37f4f2ab8ecde1d283db0049f4ce4bec",
+    "bytes": 112220
   },
   "./index.html": {
-    "sha256": "7f07170939fdb90020cd74211d9e60e5e1f68a35069fc273143f0ec0f322e2d8",
-    "bytes": 112244
+    "sha256": "466c983915a3bec3dccf48e78a5f63de37f4f2ab8ecde1d283db0049f4ce4bec",
+    "bytes": 112220
   },
   "./style.css": {
     "sha256": "11146293bc253ebffa6a0d8f1dc3c72ccb6d8a6111cc789be690b898da39f763",
@@ -61,8 +61,8 @@ const SHELL_INTEGRITY = {
     "bytes": 18549
   },
   "./app.js": {
-    "sha256": "71fa571d3d056205dd4d17b53959f008ba0a0bc8e8e44ac69bb2617f6ad23ad8",
-    "bytes": 274411
+    "sha256": "41fe4039471581384780d0c9cfcd7b7e41a50edf3b16499175d5624c60201497",
+    "bytes": 276452
   },
   "./staff-portal.js": {
     "sha256": "1acd4d52f23bc52b1ec57183b2f4c4734c30b92011052b56ace6090af0daca0c",
@@ -89,8 +89,8 @@ const SHELL_INTEGRITY = {
     "bytes": 4331
   },
   "./payroll-safety.js": {
-    "sha256": "77b49f64d7f646474f7e576cf88a11804241389550502ba1f671ca50debeb375",
-    "bytes": 54991
+    "sha256": "d15ac0b1575c9e11a4372992f6505f744c1012d59f4ee75c1fc923a2f16addb2",
+    "bytes": 55220
   },
   "./schedule-history.js": {
     "sha256": "07b6752918d47cb4fa5c5cbf273d71a2f15ff5c6baf25f9ec8bfc9429915616c",
@@ -165,8 +165,8 @@ const SHELL_INTEGRITY = {
     "bytes": 8063
   },
   "./payroll-confirmed-shifts.js": {
-    "sha256": "dc96c45597badd52e8cd80a7b7f99797685af82b22098e6ab27f22b1273e601e",
-    "bytes": 11103
+    "sha256": "98db82778e2b3d85f25be31751c5e9083d847a8fa954d19d44573b369127d33d",
+    "bytes": 11149
   },
   "./payroll-bonus-templates.js": {
     "sha256": "ee39d8bb5c7be97c5a6b667cb130ae67203133baf4e290dfb1d6351b2dafce63",
@@ -365,8 +365,8 @@ const SHELL_INTEGRITY = {
     "bytes": 6300
   },
   "./staff-rate-model.js": {
-    "sha256": "0a3ff7e23d425e566005b9d2710a8058c08d4547bdee1f8bb290224f4d74b21f",
-    "bytes": 6251
+    "sha256": "8d13bc505e5cbd297bc44b16c4bf854d3a0c1e941958072e8f62ad181f123730",
+    "bytes": 7087
   },
   "./early-time-out-model.js": {
     "sha256": "a0347c704d6938827431b8b2b67e6846b1acb0024fa4bbf89d94fc0ef93bdbec",
@@ -393,8 +393,8 @@ const SHELL_INTEGRITY = {
     "bytes": 1352
   },
   "./emergency-shift-model.js": {
-    "sha256": "cd50c64ca40dcab809a62307b163cb82f280ef0cca090f97835b0e7959bc7ad4",
-    "bytes": 6703
+    "sha256": "66e3536362a29e6fc4eca8d54cc640ab03bc5a48ff35fbf4ec064d15717c5679",
+    "bytes": 6976
   },
   "./owner-deduction-model.js": {
     "sha256": "79a95c0ebbc454644542bc8a49da084f553ef36ee637c4d3cd2411f61b339326",
@@ -445,8 +445,8 @@ const SHELL_INTEGRITY = {
     "bytes": 5725
   },
   "./staff-saved-payslips.js": {
-    "sha256": "ce32ee3a52219382305ea1d373f8b6388c850e798435e55e292b4dadc80bb11b",
-    "bytes": 11436
+    "sha256": "4d1c479da66b4bcc20bf9c7914314e76bbd2f40aff2de6930afafead5cef1869",
+    "bytes": 11358
   },
   "./staff-private-profile-client.js": {
     "sha256": "b9e75aef6b78357dc81c9ef07c47b0e72498791bd589864514bc30d2a4543147",
@@ -477,7 +477,7 @@ const SHELL_INTEGRITY = {
     "bytes": 3998
   }
 };
-const COHORT_HASH = "7e409fe1e5c5c5f33c6165deb192bfcbdf1810204802336b0000f591275d5d5c";
+const COHORT_HASH = "cbc319ae8cda91311f3dcce71e6ed6daf0766c4531ed633bc7125cf2df98db84";
 // END GENERATED STAFF COHORT
 
 // Each completed cache contains one verified release. A worker never replaces
