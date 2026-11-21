@@ -39,10 +39,17 @@ export function staffRateWorkDate(log,shift){
  const expected=shift?.expectedStartAt??(!log?.scheduleSnapshot?.needsScheduleReview?log?.scheduleSnapshot?.expectedStartAt:null);
  return staffRateDate(expected||log?.timestamp||log);
 }
+export function trainingHourlyRate(profile,workDate){
+ const terms=profile?.trainingPay;if(terms==null)return null;
+ if(terms.version!==1||![5,7].includes(terms.days)||!validRateDate(terms.start)||!Number.isSafeInteger(terms.hourlyCents)||terms.hourlyCents<=0)
+  throw Error('Review the training dates and hourly rate in the employee profile.');
+ const day=(Date.parse(workDate+'T00:00:00Z')-Date.parse(terms.start+'T00:00:00Z'))/86400000;
+ return day>=0&&day<terms.days?terms.hourlyCents/100:null;
+}
 export function staffProfileForWork(profile,log,shift){
  const workDate=staffRateWorkDate(log,shift),rate=staffRateForDate(profile,workDate);
  if(rate===null&&profile?.salaryRateVersion===1)throw Error('No daily wage is recorded for '+workDate+'. Ask HQ to review salary history.');
- return {...profile,hourlyRate:rate??0,salaryWorkDate:workDate};
+ return {...profile,hourlyRate:rate??0,salaryWorkDate:workDate,trainingHourly:trainingHourlyRate(profile,workDate)};
 }
 export async function loadStaffSalaryTimeline(api,profile,{read}={}){
  if(profile?.salaryRateVersion!==1)return profile;

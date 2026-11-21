@@ -62,3 +62,10 @@ test('the actual Franchise loader filters profiles, hydrates current branch head
 test('the actual Franchise loader cannot publish a corrected preview after the branch/cutoff identity changes',async()=>{
  const f=fixture();await assert.rejects(actualLoader(f,{changed:true}),/account, branch or cutoff changed/);
 });
+
+test('a protected manager duty category is usable on its original branch and a plain manager head stays held',async()=>{
+ const f=fixture();f.confirmation.reviewedByEmail='manager@example.test';f.confirmation.reviewedByUid='fictional-manager';
+ assert.equal(f.build(await f.hydrate()).kind,'held');
+ f.confirmation.revisionId='duty-'+('c'.repeat(64));f.confirmation.dutyCategory='mid';
+ const model=f.build(await f.hydrate());assert.equal(model.kind,'estimate');assert.equal(model.totals.basic,450);
+});

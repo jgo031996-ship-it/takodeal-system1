@@ -115,3 +115,9 @@ test('actual Franchise payroll carries a bounded actual Night basis and referenc
 test('actual Night classification keeps an explicitly zero allowance and an older paid Franchise snapshot unchanged',()=>{
  const source=actualNightInput(0),model=buildFranchisePayslip(source);assert.equal(model.kind,'estimate');assert.equal(model.totals.bonus,0);assert.match(model.attendanceRows[0].remark,/actual Night work.*no additional Mid\/Night bonus configured/);const record=saved(),before=structuredClone(record),paid=buildFranchisePayslip({...source,payrollRecords:[record]});assert.equal(paid.kind,'paid');assert.equal(paid.totals.bonus,350);assert.equal(paid.totals.net,3597.5);assert.deepEqual(record,before);
 });
+
+test('read-only branch estimate uses the dated hourly rate for training and preserves paid history',()=>{
+ const trainee={...staff,trainingPay:{version:1,start:'2026-10-01',days:5,hourlyCents:4000}};
+ const model=buildFranchisePayslip(input({staff:trainee,profiles:[trainee]}));assert.equal(model.incomeRows.find(r=>r.key==='basicPay')?.amount??model.incomeRows[0].amount,340);
+ assert.match(model.attendanceRows[0].remark,/Training 8.50h/);
+});
