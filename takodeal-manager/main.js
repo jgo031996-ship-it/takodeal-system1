@@ -23973,7 +23973,7 @@ window.openEmployeeProfile = function(docId) {
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
     window.ownerEmployeePhoto?.reset();
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
-    window.staffProfileBaseline={id:docId,exists:true,rate:data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data),rateRevision:data.salaryRateRevision??null,trainingPay:structuredClone(data.trainingPay??null)};window.pendingEmployeeProfileRef=null;
+    window.staffProfileBaseline={id:docId,exists:true,rate:data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data),rateRevision:data.salaryRateRevision??null,trainingPay:data.trainingPay?{...data.trainingPay}:null};window.pendingEmployeeProfileRef=null;
 
     const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
     const setHtml = (id, val) => { let el = document.getElementById(id); if(el) el.innerHTML = val; };

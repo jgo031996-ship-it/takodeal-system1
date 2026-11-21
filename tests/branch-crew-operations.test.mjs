@@ -1,3 +1,4 @@
+import {createScheduleRevision} from '../functions/cash-remittance-review/relief-core/schedule-history.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -46,3 +47,16 @@ test('a request without departure stays open and paid cutoffs refuse a duty chan
  for(const paid of [false,true]){const {db,requestId,duty}=dutyFixture({punch:false,paid});const view=await duty('read',{requestId},owner);assert.equal(view.timeOutAt,null);const attempt=duty('save',{requestId,expected:view.expected,selection,operationId:'missing-test-00001'},owner);if(paid)await assert.rejects(attempt,/completed payslip/);else assert.equal((await attempt).recorded,false);assert.equal(db.data.get('staff_requests/'+requestId).status,'Pending');assert.equal([...db.data.keys()].filter(k=>k.startsWith('attendance_logs/')).length,1);}
 });
 test('five and seven training days include hire date and end on the correct work date',()=>{for(const days of [5,7]){const profile={trainingPay:{version:1,start:'2030-11-01',days,hourlyCents:4580}};assert.equal(trainingHourlyRate(profile,'2030-10-31'),null);assert.equal(trainingHourlyRate(profile,'2030-11-0'+days),45.8);assert.equal(trainingHourlyRate(profile,'2030-11-0'+(days+1)),null);}assert.equal(trainingHourlyRate({},'2030-11-01'),null);});
+
+test('a branch manager can select the currently plotted night duty but cannot review another branch',async()=>{
+ const {duty,db,requestId}=dutyFixture();const manager={...owner,email:'fictional.manager@example.test',uid:'manager-demo'};
+ db.data.set('hq_managers/manager',{email:manager.email,role:'Manager',permissions:['inbox'],assignedBranch:'Demo East',active:true});
+ const grant={active:true,permissions:['inbox'],allowedBranches:['Demo West']};db.data.set('hq_email_access/'+manager.email,grant);
+ await assert.rejects(duty('read',{requestId},manager),/access/);grant.allowedBranches=['Demo East'];
+ const branch='Demo East',rule={id:'night',name:'Night',shiftType:'night',startTime:'18:30',endTime:'03:00'};
+ const snapshot={currentYear:2030,currentMonth:11,branchConfig:{[branch]:[rule]},currentSchedule:{3:{[branch]:{scheduled:{night:'Fictional Crew'}}}}};
+ const revision=createScheduleRevision(snapshot,{revisionId:'demo-roster-v1',effectiveFrom:'2030-11-01',effectiveTo:'2030-11-30',savedAt:new Date('2030-10-31T16:00:00Z'),cutover:'2030-11-01'});
+ db.data.set('settings/global_schedule',snapshot);db.data.set('settings/schedule_history_policy',{payrollHistoryEnforcedFrom:'2030-11-01'});db.data.set('settings/schedule_month_2030_11',{month:'2030-11',revisionIds:[revision.revisionId],latestRevisionId:revision.revisionId,shiftAmendments:[]});db.data.set('settings/schedule_revision_'+revision.revisionId,revision);
+ const view=await duty('read',{requestId},manager);assert.equal(view.choices.length,1);const c=view.choices[0],body={requestId,expected:view.expected,operationId:'plotted-review-demo',selection:{mode:'plotted',key:c.key,fingerprint:c.sourceFingerprint}};
+ await assert.rejects(duty('save',{...body,selection:{...body.selection,fingerprint:'stale'}},manager),/changed/);await duty('save',body,manager);assert.equal(db.data.get('attendance_shift_confirmations/start').dutyCategory,'night');
+});

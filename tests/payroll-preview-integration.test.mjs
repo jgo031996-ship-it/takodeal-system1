@@ -562,3 +562,13 @@ test('November 3 leave and cover correction refreshes the unpaid payslip and rec
  const frozen=structuredClone(db.get('payroll_records/'+saved.id)),paidView=await service.inspect(context);
  assert.match(paidView.choices[0].blockers.join(' '),/paid payslip/i);assert.deepEqual(db.get('payroll_records/'+saved.id),frozen);
 });
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+' calculates hourly training pay through day five and switches to regular pay on day six',async()=>{
+  const h=harness();h.person.trainingPay={version:1,start:'2030-01-12',days:5,hourlyCents:4325};
+  h.node('payrollEnd').value='2030-01-17';h.records.attendance_logs.push(...h.logs(17));
+  await h.w[generator]();const payroll=h.w.globalPayrollCache[h.person.cashierName];
+  assert.equal(payroll.basicPay,346+450);assert.equal(payroll.logs[0].trainingHourly,43.25);assert.equal(payroll.logs[1].trainingHourly,null);
+  assert.deepEqual(Array.from(payroll.logs,x=>x.shiftBasePay),[346,450]);assert.deepEqual(h.writes,[]);
+ });
+}
