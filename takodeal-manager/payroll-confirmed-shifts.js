@@ -3,7 +3,7 @@
 // this evidence before using the reviewed hours.
 import {attendanceKind,attendanceMillis,linkedAttendanceHistory} from './attendance-reconcile.js';
 import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
-import {resolveEmergencyShift} from './emergency-shift-model.js';
+import {serverReviewedDuty,resolveEmergencyShift} from './emergency-shift-model.js';
 // A payroll profile may have a new surname after both the punch and approval were recorded.
 export function resolvePayrollConfirmedHours(start,person,head){
  const sameId=start?.staffId&&start.staffId===(person?.staffId||person?.id)&&start.staffId===head?.staffId;
@@ -70,7 +70,7 @@ export async function loadPayrollShiftConfirmations(api,input,{assertCurrent=()=
    assertCurrent();if(typeof api.getDocFromServer!=='function')throw Error(message);
    const snapshot=fresh(await readDocument(api.doc(api.db,'attendance_shift_confirmations',start.id)),start.id);assertCurrent();const head=snapshot.exists()?snapshot.data():null;
    proof.confirmationFingerprint=await fingerprint(head);assertCurrent();
-   if(head){if(head.reviewedByEmail!==OWNER_EMAIL)throw Error('The saved assigned hours need Owner review before they can change unpaid payroll.');resolvePayrollConfirmedHours(start,person,head);confirmations[start.id]=head;}
+   if(head){if(head.reviewedByEmail!==OWNER_EMAIL&&!serverReviewedDuty(head))throw Error('The saved assigned hours need Owner review before they can change unpaid payroll.');resolvePayrollConfirmedHours(start,person,head);confirmations[start.id]=head;}
   }catch(error){assertCurrent();errors[start.id]=error.message||message;proof.readFailed=!proof.confirmationFingerprint;proof.reviewRequired=true;}
   assertCurrent();evidence.push(proof);
  });
@@ -104,5 +104,15 @@ export async function assertPayrollShiftConfirmationsFresh(api,data,rows,{assert
    for(let index=0;index<outs.length;index++){fresh(outs[index],proof.departures[index].id);if(!outs[index].exists()||await fingerprint(attendanceEvidence({...outs[index].data(),id:outs[index].id}))!==proof.departures[index].fingerprint)throw Error('The saved actual Time Out changed. Generate this unpaid payroll again before payment.');}
    assertCurrent();
   }
+ }));
+}
+
+export async function checkDutyDuringPayment(tx,ref,data){
+ if(!data.scheduleEvidenceStamp)return;
+ const rows=JSON.parse(data.scheduleEvidenceStamp).payrollConfirmations||[];
+ const selected=rows.filter(row=>row.staffId===data.staffId);
+ await Promise.all(selected.map(async row=>{
+  const snap=await tx.get(ref('attendance_shift_confirmations',row.attendanceLogId));
+  if(row.reviewRequired||row.readFailed||await fingerprint(snap.exists()?snap.data():null)!==row.confirmationFingerprint)throw Error('The assigned duty changed. Regenerate this unpaid payslip.');
  }));
 }

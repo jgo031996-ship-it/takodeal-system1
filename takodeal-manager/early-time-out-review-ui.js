@@ -1,6 +1,5 @@
 import {staffShiftProposalHTML,staffShiftProposalIdentity} from './saved-shift-proposal.js';
 import {createEarlyTimeOutReviewService,canReviewEarlyTimeOut} from './early-time-out-review.js';
-import {canCorrectOwnerTimeOut} from './owner-time-out-correction.js';
 import {EARLY_TIME_OUT_MESSAGE_TEMPLATES,earlyTimeOutMessageTemplate} from './early-time-out-message-templates.js';
 import {invalidatePayrollLoad} from './payroll-loading.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -26,7 +25,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
   const shiftPreview=dialog.querySelector('[data-shift-preview]'),proposalChoice=dialog.querySelector('[data-proposal-choice]'),proposalMode=dialog.querySelector('[data-proposal-mode]');
   const proposedFields=proposal=>{if(!proposal)return;const clock=value=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(value)).map(part=>[part.type,part.value]));return parts.hour+':'+parts.minute;};shiftDate.value=proposal.workDate;shiftStart.value=clock(proposal.expectedStartAt);shiftEnd.value=clock(proposal.expectedEndAt);shiftName.value=proposal.shiftName;};
   const openAttendance=dialog.querySelector('[data-open-attendance]'),openSchedule=dialog.querySelector('[data-open-schedule]'),openReplacement=dialog.querySelector('[data-open-replacement]');
-  const correctTimeOut=d.createElement('button');correctTimeOut.type='button';correctTimeOut.textContent='Accept reason & record Time Out';correctTimeOut.hidden=true;correctTimeOut.setAttribute('data-correct-timeout','');dialog.querySelector('footer').append(correctTimeOut);
+  const correctTimeOut=d.createElement('button');correctTimeOut.type='button';correctTimeOut.textContent='Choose duty schedule';correctTimeOut.hidden=true;correctTimeOut.setAttribute('data-correct-timeout','');dialog.querySelector('footer').append(correctTimeOut);
   const draftKey=key+'|'+requestId,savedDraft=correctionDrafts.get(draftKey);if(savedDraft){proposalMode.value=savedDraft.proposalDecision||'Use proposed shift';reply.value=savedDraft.reply;messageTemplate.value=savedDraft.template;for(const [index,field]of shiftFields.entries())field.value=savedDraft.fields[index]||'';}
   let busy=false,loading=false,row=null,navigationRow=null,inspection=null,timer,shiftOperation=null,lastShiftIntent=null,confirmedReplacement=false,acknowledgedShift=null,completionAttempt=null,chainBlocked=false,editingReplacement=false,completionHeld=false;
   const current=()=>token===generation&&dialog.open&&identity()===key;
@@ -51,7 +50,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
   const replacementReady=()=>!(!row?.staffShiftProposal?false:proposalMode.value==='Owner-confirmed hours'?w.sessionUser?.isOwner!==true:!inspection?.staffShiftProposal)&&validWorkDate(shiftDate.value)&&wallMinutes(shiftStart.value)!==null&&wallMinutes(shiftEnd.value)!==null&&reply.value.trim().length>=8&&reply.value.trim().length<=1500;
   const controls=()=>{
    const repairing=replacementAction(),continuing=!!acknowledgedShift||!!completionAttempt;
-   const canCorrect=!!recoveryContext()&&typeof w.openOwnerTimeOutCorrection==='function'&&canCorrectOwnerTimeOut(w,(row||navigationRow)?.branch);correctTimeOut.hidden=!canCorrect;correctTimeOut.disabled=busy||loading||!current()||!canCorrect;
+   const canCorrect=!!recoveryContext()&&typeof w.openOwnerTimeOutCorrection==='function'&&canReviewEarlyTimeOut(w,(row||navigationRow)?.branch);correctTimeOut.hidden=!canCorrect;correctTimeOut.disabled=busy||loading||!current()||!canCorrect;
    confirm.textContent=completionAttempt?'Retry finish review':acknowledgedShift?(completionHeld&&!completingReview()?'Review pending':'Retry finish review'):repairing?'Save hours & finish review':completingReview()?'Confirm review':decision==='Approved'?'Approve early time-out':'Reject request';
    confirm.disabled=busy||loading||!current()||chainBlocked||!(completionAttempt||continuing&&(!completionHeld||completingReview())||repairing&&replacementReady()||!repairing&&(eligible()||completingReview()));
    dismiss.hidden=!dismissible()||completingReview()||continuing;dismiss.disabled=busy||loading||!current()||!dismissible()||chainBlocked;
@@ -110,7 +109,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
     else if(checked.scheduleChanged){status.textContent='The verified saved schedule differs from this request. Review the verified scheduled finish shown here; the old request cannot authorize early Time Out.';status.setAttribute('role','alert');guidance.textContent=checked.emergencyShift?'Ask staff to refresh and reopen Time Out to submit a request for the confirmed replacement shift. If they are still leaving early, review that new request separately. Actual attendance and worked hours remain on file.':'Staff should retry Time Out using the current saved schedule. Actual attendance and worked hours remain on file.';}
     else if(checked.early){status.textContent='The saved schedule confirms that this shift has not reached its scheduled finish. Review the staff member and reason before confirming.';guidance.textContent='Approval permits early clock-out for up to 30 minutes. It does not end the shift. Staff must tap Time Out when they finish; actual recorded hours remain on file.';}
     else{inspection={...checked,unknown:true};status.textContent='The saved schedule result could not confirm whether early approval is needed. Retry the schedule check.';status.setAttribute('role','alert');retry.hidden=false;}
-    if(!checked.closed)guidance.textContent+=' To accept the reason and record a departure together, use Accept reason & record Time Out. Check the actual date and time in that review.';
+    if(!checked.closed)guidance.textContent+=' Use Choose duty schedule to review plotted hours or an emergency schedule alongside the recorded punches.';
     dismiss.hidden=!dismissible()||completingReview();
     if(afterConfirmation)status.textContent='Replacement shift saved. '+status.textContent;
     return true;
@@ -178,7 +177,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
    finally{busy=false;if(dialog.open)controls();}
   }
   confirm.onclick=()=>acknowledgedShift||completionAttempt||replacementAction()?saveReplacementAndFinish():save(completingReview());dismiss.onclick=()=>save(true);retry.onclick=()=>completionAttempt?saveReplacementAndFinish():inspect();
-  correctTimeOut.onclick=()=>{if(busy||loading||!current()||!recoveryContext()||!canCorrectOwnerTimeOut(w,(row||navigationRow).branch)||typeof w.openOwnerTimeOutCorrection!=='function')return;const saved=recoveryContext();correctionDrafts.set(draftKey,{reply:reply.value,template:messageTemplate.value,fields:shiftFields.map(field=>field.value),proposalDecision:proposalMode.value});while(correctionDrafts.size>20)correctionDrafts.delete(correctionDrafts.keys().next().value);dialog.close();return w.openOwnerTimeOutCorrection({...saved,reviewNote:reply.value.trim(),onReturn:()=>identity()===key?review(requestId,decision):undefined});};
+  correctTimeOut.onclick=()=>{if(busy||loading||!current()||!recoveryContext()||!canReviewEarlyTimeOut(w,(row||navigationRow).branch)||typeof w.openOwnerTimeOutCorrection!=='function')return;const saved=recoveryContext();correctionDrafts.set(draftKey,{reply:reply.value,template:messageTemplate.value,fields:shiftFields.map(field=>field.value),proposalDecision:proposalMode.value});while(correctionDrafts.size>20)correctionDrafts.delete(correctionDrafts.keys().next().value);dialog.close();return w.openOwnerTimeOutCorrection({...saved,reviewNote:reply.value.trim(),onReturn:()=>identity()===key?review(requestId,decision):undefined});};
   openAttendance.onclick=()=>navigate('attendance');openSchedule.onclick=()=>navigate('schedule');openReplacement.onclick=()=>{if(busy||loading||!current()||!replacementEligible())return;shiftPanel.open=true;editingReplacement=!!inspection?.emergencyShift;controls();shiftPanel.scrollIntoView?.({block:'nearest'});shiftPanel.querySelector('summary')?.focus?.();};
   await inspect();
  }

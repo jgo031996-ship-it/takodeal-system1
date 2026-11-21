@@ -1,3 +1,5 @@
+import {createCoinStash} from './coin-stash.mjs';
+import {createDutyReview} from './duty-review.mjs';
 import {initializeApp,getApps} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
@@ -63,4 +65,20 @@ export const syncOperationalStaffDirectory=onDocumentWritten({...directoryRuntim
 export const syncCompanyHQAccess=onDocumentWritten({...directoryRuntime,document:'hq_managers/{profileId}'},()=>accessIndex.syncHQ());
 export const cashRemittanceReview=onRequest({region:'asia-southeast1',memory:'256MiB',cpu:1,concurrency:4,minInstances:0,maxInstances:2,timeoutSeconds:60,cors:false,invoker:'public',serviceAccount:'cash-remittance-review@takodeal-pos.iam.gserviceaccount.com'},async(request,response)=>{
  const route=request.path.startsWith('/staff-self-service/')?staffSelfServiceHandle:request.path.startsWith('/cashier-void/')?cashierVoidHandle:request.path.startsWith('/staff-private-profile/')?staffPrivateProfileHandle:request.path.startsWith('/document-metadata/')?documentMetadataHandle:request.path.startsWith('/gcash-reconciliation/')?gcashHandle:request.path.startsWith('/owner-time-out/')?ownerTimeOutHandle:request.path.startsWith('/relief-hours/')?reliefHandle:request.path.startsWith('/access/')?accessHandle:request.path==='/staff-loan-ledger'?loanHandle:request.path.startsWith('/prep/')?prepHandle:request.path.startsWith('/rider-access/')?riderHandle:request.path.startsWith('/hq-upload/')?hqUploadHandle:request.path==='/customer-public/reviews'?customerPublicHandle:handle;const result=await route({method:request.method,path:request.path,query:request.query,origin:request.get('Origin'),contentType:request.get('Content-Type'),authorization:request.get('Authorization'),rawSize:request.rawBody?.length,body:request.body,trustedIP:request.socket?.remoteAddress,preflightMethod:request.get('Access-Control-Request-Method'),preflightHeaders:request.get('Access-Control-Request-Headers')});response.status(result.status).set(result.headers);if(result.body===null)response.end();else response.json(serialize(result.body));
+});
+
+const stashOperations=createCoinStash(db,{serverTimestamp}),dutyOperations=createDutyReview(db,{serverTimestamp});
+export const branchCrewOperations=onRequest({region:'asia-southeast1',memory:'256MiB',cpu:1,concurrency:4,minInstances:0,maxInstances:2,timeoutSeconds:60,cors:false,invoker:'public',serviceAccount:'cash-remittance-review@takodeal-pos.iam.gserviceaccount.com'},async(req,res)=>{
+ const origin=req.get('Origin'),owner=origin==='https://takodeal-owner.vercel.app';
+ res.set({'Cache-Control':'no-store','Vary':'Origin'});
+ if(!owner&&origin!=='https://takodeal-cashier.vercel.app')return res.status(403).json({error:'Open the production branch app.'});
+ res.set({'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type'});
+ if(req.method==='OPTIONS')return res.status(204).end();
+ if(req.method!=='POST'||!req.is('application/json')||!req.body||Array.isArray(req.body)||typeof req.body!=='object'||req.rawBody?.length>20000)return res.status(400).json({error:'Invalid branch operation.'});
+ const match=/^\/(stash|duty)\/(read|configure|fund|spend|save)$/.exec(req.path),bearer=/^Bearer (\S+)$/.exec(req.get('Authorization')||'');
+ if(!bearer)return res.status(401).json({error:'Sign in again.'});
+ let actor;try{actor=await verifyToken(bearer[1],true);}catch{return res.status(401).json({error:'Sign in again.'});}
+ if(!match||match[1]==='duty'&&!owner)return res.status(403).json({error:'This action is unavailable.'});
+ try{const result=match[1]==='stash'?await stashOperations(match[2],req.body,actor,owner):await dutyOperations(match[2],req.body,actor);return res.status(200).json(result);}
+ catch(e){const status=Number.isInteger(e.status)&&e.status>=400&&e.status<500?e.status:409;return res.status(status).json({error:e.code?'HQ could not verify this operation. Refresh and retry.':e.message||'The branch operation could not be confirmed.'});}
 });

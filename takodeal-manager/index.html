@@ -5573,6 +5573,10 @@
                 <div>
                     <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Daily Rate (₱) *</label>
                     <input type="number" id="empHourlyRate" placeholder="e.g. 450" style="width: 100%; padding: 12px; border: 2px solid #16a34a; background: white; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #15803d; font-size: 18px; outline: none;">
+                    <fieldset style="margin:12px 0;padding:12px;border:1px solid #d2dfd2;border-radius:6px"><legend>Hourly training pay</legend>
+                      <label>Training period <select id="empTrainingDays"><option value="">Regular pay</option><option value="5">First 5 calendar days from hire</option><option value="7">First 7 calendar days from hire</option></select></label>
+                      <label>Training rate (₱ per worked hour) <input id="empTrainingHourly" type="number" min="0.01" step="0.01"></label>
+                    </fieldset>
                     <label for="empRateEffectiveDate" style="display:block;margin:12px 0 5px;font-size:12px;font-weight:700;color:#526b59">Salary effective date *</label>
                     <input type="date" id="empRateEffectiveDate" required aria-describedby="empRateEffectiveHelp" style="width:100%;padding:11px;border:1px solid #d2dfd2;border-radius:6px;color:#244b35;background:white">
                     <p id="empRateEffectiveHelp" style="font-size:11px;line-height:1.5;color:#71816e;margin-top:6px">This rate starts on the selected Philippine work date. Earlier shifts keep their previous rate; saved paid payslips stay unchanged.</p>
@@ -5820,7 +5824,7 @@
               <div style="display: flex; gap: 10px;" class="payslip-toolbar-actions">
                   <button type="button" id="btnPreparePayrollMessenger" hidden style="background:#14594b;color:white;border:1px solid #cdded1;padding:8px 15px;border-radius:6px;font-weight:bold;cursor:pointer">Prepare Messenger</button>
                   <button type="button" onclick="window.checkCurrentSavedPayroll()" id="btnCheckSavedPayslip" style="background:#fff;color:#14594b;border:1px solid #cdded1;padding:8px 15px;border-radius:6px;font-weight:bold;cursor:pointer">Check saved payment</button>
-                  <button type="button" onclick="window.saveAndShareStaffPayslip()" id="btnShareStaffPayslip" hidden style="background:#14594b;color:white;border:1px solid #cdded1;padding:8px 15px;border-radius:6px;font-weight:bold;cursor:pointer">Save &amp; share payslip</button>
+                  <small id="staffPayslipSync" role="status" aria-live="polite"></small>
                   <button onclick="window.finalizePayslip()" id="btnFinalizePayslip" style="background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s;">✅ Mark Paid & Auto-Deduct</button>
                   <button onclick="window.downloadPayslipImage()" id="btnDownloadPayslip" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">⬇️ Download Image</button>
                   <button onclick="document.getElementById('payslipModal').style.display='none'" style="background: transparent; color: white; border: 1px solid white; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✖ Close</button>

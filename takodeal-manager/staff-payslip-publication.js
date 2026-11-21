@@ -1,10 +1,11 @@
 import {OWNER_EMAIL} from './workspace-access-model.js';
-import {dailyStaffRate,validRateDate} from './staff-rate-model.js';
+import {sameTrainingTerms,dailyStaffRate,validRateDate} from './staff-rate-model.js';
 import {payslipSavedAmounts,savedPayslipCents} from './staff-payslip-snapshot.js';
 import {savedPayrollAdjustmentDetails} from './payroll-adjustment-model.js';
 import {payrollRecoveryDetails} from './payroll-recovery-model.js';
+const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])])):value;
 const pending=new WeakMap(),clone=value=>JSON.parse(JSON.stringify(value)),text=value=>typeof value==='string'?value.trim():'';
-const readDeadline=promise=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('The saved payslip check took too long. Reconnect and reopen Save & share.')),25000);})]).finally(()=>clearTimeout(timer));};
+const readDeadline=promise=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('The saved payslip check took too long. Reconnect and reopen the payslip.')),25000);})]).finally(()=>clearTimeout(timer));};
 const id=value=>{if(typeof value!=='string'||!/^[-\w]{1,180}$/.test(value))throw Error('Reopen the saved employee before sharing a payslip.');return value;};
 export function staffPayslipPreviewId(staffId,start,end){id(staffId);if(!validRateDate(start)||!validRateDate(end)||start>end)throw Error('Choose the exact payslip cutoff.');return staffId+'-'+start+'-'+end;}
 const fields=['basicPay','nightBonus','straightBonus','holidayPayTotal','perfBonus','payrollAdjustments','lateDeduction','sss','philhealth','pagibig','advances','meals','loans','onlineRefunds','cashShortages','ownerDeductions'];
@@ -35,8 +36,9 @@ export function prepareSharedPayslip(data,finalNetPay){
   profile.staffId=staffId;profile.customDeductions=customDeductions;
   const snapshot={staffId,name:text(data.name),branch:text(data.branch),start,end,isPaid:false,...Object.fromEntries(fields.map(key=>[key,amounts[key]])),
     customDeductions,customDeductionsTotal:customTotal/100,grossPay:gross/100,totalDeductions:deducted/100,finalNetPay:net/100,profile,
-    logs:(Array.isArray(data.logs)?data.logs:[]).map(row=>safeRow(row,['date','dateString','in','out','hrs','remark','branch','attendanceLogId','timeInAt','timeOutAt','expectedStartAt','expectedEndAt','scheduleSource','scheduleRevisionId','lateMins','rateWorkDate','dailyRate','nightBonus','bonusBasis','bonusReviewReason'])),
+    logs:(Array.isArray(data.logs)?data.logs:[]).map(row=>safeRow(row,['date','dateString','in','out','hrs','remark','branch','attendanceLogId','timeInAt','timeOutAt','expectedStartAt','expectedEndAt','scheduleSource','scheduleRevisionId','lateMins','rateWorkDate','dailyRate','trainingHourly','shiftBasePay','nightBonus','bonusBasis','bonusReviewReason'])),
     ...safeRow(data,['hours','shiftsWorked','penalties'])};
+  if(data.vaultOverrides)snapshot.vaultOverrides=Object.fromEntries(Object.entries(data.vaultOverrides).filter(([key,value])=>(fields.includes(key)||/^custom-\d+$/.test(key))&&Number.isFinite(value)&&value>=0));
   for(const name of ['deductionDetails','onlineRefundRows','cashShortageRows','ownerDeductionDetails'])if(Array.isArray(data[name]))snapshot[name]=safeDetails(data[name]);
   if(data.deductionDetailsVersion===1)snapshot.deductionDetailsVersion=1;
   snapshot.payrollAdjustmentRows=savedPayrollAdjustmentDetails(data).rows;
@@ -91,9 +93,11 @@ export function publishStaffPayslip(api,{data,finalNetPay,expectedRevision,asser
       if(paid.some(row=>row.exists()))throw Error('This cutoff already has a saved payroll record. Open its paid payslip; shared drafts cannot replace it.');
       if(!person.exists()||text(person.data().cashierName||person.data().fullName||person.data().name)!==copied.name||person.data().branch!==copied.branch)throw Error('The saved employee identity or branch changed. Reopen payroll.');
       const live=person.data(),profile=copied.profile||{};
+      if(!sameTrainingTerms(live.trainingPay,profile.trainingPay))throw Error('Training terms changed. Regenerate this unpaid payslip.');
       if(profile.salaryRateVersion===1?live.salaryRateVersion!==1||live.salaryRateRevision!==profile.salaryRateRevision:live.salaryRateVersion===1||dailyStaffRate(live)===null||dailyStaffRate(live)!==dailyStaffRate(profile))throw Error('Salary details changed. Generate a fresh payslip before sharing.');
       const before=saved.exists()?saved.data():null;
-      if((before?.revision||0)!==expectedRevision||before&&(before.staffId!==copied.staffId||before.startDate!==copied.start||before.endDate!==copied.end))throw Error('Another saved payslip changed while you reviewed it. Reopen Save & share before replacing it.');
+      if(before&&before.staffId===copied.staffId&&before.startDate===copied.start&&before.endDate===copied.end&&[expectedRevision,expectedRevision+1].includes(before.revision)&&before.finalNetPay===prepared.finalNetPay&&JSON.stringify(canonical(before.snapshot))===JSON.stringify(canonical(prepared.snapshot)))return {id:key,revision:before.revision,...prepared};
+      if((before?.revision||0)!==expectedRevision||before&&(before.staffId!==copied.staffId||before.startDate!==copied.start||before.endDate!==copied.end))throw Error('Another saved payslip changed while you reviewed it. Reopen the payslip to load the latest saved figures.');
       const record={schemaVersion:1,kind:'owner-shared-payslip',status:'Published',staffId:copied.staffId,staffName:copied.name,branch:copied.branch,startDate:copied.start,endDate:copied.end,
         revision:expectedRevision+1,publishedAt:api.serverTimestamp(),publishedByUid:api.auth.currentUser.uid,publishedByEmail:api.auth.currentUser.email.toLowerCase(),snapshot:prepared.snapshot,finalNetPay:prepared.finalNetPay};
       guard();tx.set(ref('staff_payslip_previews',key),record);

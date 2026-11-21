@@ -1,6 +1,4 @@
 import {readStaffPayslipPublication,publishStaffPayslip,prepareSharedPayslip} from './staff-payslip-publication.js';
-const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=value=>'₱'+value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fields={loans:'psLoans',advances:'psAdvance',meals:'psFoods',lateDeduction:'psLate',sss:'psSSS',philhealth:'psPhil',pagibig:'psPagibig',straightBonus:'psStraightBonus',perfBonus:'psPerfBonus',holidayPayTotal:'psHoliday',basicPay:'psBasicPay',nightBonus:'psOvertime'};
 function number(node,{negative=false}={}){
  if(!node)throw Error('Update the Owner app and reopen the full payslip before sharing it.');
@@ -17,30 +15,63 @@ export function captureOwnerPayslip(d,data){
  return {data:{...data,...amounts,customDeductions:custom,customDeductionsTotal:Math.round(custom.reduce((sum,row)=>sum+row.amount,0)*100)/100,profile:{...data.profile,customDeductions:custom}},finalNetPay:number(d.getElementById('psNetPay'),{negative:true})};
 }
 export function installOwnerPayslipSharing(w,d,{actorKey,assertFresh,read=readStaffPayslipPublication,publish=publishStaffPayslip}={}){
- if(w.staffPayslipSharing)return w.staffPayslipSharing;
- if(typeof actorKey!=='function'||typeof assertFresh!=='function')throw Error('Payslip sharing needs the existing payroll verification checks.');
- let busy=false,currentView=null;
- const button=()=>d.getElementById('btnShareStaffPayslip');
- const owner=()=>{const user=w.auth?.currentUser;return user?.email?.toLowerCase()==='jgo031996@gmail.com'&&user.emailVerified===true&&user.providerData?.some(row=>row.providerId==='google.com')&&w.sessionUser?.uid===user.uid&&w.sessionUser?.isOwner===true&&!w.sessionUser?.isFranchisee;};
- const eligible=data=>owner()&&data&&!data.isPaid&&!w.paidPayrollSnapshots?.has(data)&&!data.attendanceReviewRequired&&!data.salaryReviewRequired;
- function sync(data,{history=false}={}){currentView={data,history};const node=button();if(node){node.hidden=history||!eligible(data);node.disabled=busy||!!w.payrollPaymentPending;node.textContent='Save & share payslip';}}
- async function share(){
-  const data=w.currentPayslipData;if(busy||w.payrollPaymentPending||!eligible(data))return false;
-  let key,token,saved=false;const user=w.auth.currentUser,session=w.sessionUser;
-  const owns=()=>w.currentPayslipData===data&&w.auth.currentUser===user&&w.sessionUser===session;
-  busy=true;if(button()){button().disabled=true;button().textContent='Checking payslip…';}
-  try{
-   key=actorKey();token=w.requirePayrollPreview(data);
-   const current=()=>{w.getPayrollPreviewGuard().assertCurrent(token);w.requirePayrollPreview(data);if(!owns()||!eligible(data)||actorKey()!==key||w.payrollPaymentPending||d.getElementById('payslipModal')?.style.display==='none')throw Error('The selected payslip, account or payment state changed. Reopen Save & share.');};
-   current();w.recalcPayslip?.();const captured=captureOwnerPayslip(d,data),prepared=prepareSharedPayslip(captured.data,captured.finalNetPay),intent=JSON.stringify(prepared);
-   const unchanged=()=>{current();const next=captureOwnerPayslip(d,data);if(JSON.stringify(prepareSharedPayslip(next.data,next.finalNetPay))!==intent)throw Error('Payslip amounts changed. Review them and choose Save & share again.');};
-   await assertFresh(data);unchanged();const prior=await read(w,{data:captured.data,assertCurrent:unchanged});unchanged();
-   const choice=await w.Swal.fire({title:prior.revision?'Update the shared payslip?':'Share this payslip with staff?',html:'<p><strong>'+esc(data.name)+'</strong><br>'+esc(data.start)+' → '+esc(data.end)+'</p><p>Gross income: <strong>'+money(prepared.grossPay)+'</strong><br>Deductions: <strong>'+money(prepared.totalDeductions)+'</strong><br>Net pay: <strong>'+money(prepared.finalNetPay)+'</strong></p><p>This saves the reviewed figures for the Staff Vault. Payment is a separate action.</p>',showCancelButton:true,confirmButtonText:prior.revision?'Save updated payslip':'Save & share',focusConfirm:false});
-   if(!choice.isConfirmed)return false;unchanged();if(button())button().textContent='Sharing reviewed payslip…';await assertFresh(data);unchanged();
-   const result=await publish(w,{...captured,expectedRevision:prior.revision,assertCurrent:unchanged});unchanged();saved=true;
-   await w.Swal.fire({title:'Payslip shared',text:'Revision '+result.revision+' is saved. Staff can refresh their unlocked Payslip Vault to see these exact figures.',icon:'success'});return result;
-  }catch(error){if(owns())await w.Swal.fire({title:saved?'Payslip saved; reopen to review':'Payslip sharing was not confirmed',text:error.message||'Reconnect and check the saved revision before retrying.',icon:'warning'});return false;}
-  finally{busy=false;if(currentView?.data===w.currentPayslipData)sync(currentView.data,{history:currentView.history});}
+ let view=null;
+ const status=(v,message)=>{if(view===v&&w.currentPayslipData===v.data){const el=d.getElementById('staffPayslipSync');if(el)el.textContent=message;}};
+ const permitted=()=>{const user=w.auth?.currentUser;return user?.email?.toLowerCase()==='jgo031996@gmail.com'&&user.emailVerified===true&&w.sessionUser?.isOwner===true&&w.sessionUser.uid===user.uid;};
+ function inputs(){return [...Object.entries(fields).map(([key,id])=>[key,d.getElementById(id)]),...Array.from(d.querySelectorAll('.ps-dynamic-deduction'),(node,i)=>['custom-'+i,node])];}
+ function sync(data,{history=false}={}){
+  view=null;const label=d.getElementById('staffPayslipSync');if(label)label.textContent='';
+  if(history||!permitted()||!data||data.isPaid||w.paidPayrollSnapshots?.has(data)||data.attendanceReviewRequired||data.salaryReviewRequired)return;
+  const v={data,actor:actorKey(),token:w.requirePayrollPreview(data),revision:0,touched:new Set(),overrides:{},queue:Promise.resolve(),ready:false};
+  view=v;status(v,'Checking Staff Vault…');
+  const guard=()=>{if(!permitted()||actorKey()!==v.actor||w.paidPayrollSnapshots?.has(data)||data.isPaid)throw Error('The payroll account or payment changed. Reopen the payslip.');w.getPayrollPreviewGuard().assertCurrent(v.token);};
+  const capture=()=>{const c=captureOwnerPayslip(d,data);c.data.vaultOverrides={...v.overrides};return c;};
+  function enqueue(c){
+   v.latest=c;
+   const send=async()=>{guard();const prepared=prepareSharedPayslip(c.data,c.finalNetPay),intent=JSON.stringify(prepared.snapshot);
+    if(intent===v.last)return;
+    status(v,'Syncing to Staff Vault…');await assertFresh(data);guard();
+    const result=await publish(w,{...c,expectedRevision:v.revision,assertCurrent:guard});
+    v.revision=result.revision;v.last=intent;status(v,'Staff Vault synced · Unpaid');};
+   v.queue=v.queue.catch(()=>{}).then(send);v.queue.catch(error=>status(v,'Vault sync pending · '+error.message));return v.queue;
+  }
+  function changed(node){
+   const pair=inputs().find(([,el])=>el===node);if(!pair)return;
+   const [key]=pair;v.touched.add(key);
+   try{v.overrides[key]=number(node);if(v.ready){w.recalcPayslip();void enqueue(capture());}}catch(error){status(v,error.message);}
+  }
+  v.changed=changed;
+  v.retry=()=>v.ready&&v.latest?enqueue(v.latest):sync(data);
+  v.open=Promise.resolve().then(async()=>{
+   const previous=await read(w,{data,assertCurrent:guard});guard();if(view!==v)return;
+   v.revision=previous.revision;const snap=previous.publication?.snapshot;
+   const prior=snap?.vaultOverrides||{};
+   for(const [key,node] of inputs()){
+    if(!node||node.tagName!=='INPUT'||v.touched.has(key))continue;
+    const value=Object.hasOwn(prior,key)?prior[key]:undefined;
+    if(Number.isFinite(value)&&value>=0){node.value=String(value);v.overrides[key]=value;}
+   }
+   w.recalcPayslip();v.ready=true;
+   if(snap&&!snap.vaultOverrides&&!v.touched.size){
+    // A draft from the manual-share release has no per-field edit history.
+    // Restore the saved editable amounts only when it refers to the same punches.
+    const punches=logs=>(logs||[]).map(x=>[x.attendanceLogId,x.timeInAt,x.timeOutAt]);
+    if(JSON.stringify(punches(snap.logs))===JSON.stringify(punches(data.logs))){
+     for(const [key,node] of inputs()){
+      const val=key.startsWith('custom-')?snap.customDeductions?.[Number(key.slice(7))]?.amount:snap[key];
+      if(node?.tagName==='INPUT'&&Number.isFinite(val)&&number(node)!==val){node.value=String(val);v.overrides[key]=val;}
+     }
+     w.recalcPayslip();
+    }
+   }
+   v.last=snap?JSON.stringify(snap):null;const next=capture();
+   if(JSON.stringify(prepareSharedPayslip(next.data,next.finalNetPay).snapshot)===v.last){status(v,'Staff Vault synced · Unpaid');return;}
+   await enqueue(next);
+  });
+  v.open.catch(error=>status(v,'Vault sync pending · '+error.message));
  }
- const controller={sync,share};w.staffPayslipSharing=controller;w.saveAndShareStaffPayslip=share;return controller;
+ d.addEventListener('change',event=>{if(view&&w.currentPayslipData===view.data)view.changed(event.target);});
+ w.addEventListener?.('online',()=>{if(view&&w.currentPayslipData===view.data&&!w.payrollPaymentPending)void view.retry();});
+ const controller={sync,async beforePayment(data){const v=view;if(v?.data===data){if(!v.ready)await v.open;if(!v.ready)throw Error('Reopen the payslip to load the saved Staff Vault figures.');await v.queue;}}};
+ w.staffPayslipSharing=controller;return controller;
 }

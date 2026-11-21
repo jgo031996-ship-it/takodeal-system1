@@ -1,3 +1,4 @@
+import {sameTrainingTerms} from './staff-rate-model.js';
 import {protectStaffEdits,watchEmployeeProfile} from './employee-profile-sync.js';
 import {resolveHQAccount} from './hq-account-model.js';
 import {createWorkspaceSession,canOpenHrTab,OWNER_EMAIL} from './workspace-access-model.js';
@@ -36,7 +37,7 @@ function authorized(api,actor,account,branches,access) {
     if(session.email!==OWNER_EMAIL && !session.allowedBranches.includes('All') && branches.some(branch=>!session.allowedBranches.includes(branch)))throw Error('The staff branch is outside your assigned access.');
     protectedAccess(actor,access,branches);
 }
-export async function saveStaffProfileAtomic(api,staffId,payload,{operationId,expectedRate,expectedExists,expectedRateRevision,expectedShared,expectedPinVersion,effectiveDate,now=()=>new Date()}={}) {
+export async function saveStaffProfileAtomic(api,staffId,payload,{operationId,expectedTraining,expectedRate,expectedExists,expectedRateRevision,expectedShared,expectedPinVersion,effectiveDate,now=()=>new Date()}={}) {
     if(!staffId || staffId.includes('/') || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId || ''))throw Error('Open a new staff profile save.');
     const nextRate=dailyStaffRate(payload);
     if(nextRate==null || !text(payload.cashierName) || !text(payload.branch))throw Error('Enter a staff name, branch and valid daily rate.');
@@ -57,6 +58,7 @@ export async function saveStaffProfileAtomic(api,staffId,payload,{operationId,ex
         authorized(api,actor,fresh,[payload.branch,...(old?.branch?[old.branch]:[])],freshAccess);
         if(audit.exists()) {const previous=audit.data();if(previous.actorUid!==actor.uid || previous.staffId!==staffId || previous.inputHash!==inputHash)throw Error('This save reference belongs to different staff edits. Reopen the profile.');return {staffId,alreadySaved:true,eventType:previous.eventType,profile:old?.salaryRateVersion===1&&salary?.exists()?{...old,salaryRateTimeline:salary.data()}:old};}
         if(shared&&Object.hasOwn(payload,'pin')&&expectedPinVersion!==undefined&&(old?.loginPinVersion??0)!==expectedPinVersion)throw Error('The employee changed their login PIN. Reopen this profile before setting a new PIN.');
+        if(expectedTraining!==undefined&&!sameTrainingTerms(old?.trainingPay,expectedTraining))throw Error('Training terms changed. Reopen the employee profile.');
         const safePayload=protectStaffEdits(payload,shared,old);
         if(old&&(Object.hasOwn(safePayload,'cashierName')||Object.hasOwn(safePayload,'scheduleNickname'))){
             const names=['cashierName','fullName','name','scheduleNickname','scheduleName','nickname'];
