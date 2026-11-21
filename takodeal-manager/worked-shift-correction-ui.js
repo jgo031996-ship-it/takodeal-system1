@@ -7,9 +7,9 @@ export function workedShiftActionHint(api,data,log){
  const user=api?.auth?.currentUser;
  if(!user?.uid||user.email?.toLowerCase()!==OWNER_EMAIL||api.sessionUser?.uid!==user.uid||!api.sessionUser?.isOwner||data?.isPaid||api.paidPayrollSnapshots?.has(data)||!log?.attendanceLogId||!data.staffId||log.out==='MISSED')return null;
  const start=attendanceMillis(log.timeInAt),end=attendanceMillis(log.timeOutAt),expected=attendanceMillis(log.expectedStartAt),finish=attendanceMillis(log.expectedEndAt);
- if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>18*3600000||log.workedShiftCorrectionId)return null;
+ if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>18*3600000||log.workedShiftCorrectionId&&!log.workedLeaveReview)return null;
  const overlap=Math.max(0,Math.min(end,finish)-Math.max(start,expected));
- if(log.bonusReviewRequired||!Number.isFinite(expected)||!Number.isFinite(finish)||Math.abs(start-expected)>=3*3600000&&overlap<(end-start)/2)return {label:'Apply worked shift',context:{attendanceLogId:log.attendanceLogId,staffId:data.staffId,branch:log.branch||data.branch,from:data.start,to:data.end}};
+ if(log.workedLeaveReview||log.bonusReviewRequired||!Number.isFinite(expected)||!Number.isFinite(finish)||Math.abs(start-expected)>=3*3600000&&overlap<(end-start)/2)return {label:log.workedLeaveReview?'Review leave and worked shift':'Apply worked shift',context:{...(log.workedLeaveReview?{workDate:log.rateWorkDate,allowManual:true}:{}),attendanceLogId:log.attendanceLogId,staffId:data.staffId,branch:log.branch||data.branch,from:data.start,to:data.end}};
  return null;
 }
 export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCorrectionService(w)}={}){
@@ -25,6 +25,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    current();
    node.dataset.workedShiftSaved='true';node.close();node.remove();if(dialog===node)dialog=null;
    w.invalidateCollectionCache?.('settings');
+   w.invalidateCache?.('staff_requests');w.invalidateCollectionCache?.('staff_requests');
    w.invalidateCache?.('global_schedule');
    w.dispatchEvent?.(new w.CustomEvent('worked-shift-corrected',{detail:{...result,staffId:context.staffId,branch:context.branch}}));
    try{
@@ -40,7 +41,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    const records=view.recordChoices||[],choices=view.choices||[],blockers=view.blockers||[];
    const available=choices.filter(row=>!row.blockers.length),blocked=choices.filter(row=>row.blockers.length);
    const proposed=available.find(row=>row.shiftId===context.proposedShiftId),preferred=proposed?.key||view.recommendedKey;
-   let selected=null,saving=false,proposal=null,draftKey='',manualMode=false,reviewedChange='';
+   let selected=null,saving=false,proposal=null,draftKey='',manualMode=false,reviewedChange='',leaveReview='';
    const saved=view.confirmedDuty;
    node.addEventListener('cancel',event=>{if(saving)event.preventDefault();});
    const rowTime=row=>esc(stamp(row.expectedStartAt))+' → '+esc(stamp(row.expectedEndAt));
@@ -48,6 +49,7 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
      row.key===proposed?.key?'Requested by employee':'',
      row.ownerEntered?'Owner-entered hours for this punch.':row.standalone?'No dated roster for this branch. Select these hours only if you can confirm the assignment for this punch.':'',
      row.occupied?'Another employee holds this slot. Confirming records this employee’s duty only.':'',
+     row.leave?'Approved '+row.leave.type+' · '+row.leave.date+' · request '+row.leave.requestId:'',
      row.undatedLeaveIds?.length?'A leave has incomplete dates. Confirm only if you verified this employee worked this date. The leave stays on file.':''
    ].filter(Boolean).map(note=>'<small style="display:block;margin-top:4px">'+esc(note)+'</small>').join('');
    const cards=available.map((row,index)=>'<label style="display:flex;align-items:flex-start;gap:10px;border:1px solid #a9c2b3;border-radius:8px;padding:12px;margin:8px 0;cursor:pointer"><input type="radio" name="workedShiftChoice" data-choice value="'+index+'"><span><strong>'+esc(row.shiftName)+'</strong><br>'+rowTime(row)+notes(row)+'</span></label>').join('');
@@ -74,10 +76,10 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
     if(exception.unavailableBranches.length||exception.dateRestriction)notes.push('The roster lists this employee as unavailable.');
     return notes.join(' ');
    }
-   const clearDraft=()=>{reviewedChange='';proposal=null;draftKey='';};
+   const clearDraft=()=>{leaveReview='';reviewedChange='';proposal=null;draftKey='';};
    const refresh=()=>{
     const ready=manualMode&&Object.values(values()).every(Boolean);
-    button.textContent=records.length?'Choose record':manualMode?(reviewedChange?'Confirm updated hours':'Confirm assigned hours'):'Confirm worked shift';
+    button.textContent=records.length?'Choose record':leaveReview?'Confirm work and remove this leave date':manualMode?(reviewedChange?'Confirm updated hours':'Confirm assigned hours'):'Confirm worked shift';
     button.disabled=saving||(!records.length&&(manualMode?!ready:!selected||!!blockers.length));
    };
    function activateManual(){
@@ -126,7 +128,19 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
     saving=value;for(const control of [...radios,...Object.values(fields),...node.querySelectorAll('[data-close]')])control.disabled=value;
     refresh();
    }
-   button.onclick=async()=>{
+   function prepare(checked,row){
+     const leave=row.leave;
+     if(leave){
+      const key=JSON.stringify([checked.expectedFingerprint,row.key]);
+      if(leaveReview!==key){
+       leaveReview=key;
+       status.textContent='Approved '+leave.type+' (request '+leave.requestId+') covers '+leave.dates.join(', ')+'. Recorded at '+checked.branch+': '+stamp(checked.timeInAt)+' to '+stamp(checked.timeOutAt)+'. Dated roster: '+(row.rosterException?.otherBranches?.length?'also assigned at '+row.rosterException.otherBranches.join(', '):row.plottedName||'no employee in this slot')+'. Assigned '+row.shiftName+': '+stamp(row.expectedStartAt)+' to '+stamp(row.expectedEndAt)+'. Confirm only if the employee worked and no leave applies on '+row.workDate+'. Other leave dates stay approved. For partial leave or uncertain hours, cancel to keep this date under review.';
+       return null;
+      }
+     }
+     return service.propose(checked,row.key,{workedLeaveRequestId:leave?.requestId||null});
+    }
+    button.onclick=async()=>{
     if(pending||button.disabled||!node.open)return;
     pending=true;lock(true);
     try{
@@ -150,9 +164,10 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
         throw Error('The saved punch or approval changed. Reopen it to check the latest hours.');
        const choice=checked.choices.find(row=>row.ownerEntered&&row.workDate===draft.date);
        if(!choice||checked.blockers.length||choice.blockers.length)throw Error(choice?.blockers[0]||checked.blockers[0]||'Check that the assigned window overlaps the recorded duty.');
-       proposal=service.propose(checked,choice.key);draftKey=key;
+       proposal=prepare(checked,choice);draftKey=key;
       }
-     }else proposal||=service.propose(view,selected.key);
+     }else proposal||=prepare(view,selected);
+     if(!proposal)return;
      status.textContent='Saving the confirmed hours…';
      let result;
      try{result=await service.apply(proposal);}

@@ -370,3 +370,16 @@ test('refund edited net and custom details must match before a new payment, whil
  const replay=await finalizeRefundPayroll(f.h.api,{data:{...data,basicPay:1,customDeductionsTotal:999},accountId:'cash',finalNetPay:1});
  assert.equal(replay.alreadyPaid,true);assert.equal(replay.finalNetPay,360);assert.equal(replay.frozenData.basicPay,450);assert.equal(f.h.get('cash_accounts/cash').balance,4640);
 });
+test('a concurrent worked-date correction prevents an outdated payment from debiting the account',async()=>{
+ const f=fixture();f.h.put('settings/schedule_month_2030_01',{revisionIds:['roster-v1']});
+ afterPreflight(f,()=>f.h.put('settings/schedule_month_2030_01',{revisionIds:['roster-v1','worked-qa']}));
+ await assert.rejects(f.pay({scheduleMonths:{'2030-01':['roster-v1']}}),/worked shift changed/);
+ assert.equal(f.h.get('cash_accounts/cash').balance,5000);assert.equal(paths(f.h,'payroll_records').length,0);
+});
+test('Owner recovers the same completed payment after a rename and home branch transfer',async()=>{
+ const f=fixture();await f.pay();
+ f.h.put('cashiers/'+staffId,{...f.data.profile,cashierName:'Renamed Sample',branch:'Another Branch'});
+ const result=await checkSavedPayrollPayment(f.h.api,{data:f.data});
+ assert.equal(result.status,'paid');assert.equal((await f.pay()).id,result.id);
+ assert.equal(f.h.get('cash_accounts/cash').balance,4550);
+});

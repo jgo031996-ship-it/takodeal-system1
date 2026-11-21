@@ -97,12 +97,13 @@ test('an occupied overnight slot can be explicitly confirmed without changing it
  const repeat=await inspect(f),choice=repeat.choices.find(row=>row.shiftId==='night');
  assert.equal((await f.service.apply(f.service.propose(repeat,choice.key))).alreadySaved,true);
 });
-test('a confirmed leave blocks that date; an old incomplete leave outside it does not',async()=>{
+test('a confirmed leave requires an explicit date decision; an old incomplete leave outside it does not',async()=>{
  const f=fixture(),letter={type:'Leave',status:'Approved',staffId,staffName:name};
  f.put('staff_requests/old',{...letter,endDate:'2026-10-10'});
  let row=(await inspect(f)).choices.find(row=>row.shiftId==='night');assert.deepEqual(row.blockers,[]);assert.equal(row.attendanceOnly,false);
  f.put('staff_requests/active',{...letter,startDate:'2026-10-17',endDate:'2026-10-18'});
- row=(await inspect(f)).choices.find(row=>row.shiftId==='night');assert.match(row.blockers.join(' '),/approved leave covers/i);
+ const view=await inspect(f);row=view.choices.find(row=>row.shiftId==='night');
+ assert.equal(row.leave.requestId,'active');assert.throws(()=>f.service.propose(view,row.key),/Review the approved leave/);
 });
 for(const source of ['claim','approved-leave','suspension','unknown-leave','unknown-sanction'])test(source+' keeps a verified Owner from overriding an independent HR record',async()=>{
  const f=fixture({extraDay:{unavailable:['CREW']}}),day='2026-10-17';

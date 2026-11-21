@@ -2,6 +2,7 @@ import {createPayrollAttendanceReader} from './payroll-attendance-reader.js';
 import {readPayrollSnapshot} from './payroll-preview-guard.js';
 import {loadStaffSalaryTimeline,staffProfileForWork,staffRateWorkDate,staffRateForDate,payrollSalaryProfile,dailyStaffRate} from './staff-rate-model.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
+import {leaveOnWorkDate} from './worked-leave-review.js';
 import {attendanceKind} from './attendance-reconcile.js';
 import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
 import {PAYROLL_ADJUSTMENT_TYPE} from './payroll-adjustment-model.js';
@@ -82,6 +83,41 @@ function previewReferences(api,options){
  cache.set(key,result);if(cache.size>32)cache.delete(cache.keys().next().value);return result;
 }
 
+async function readApprovedPayrollLeaves(api,scope,timeoutMs) {
+ const branches=scope.all ? [null] : [...new Set(api.sessionUser.allowedBranches)];
+ const groups=await Promise.all(branches.map(async branch=>{
+  const filters=[api.where('type','==','Leave'),api.where('status','==','Approved')];
+  if(branch)filters.push(api.where('branch','==',branch));
+  if(api.limit)filters.push(api.limit(2001));
+  const snapshot=await readPayrollSnapshot(api,api.query(api.collection(api.db,'staff_requests'),...filters),{timeoutMs});
+  if(snapshot.docs.length>2000)throw Error('Too many approved leave records to verify.');
+  return snapshot.docs.map(doc=>({...doc.data(),id:doc.id})).filter(row=>row.type==='Leave'&&row.status==='Approved');
+ }));
+ return groups.flat();
+}
+
+export function applyPayrollLeaveHolds(staffData,leaves,resolver) {
+ const byName=new Map();
+ for(const row of leaves||[]){
+  const identity=resolver(row);
+  if(!identity.name)continue;
+  const group=byName.get(identity.name)||[];
+  group.push(row);byName.set(identity.name,group);
+ }
+ for(const [name,data] of Object.entries(staffData)){
+  for(const log of data.logs||[]){
+   if(!log.attendanceLogId||!log.timeOutLogId||!log.rateWorkDate)continue;
+   if(leaves!==null&&!byName.get(name)?.some(row=>leaveOnWorkDate(row,log.rateWorkDate)===true))continue;
+   data.attendanceReviewRequired=true;
+   log.workedLeaveReview=leaves!==null;
+   const reason=leaves===null?'HQ could not verify approved leave. Reconnect and refresh payroll.':
+       log.rateWorkDate+' at '+log.branch+': approved leave overlaps recorded work. Review this shift.';
+   data.attendanceReviewReasons=[...new Set([...(data.attendanceReviewReasons||[]),reason])];
+   data.attendanceLogIds=[...new Set([...(data.attendanceLogIds||[]),log.attendanceLogId])];
+  }
+ }
+}
+
 export async function loadPayrollPreviewInputs(api,options){
  const {start,end,assertCurrent=()=>{},concurrency=8,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),sourceGenerations.get(api)||0,'schedule',start,end]);
  if(!attendanceReaders.has(api))attendanceReaders.set(api,api.readPayrollAttendance||createPayrollAttendanceReader({...api.deviceFleetConnection,auth:api.auth,fetch:api.fetch?.bind(api)||globalThis.fetch}));
@@ -96,7 +132,13 @@ export async function loadPayrollPreviewInputs(api,options){
  const attendanceReferenceRecords=await loadPayrollAttendanceReferences(api,input,scoped,{guard,timeoutMs});guard();
  const actor=accountKey(api),generation=sourceGenerations.get(api)||0;
  const confirmedSchedule=await loadPayrollShiftConfirmations(api,scoped,{from:start,to:end,assertCurrent:guard,mapReads:mapPayrollReads,readDocument:reference=>readBoundedDocument(api,JSON.stringify([actor,generation,'payroll-shift-confirmation',reference.id]),()=>{guard();return api.getDocFromServer(reference);},{timeoutMs})});guard();
- return {...scoped,scheduleData:confirmedSchedule,attendanceReferenceRecords};
+ let approvedLeaves=[];
+ if(scoped.attSnap.docs.length){
+  try{approvedLeaves=await readApprovedPayrollLeaves(api,payrollLoadingScope(api),timeoutMs);}
+  catch{approvedLeaves=null;}
+  guard();
+ }
+ return {...scoped,scheduleData:confirmedSchedule,attendanceReferenceRecords,approvedLeaves};
 }
 
 // A cutoff query can contain a Time Out whose linked Time In is outside its
