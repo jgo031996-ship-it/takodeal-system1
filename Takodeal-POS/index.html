@@ -2410,14 +2410,22 @@
         const grid = document.getElementById('menuGrid'); 
         if(!grid) return;
 
+        const hidden=new Set(hiddenCategories.map(c=>c.toLowerCase()));
+        const layout=new Map();
+        (window.globalItemLayout || []).forEach((id,i)=>{if(!layout.has(id))layout.set(id,i);});
+        const recipes=new Map();
+        for(const line of (window.masterPOSData.bom || [])){
+            if(!recipes.has(line.menuItem))recipes.set(line.menuItem,[]);
+            recipes.get(line.menuItem).push(line);
+        }
         let safeItems = window.masterPOSData.items.filter(item => {
             let cat = (item.category || "").toLowerCase();
-            return !hiddenCategories.map(c => c.toLowerCase()).includes(cat);
+            return !hidden.has(cat);
         });
 
         safeItems.sort((a, b) => {
-            let idxA = window.globalItemLayout ? window.globalItemLayout.indexOf(a.id) : -1;
-            let idxB = window.globalItemLayout ? window.globalItemLayout.indexOf(b.id) : -1;
+            let idxA = layout.get(a.id) ?? -1;
+            let idxB = layout.get(b.id) ?? -1;
             if (idxA !== -1 && idxB !== -1) return idxA - idxB; 
             if (idxA !== -1) return -1; 
             if (idxB !== -1) return 1;  
@@ -2433,7 +2441,7 @@
             
             let possibleOrders = Infinity;
             if (window.masterPOSData.bom && window.masterPOSData.stockLevels) {
-                let recipe = window.masterPOSData.bom.filter(b => b.menuItem === item.name);
+                let recipe = recipes.get(item.name) || [];
                 if (recipe.length > 0) {
                     recipe.forEach(r => {
                         let stock = window.masterPOSData.stockLevels[r.ingredientName] || 0;
@@ -2492,7 +2500,7 @@
         grid.innerHTML = html; 
         
         let dropdown = document.getElementById('menuCategoryDropdown');
-        if (dropdown) window.filterMenu(dropdown.value);
+        if (dropdown && !window.cashierMenuDecorated) window.filterMenu(dropdown.value);
     };
 
     // --- 4. SHIFT & EXPENSE SYSTEM ---
@@ -4575,7 +4583,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=branch-close-20261121-r2"></script>
+    <script type="module" src="main.js?v=register-performance-20261121-r3"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
@@ -4725,7 +4733,7 @@ window.showMobileOrders = function() {
           </div>
       </div>
   </div>
-<script src="cashier-pos-ui.js?v=tablet-attendance-stock-20261009-r1"></script>
+<script src="cashier-pos-ui.js?v=register-performance-20261121"></script>
 <script type="module" src="cashier-workspace.js?v=update-progress-20261108-r1"></script>
 </body>
 </html>

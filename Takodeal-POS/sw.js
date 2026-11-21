@@ -1,10 +1,10 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-branch-close-20261121-r2';
+const CORE = 'takodeal-pos-register-performance-20261121-r3';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
-const required = ['./crew-operations-client.js','./coin-stash.js','./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-app-update.js','./cashier-data.js'];
+const required = ['./pending-payment-tally.js','./crew-operations-client.js','./coin-stash.js','./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-app-update.js','./cashier-data.js'];
 required.push('./cashier-branch-policy.js','./cashier-meal-context.js');
 const sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';
 required.push('./cashier-device-setup.js');
