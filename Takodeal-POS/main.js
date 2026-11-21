@@ -1,6 +1,7 @@
 import {posList,startPosConfigSync} from './pos-config-sync.js';
 import {enrollOwnerWorkstation} from './cashier-workstation.js';
-import {createCashierStaffAccess} from './cashier-staff-access.js';
+import {installCashierStash} from './coin-stash.js';
+import {createCashierOperationalApi,createCashierStaffAccess} from './cashier-staff-access.js';
 import {mobileOwnerContext} from './mobile-order-actions.js';
 import {createCashierMealContext} from './cashier-meal-context.js';
 import {readCashierBranchPolicy} from './cashier-branch-policy.js';
@@ -143,6 +144,7 @@ window.getDoc = getDoc;
 window.setDoc = setDoc;
 // Device approvals use their own matching auth/database context when Google is signed in.
 const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+installCashierStash(window,document,createCashierOperationalApi(window,{primaryAuth:auth,primaryDb:db,deviceContext:cashierDeviceContext}));
 const cashierMealContext=createCashierMealContext(window,{primaryAuth:auth,deviceContext:cashierDeviceContext});
 window.resolveCashierMealApi=options=>cashierMealContext.read(options);
 const cashierOwnerDesktopContext=createCashierOwnerDesktopContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
