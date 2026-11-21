@@ -1864,7 +1864,24 @@ window.switchPayslipTab = function(tabName) {
     }
 };
 
-window.loadPayslipVault = async function() {
+let vaultLoad=null,refreshSavedVault=null,refreshingSaved=null;
+window.loadPayslipVault = function(){
+ const id=localStorage.getItem('takodeal_staff_id'),epoch=window.staffVaultSession?.epoch;
+ if(!id||!window.staffVaultSession?.allows(id,epoch))return Promise.resolve();
+ if(vaultLoad?.id===id&&vaultLoad.epoch===epoch)return vaultLoad.promise;
+ const pending={id,epoch};vaultLoad=pending;refreshSavedVault=null;
+ pending.promise=loadOpenPayroll().finally(()=>{if(vaultLoad===pending)vaultLoad=null;});return pending.promise;
+};
+const refreshVisiblePayroll=()=>{
+ if(!document.hidden&&navigator.onLine!==false&&document.getElementById('view-payslip')?.classList.contains('active')&&
+    window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))&&!vaultLoad&&!refreshingSaved&&refreshSavedVault){
+  const refresh=refreshSavedVault;refreshingSaved=Promise.resolve().then(refresh).catch(()=>{}).finally(()=>{refreshingSaved=null;});
+ }
+};
+window.setInterval(refreshVisiblePayroll,30000);
+window.addEventListener('online',refreshVisiblePayroll);
+document.addEventListener('visibilitychange',refreshVisiblePayroll);
+const loadOpenPayroll = async function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
     if (!staffName || !staffId || !window.staffVaultSession?.allows(staffId)) return;
@@ -1872,7 +1889,8 @@ window.loadPayslipVault = async function() {
     const stillOpen = () => window.staffVaultSession.allows(staffId, vaultEpoch) && localStorage.getItem('takodeal_staff_id') === staffId;
     const savedViews=installStaffSavedPayslipViews(window,document);savedViews.restoreLive();
     let savedPayslips={paid:[],shared:[],held:[],errors:[]};
-    const renderSaved=(processingHTML='',processingCount=0)=>{if(stillOpen())savedViews.render(savedPayslips,{staffId,epoch:vaultEpoch,start:startDateStr,end:endDateStr,processingHTML,processingCount});};
+    let lastProcessingHTML='',lastProcessingCount=0;
+    const renderSaved=(processingHTML='',processingCount=0)=>{if(stillOpen()){lastProcessingHTML=processingHTML;lastProcessingCount=processingCount;savedViews.render(savedPayslips,{staffId,epoch:vaultEpoch,start:startDateStr,end:endDateStr,processingHTML,processingCount});}};
 
     const safeDate = (fbDate) => {
         if (!fbDate) return new Date();
@@ -1912,11 +1930,19 @@ window.loadPayslipVault = async function() {
             const staffRef = await window.readPrivateStaffProfile(staffId,{assertCurrent:()=>{if(!stillOpen())throw Error('The private Pay view changed.');}});
             if(!staffRef.exists()||staffRef.metadata?.fromCache||staffRef.metadata?.hasPendingWrites)throw Error('Salary profile is not confirmed.');
             staffProfile={...staffRef.data(),staffId};
+            const client=await createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
+            const privateUser=client.auth?.currentUser;
+            if(!privateUser||!stillOpen())throw Error('Unlock your own Staff Vault.');
+            const own=await client.sdk.getDocFromServer(client.sdk.doc(client.db,'cashiers',staffId));
+            if(!stillOpen()||privateUser!==client.auth.currentUser||!own.exists()||own.metadata?.fromCache||own.metadata?.hasPendingWrites)throw Error('Training terms need a fresh employee profile.');
+            staffProfile.trainingPay=own.data().trainingPay??null;
         } catch {salaryHistoryUnavailable=true;}
         if (!stillOpen()) return;
         if(staffProfile.salaryRateVersion===1){try{staffProfile=await window.loadPrivateStaffSalaryProfile(staffProfile);}catch{salaryHistoryUnavailable=true;}}
         if(!stillOpen())return;
-        savedPayslips=await readStaffSavedPayslips(window,{staffId,staffName,profile:staffProfile,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
+        const readSaved=()=>readStaffSavedPayslips(window,{staffId,staffName,profile:staffProfile,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
+        savedPayslips=await readSaved();
+        if(stillOpen()){const refresh=async()=>{if(!stillOpen()||refreshSavedVault!==refresh)return;const next=await readSaved();if(stillOpen()&&refreshSavedVault===refresh){savedPayslips=next;renderSaved(lastProcessingHTML,lastProcessingCount);}};refreshSavedVault=refresh;}
         if(!stillOpen())return;renderSaved();
         let dailyRate = salaryHistoryUnavailable?0:staffRateForDate(staffProfile) ?? 0;
         let ratePerHour = dailyRate / 8;
@@ -2029,7 +2055,7 @@ window.loadPayslipVault = async function() {
                     wasScheduled = matchedShift?.wasScheduled || false;
                     const rateProfile=staffProfileForWork(staffProfile,log,matchedShift);
                     const lateExempted = matchedShift?.reliefReviewVerified ? matchedShift.reliefLateExempted : matchedShift?.amendmentReviewVerified ? matchedShift.amendmentLateExempted : log.lateExempted === true;
-                    const late = latePay(lateMinutes, rateProfile, matchedShift, lateExempted);
+                    const late = rateProfile.trainingHourly!=null?{amount:0,hours:0}:latePay(lateMinutes, rateProfile, matchedShift, lateExempted);
                     activeShift = { time: logDate, lateMinutes, lateAmount: late.amount, lateExempted,
                         manualPenalty, wasScheduled, matchedShift,rateProfile };
 
@@ -2071,8 +2097,11 @@ window.loadPayslipVault = async function() {
                     let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShift.matchedShift);
                     let hType = holidaysObj[logDateStr];
                     const appliedDailyRate=activeShift.rateProfile.hourlyRate;
-                    tBasic+=appliedDailyRate*shiftMultiplier;
-                    let baseForHoliday = (appliedDailyRate * shiftMultiplier) + thisShiftNightBonus;
+                    const trainingHourly=activeShift.rateProfile.trainingHourly;
+                    const shiftBase=trainingHourly!=null?Math.round(trainingHourly*hoursWorked*100)/100:appliedDailyRate*shiftMultiplier;
+                    if(trainingHourly!=null)remark=remark.replace(/Short duty \([^<]*?full daily pay retained\)/g,'Short duty')+'<br>Training · ₱'+trainingHourly.toFixed(2)+'/hr × '+hoursWorked.toFixed(2)+'h = ₱'+shiftBase.toFixed(2);
+                    tBasic+=shiftBase;
+                    let baseForHoliday = shiftBase + thisShiftNightBonus;
                     let hBonus = 0;
 
                     if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; tBonuses += hBonus; remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 

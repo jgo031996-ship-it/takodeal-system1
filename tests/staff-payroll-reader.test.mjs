@@ -120,7 +120,7 @@ test('invalid requests and already closed views perform no token or attendance q
  await assert.rejects(read({...request,assertCurrent:()=>{throw Error('locked');}}),/locked/);assert.equal(calls,0);assert.equal(createStaffPayrollAttendanceReader(),null);
 });
 
-const engine=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),vaultStart=engine.indexOf('window.loadPayslipVault = async function() {'),vaultEnd=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',vaultStart),vault=engine.slice(vaultStart,vaultEnd);
+const engine=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),vaultStart=engine.indexOf('let vaultLoad=null,refreshSavedVault='),vaultEnd=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',vaultStart),vault=engine.slice(vaultStart,vaultEnd);
 const legacyAttendance=`const attQ = query(collection(db, "attendance_logs"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
         const attendanceSources = await Promise.all([getDocs(attQ),getDocs(query(collection(db, "attendance_logs"), where("staffId", "==", staffId)))]);
         const attendanceRecords = new Map();
@@ -135,6 +135,8 @@ function runVault(logs,{legacy=false,read,clock='2026-10-08T12:00:00+08:00',staf
  api.getDocsFromServer=api.getDocs;
  const context={...api,...savedPayslipViews,...snapshotAmounts,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,readStaffPayrollRecoveryHistory,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,createPayrollBonusHistoryStore:scheduleFactory,Date:FixedDate,console:{error:(...error)=>errors.push(error)},window:{...api,readMyLoanLedgerSnapshot:async()=>buildStaffLoanLedgerSnapshot({staffId,staffName,branch:'Maa',asOf:'2026-11-09T00:00:00.000Z'}),readStaffPayrollAttendance:read,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?staffId:staffName},document:{getElementById:node}};
  context.window.localStorage=context.localStorage;
+ context.window.setInterval=()=>0;context.window.addEventListener=()=>{};context.document.addEventListener=()=>{};
+ context.firebaseConfig={};context.createStaffDocumentFirebase=async()=>({auth:{currentUser:{uid:'fictional-private'}},db:api.db,sdk:{doc:api.doc,getDocFromServer:api.getDocFromServer}});
  installStaffPrivateAPIFixture(context.window,api,{staffId,staffName});
  vm.runInNewContext((legacy?legacyVault:vault).replace('let prevData = analyzeCutoff(', 'window.actualCutoffForTest=currentData;\n        let prevData = analyzeCutoff('),context);
  return {node,errors,queries,load:()=>context.window.loadPayslipVault(),context,result:()=>Object.fromEntries([...nodes].map(([key,value])=>[key,{text:value.innerText,html:value.innerHTML}]))};
