@@ -1,5 +1,5 @@
-const STAFF_RELEASE = 'staff-profile-photo-contract-20261118-r3';
-const CACHE_NAME = 'takodeal-staff-v71-profile-photo-contract-20261118-r3';
+const STAFF_RELEASE = 'staff-vault-training-20261121-r1';
+const CACHE_NAME = 'takodeal-staff-v72-vault-training-20261121-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./staff-profile-photo.js','./profile-photo-prepare.js','./signed-contract-document.js');
 SHELL.push('./live-branch-directory.js','./staff-self-service.js','./employment-contract.mjs','./contract-logo.mjs');
