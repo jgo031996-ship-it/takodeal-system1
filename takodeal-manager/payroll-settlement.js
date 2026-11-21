@@ -1,7 +1,8 @@
+import {checkDutyDuringPayment} from './payroll-confirmed-shifts.js';
 import {prepareWorkedDateCheck,checkWorkedDatesInPayment} from './payroll-worked-dates.js';
 import {resolveHQAccount} from './hq-account-model.js';
 import {createWorkspaceSession,canOpenHrTab,OWNER_EMAIL} from './workspace-access-model.js';
-import {dailyStaffRate,validRateDate,validateSalaryTimeline} from './staff-rate-model.js';
+import {sameTrainingTerms,dailyStaffRate,validRateDate,validateSalaryTimeline} from './staff-rate-model.js';
 import {isMealDeduction} from './payroll-safety.js';
 import {isCashShortageDeduction,validateCashShortageLink,CASH_SHORTAGE_LIMIT} from './cash-shortage-model.js';
 import {snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
@@ -18,7 +19,7 @@ const json=value=>JSON.parse(JSON.stringify(value));
 const amount=(value,{negative=false}={})=>{if(value==null||value==='')value=0;if(!['number','string'].includes(typeof value)||typeof value==='string'&&!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim()))throw Error('Payroll amounts must be valid numbers.');const cents=Math.round(Number(value)*100);if(!Number.isSafeInteger(cents)||Math.abs(cents)>PAYROLL_SETTLEMENT_LIMITS.maxCents||!negative&&cents<0)throw Error('Payroll amounts are outside the permitted range.');return cents;};
 export function ordinaryPayrollId(staffId,start,end){id(staffId);if(!validRateDate(start)||!validRateDate(end)||start>end)throw Error('Choose a valid payroll cutoff.');return id('payroll-'+staffId+'-'+start+'-'+end);}
 const refundId=(staffId,start,end)=>id('refund-payroll-'+staffId+'-'+start+'-'+end);
-const safeProfile=profile=>Object.fromEntries(['staffId','id','cashierName','role','dateHired','hourlyRate','salaryRateVersion','salaryRateRevision','sssAmount','pagibigAmount','philHealthAmount','eligibleNightDiff','nightDiffRate','customDeductions'].filter(key=>profile?.[key]!==undefined).map(key=>[key,json(profile[key])]));
+const safeProfile=profile=>Object.fromEntries(['staffId','id','cashierName','role','dateHired','trainingPay','hourlyRate','salaryRateVersion','salaryRateRevision','sssAmount','pagibigAmount','philHealthAmount','eligibleNightDiff','nightDiffRate','customDeductions'].filter(key=>profile?.[key]!==undefined).map(key=>[key,json(profile[key])]));
 // Firestore map key order is not payroll data. Preserve array order and types,
 // while comparing Timestamp instances with their equivalent serialized values.
 export function sameSavedPayrollValue(left,right){
@@ -210,6 +211,7 @@ async function settle(api,input,identity,guard){
   const exact=existing.filter(row=>row.startDate===data.start&&row.endDate===data.end);
   if(exact.length>1)throw Error('Duplicate saved payroll records need HQ review. No new payment was made.');
   if(exact.length){const row=exact[0];authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[data.branch,row.branch||row.frozenData?.branch||data.branch]);return confirmedPayrollResult(row,{id:row.id,staffId:data.staffId,start:data.start,end:data.end,legacyName:data.name});}
+  await checkDutyDuringPayment(tx,ref,data);
   await checkWorkedDatesInPayment(tx,ref,data.staffId,workedDates,input.scheduleMonths);guard();
   if(data.isPaid)throw Error('This saved payslip is read-only. Refresh payroll to confirm its payment record.');
   if(adjustmentCandidates.length&&(identity.email!==OWNER_EMAIL||api.sessionUser?.isOwner!==true))throw Error('The verified Owner must confirm this payslip because it includes a previous payroll credit.');
@@ -221,6 +223,7 @@ async function settle(api,input,identity,guard){
   if(!account||!text(account.name))throw Error('The selected payment account is unavailable.');
   authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[data.branch,account.branch||'Unassigned']);
   if(account.balance==null||account.balance==='')throw Error('The current payment account balance is invalid.');const balance=amount(account.balance,{negative:true}),net=amount(finalNetPay);if(!allowNegativeBalance&&balance<net)throw Error('The current account balance is too low. Review it before confirming a negative balance.');
+  if(!sameTrainingTerms(person.trainingPay,data.profile?.trainingPay))throw Error('Training terms changed. Regenerate this unpaid payslip.');
   if(person.salaryRateVersion===1){const salary=await tx.get(ref('staff_salary_rates',data.staffId));guard();if(data.profile?.salaryRateVersion!==1||person.salaryRateRevision!==data.profile?.salaryRateRevision||!salary.exists())throw Error('Salary dates changed. Regenerate this unpaid payslip.');const timeline=validateSalaryTimeline(salary.data());if(timeline.staffId!==data.staffId||timeline.branch!==data.branch||timeline.revisionId!==person.salaryRateRevision)throw Error('Private salary history needs HQ review.');}
   else if(data.profile?.salaryRateVersion===1||dailyStaffRate(person)!==dailyStaffRate(data.profile))throw Error('The saved daily wage changed. Regenerate this unpaid payslip.');
   const cashSettlements=validatePayrollCashShortageSet(data,cashCandidates,get);

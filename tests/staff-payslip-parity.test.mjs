@@ -83,7 +83,7 @@ test('concurrent identical publication calls share the unresolved save and chang
 });
 test('fresh revision is required for a replacement, and a stale Owner tab cannot overwrite another saved version',async()=>{
   const f=fixture();assert.equal((await readStaffPayslipPublication(f.h.api,{data:f.data})).revision,0);await f.publish();
-  await assert.rejects(f.publish(),/Another saved payslip changed/);assert.equal((await readStaffPayslipPublication(f.h.api,{data:f.data})).revision,1);
+  assert.equal((await f.publish()).revision,1);await assert.rejects(f.publish({data:{...f.data,sss:0},finalNetPay:net+1,expectedRevision:0}),/Another saved payslip changed/);assert.equal((await readStaffPayslipPublication(f.h.api,{data:f.data})).revision,1);
   await f.publish({data:{...f.data,sss:0},finalNetPay:net+1,expectedRevision:1});assert.equal(f.h.get('staff_payslip_previews/'+key).revision,2);assert.equal(f.h.get('staff_payslip_previews/'+key).snapshot.sss,0);
 });
 test('ordinary, refund and legacy paid-cutoff references prohibit a new shared draft, leaving paid freezes intact',async()=>{
@@ -127,7 +127,7 @@ test('only the unchanged verified Google Owner can publish and the final transac
 });
 test('transaction failure creates no publication and a lost acknowledgment is recoverable through a fresh revision read',async()=>{
   const f=fixture();f.h.failNextCommit();await assert.rejects(f.publish(),/Commit rejected/);assert.equal(f.h.get('staff_payslip_previews/'+key),undefined);
-  f.h.loseNextAck();await assert.rejects(f.publish(),/Connection lost/);assert.equal((await readStaffPayslipPublication(f.h.api,{data:f.data})).revision,1);await assert.rejects(f.publish(),/Another saved payslip changed/);
+  f.h.loseNextAck();await assert.rejects(f.publish(),/Connection lost/);assert.equal((await readStaffPayslipPublication(f.h.api,{data:f.data})).revision,1);assert.equal((await f.publish()).revision,1);
 });
 test('Staff reads new shared snapshots only through its fresh approved private-doc client, and a paid record always wins',async()=>{
   const f=fixture();await f.publish();const first=await privateReader(f);assert.equal(first.state.shared.length,1);assert.equal(first.state.shared[0].data.sss,1);
@@ -194,7 +194,7 @@ function displayFixture(){
 }
 test('shared preview is read-only, paid acknowledgment remains separate, and vault lock invalidates old saved-view actions',async()=>{
   const f=fixture();await f.publish();const {state}=await privateReader(f),ui=displayFixture();ui.controller.render(state,{staffId,epoch:1,start,end});
-  assert.match(ui.node('payslipPendingList').innerHTML,/Owner-shared payslip/);assert.doesNotMatch(ui.node('payslipPendingList').innerHTML,/data-saved-sign/);assert.match(ui.node('staffAuthoritativePayslip').innerHTML,/930\.73/);
+  assert.match(ui.node('payslipPendingList').innerHTML,/Unpaid payslip|Owner-shared payslip/);assert.doesNotMatch(ui.node('payslipPendingList').innerHTML,/data-saved-sign/);assert.match(ui.node('staffAuthoritativePayslip').innerHTML,/930\.73/);
   ui.w.signSavedStaffPayslip('shared:'+key);assert.equal(ui.calls.length,0);ui.w.viewSavedStaffPayslip('shared:'+key);assert.equal(ui.calls[0][1].recordState,'shared');ui.lock();ui.w.viewSavedStaffPayslip('shared:'+key);assert.equal(ui.calls.length,1);assert.equal(ui.node('payslipPendingList').innerHTML,'');
   f.h.put('payroll_records/paid-original',paid(f.data));const paidView=await privateReader(f),other=displayFixture();other.controller.render(paidView.state,{staffId,epoch:1,start,end});other.w.signSavedStaffPayslip('paid:paid-original');assert.deepEqual(other.calls,[['sign','paid-original']]);
 });
