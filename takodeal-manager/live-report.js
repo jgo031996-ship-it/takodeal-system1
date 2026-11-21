@@ -10,7 +10,7 @@ export function createLiveReport({ subscribe, status, error = console.error }) {
             const active = () => generation === current;
             return {
                 active,
-                watch(query, render) {
+                watch(query, render, onConnectionError) {
                     if (!active()) return;
                     status('Connecting…');
                     let first = true;
@@ -21,7 +21,7 @@ export function createLiveReport({ subscribe, status, error = console.error }) {
                         Promise.resolve().then(() => { if (active()) return render(snap, update); }).catch(e => {
                             if (active()) { status('Report update failed'); error(e); }
                         });
-                    }, e => { if (active()) { status('Live connection failed — use Update Report'); error(e); } });
+                    }, e => { if (active()) { status('Live connection failed — use Update Report'); error(e); onConnectionError?.(e); } });
                     if (active()) unsubscribe = off; else off();
                 }
             };

@@ -235,6 +235,11 @@ const globalDashboard = createDashboard();
 import { createSaleEngine } from './pos-safety.js';
 import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
+import {saleIsPaid} from './dashboard-data.js';
+import {receiptPlatform,createSalesSnapshotReader,showConfirmedReceipts,supportTables} from './sales-report-recovery.js';
+let recoveryFlight,reportConnectTimer;
+function stopSalesRecovery(){clearTimeout(reportConnectTimer);recoveryFlight?.controller.abort();recoveryFlight=null;}
+
 import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus, calculateShiftEarnings,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
     shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule,
@@ -907,7 +912,7 @@ window.deleteSingleAlert = async function(docId) {
 // --- NAVIGATION SYSTEM ---
 window.switchView = function (viewId) {
   if (viewId === 'products') viewId = 'menu';
-  if (viewId !== 'history') historyLive.stop();
+  if (viewId !== 'history') {historyLive.stop();stopSalesRecovery();}
   // Hide all views
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   // Remove highlight from all sidebar items
@@ -13197,8 +13202,9 @@ window.runProductReport = function() {
         return;
     }
     
-    let startOfDay = new Date(startDateRaw + 'T00:00:00');
-    let endOfDay = new Date(endDateRaw + 'T23:59:59');
+    let startOfDay = new Date(startDateRaw + 'T00:00:00+08:00');
+    const until = new Date(Date.parse(endDateRaw + 'T00:00:00+08:00') + 86400000);
+    let endOfDay = new Date(+until - 1);
     
     if (typeof window.loadProductAnalytics === 'function') {
         window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
@@ -13210,7 +13216,11 @@ window.runProductReport = function() {
 // ========================================================
 // 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE (SECURED)
 // ========================================================
-window.loadSalesHistoryTab = async function() {
+window.addEventListener('managercloudfailure',()=>{
+    if(document.getElementById('view-history')?.classList.contains('active')) queueMicrotask(()=>window.loadSalesHistoryTab?.('confirmed'));
+});
+window.loadSalesHistoryTab = async function(mode) {
+    clearTimeout(reportConnectTimer);
     const reportSession = historyLive.start();
     const historyUser=window.auth?.currentUser,historySessionUser=window.sessionUser;
     const historyScope = () => JSON.stringify([window.auth?.currentUser?.uid,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.isFranchisee]);
@@ -13236,16 +13246,15 @@ window.loadSalesHistoryTab = async function() {
     let endDateRaw = document.getElementById('histEndDate').value;
 
     if (!startDateRaw || !endDateRaw) {
-        let today = new Date();
-        today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-        let todayStr = today.toISOString().split('T')[0];
+        const todayStr = new Date(Date.now()+8*3600000).toISOString().slice(0,10);
         document.getElementById('histStartDate').value = todayStr;
         document.getElementById('histEndDate').value = todayStr;
         startDateRaw = todayStr; endDateRaw = todayStr;
     }
 
-    let startOfDay = new Date(startDateRaw + 'T00:00:00');
-    let endOfDay = new Date(endDateRaw + 'T23:59:59');
+    let startOfDay = new Date(startDateRaw + 'T00:00:00+08:00');
+    const until = new Date(Date.parse(endDateRaw + 'T00:00:00+08:00') + 86400000);
+    let endOfDay = new Date(+until - 1);
 
     if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading data...</td></tr>';
     if(tbodyShifts) tbodyShifts.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
@@ -13255,14 +13264,69 @@ window.loadSalesHistoryTab = async function() {
     let dataSource = dataSourceSelect ? dataSourceSelect.value : "LIVE";
     selectedHistoryScope=selectedScope();
     const reportStatus=text=>{if(historyCurrent()){const node=document.getElementById('histLiveStatus');if(node)node.textContent=text;}};
-    const pendingFigures=text=>{for(const id of ['histSumNet','histSumCogs','histSumMargin','histSumGrab','histSumFoodpanda','histCountGrab','histCountFoodpanda','histCogsPct','histMarginPct']){const node=document.getElementById(id);if(node)node.innerText=text;}};
+    const pendingFigures=text=>{for(const id of ['histSumNet','histSumCogs','histSumMargin','histSumGrab','histSumFoodpanda','histCountGrab','histCountFoodpanda','histCogsPct','histMarginPct','histParkedPaid','histParkedDeleted']){const node=document.getElementById(id);if(node)node.innerText=text;}};
     pendingFigures('—');reportStatus('Loading sales report…');
+    const recoveryAllowed = dataSource==='LIVE' && historyUser?.uid && historySessionUser && !historySessionUser.isFranchisee
+        && historySessionUser.uid===historyUser.uid && historySessionUser.isOwner===true && historyUser.emailVerified===true && historyUser.email?.toLowerCase()===MASTER_EMAIL;
+    const recover = recoveryAllowed && (mode==='confirmed' || window.managerCloudHealth?.isFailed?.());
+    const sameSelection=()=>window.auth?.currentUser===historyUser && window.sessionUser===historySessionUser && historyScope()===historyAccount && selectedScope()===selectedHistoryScope;
+    const key=JSON.stringify([historyAccount,selectedHistoryScope]);
+    if(recoveryFlight && (!recover || recoveryFlight.key!==key || recoveryFlight.user!==historyUser || recoveryFlight.session!==historySessionUser)) stopSalesRecovery();
+    let recoveredReceipts;
+    const confirmedStatus=message=>reportStatus('Confirmed server snapshot · '+message);
 
+    let receiveLive, latestLive, detailsFailed=false;
+    function presentReceipts(snap){
+        pendingFigures('—');
+        for(const id of ['historyShiftsBody','historyDailyBody','historyMonthlyBody','historyProductAnalyticsBody','distOrderTypeBody','distPaymentBody']){
+            const node=document.getElementById(id);
+            if(node)node.textContent='';
+        }
+        window.globalShiftReports={};
+        window.onlineHistoryRows=[];
+        showConfirmedReceipts(document,snap,branchFilter);
+    }
+    const transactionQuery=()=>window.query(window.collection(window.db,'transactions'),window.where('timestamp','>=',startOfDay),window.where('timestamp','<=',endOfDay));
+    const fallback=()=>{if(historyCurrent() && recoveryAllowed)void window.loadSalesHistoryTab('confirmed');};
     try {
+        let invSnap,bomSnap,menuSnap,shiftSnap,rejectedSnap,parkedSnap;
+        if(recover){
+            if(!Number.isFinite(+startOfDay)||!Number.isFinite(+until)||until<=startOfDay)throw Error('Choose a valid report date range.');
+            if(!recoveryFlight){
+                const controller=new AbortController();
+                const read=createSalesSnapshotReader({projectId:window.auth.app.options.projectId,apiKey:window.auth.app.options.apiKey,getAppCheckToken:window.getHQAppCheckToken,user:historyUser,current:sameSelection,branch:branchFilter,start:startOfDay,end:until,signal:controller.signal});
+                const receipts=read('transactions');
+                const inputs=receipts.then(()=>Promise.allSettled(supportTables.map(read)));
+                inputs.catch(()=>{}); recoveryFlight={key,user:historyUser,session:historySessionUser,controller,receipts,inputs};
+            }
+            const flight=recoveryFlight;
+            try{
+                confirmedStatus('loading receipts…');recoveredReceipts=await flight.receipts;if(!historyCurrent())return;
+                presentReceipts(recoveredReceipts);
+                confirmedStatus('receipts loaded · checking report details…');
+                const results=await flight.inputs;if(!historyCurrent())return;
+                const missing=supportTables.filter((_,i)=>results[i].status==='rejected');
+                if(missing.length){confirmedStatus('paid receipts loaded · unavailable sections: '+missing.join(', ')+' · Update Report to retry');return;}
+                [invSnap,bomSnap,menuSnap,shiftSnap,rejectedSnap,parkedSnap]=results.map(result=>result.value);
+            }finally{if(historyCurrent()&&recoveryFlight===flight)recoveryFlight=null;}
+        }else{
+        if(recoveryAllowed){
+            reportConnectTimer=setTimeout(fallback,15000);
+            reportSession.watch(transactionQuery(),(snap,update)=>{
+                if(!historyCurrent())return;
+                if(!snap.metadata?.fromCache)clearTimeout(reportConnectTimer);
+                latestLive={snap,update};
+                if(receiveLive)return receiveLive(snap,update);
+                if(!snap.metadata?.fromCache){
+                    presentReceipts(snap);
+                    reportStatus(detailsFailed?'Live receipts · report details unavailable · Update Report to retry':'Live receipts · loading report details…');
+                }
+            },fallback);
+        }
         const qInv = window.query ? window.collection(window.db, "inventory") : collection(db, "inventory");
         const qBom = window.query ? window.collection(window.db, "bom") : collection(db, "bom");
         const qMenu = window.query ? window.collection(window.db, "menu") : collection(db, "menu");
-        const qShifts = window.query ? window.query(window.collection(window.db, "shifts"), window.where("startTime", ">=", startOfDay), window.orderBy("startTime", "desc")) : query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
+        const qShifts = window.query ? window.query(window.collection(window.db, "shifts"), window.where("startTime", ">=", startOfDay), window.where("startTime", "<=", endOfDay), window.orderBy("startTime", "desc")) : query(collection(db, "shifts"), where("startTime", ">=", startOfDay), where("startTime", "<=", endOfDay), orderBy("startTime", "desc"));
         const qRej = window.query ? window.query(window.collection(window.db, "incoming_orders"), window.where("status", "in", ["rejected", "rejected_by_customer"]), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const qParked = window.query ? window.query(window.collection(window.db, "parked_orders"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "parked_orders"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
 
@@ -13279,8 +13343,9 @@ window.loadSalesHistoryTab = async function() {
             const entry=input;void Promise.allSettled(reads).then(()=>{if(pendingInputs.get(inputKey)===entry)pendingInputs.delete(inputKey);});
         }
         let inputTimer;
-        const [invSnap, bomSnap, menuSnap, shiftSnap, rejectedSnap, parkedSnap] = await Promise.race([input.promise,new Promise((_,reject)=>{inputTimer=window.setTimeout?.(()=>reject(Error('Sales report inputs took too long. Reconnect and use Update Report to retry.')),20000);})]).finally(()=>window.clearTimeout?.(inputTimer));
+        [invSnap, bomSnap, menuSnap, shiftSnap, rejectedSnap, parkedSnap] = await Promise.race([input.promise,new Promise((_,reject)=>{inputTimer=window.setTimeout?.(()=>reject(Error('Sales report inputs took too long. Reconnect and use Update Report to retry.')),20000);})]).finally(()=>window.clearTimeout?.(inputTimer));
 
+        }
         if (!historyCurrent()) return;
         // 1. PROCESS COSTS & MENU CATEGORIES
         let inventoryCosts = {};
@@ -13438,6 +13503,7 @@ window.loadSalesHistoryTab = async function() {
 
             window.onlineHistoryRows.push({...tx});
             let isVoid = tx.status === "Voided";
+            const paid=saleIsPaid(tx);
             const isPreparedCancellation = isVoid && tx.preparedCancellation?.prepared === true;
             const preparedCancellationLabel = isPreparedCancellation ? String(tx.preparedCancellation.label || (tx.preparedCancellation.reason === 'customer' ? 'Prepared but customer cancelled' : tx.preparedCancellation.reason === 'rider' ? 'Prepared but rider cancelled' : 'Prepared platform cancellation')) : '';
             
@@ -13485,7 +13551,7 @@ window.loadSalesHistoryTab = async function() {
 
                     txCogs += itemTotalCogs;
 
-                    if (!isVoid) {
+                    if (paid) {
                         if (!shiftRef.categorySales[itemCat]) shiftRef.categorySales[itemCat] = { sales: 0, qty: 0 };
                         shiftRef.categorySales[itemCat].sales += itemTotalSales;
                         shiftRef.categorySales[itemCat].qty += qty;
@@ -13498,12 +13564,12 @@ window.loadSalesHistoryTab = async function() {
                 netTotal: txNet, cogs: txCogs, paymentMethod: tx.paymentMethod || 'Unknown', cartEncoded: safeCart, isVoid: isVoid, preparedCancellation: isPreparedCancellation, preparedCancellationLabel
             });
 
-            if (!isVoid) {
+            if (paid) {
                 tNet += txNet; tCogs += txCogs; shiftRef.sales += txNet; shiftRef.cogs += txCogs; shiftRef.txCount += 1;
 
-                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab" || (tx.paymentMethod && tx.paymentMethod.toLowerCase().includes('grab'))) { 
+                if (receiptPlatform(tx)==="grab") { 
                      tGrab += txNet; tGrabCount += 1; 
-                 } else if (tx.paymentMethod === "Foodpanda" || tx.orderType === "Foodpanda" || tx.paymentMethod === "Panda" || tx.orderType === "Panda" || (tx.paymentMethod && tx.paymentMethod.toLowerCase().includes('foodpanda'))) {
+                 } else if (receiptPlatform(tx)==="foodpanda") {
                      tFoodpanda += txNet; tFoodpandaCount += 1;
                  }
 
@@ -13513,7 +13579,7 @@ window.loadSalesHistoryTab = async function() {
                 if (!distPayment[pMeth]) distPayment[pMeth] = { sales: 0, count: 0 };
                 distOrderType[oType].sales += txNet; distOrderType[oType].count++;
                 distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
-            } else {
+            } else if(isVoid) {
                 shiftRef.voids += txNet;
                 // Cooked cancellations retain consumed-food cost at the original
                 // receipt date. Their linked resale adds revenue, not more cost.
@@ -13522,11 +13588,11 @@ window.loadSalesHistoryTab = async function() {
 
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
             if (isVoid) { dailyAggregates[dailyKey].voids += txNet; if (isPreparedCancellation) dailyAggregates[dailyKey].cogs += txCogs; }
-            else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
+            else if(paid) { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
             if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
             if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; if (isPreparedCancellation) monthlyAggregates[monthlyKey].cogs += txCogs; }
-            else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
+            else if(paid) { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
 
             let statusStyle = isVoid ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
             let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : Date.now();
@@ -13675,8 +13741,16 @@ window.loadSalesHistoryTab = async function() {
         }
         }
         if (dataSource === 'LIVE') {
-            const qTx = window.query ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-            reportSession.watch(qTx, renderHistory);
+            if(recover){
+                await renderHistory(recoveredReceipts);
+                confirmedStatus('as of '+new Date(recoveredReceipts.asOf).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila'})+' PH · Update Report to refresh');
+            }else if(recoveryAllowed){
+                receiveLive=renderHistory;
+                if(latestLive){
+                    reportStatus(latestLive.snap.metadata?.fromCache?'Offline / cached sales':'Live sales');
+                    await renderHistory(latestLive.snap,latestLive.update);
+                }
+            }else reportSession.watch(transactionQuery(),renderHistory);
         } else {
             const status = document.getElementById('histLiveStatus'); if (status) status.textContent = 'Archived report';
             await renderHistory(null);
@@ -13685,7 +13759,15 @@ window.loadSalesHistoryTab = async function() {
     } catch (e) {
         if (!historyCurrent()) return;
         console.error("History Error:", e);
-        pendingFigures('Unavailable');reportStatus('Sales report unavailable · use Update Report to retry');
+        if(recoveryAllowed && !recover){
+            if(latestLive && !latestLive.snap.metadata?.fromCache){
+                detailsFailed=true;receiveLive=null;presentReceipts(latestLive.snap);
+                reportStatus('Live receipts · report details unavailable · Update Report to retry');return;
+            }
+            return window.loadSalesHistoryTab('confirmed');
+        }
+        if(recover && recoveredReceipts){presentReceipts(recoveredReceipts);confirmedStatus('receipt totals available · detailed report could not load');return;}
+        pendingFigures('Unavailable');reportStatus(recover?'Confirmed receipts unavailable · '+(e.message||'Check your connection and retry'):'Sales report unavailable · use Update Report to retry');
         for(const body of [tbodyTx,tbodyShifts,tbodyDaily,tbodyMonthly])if(body)body.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Sales report could not finish loading. Check your connection and use Update Report to retry. Pending Verifications has its own receipt-loading status.</td></tr>';
     }
 };

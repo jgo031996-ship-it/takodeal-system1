@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {saleIsPaid} from '../takodeal-manager/dashboard-data.js';
+import {receiptPlatform,showConfirmedReceipts,supportTables} from '../takodeal-manager/sales-report-recovery.js';
 import {createDashboard} from '../takodeal-manager/dashboard.js';
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 
 const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
-const first=main.indexOf('window.loadSalesHistoryTab = async function()');
+const first=main.indexOf('window.loadSalesHistoryTab = async function(');
 const historySource=main.slice(first,main.indexOf('\nwindow.',first+1));
 const start=new Date('2026-10-20T00:00:00+08:00'),end=new Date('2026-10-20T23:59:59+08:00');
 const sale=(id,patch={})=>({id,branch:'Maa',status:'Paid',netTotal:80,paymentMethod:'Cash',timestamp:new Date('2026-10-20T12:00:00+08:00'),cart:[{name:'Sample drink',qty:1,price:100}],...patch});
@@ -15,20 +17,24 @@ const bom=[{id:'recipe',menuItem:'Sample drink',ingredientName:'Ice Cubes',qty:1
 const snapshot=data=>({docs:data.map(row=>({id:row.id,data:()=>row})),forEach(fn){this.docs.forEach(fn);}});
 const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return{promise,resolve};};
 
-function fixture({branch='Maa',archive='LIVE',tx=[sale('paid')],extra={},manualTimers=false}={}){
+function fixture({branch='Maa',archive='LIVE',tx=[sale('paid')],extra={},manualTimers=false,serverRead}={}){
  const nodes=new Map(),reads=[],references=[],analytics=[],errors=[];
  const get=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',textContent:'',style:{},value:''});return nodes.get(id);};
  for(const [id,value] of Object.entries({histStartDate:'2026-10-20',histEndDate:'2026-10-20',histBranchFilter:branch,histArchiveSelect:archive}))get(id).value=value;
  const data={inventory,bom,menu:[{id:'menu',name:'Sample drink',category:'Drinks'}],shifts:[],incoming_orders:[sale('rejected',{status:'rejected'})],parked_orders:[sale('parked',{status:'Parked'})],transactions:tx,...extra};
  const w={db:{},auth:{currentUser:{uid:'owner'}},sessionUser:{uid:'owner',email:'owner@example.test',permissions:['all'],allowedBranches:['All']},isBranchAllowed:b=>b==='Maa',collection:(_db,table)=>({table}),where:(field,op,value)=>({field,op,value}),orderBy:(field,order)=>({field,order}),query:(ref,...clauses)=>({...ref,clauses}),getDocs:async ref=>{reads.push(ref);return snapshot(data[ref.table]||[]);},fetchCachedCollection:async name=>{references.push(name);return data[name];}};
+ if(serverRead){
+  Object.assign(w.auth.currentUser,{email:'fixture-owner@example.test',emailVerified:true});
+  w.auth.app={options:{projectId:'fictional',apiKey:'fixture'}};w.sessionUser.isOwner=true;
+ }
  const d={getElementById:get},dashboard=createDashboard(w,d);
  const timers=new Map();let timerId=0;w.setTimeout=manualTimers?(callback,ms)=>{timers.set(++timerId,{callback,ms});return timerId;}:setTimeout;w.clearTimeout=manualTimers?id=>timers.delete(id):clearTimeout;
  w.loadProductAnalytics=(...args)=>{analytics.push(args);return dashboard.historyProducts(...args);};
- let liveRender,alive=true,watches=0,generation=0;
- const historyLive={start(){alive=true;const current=++generation;return{active:()=>alive&&current===generation,watch(_query,render){watches++;liveRender=render;}};}};
- const context={window:w,document:d,historyLive,console:{error:error=>errors.push(error)},fetch:async()=>({json:async()=>tx}),Date};
+ let liveRender,listenerError,alive=true,watches=0,generation=0;
+ const historyLive={start(){alive=true;const current=++generation;return{active:()=>alive&&current===generation,watch(_query,render,error){listenerError=error;watches++;liveRender=render;}};}};
+ const context={AbortController,supportTables,createSalesSnapshotReader:serverRead,window:w,document:d,historyLive,saleIsPaid,receiptPlatform,showConfirmedReceipts,reportConnectTimer:null,recoveryFlight:null,MASTER_EMAIL:"fixture-owner@example.test",clearTimeout,setTimeout,console:{error:error=>errors.push(error)},fetch:async()=>({json:async()=>tx}),Date};
  vm.createContext(context);vm.runInContext(historySource,context);
- return{w,d,dashboard,nodes,get,reads,references,analytics,errors,data,timers,load:()=>w.loadSalesHistoryTab(),emit:(rows,update=false)=>liveRender(snapshot(rows),update),stop:()=>{alive=false;},watches:()=>watches};
+ return{w,d,dashboard,nodes,get,reads,references,analytics,errors,data,timers,load:mode=>w.loadSalesHistoryTab(mode),fail:()=>listenerError?.(),emit:(rows,update=false)=>liveRender(snapshot(rows),update),stop:()=>{alive=false;},watches:()=>watches};
 }
 
 test('live product report reuses captured transactions and costs without a Firestore read, keeping paid/branch/date/discount rules',async()=>{
@@ -113,4 +119,27 @@ test('actual archive History keeps the standalone analytics fallback and does no
 test('main analytics bridge forwards the captured report without discarding its guard',()=>{
  const source=main.slice(main.indexOf('window.loadProductAnalytics ='),main.indexOf('\n',main.indexOf('window.loadProductAnalytics ='))),calls=[],window={},globalDashboard={historyProducts:(...args)=>calls.push(args)};
  const loaded={transactions:[],inventory:[],bom:[],isCurrent:()=>true};vm.runInNewContext(source,{window,globalDashboard});window.loadProductAnalytics(start,end,'Maa',loaded);assert.equal(calls[0][3],loaded);
+});
+
+test('the verified Owner sees live branch receipts before a slow menu read and retains them if details fail',async()=>{
+ const f=fixture({serverRead:()=>{throw Error('Unexpected replacement read');}}),menu=deferred(),oldRead=f.w.getDocs;
+ f.w.getDocs=ref=>ref.table==='menu'?menu.promise.then(()=>{throw Error('offline');}):oldRead(ref);
+ const load=f.load();await Promise.resolve();assert.equal(f.watches(),1);
+ await f.emit([sale('visible'),sale('other',{branch:'Agdao',netTotal:999})]);
+ assert.match(f.get('histSumNet').textContent,/80\.00/);assert.doesNotMatch(f.get('historyTableBody').innerHTML,/other/);
+ menu.resolve();await load;assert.match(f.get('histLiveStatus').textContent,/report details unavailable/);
+});
+test('a stopped SDK recovers receipts, coalesces repeated refresh clicks and identifies the unavailable supporting section',async()=>{
+ const receipts=deferred(),calls=[];const f=fixture({serverRead:()=>async table=>{
+  calls.push(table);if(table==='transactions')return receipts.promise;
+  if(table==='menu')throw Error('interrupted');return snapshot([]);
+ }});
+ f.w.managerCloudHealth={isFailed:()=>true};
+ const a=f.load(),b=f.load();assert.equal(calls.length,1);receipts.resolve({...snapshot([sale('test')]),asOf:new Date().toISOString()});
+ await Promise.all([a,b]);assert.equal(f.watches(),0);assert.equal(f.reads.length,0);assert.match(f.get('histSumNet').textContent,/80\.00/);
+ assert.deepEqual(calls,['transactions',...supportTables]);assert.match(f.get('histLiveStatus').textContent,/unavailable sections: menu/);
+});
+test('confirmed mode reaches the complete report and omits parked orders from paid totals even when all supporting sections load',async()=>{
+ const f=fixture({serverRead:()=>async table=>({...snapshot(table==='transactions'?[sale('one')]:table==='parked_orders'?[sale('unpaid',{netTotal:999,total:999})]:[]),asOf:new Date().toISOString()})});
+ await f.load('confirmed');assert.match(f.get('histSumNet').innerText,/80\.00/);assert.match(f.get('histLiveStatus').textContent,/as of/);assert.equal(f.watches(),0);
 });

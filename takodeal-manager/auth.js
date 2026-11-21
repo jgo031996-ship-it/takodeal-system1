@@ -45,7 +45,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=branch-notices-20261121-r2');
+            await import('./main.js?v=sales-recovery-20261121-r3');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();
