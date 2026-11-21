@@ -1,0 +1,52 @@
+name: Verify November Owner payroll repair
+on:
+  push:
+    branches: [verify/owner-reviewed-payroll-20261121]
+permissions:
+  contents: read
+jobs:
+  payroll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Manila
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 4ea7dfa157a7fa090856a09a5c880877d303ee5e
+          path: repair
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 15cc210b6a6fe190f79f344b1619496a169dbb50
+          path: parent
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Fictional payroll incidents, retries, and Owner release assets
+        working-directory: repair
+        run: node --test tests/payroll-preview-integration.test.mjs tests/payroll-settlement.test.mjs tests/worked-shift-correction.test.mjs tests/worked-shift-correction-ui.test.mjs tests/payslip-worked-shifts.test.mjs tests/payroll-schedule-freshness.test.mjs tests/leave-schedule.test.mjs tests/payroll-recovery.test.mjs tests/owner-update-wiring.test.mjs
+      - name: Compare wider payroll-related failures with the serving parent
+        shell: bash
+        run: |
+          tests=(tests/franchise-payroll-confirmations.test.mjs tests/franchise-payroll-controls.test.mjs tests/franchise-payroll-model.test.mjs tests/hr-payroll-context.test.mjs tests/hr-payroll-navigation.test.mjs tests/hr-review-ui.test.mjs tests/leave-schedule.test.mjs tests/leave-ui.test.mjs tests/owner-deduction-payroll.test.mjs tests/owner-update-notice.test.mjs tests/owner-update-wiring.test.mjs tests/payroll-actual-shift-bonus.test.mjs tests/payroll-adjustment-history.test.mjs tests/payroll-adjustment-refresh.test.mjs tests/payroll-adjustment-ui.test.mjs tests/payroll-adjustments.test.mjs tests/payroll-attendance-links.test.mjs tests/payroll-attendance-reader.test.mjs tests/payroll-attendance-reference-loading.test.mjs tests/payroll-balance-review.test.mjs tests/payroll-bonus-review-hint.test.mjs tests/payroll-cash-shortage.test.mjs tests/payroll-completion.test.mjs tests/payroll-confirmed-shifts.test.mjs tests/payroll-cutoff-context.test.mjs tests/payroll-finalize-integration.test.mjs tests/payroll-loading.test.mjs tests/payroll-messenger.test.mjs tests/payroll-overtime.test.mjs tests/payroll-preview-guard.test.mjs tests/payroll-preview-integration.test.mjs tests/payroll-recovery.test.mjs tests/payroll-roster-model.test.mjs tests/payroll-safety.test.mjs tests/payroll-schedule-freshness.test.mjs tests/payroll-settlement.test.mjs tests/payroll-shift-earnings.test.mjs tests/payroll-snapshot-size.test.mjs tests/payroll-straight-review.test.mjs tests/payroll-vault-freshness.test.mjs tests/payslip-worked-shifts.test.mjs tests/plotted-payroll.test.mjs tests/shift-amendment-payroll.test.mjs tests/staff-payroll-adjustments.test.mjs tests/staff-payroll-reader.test.mjs tests/staff-payslip-details.test.mjs tests/staff-payslip-parity.test.mjs tests/staff-payslip-publication-ui.test.mjs tests/worked-shift-correction-ui.test.mjs tests/worked-shift-correction.test.mjs tests/worked-shift-reference.test.mjs)
+          for version in parent repair; do
+            (cd "$version" && node --test --test-reporter=tap "${tests[@]}") > "$RUNNER_TEMP/$version.tap" || true
+          done
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          function result(version) {
+            const tap = readFileSync(process.env.RUNNER_TEMP+'/'+version+'.tap','utf8');
+            const totals = Object.fromEntries(['tests','pass','fail','cancelled'].map(k=>[k,Number(tap.match(new RegExp('^# '+k+' (\\d+)$','m'))?.[1])]));
+            const failures = [...tap.matchAll(/^not ok \d+ - (.+)$/gm)].map(m=>m[1].replaceAll(process.cwd()+'/'+version+'/','')).sort();
+            console.log(version, totals, failures);
+            assert.ok(totals.tests > 1000 && totals.pass+totals.fail===totals.tests && totals.cancelled===0);
+            assert.equal(failures.length,totals.fail);
+            return {totals,failures};
+          }
+          const old = result('parent'), next = result('repair');
+          assert.deepEqual(next.failures.filter(name=>!old.failures.includes(name)),[]);
+          assert.ok(next.totals.pass>=old.totals.pass);
+          NODE
