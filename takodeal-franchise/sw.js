@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-v18-worked-shift-review-20261116-r1';
+const CACHE = 'takodeal-franchise-v19-reviewed-duty-training-20261121';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('./worked-shift-reference.js');
 CORE.push('franchise-ai-board.js','franchise-ai-board.css');

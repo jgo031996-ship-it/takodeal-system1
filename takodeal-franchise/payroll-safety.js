@@ -1,3 +1,4 @@
+import {serverReviewedDuty} from './emergency-shift-model.js';
 import {resolveWorkedShiftReference,workedShiftLatenessReference} from './worked-shift-reference.js';
 import {resolveReliefScheduleReview} from './relief-schedule-review-model.js';
 import {validEmergencyReliefMarker} from './relief-attendance-model.js';
@@ -301,10 +302,10 @@ export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOv
     if(log.id&&heads&&Object.hasOwn(heads,log.id)){
         try{
             const head=heads[log.id],confirmed=resolveEmergencyShift(log,profiles[staffNameOverride],head);
-            if(!confirmed||head.reviewedByEmail!==payrollOwnerEmail)throw Error('The saved assigned-hours review is not a verified Owner confirmation.');
+            if(!confirmed||head.reviewedByEmail!==payrollOwnerEmail&&!serverReviewedDuty(head))throw Error('The saved assigned-hours review is not a verified Owner confirmation.');
             assertPayrollConfirmationOrder(log,schedule,priorReview,head);
             const sameBounds=+confirmed.expectedStartAt===+priorReview?.expectedStartAt&&+confirmed.expectedEndAt===+priorReview?.expectedEndAt;
-            const category=sameBounds&&relief?{shiftType:relief.shiftType,isNightShift:relief.isNightShift,bonusCategoryVerified:true}:datedRuleCategory(schedule,log.branch,confirmed.expectedStartAt,confirmed.expectedEndAt);
+            const category=serverReviewedDuty(head)?{shiftType:head.dutyCategory,isNightShift:['mid','night'].includes(head.dutyCategory),bonusCategoryVerified:true}:sameBounds&&relief?{shiftType:relief.shiftType,isNightShift:relief.isNightShift,bonusCategoryVerified:true}:datedRuleCategory(schedule,log.branch,confirmed.expectedStartAt,confirmed.expectedEndAt);
             const lateMinutes=original.reliefReviewVerified||original.amendmentReviewVerified?original.lateMinutes:attendanceLateMinutes(log,original);
             return finish({...original,...confirmed,...category,lateMinutes,payrollHoursConfirmed:true,payrollConfirmationRevisionId:head.revisionId,payrollConfirmationVersion:head.version,amendmentNeedsReview:original.amendmentNeedsReview===true,needsScheduleReview:original.amendmentNeedsReview===true,bonusCategoryVerified:category.bonusCategoryVerified,originalExpectedStartAt:original.expectedStartAt,originalExpectedEndAt:original.expectedEndAt});
         }catch(error){return {...emptyAttendanceShift(log,'owner-shift-review'),payrollShiftConfirmationError:error.message||'The saved Owner hours need a fresh review.'};}
