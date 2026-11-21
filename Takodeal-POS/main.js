@@ -7213,13 +7213,14 @@ window.MASTER_CloseShift = async function () {
         if (!shiftSnapshot.exists()) throw new Error('The active shift was not found.');
         const branchPolicy = await readBranchPolicy(window,branchName);
         let dailyClose = {isFinalShiftOfDay:false};
-        if (shiftSnapshot.data().isMallBranch ?? branchPolicy.isMallBranch === true) {
+        if (shiftSnapshot.data().branch!==branchName) throw new Error('The shift belongs to a different branch. Reopen closing.');
+        if (branchPolicy.isMallBranch) {
             dailyClose = await confirmMallDailyClose(window,{branch:branchName,started:shiftSnapshot.data().startTime,declaredCash});
             if (!dailyClose) { if (confirmBtn) { confirmBtn.innerHTML=origText; confirmBtn.disabled=false; } return; }
         }
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
         assertCloseCurrent();
-        await closeShiftAtomic(window, {expectedSalesRevision,shiftId,branch:branchName,cashier:cashierName,closer,assertCurrent:assertCloseCurrent,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
+        await closeShiftAtomic(window, {reviewedMallMode:branchPolicy.isMallBranch,expectedSalesRevision,shiftId,branch:branchName,cashier:cashierName,closer,assertCurrent:assertCloseCurrent,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
         // The old account's commit remains saved if the screen changed while
         // its acknowledgement travelled back. Do not clear the new session.
         try{assertCloseCurrent();}catch{return;}
