@@ -83,6 +83,68 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
 test('actual modal and payment handlers deny a stale preview before rendering a payslip or opening a payment dialog',async()=>{const h=harness();await h.w.loadPayrollGenerator();const old=h.w.globalPayrollCache['Sample Staff'];h.node('payrollEnd').value='2030-01-17';await h.w.openPayslipModal('Sample Staff');assert.equal(h.w.currentPayslipData,null);assert.equal(h.node('payslipModal').style.display,'none');h.w.currentPayslipData=old;await h.w.finalizePayslip();assert.equal(h.writes.length,0);assert.ok(h.events.some(event=>Array.isArray(event)&&/Refresh unpaid payslip/.test(event[0])));});
 test('an existing payment confirmation cannot write after the cutoff changes underneath it',async()=>{const gate=held(),shown=held();let confirmation=false;const h=harness({confirm:async options=>{if(options?.title==='💸 Disburse Payroll'){confirmation=true;shown.resolve();return gate.promise;}return {isConfirmed:false};}});await h.w.generateAutoPayslips();h.w.currentPayslipData=h.w.globalPayrollCache['Sample Staff'];h.node('psNetPay').innerText='450.00';for(const id of ['psLoans','psAdvance','psFoods'])h.node(id).innerText='0';const work=h.w.finalizePayslip();await waitForSignal(shown.promise,'The real payroll confirmation');assert.equal(confirmation,true);h.node('payrollEnd').value='2030-01-17';h.node('payrollEnd').emit('change');gate.resolve({isConfirmed:true,value:'0'});await work;assert.equal(h.writes.length,0);assert.equal(h.node('btnFinalizePayslip').disabled,true);});
 
+test('November leave decision flows through both generators and one recoverable payment',async()=>{
+ const {fixture}=await import('./helpers/worked-shift-fixture.mjs');
+ const {finalizeOrdinaryPayroll,checkSavedPayrollPayment}=await import('../takodeal-manager/payroll-settlement.js');
+ const f=fixture({clockNow:new Date('2026-11-21T12:00:00+08:00')});
+ const h=harness(),staffId=f.start.staffId,branch='Cabantian',home='Fictional home',date='2026-11-03';
+ const start={id:'nov-in',staffId,staffName:'Former Sample',branch,type:'TIME IN',timestamp:new Date(date+'T08:55:00+08:00')};
+ const out={id:'nov-out',staffId,staffName:start.staffName,branch,type:'TIME OUT',timestamp:new Date(date+'T17:53:00+08:00'),timeInLogId:start.id,timeInAt:start.timestamp};
+ const person={...f.profile,branch:home,cashierName:'Renamed Sample',scheduleAliases:[start.staffName]};
+ f.put('cashiers/'+staffId,person);
+ f.put('attendance_logs/'+start.id,start);f.put('attendance_logs/'+out.id,out);
+ const parent={staffId,staffName:start.staffName,branch:home,type:'Leave',status:'Approved',reason:'Original reason',startDate:date,endDate:'2026-11-04'};
+ f.put('staff_requests/nov-letter',parent);
+ const claims={staffId,dates:{[date]:{requestId:'nov-letter',staffId},'2026-11-04':{requestId:'nov-letter',staffId}}};
+ const claimPath='settings/schedule_leave_staff_'+staffId;
+ f.put(claimPath,claims);
+ const context={staffId,branch,attendanceLogId:start.id,from:'2026-11-01',to:'2026-11-15',workDate:date,
+    manualDuty:{name:'Morning 1',shiftType:'morning',startTime:'09:00',endTime:'17:46'}};
+ const view=await f.service.inspect(context),choice=view.choices.find(row=>row.ownerEntered);
+ assert.equal(choice.leaveReview.requestId,'nov-letter');assert.equal(view.recommendedKey,null);
+ assert.throws(()=>f.service.propose(view,choice.key),/approved leave/);
+ const proposal=f.service.propose(view,choice.key,'nov-letter');
+ f.failNextCommit();await assert.rejects(f.service.apply(proposal),/Commit rejected/);
+ assert.deepEqual(f.get('staff_requests/nov-letter'),parent);assert.deepEqual(f.get(claimPath),claims);
+ f.loseNextAck();await assert.rejects(f.service.apply(proposal),/lost after commit/);
+ const saved=await f.service.apply(proposal);assert.equal(saved.alreadySaved,true);
+ assert.deepEqual(f.get('attendance_logs/'+start.id),start);assert.deepEqual(f.get('attendance_logs/'+out.id),out);
+ const leave=f.get('staff_requests/nov-letter');
+ assert.deepEqual(leave.activeLeaveDates,['2026-11-04']);assert.equal(leave.reason,parent.reason);
+ assert.equal(leave.leaveActions.length,1);assert.equal(leave.leaveActions[0].timeOutLogId,out.id);
+ assert.deepEqual(f.get(claimPath).dates,{'2026-11-04':claims.dates['2026-11-04']});
+ const again=await f.makeService().inspect(context);assert.equal(again.choices[0].alreadyCorrected,true);
+ h.node('payrollStart').value=context.from;h.node('payrollEnd').value=context.to;
+ h.records.cashiers=[{...person,id:staffId}];
+ h.records.attendance_logs=[start,out].map(log=>({...log,timestamp:stamp(log.timestamp.toISOString()),
+    ...(log.timeInAt?{timeInAt:stamp(log.timeInAt.toISOString())}:{})}));
+ h.w.loadPayrollScheduleHistory=()=>schedule.createScheduleHistoryStore(f.api).loadRange(context.from,context.to);
+ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+    await h.w[generator]();
+    const d=h.w.globalPayrollCache[person.cashierName];assert.ok(d);
+    assert.equal(d.staffId,staffId);assert.equal(d.branch,home);assert.equal(d.logs[0].branch,branch);
+    assert.equal(d.logs[0].workedShiftCorrectionId,saved.revisionId);assert.equal(d.attendanceReviewRequired,false);
+    assert.equal(d.shiftsWorked,1);assert.equal(d.hours,(8*60+58)/60);assert.equal(d.basicPay,450);
+ }
+ const data=h.w.globalPayrollCache[person.cashierName];
+ f.put('cash_accounts/test-account',{name:'Test cash',branch:home,balance:1000});
+ f.api.loadPayrollScheduleHistory=h.w.loadPayrollScheduleHistory;
+ const verifySchedule=await freshness.assertPayrollScheduleFresh(f.api,data);
+ const payment={data,accountId:'test-account',finalNetPay:450,verifySchedule};
+ const indexPath='settings/schedule_month_2026_11',originalIndex=f.get(indexPath);
+ f.put(indexPath,{...originalIndex,revisionIds:[...originalIndex.revisionIds,'intervening-change']});
+ await assert.rejects(finalizeOrdinaryPayroll(f.api,payment),/schedule changed during payment/);
+ assert.equal(f.get('cash_accounts/test-account').balance,1000);f.put(indexPath,originalIndex);
+ f.loseNextAck();await assert.rejects(finalizeOrdinaryPayroll(f.api,payment),/lost after commit/);
+ f.put('cashiers/'+staffId,{...person,cashierName:'Newer Sample',branch:'New home',scheduleAliases:[person.cashierName,start.staffName]});
+ const results=await Promise.all([finalizeOrdinaryPayroll(f.api,payment),checkSavedPayrollPayment(f.api,{data})]);
+ assert.equal(results[1].status,'paid');assert.equal(results[0].id,results[1].id);
+ assert.equal(f.get('cash_accounts/test-account').balance,550);
+ assert.equal([...f.docs.keys()].filter(key=>key.startsWith('expenses/')).length,1);
+ assert.equal(results[0].frozenData.logs[0].branch,branch);
+ assert.match((await f.service.inspect(context)).choices[0].blockers.join(' '),/paid payslip/);
+});
+
 function datedSalary(h){
  Object.assign(h.person,{hourlyRate:500,salaryRateVersion:1,salaryRateRevision:'raise'});
  h.records.staff_salary_rates=[{id:'person-a',staffId:'person-a',branch:h.person.branch,version:1,revision:1,revisionId:'raise',baselineDailyRate:450,rates:{raise:{effectiveDate:'2030-01-17',dailyRate:500,sequence:1}}}];

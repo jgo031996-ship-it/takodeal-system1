@@ -25,6 +25,8 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    current();
    node.dataset.workedShiftSaved='true';node.close();node.remove();if(dialog===node)dialog=null;
    w.invalidateCollectionCache?.('settings');
+   w.invalidateCollectionCache?.('staff_requests');
+   w.invalidateCache?.('staff_requests');
    w.invalidateCache?.('global_schedule');
    w.dispatchEvent?.(new w.CustomEvent('worked-shift-corrected',{detail:{...result,staffId:context.staffId,branch:context.branch}}));
    try{
@@ -40,20 +42,21 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
    const records=view.recordChoices||[],choices=view.choices||[],blockers=view.blockers||[];
    const available=choices.filter(row=>!row.blockers.length),blocked=choices.filter(row=>row.blockers.length);
    const proposed=available.find(row=>row.shiftId===context.proposedShiftId),preferred=proposed?.key||view.recommendedKey;
-   let selected=null,saving=false,proposal=null,draftKey='',manualMode=false,reviewedChange='';
+   let selected=null,saving=false,proposal=null,draftKey='',manualMode=false,reviewedChange='',leaveConsent=null;
    const saved=view.confirmedDuty;
    node.addEventListener('cancel',event=>{if(saving)event.preventDefault();});
    const rowTime=row=>esc(stamp(row.expectedStartAt))+' → '+esc(stamp(row.expectedEndAt));
    const notes=row=>[
      row.key===proposed?.key?'Requested by employee':'',
      row.ownerEntered?'Owner-entered hours for this punch.':row.standalone?'No dated roster for this branch. Select these hours only if you can confirm the assignment for this punch.':'',
+     row.leaveReview?'Approved '+row.leaveReview.type+' · '+row.leaveReview.workDate+' · request '+row.leaveReview.requestId:'',
      row.occupied?'Another employee holds this slot. Confirming records this employee’s duty only.':'',
      row.undatedLeaveIds?.length?'A leave has incomplete dates. Confirm only if you verified this employee worked this date. The leave stays on file.':''
    ].filter(Boolean).map(note=>'<small style="display:block;margin-top:4px">'+esc(note)+'</small>').join('');
    const cards=available.map((row,index)=>'<label style="display:flex;align-items:flex-start;gap:10px;border:1px solid #a9c2b3;border-radius:8px;padding:12px;margin:8px 0;cursor:pointer"><input type="radio" name="workedShiftChoice" data-choice value="'+index+'"><span><strong>'+esc(row.shiftName)+'</strong><br>'+rowTime(row)+notes(row)+'</span></label>').join('');
    const unavailable=blocked.length?'<details><summary>Unavailable shifts ('+blocked.length+')</summary>'+blocked.map(row=>'<p><strong>'+esc(row.shiftName)+'</strong><br>'+esc(row.blockers.join(' '))+'</p>').join('')+'</details>':'';
    const options=records.length?'<label>Work record<select data-record style="display:block;width:100%;padding:12px">'+records.map(row=>'<option value="'+esc(row.attendanceLogId)+'">'+esc(stamp(row.timeInAt))+(row.timeOutAt?' → '+esc(stamp(row.timeOutAt)):' · missing Time Out')+'</option>').join('')+'</select></label>':'<fieldset style="padding:0;border:0"><legend>Which shift did this employee work?</legend>'+cards+'</fieldset>'+unavailable;
-   const allowManual=!records.length&&!!view.timeInAt&&!context.proposedShiftId&&(saved||!available.length||choices.some(row=>row.standalone||row.rosterException)||context.allowManual);
+   const allowManual=!records.length&&!!view.timeInAt&&!context.proposedShiftId&&(saved||!available.length||choices.some(row=>row.standalone||row.rosterException||row.leaveReview)||context.allowManual);
    const useManualFirst=allowManual&&!available.length;
    const local=value=>new Date(Date.parse(value)+8*3600000).toISOString();
    const savedNotice=saved?'<p class="owner-time-out-note"><strong>Previously confirmed</strong><br>'+esc(saved.name)+'<br>'+rowTime(saved)+'</p>':'';
@@ -74,12 +77,28 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
     if(exception.unavailableBranches.length||exception.dateRestriction)notes.push('The roster lists this employee as unavailable.');
     return notes.join(' ');
    }
-   const clearDraft=()=>{reviewedChange='';proposal=null;draftKey='';};
+   const clearDraft=()=>{reviewedChange='';proposal=null;draftKey='';leaveConsent=null;};
    const refresh=()=>{
     const ready=manualMode&&Object.values(values()).every(Boolean);
-    button.textContent=records.length?'Choose record':manualMode?(reviewedChange?'Confirm updated hours':'Confirm assigned hours'):'Confirm worked shift';
+    button.textContent=leaveConsent?'Confirm work and remove leave for this date':records.length?'Choose record':manualMode?(reviewedChange?'Confirm updated hours':'Confirm assigned hours'):'Confirm worked shift';
     button.disabled=saving||(!records.length&&(manualMode?!ready:!selected||!!blockers.length));
    };
+   function prepare(checked,row){
+    const leave=row.leaveReview;
+    if(leave){
+     const key=JSON.stringify([checked.expectedFingerprint,row.key,row.expectedStartAt,row.expectedEndAt,leave.requestId]);
+     if(leaveConsent!==key){
+      leaveConsent=key;
+      const roster=row.plotted?.length?row.plotted.join(', '):'No assigned shift at this branch';
+      status.textContent='Approved '+leave.type+' ('+leave.start+' to '+leave.end+', request '+leave.requestId+'). '+
+       'Roster: '+roster+'. '+payrollLocation(row)+' Recorded at '+checked.branch+': '+stamp(checked.timeInAt)+' to '+stamp(checked.timeOutAt)+
+       '. Assigned hours: '+row.shiftName+', '+stamp(row.expectedStartAt)+' to '+stamp(row.expectedEndAt)+
+       '. Confirm to remove '+leave.workDate+' from this leave and count this duty once. Cancel to keep the leave.';
+      return null;
+     }
+    }
+    return service.propose(checked,row.key,leave?.requestId||null);
+   }
    function activateManual(){
     if(saving)return;
     manualMode=true;selected=null;clearDraft();radios.forEach(radio=>radio.checked=false);
@@ -150,9 +169,9 @@ export function installWorkedShiftCorrectionUI(w,d,{service=createWorkedShiftCor
         throw Error('The saved punch or approval changed. Reopen it to check the latest hours.');
        const choice=checked.choices.find(row=>row.ownerEntered&&row.workDate===draft.date);
        if(!choice||checked.blockers.length||choice.blockers.length)throw Error(choice?.blockers[0]||checked.blockers[0]||'Check that the assigned window overlaps the recorded duty.');
-       proposal=service.propose(checked,choice.key);draftKey=key;
+       proposal=prepare(checked,choice);if(!proposal)return;draftKey=key;
       }
-     }else proposal||=service.propose(view,selected.key);
+     }else {proposal||=prepare(view,selected);if(!proposal)return;}
      status.textContent='Saving the confirmed hours…';
      let result;
      try{result=await service.apply(proposal);}

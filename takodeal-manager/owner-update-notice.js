@@ -1,6 +1,6 @@
 import {waitForAppUpdate} from './owner-app-update.js';
 
-export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v174-payslip-multiple-worked-shifts-20261119-r1';
+export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v175-owner-payroll-leave-review-20261121-r1';
 const installations=new WeakMap();
 const validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);
 const noticeText='App update ready. Save open edits, then reload to use the latest fixes.';

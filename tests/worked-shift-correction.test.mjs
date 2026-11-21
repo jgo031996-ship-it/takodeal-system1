@@ -1,9 +1,7 @@
 import {installWorkedShiftCorrectionUI} from '../takodeal-manager/worked-shift-correction-ui.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto} from 'node:crypto';
-import {firestoreHarness} from './helpers/firestore-harness.mjs';
-import {createWorkedShiftCorrectionService} from '../takodeal-manager/worked-shift-correction-service.js';
+import {owner,branch,name,staffId,metadata,at,rule,fixture} from './helpers/worked-shift-fixture.mjs';
 import {createScheduleRevision,resolveScheduleForDate} from '../takodeal-manager/schedule-history.js';
 import {captureAttendanceSchedule,resolveAttendanceShift,payrollReliefHoursVerified,attendanceLateMinutes} from '../takodeal-manager/payroll-safety.js';
 import {ordinaryPayrollId} from '../takodeal-manager/payroll-settlement.js';
@@ -25,25 +23,6 @@ import {installOwnerRequestDialog} from '../takodeal-manager/owner-request-dialo
 import {installScheduleDeclarationReview} from '../takodeal-manager/attendance-swap-declaration.js';
 import {ReviewDocument,ReviewElement} from './helpers/review-dom.mjs';
 
-const owner='jgo031996@gmail.com',branch='Fictional Branch',name='Fictional Crew',staffId='fictional-crew',metadata={fromCache:false,hasPendingWrites:false};
-const at=(time,day=17)=>new Date('2026-10-'+String(day).padStart(2,'0')+'T'+time+':00+08:00');
-const rule=(id,startTime,endTime,shiftType)=>({id,name:id,startTime,endTime,shiftType,active:true,days:[0,1,2,3,4,5,6]});
-function fixture({rules=[rule('morning','09:00','17:30','morning'),rule('night','17:30','02:00','night')],extraDay={},missingHistory=false,clockNow=new Date('2026-11-05T12:00:00+08:00'),defaultReader=false}={}){
- const h=firestoreHarness(),profile={cashierName:name,nickname:'CREW',branch,hourlyRate:450,nightDiffRate:50,active:true},snapshot={currentYear:2026,currentMonth:10,branchConfig:{[branch]:rules},employees:[{staffId,name,nickname:'CREW',branch}],currentSchedule:{17:{[branch]:{scheduled:{morning:'CREW',...Object.fromEntries(rules.filter(row=>row.id!=='morning').map(row=>[row.id,'UNFILLED']))},rest:[],unavailable:[],swaps:{morning:'Original colleague'},...extraDay}}},unavailability:{},holidays:{}};
- const revision=createScheduleRevision(snapshot,{revisionId:'original-october',effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',savedAt:at('00:00',1)}),history={...snapshot,historyMonths:{'2026-10':{month:'2026-10',revisions:[revision]}}};
- const start={id:'fictional-in',staffId,staffName:name,branch,type:'TIME IN',timestamp:at('17:11'),lateMinutes:37,lateExempted:false,lateDecision:'Saved decision',scheduleSnapshot:captureAttendanceSchedule(at('17:11'),branch,name,history,{[name]:{...profile,staffId}})},out={id:'fictional-out',staffId,staffName:name,branch,type:'TIME OUT',timestamp:at('02:06',18),timeInLogId:start.id,timeInAt:start.timestamp};
- h.put('cashiers/'+staffId,profile);h.put('hq_managers/fictional-owner',{email:owner,cashierName:'Fictional Owner',role:'Owner',permissions:['all'],allowedBranches:['All'],pin:'3333',active:true});
- h.put('settings/global_schedule',{currentYear:2026,currentMonth:11,branchConfig:{[branch]:[rule('new-night','19:30','04:00','night')]},currentSchedule:{},scheduleRevisionId:'november-head',payrollHistoryEnforcedFrom:'2026-10-01'});h.put('settings/schedule_history_policy',{schemaVersion:1,payrollHistoryEnforcedFrom:'2026-10-01'});
- if(!missingHistory){h.put('settings/schedule_revision_original-october',revision);h.put('settings/schedule_month_2026_10',{schemaVersion:1,kind:'schedule-month',month:'2026-10',revisionIds:[revision.revisionId],latestRevisionId:revision.revisionId,updatedAt:revision.savedAt,payrollHistoryEnforcedFrom:'2026-10-01'});}
- h.put('attendance_logs/'+start.id,start);h.put('attendance_logs/'+out.id,out);h.put('cash_accounts/fictional',{balance:5000});
- const calls={reads:[],writes:[],queries:[],transactionReads:[]},base=h.api,api={...base,crypto:webcrypto,auth:{currentUser:{uid:'fictional-owner',email:owner,emailVerified:true,providerData:[{providerId:'google.com'}]}},sessionUser:{uid:'fictional-owner',email:owner,isOwner:true,isFranchisee:false,permissions:['all'],allowedBranches:['All']},isBranchAllowed:()=>true,where:(key,op,value)=>({key,op,value}),limit:count=>({limit:count})};
- api.getDocFromServer=async reference=>{calls.reads.push(reference.path);const row=h.get(reference.path);return {id:reference.id,metadata,exists:()=>row!==undefined,data:()=>structuredClone(row)};};
- api.getDocsFromServer=async query=>{calls.queries.push(query);const matches=[...h.docs].filter(([path,row])=>path.startsWith(query.table+'/')&&(query.filters||[]).every(filter=>!filter.key||filter.op==='>='?(!filter.key||+row[filter.key]>=+filter.value):filter.op==='<'?+row[filter.key]<+filter.value:row[filter.key]===filter.value)),limit=query.filters.find(filter=>filter.limit)?.limit??Infinity;return {metadata,docs:matches.slice(0,limit).map(([path,row])=>({id:path.slice(query.table.length+1),metadata,exists:()=>true,data:()=>structuredClone(row)}))};};
- api.runTransaction=(db,callback)=>base.runTransaction(db,tx=>callback({...tx,get:async reference=>{calls.transactionReads.push(reference.path);return {...await tx.get(reference),metadata};},set:(reference,value)=>{calls.writes.push(reference.path);tx.set(reference,value);}}));
- let counter=0;const makeService=()=>createWorkedShiftCorrectionService(api,{crypto:webcrypto,now:()=>clockNow,makeId:()=> 'operation-'+String(++counter),...(!defaultReader?{readAttendance:async()=>[...h.docs].filter(([path])=>path.startsWith('attendance_logs/')).map(([path,row])=>({...structuredClone(row),id:path.slice('attendance_logs/'.length)}))}:{})}),service=makeService();
- const context={attendanceLogId:start.id,staffId,branch,from:'2026-10-16',to:'2026-10-31'};
- return {...h,api,service,makeService,context,profile,snapshot,revision,start,out,calls};
-}
 const inspect=f=>f.service.inspect(f.context);
 const apply=async f=>{const view=await inspect(f);return f.service.apply(f.service.propose(view));};
 const revisions=f=>[...f.docs.keys()].filter(path=>path.startsWith('settings/schedule_revision_worked-'));
@@ -97,16 +76,17 @@ test('an occupied overnight slot can be explicitly confirmed without changing it
  const repeat=await inspect(f),choice=repeat.choices.find(row=>row.shiftId==='night');
  assert.equal((await f.service.apply(f.service.propose(repeat,choice.key))).alreadySaved,true);
 });
-test('a confirmed leave blocks that date; an old incomplete leave outside it does not',async()=>{
+test('a verified leave needs explicit consent for the selected date; unrelated history is ignored',async()=>{
  const f=fixture(),letter={type:'Leave',status:'Approved',staffId,staffName:name};
  f.put('staff_requests/old',{...letter,endDate:'2026-10-10'});
  let row=(await inspect(f)).choices.find(row=>row.shiftId==='night');assert.deepEqual(row.blockers,[]);assert.equal(row.attendanceOnly,false);
  f.put('staff_requests/active',{...letter,startDate:'2026-10-17',endDate:'2026-10-18'});
- row=(await inspect(f)).choices.find(row=>row.shiftId==='night');assert.match(row.blockers.join(' '),/approved leave covers/i);
+ const view=await inspect(f);row=view.choices.find(row=>row.shiftId==='night');assert.equal(row.leaveReview.requestId,'active');assert.throws(()=>f.service.propose(view,row.key),/approved leave/i);
 });
 for(const source of ['claim','approved-leave','suspension','unknown-leave','unknown-sanction'])test(source+' keeps a verified Owner from overriding an independent HR record',async()=>{
  const f=fixture({extraDay:{unavailable:['CREW']}}),day='2026-10-17';
  if(source==='claim')f.put('settings/schedule_leave_staff_'+staffId,{dates:{[day]:{requestId:'leave-source'}}});
+ if(source==='approved-leave')f.put('cashiers/namesake',{...f.profile,cashierName:'Different employee'});
  if(source==='approved-leave')f.put('staff_requests/leave-source',{staffName:'CREW',type:'Leave',status:'Approved',startDate:day,endDate:day});
  if(source==='suspension')f.put('hr_sanctions/sanction-source',{staffId,staffName:name,severity:'1 day suspension',effectiveDate:day});
  if(source.startsWith('unknown-'))f.get('settings/schedule_revision_original-october').daySnapshots[day].daySchedule[branch].unavailable.push({name:'CREW',[source==='unknown-leave'?'leaveRequestId':'sanctionId']:'missing-source'});
