@@ -6,6 +6,8 @@ import {OWNER_EMAIL,canOpenWorkspacePage,createWorkspaceSession} from './workspa
 import {resolveHQAccount,savedPin} from './hq-account-model.js';
 import {validEmergencyReliefMarker} from './relief-attendance-model.js';
 import {workedShiftApprovalKey} from './worked-shift-reference.js';
+import {uniqueLeaveOwner,workedLeaveChanges} from './worked-shift-leave.js';
+import {activeLeaveDates} from './leave-model.js';
 import {ordinaryPayrollId} from './payroll-settlement.js';
 import {planWorkedShiftCorrection,createWorkedShiftRevision,workedShiftCanonical,workedShiftValidId,workedShiftPair,workedShiftAttendanceEvidence,workedShiftSourceFingerprint} from './worked-shift-correction-model.js';
 
@@ -99,14 +101,24 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
             const names=[...new Set([start.staffName,profile.cashierName,profile.fullName,profile.nickname,profile.scheduleName,profile.scheduleNickname,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].filter(v=>typeof v==='string'&&v.trim()).map(v=>v.trim()))];
             const rows=await Promise.all([queryRows(table,[api.where('staffId','==',staffId)]),...names.map(value=>queryRows(table,[api.where('staffName','==',value)]))]);return [...new Map(rows.flat().map(row=>[row.id,row])).values()];};
         const [history,leaves,sanctions,payroll,claims,head]=await Promise.all([historyPromise,search('staff_requests'),search('hr_sanctions'),search('payroll_records'),get('settings','schedule_leave_staff_'+staffId),get('attendance_shift_confirmations',start.id)]);
+        const nearbyDates=[-1,0,1].map(offset=>scheduleDateKey(new Date(at+offset*DAY)));
+        const legacy=leaves.filter(row=>{
+            if(row.staffId||row.type!=='Leave'||row.status!=='Approved')return false;
+            try{return activeLeaveDates(row).some(date=>nearbyDates.includes(date));}catch{return false;}
+        });
+        const legacyLeaveIds=new Set();
+        if(legacy.length){
+            const directory=await queryRows('cashiers');
+            for(const row of legacy)if(uniqueLeaveOwner(row,directory,staffId))legacyLeaveIds.add(row.id);
+        }
         if(head)history.payrollShiftConfirmations={[start.id]:head};
         guard(key,user,session,start.branch);authority(api,key,accounts,start.branch);
         const matched=resolveAttendanceShift(start,history,{[start.staffName]:{...profile,staffId}},start.staffName);
         const cover=validEmergencyReliefMarker(start.emergencyRelief,start.branch)||validEmergencyReliefMarker(out.emergencyRelief,out.branch);
         if(matched.payrollShiftConfirmationError||matched.reliefNeedsReview&&!cover||matched.amendmentNeedsReview)throw Error('The existing Owner attendance review must be resolved before correcting its roster.');
-        const plan=planWorkedShiftCorrection({start,out,profile,history,attendance:records,leaves,sanctions,payroll,claims,matchedShift:matched,context:{...context,coverReview:!!cover},now:now()});plan.sourceFingerprint=workedShiftSourceFingerprint(start);
+        const plan=planWorkedShiftCorrection({start,out,profile,history,attendance:records,leaves,sanctions,payroll,claims,legacyLeaveIds,matchedShift:matched,context:{...context,coverReview:!!cover},now:now()});plan.sourceFingerprint=workedShiftSourceFingerprint(start);
         if(matched.workedShiftCorrectionId&&matched.workedShiftTimeOutLogId===out.id&&attendanceMillis(matched.workedShiftTimeOutAt)===attendanceMillis(out.timestamp)){
-            for(const row of plan.choices)if(row.standalone&&row.workDate===matched.workDate&&row.shiftId===matched.shiftId&&row.shiftName===matched.shiftName&&row.shiftType===matched.shiftType&&row.expectedStartAt===new Date(matched.expectedStartAt).toISOString()&&row.expectedEndAt===new Date(matched.expectedEndAt).toISOString()){
+            for(const row of plan.choices)if(!row.leaveReview&&row.standalone&&row.workDate===matched.workDate&&row.shiftId===matched.shiftId&&row.shiftName===matched.shiftName&&row.shiftType===matched.shiftType&&row.expectedStartAt===new Date(matched.expectedStartAt).toISOString()&&row.expectedEndAt===new Date(matched.expectedEndAt).toISOString()){
                 row.alreadyCorrected=true;row.existingCorrectionId=matched.workedShiftCorrectionId;
             }
         }
@@ -137,13 +149,14 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
         const view=freeze({status:plan.blockers.length?'blocked':'ready',context:{...context,attendanceLogId:start.id,staffId,branch:start.branch},staffId,staffName:start.staffName,branch:start.branch,attendanceLogId:start.id,timeOutLogId:out.id,timeInAt:plan.timeInAt,timeOutAt:plan.timeOutAt,workedHours:plan.workedHours,confirmedDuty,preservedLateness:copy(plan.preservedLateness),choices:plan.choices.map(({basis,...choice})=>copy(choice)),recommendedKey:plan.recommendedKey,blockers:[...plan.blockers],expectedFingerprint,recordChoices:[]});
         inspections.set(view,{key,user,session,accounts,refs,plan,history,context:view.context});return view;
     }
-    function propose(view,choiceKey=view?.recommendedKey){
+    function propose(view,choiceKey=view?.recommendedKey,reviewedLeaveId=null){
         const saved=inspections.get(view);if(!saved)throw Error('Inspect this exact worked shift before applying its correction.');guard(saved.key,saved.user,saved.session,view.branch);
         const choice=saved.plan.choices.find(row=>row.key===choiceKey);if(!choice||view.blockers.length||choice.blockers.length)throw Error(choice?.blockers[0]||view.blockers[0]||'Choose one saved shift slot from this work date.');
+        if((choice.leaveReview?.requestId||null)!==reviewedLeaveId)throw Error('Review the approved leave and confirm removing this date before saving the worked shift.');
         const slot=saved.key+'|'+view.attendanceLogId,existing=attempts.get(slot);
         if(existing){if(existing.choiceKey!==choiceKey||existing.expectedFingerprint!==view.expectedFingerprint)throw Error('A different correction is still pending for this Time In. Retry its original outcome first.');return existing;}
         const operationId=makeId();if(!workedShiftValidId(operationId)||operationId.length>80)throw Error('The correction reference could not be prepared.');
-        const proposal=freeze({operationId,choiceKey,expectedFingerprint:view.expectedFingerprint,context:copy(view.context),workDate:choice.workDate,staffId:view.staffId,branch:view.branch});proposals.set(proposal,saved);attempts.set(slot,proposal);return proposal;
+        const proposal=freeze({operationId,choiceKey,reviewedLeaveId,expectedFingerprint:view.expectedFingerprint,context:copy(view.context),workDate:choice.workDate,staffId:view.staffId,branch:view.branch});proposals.set(proposal,saved);attempts.set(slot,proposal);return proposal;
     }
     function apply(proposal,stageDecision){
         const saved=proposals.get(proposal);if(!saved)return Promise.reject(Error('Use the original inspected correction before applying this worked shift.'));
@@ -168,7 +181,7 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
                     return result;
                 };
                 const prior=data(fresh(await tx.get(ref('settings','schedule_revision_'+revisionId))));
-                const live=new Map(await Promise.all([...refs].map(async([name,row])=>{const snapshot=fresh(await tx.get(ref(row.table,row.id)));return [name,{...row,value:project(row.table,data(snapshot),row.id)}];})));
+                const live=new Map(await Promise.all([...refs].map(async([name,row])=>{const snapshot=fresh(await tx.get(ref(row.table,row.id)));const raw=data(snapshot);return [name,{...row,raw,value:project(row.table,raw,row.id)}];})));
                 const accounts=[...live].filter(([name])=>name.startsWith('hq_managers/')).map(([,row])=>row.value&&({...row.value,id:row.id})).filter(Boolean);authority(api,key,accounts,proposal.branch);
                 if(prior){if(!['owner-worked-shift','owner-attendance-only'].includes(prior.source)||prior.revisionId!==revisionId||prior.intent!==intent||prior.historicalWorkedShiftReview?.reviewedByUid!==actor.uid||prior.historicalWorkedShiftReview?.timeInLogId!==plan.attendanceLogId)throw Error('This correction reference belongs to different saved details.');return finish({alreadySaved:true,revisionId,workDate:proposal.workDate,staffId:proposal.staffId});}
                 for(const [name,row]of refs)if(workedShiftCanonical(live.get(name)?.value)!==workedShiftCanonical(row.value))throw Error('The saved roster, attendance, payment or leave changed. Reopen this exact worked-shift correction.');
@@ -182,11 +195,14 @@ export function createWorkedShiftCorrectionService(api,{now=()=>new Date(),makeI
                 const next={...copy(index),schemaVersion:1,kind:'schedule-month',month,revisionIds:[...new Set([...index.revisionIds,revisionId])],updatedAt:revision.savedAt};
                 if(new TextEncoder().encode(JSON.stringify(next)).length>950000)throw Error('The dated schedule index is too large to update safely.');
                 guard(key,user,session,proposal.branch);
+                const leaveChanges=selected.leaveReview ? workedLeaveChanges(ref,(table,id)=>live.get(table+'/'+id)?.raw,
+                    selected.leaveReview,revision,scheduleDateKey(now()),plan.staffId) : [];
                 mayHaveWritten=true;
                 return finish({alreadySaved:false,revisionId,workDate:proposal.workDate,staffId:proposal.staffId,
                     shiftId:revision.historicalWorkedShiftReview.shiftId,preservedLateness:copy(plan.preservedLateness)},[
                     {ref:ref('settings','schedule_revision_'+revisionId),value:revision},
-                    {ref:ref('settings','schedule_month_'+month.replace('-','_')),value:next}
+                    {ref:ref('settings','schedule_month_'+month.replace('-','_')),value:next},
+                    ...leaveChanges
                 ]);
             });
             guard(key,user,session,proposal.branch);

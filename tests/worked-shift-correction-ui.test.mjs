@@ -37,6 +37,18 @@ const apply=async f=>{const view=await inspect(f);return f.service.apply(f.servi
 const revisions=f=>[...f.docs.keys()].filter(path=>path.startsWith('settings/schedule_revision_worked-'));
 
 import {ReviewDocument,ReviewElement,drain,deferred} from './helpers/review-dom.mjs';
+test('review lists the leave and punch before a separate explicit confirmation, including overnight manual hours',async()=>{
+ const f=uiFixture(),day='2026-10-17',path='staff_requests/leave-review';
+ f.put(path,{type:'Leave',status:'Approved',staffId,staffName:name,startDate:day,endDate:day});
+ await f.ui.open({...f.context,allowManual:true},{assertCurrent:f.assertCurrent,onApplied:f.onApplied});
+ enterHours(f);await f.node('[data-apply]').onclick();
+ assert.match(f.node('[data-status]').textContent,/leave-review.*Roster:.*Recorded at.*Assigned hours:/);
+ assert.equal(revisions(f).length,0);assert.equal(f.get(path).activeLeaveDates,undefined);
+ assert.match(f.node('[data-apply]').textContent,/Confirm work and remove leave/);
+ await Promise.all([f.node('[data-apply]').onclick(),f.node('[data-apply]').onclick()]);
+ assert.equal(f.applied.length,1);assert.deepEqual(f.get(path).activeLeaveDates,[]);
+ assert.equal(f.get(path).leaveActions.length,1);assert.equal(revisions(f).length,1);
+});
 import {installWorkedShiftCorrectionUI,workedShiftActionHint} from '../takodeal-manager/worked-shift-correction-ui.js';
 import {openPayslipWorkedShifts} from '../takodeal-manager/payslip-worked-shifts.js';
 Object.defineProperty(ReviewElement.prototype,'style',{configurable:true,get(){return this._style ||= {};}});

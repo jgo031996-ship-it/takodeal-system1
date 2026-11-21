@@ -11111,10 +11111,10 @@ window.finalizePayslip = async function() {
         let allowNegativeBalance=false;
         if(Number(account.balance)<finalNetPay){const answer=await Swal.fire({title:'Insufficient Funds',html:escapeHtml(account.name)+' has ₱'+Number(account.balance).toLocaleString()+'. Paying ₱'+finalNetPay.toLocaleString()+' will make its balance negative. Continue?',icon:'warning',showCancelButton:true,confirmButtonText:'Yes, Proceed',confirmButtonColor:'#dc2626'});if(!answer.isConfirmed)return;allowNegativeBalance=true;}
         currentIntent();if(btn&&owns())btn.innerText='Saving payment…';
-        await Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)]);currentIntent();
+        const [verifySchedule] = await Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)]);currentIntent();
         const result=(snapshot.onlineRefundRows||[]).length
-            ?await finalizeRefundPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance})
-            :await finalizeOrdinaryPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance});
+            ?await finalizeRefundPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance,verifySchedule})
+            :await finalizeOrdinaryPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance,verifySchedule});
         confirmed=true;
         const saved={...result,accountId:result.accountId??account.id,finalNetPay:result.finalNetPay??finalNetPay,frozenData:result.frozenData||{...snapshot,isPaid:true,finalNetPay}};
         const active=applyConfirmedPayroll(window,document,data,saved,{actorKey});
@@ -11637,7 +11637,7 @@ window.generateAutoPayslips = async function() {
             if(paidRecords[name])return;
             
             if (!staffData[name]) {
-                staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
+                staffData[name] = { branch: staffDict[name]?.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
 
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;

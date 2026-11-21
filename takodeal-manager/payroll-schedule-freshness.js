@@ -148,4 +148,16 @@ export async function assertPayrollScheduleFresh(api, data) {
     if (actor !== identity() || payrollScheduleStamp(current,{start:data.start,end:data.end},{bonusBranches}) !== data.scheduleEvidenceStamp)
         throw Error('The saved shift times changed. Regenerate this unpaid payslip and reopen it before payment.');
     await assertPayrollShiftConfirmationsFresh(api,data,stamp.payrollConfirmations,{assertCurrent:()=>{if(actor!==identity())throw Error('The payroll account changed. Generate this unpaid payroll again.');}});
+    // Lock the month indices read during the last fresh check until payment commits.
+    const indices=Object.entries(schedule.historyMonths||{}).map(([month,archive])=>({
+        id:'schedule_month_'+month.replace('-','_'), ids:(archive.revisions||[]).map(row=>row.revisionId).sort()
+    }));
+    return async tx=>{
+        for(const {id,ids} of indices){
+            const saved=await tx.get(api.doc(api.db,'settings',id));
+            const live=saved.exists()?saved.data().revisionIds||[]:[];
+            if(!Array.isArray(live)||JSON.stringify([...new Set(live)].sort())!==JSON.stringify(ids))
+                throw Error('The saved schedule changed during payment. Refresh the unpaid payslip to review the latest hours.');
+        }
+    };
 }
