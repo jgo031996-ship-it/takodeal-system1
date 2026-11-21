@@ -1,3 +1,5 @@
+import {readStaffAnnouncements,announcementImage} from './staff-announcements.js';
+import {operationalRecordsSnapshot} from './staff-operational-records.js';
 import {signedContractDocument} from './signed-contract-document.js';
 import {installStaffProfilePhoto} from './staff-profile-photo.js';
 import {createStaffSelfService,createDailyPinRecoveryClient,createPersonalPhonePreparation} from './staff-self-service.js';
@@ -775,28 +777,32 @@ window.loadAnnouncements = async function() {
     let container = document.getElementById('bulletinList');
     let cashierName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
-    if (!cashierName) return;
-
+    if (!cashierName || !staffId) { container.replaceChildren(); return; }
+    const session = localStorage.getItem('takodeal_staff_session_id');
+    const current = () => staffId===localStorage.getItem('takodeal_staff_id') && session===localStorage.getItem('takodeal_staff_session_id');
+    const guard = () => { if (!current()) throw Error('The staff account changed.'); };
+    const escapeNotice = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    container.textContent='Loading notices…';
     try {
-        // 🔥 GET STAFF BRANCH: Required to route branch-specific announcements
-        let staffBranch = "Unknown";
-        if (staffId) {
-            const staffDoc = await window.getDoc(window.doc(window.db, "cashiers", staffId));
-            if (staffDoc.exists()) staffBranch = staffDoc.data().branch || "Unknown";
+        let staffBranch, snap, ackSnap;
+        if (session && window.staffAccessClient) {
+            const read = async table => operationalRecordsSnapshot((await window.staffAccessClient.operational({staffId,table,assertCurrent:guard})).records);
+            [snap,ackSnap] = await Promise.all([read('announcements'),read('acknowledgments')]);
+        } else {
+            const profile=await window.getDocFromServer(window.doc(window.db,'cashiers',staffId)); guard();
+            staffBranch=profile.data()?.branch;
+            [snap,ackSnap]=await Promise.all([
+                readStaffAnnouncements(window,{staffId,staffName:cashierName,branch:staffBranch,assertCurrent:guard}),
+                window.getDocsFromServer(window.query(window.collection(window.db,'acknowledgments'),window.where('staffId','==',staffId)))
+            ]);
         }
-
-        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
-        const snap = await window.getDocs(q);
-
-        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", cashierName));
-        const ackSnap = await window.getDocs(ackQ);
-
+        guard();
         let signatures = {};
         ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
 
         let announcementsArray = [];
         snap.forEach(docSnap => announcementsArray.push({id: docSnap.id, ...docSnap.data()}));
-        announcementsArray.sort((a,b) => b.timestamp - a.timestamp); 
+        announcementsArray.sort((a,b) => (b.timestamp?.toMillis?.() || 0) - (a.timestamp?.toMillis?.() || 0)); 
 
         let html = '';
         let unreadAnnouncements = [];
@@ -805,8 +811,8 @@ window.loadAnnouncements = async function() {
             // 🔥 THE GATEKEEPER: Filters out announcements not meant for this staff member
             let isTarget = false;
             if (!ann.targetType || ann.targetType === 'All') isTarget = true;
-            else if (ann.targetType === 'Branch' && ann.targetBranch === staffBranch) isTarget = true;
-            else if (ann.targetType === 'Individual' && ann.targetStaff === cashierName) isTarget = true;
+            else if (ann.targetType === 'Branch' && (!staffBranch || ann.targetBranch === staffBranch)) isTarget = true;
+            else if (ann.targetType === 'Individual' && (ann.targetStaffId ? ann.targetStaffId === staffId : ann.targetStaff === cashierName)) isTarget = true;
 
             if (!isTarget) return; 
 
@@ -827,34 +833,36 @@ window.loadAnnouncements = async function() {
 
             let safeData = {
                 id: ann.id,
-                title: ann.title || 'Announcement',
-                subHeadline: ann.subHeadline || '',
-                message: ann.message || '',
-                footerMessage: ann.footerMessage || '', 
-                images: ann.images || [],
+                recipientId: staffId,
+                isSchedule: ann.isSchedule===true,
+                title: escapeNotice(ann.title || 'Announcement'),
+                subHeadline: escapeNotice(ann.subHeadline),
+                message: escapeNotice(ann.message),
+                footerMessage: escapeNotice(ann.footerMessage), 
+                images: (Array.isArray(ann.images)?ann.images:[]).map(v=>announcementImage(v)).filter(url=>url&&!/[\x22'<>\\]/.test(url)),
                 dateStr: dateStr,
                 hasSignature: !!sigData,
-                signatureImg: sigData ? sigData.signature : '',
+                signatureImg: sigData ? escapeNotice(announcementImage(sigData.signature,{signature:true})) : '',
                 signatureDate: sigDateStr,
                 targetType: ann.targetType || 'All'
             };
             
-            let modalData = encodeURIComponent(JSON.stringify(safeData));
+            let modalData = encodeURIComponent(JSON.stringify(safeData)).replace(/'/g,'%27');
 
             if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
                 <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
+                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${safeData.title}</h3>
                         <div style="margin-left: 10px; display: flex; flex-direction: column; align-items: flex-end;">
                             ${statusBadge}
                             ${targetBadge}
                         </div>
                     </div>
-                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${ann.subHeadline}</div>` : ''}
+                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${safeData.subHeadline}</div>` : ''}
                     <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
-                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
+                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${escapeNotice(shortMsg)}</p>
                     <div style="font-size: 11px; color: #0ea5e9; font-weight: bold; text-align: right;">View Full Details &rarr;</div>
                 </div>
             `;
@@ -865,12 +873,12 @@ window.loadAnnouncements = async function() {
         if (unreadAnnouncements.length > 0 && !window.hasAutoShownBulletin) {
             window.hasAutoShownBulletin = true;
             setTimeout(() => {
-                window.viewAnnouncement(unreadAnnouncements[0]); 
+                if (current()) window.viewAnnouncement(unreadAnnouncements[0]); 
             }, 1000); 
         }
 
     } catch (e) { 
-        console.error(e); 
+        if (!current()) return; console.error(e);
         container.innerHTML = '<div style="text-align:center; padding: 40px; color: #dc2626;">Error loading announcements.</div>';
     }
 };
@@ -898,6 +906,7 @@ if (typeof window.originalViewAnnouncement === 'undefined' && typeof window.view
 
 window.viewAnnouncement = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
+    if (data.recipientId && data.recipientId!==localStorage.getItem('takodeal_staff_id')) return;
     
     let imagesHtml = '';
     if (data.images && data.images.length > 0) {
@@ -926,7 +935,7 @@ window.viewAnnouncement = function(encodedData) {
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
                     <button onclick="window.clearSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear</button>
-                    <button onclick="window.submitSignature('${data.id}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
+                    <button onclick="window.submitSignature('${data.id}','${data.recipientId || ''}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">Submit Signature</button>
                 </div>
             </div>`;
     }
@@ -1031,7 +1040,7 @@ window.clearSignature = function() {
     }
 };
 
-window.submitSignature = async function(announcementId) {
+window.submitSignature = async function(announcementId, expectedStaffId) {
     const canvas = document.getElementById('sigCanvas');
     if (!canvas) return;
 
@@ -1048,11 +1057,18 @@ window.submitSignature = async function(announcementId) {
     let staffName = localStorage.getItem('takodeal_staff_name');
 
     try {
-        await addDoc(collection(db, "acknowledgments"), {
-            announcementId: announcementId,
-            staffName: staffName,
-            signature: sigDataUrl,
-            timestamp: serverTimestamp()
+        const staffId=localStorage.getItem('takodeal_staff_id'), session=localStorage.getItem('takodeal_staff_session_id');
+        if(!staffId || expectedStaffId && expectedStaffId!==staffId) throw Error('Reopen your own staff notice.');
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([announcementId,staffId])));
+        const ack=doc(db,'acknowledgments','notice-'+Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join(''));
+        await runTransaction(db,async tx=>{
+            const prior=await tx.get(ack);
+            if(localStorage.getItem('takodeal_staff_id')!==staffId || localStorage.getItem('takodeal_staff_session_id')!==session) throw Error('Your staff account changed.');
+            if(prior.exists()){
+                if(prior.data().staffId!==staffId || prior.data().announcementId!==announcementId) throw Error('Reopen the saved notice.');
+                return;
+            }
+            tx.set(ack,{announcementId,staffId,staffName,signature:sigDataUrl,timestamp:serverTimestamp()});
         });
 
         Swal.fire({
@@ -3036,10 +3052,11 @@ if (typeof window.originalViewAnnouncement === 'undefined') {
 
 window.viewAnnouncement = async function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
+    if (data.recipientId && data.recipientId!==localStorage.getItem('takodeal_staff_id')) return;
     
     // Quick fetch to check if it has the secret "isSchedule" flag!
-    let isSchedule = false;
-    try {
+    let isSchedule = data.isSchedule===true;
+    if (!Object.hasOwn(data,'isSchedule')) try {
         const docSnap = await window.getDoc(window.doc(window.db, "announcements", data.id));
         if (docSnap.exists() && docSnap.data().isSchedule) {
             isSchedule = true;
@@ -3088,6 +3105,7 @@ window.submitScheduleAck = async function(announcementId) {
     try {
         await window.addDoc(window.collection(window.db, "acknowledgments"), {
             announcementId: announcementId,
+            staffId:localStorage.getItem('takodeal_staff_id'),
             staffName: cashierName,
             signature: quickSigImg,
             timestamp: window.serverTimestamp()
