@@ -1,4 +1,4 @@
-import {readStaffAnnouncements,announcementImage} from './staff-announcements.js';
+import {readStaffAnnouncements,readStaffNoticeAcknowledgments,announcementImage} from './staff-announcements.js';
 import {operationalRecordsSnapshot} from './staff-operational-records.js';
 import {signedContractDocument} from './signed-contract-document.js';
 import {installStaffProfilePhoto} from './staff-profile-photo.js';
@@ -793,7 +793,7 @@ window.loadAnnouncements = async function() {
             staffBranch=profile.data()?.branch;
             [snap,ackSnap]=await Promise.all([
                 readStaffAnnouncements(window,{staffId,staffName:cashierName,branch:staffBranch,assertCurrent:guard}),
-                window.getDocsFromServer(window.query(window.collection(window.db,'acknowledgments'),window.where('staffId','==',staffId)))
+                readStaffNoticeAcknowledgments(window,{staffId,staffName:cashierName,assertCurrent:guard})
             ]);
         }
         guard();

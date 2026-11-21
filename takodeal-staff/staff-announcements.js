@@ -15,3 +15,27 @@ export async function readStaffAnnouncements(api,{staffId,staffName,branch,asser
  function checked(snapshot){if(!snapshot||!Array.isArray(snapshot.docs)||snapshot.docs.length>maxRows||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||snapshot.docs.some(row=>!row?.id||typeof row.data!=='function'||row.metadata?.fromCache||row.metadata?.hasPendingWrites))throw Error('Announcements are incomplete or still syncing. Reconnect and refresh.');return snapshot;}
  try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;reject(Error('Announcements took too long. Reconnect and refresh.'));},timeoutMs);})]);}finally{expired=true;clearTimeout(timer);}
 }
+
+// Older phones can have signatures saved before staff IDs were included.
+// Read those by name only after the directory confirms a unique owner.
+export async function readStaffNoticeAcknowledgments(api,{staffId,staffName,assertCurrent=()=>{}}) {
+    assertCurrent();
+    const table=api.collection(api.db,'acknowledgments');
+    const own=await api.getDocsFromServer(api.query(table,api.where('staffId','==',staffId)));
+    assertCurrent();
+    const byId=new Map(own.docs.map(row=>[row.id,row]));
+    if(staffName && !staffName.includes('/')) {
+        try {
+            const snapshot=await api.getDocFromServer(api.doc(api.db,'staff_name_claims',staffName));
+            assertCurrent();
+            const claim=snapshot.exists()?snapshot.data():null;
+            if(claim?.ambiguous===false && claim.uniqueStaffId===staffId) {
+                const legacy=await api.getDocsFromServer(api.query(table,api.where('staffName','==',staffName)));
+                assertCurrent();
+                for(const row of legacy.docs) if(!row.data().staffId || row.data().staffId===staffId) byId.set(row.id,row);
+            }
+        } catch(error) { if(error.code!=='permission-denied') throw error; }
+    }
+    assertCurrent();
+    return {forEach:callback=>byId.forEach(row=>callback(row))};
+}
