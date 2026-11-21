@@ -41,14 +41,17 @@ export function installOwnerPayslipSharing(w,d,{actorKey,assertFresh,read=readSt
    try{v.overrides[key]=number(node);if(v.ready){w.recalcPayslip();void enqueue(capture());}}catch(error){status(v,error.message);}
   }
   v.changed=changed;
-  v.retry=()=>v.ready&&v.latest?enqueue(v.latest):sync(data);
-  v.open=Promise.resolve().then(async()=>{
+  v.retry=()=>{if(v.ready&&v.latest)return enqueue(v.latest);return begin();};
+  function begin(){v.open=Promise.resolve().then(async()=>{
    const previous=await read(w,{data,assertCurrent:guard});guard();if(view!==v)return;
    v.revision=previous.revision;const snap=previous.publication?.snapshot;
    const prior=snap?.vaultOverrides||{};
    for(const [key,node] of inputs()){
     if(!node||node.tagName!=='INPUT'||v.touched.has(key))continue;
-    const value=Object.hasOwn(prior,key)?prior[key]:undefined;
+    const index=key.startsWith('custom-')?Number(key.slice(7)):null;
+    const label=index===null?null:(data.customDeductions??data.profile?.customDeductions)?.[index]?.name;
+    const beforeKey=index===null?key:'custom-'+(snap?.customDeductions||[]).findIndex(row=>row.name===label);
+    const value=Object.hasOwn(prior,beforeKey)?prior[beforeKey]:undefined;
     if(Number.isFinite(value)&&value>=0){node.value=String(value);v.overrides[key]=value;}
    }
    w.recalcPayslip();v.ready=true;
@@ -68,10 +71,11 @@ export function installOwnerPayslipSharing(w,d,{actorKey,assertFresh,read=readSt
    if(JSON.stringify(prepareSharedPayslip(next.data,next.finalNetPay).snapshot)===v.last){status(v,'Staff Vault synced · Unpaid');return;}
    await enqueue(next);
   });
-  v.open.catch(error=>status(v,'Vault sync pending · '+error.message));
+  v.open.catch(error=>status(v,'Vault sync pending · '+error.message));return v.open;}
+  begin();
  }
  d.addEventListener('change',event=>{if(view&&w.currentPayslipData===view.data)view.changed(event.target);});
- w.addEventListener?.('online',()=>{if(view&&w.currentPayslipData===view.data&&!w.payrollPaymentPending)void view.retry();});
+ w.addEventListener?.('online',()=>{if(view&&w.currentPayslipData===view.data&&!w.payrollPaymentPending)void view.retry().catch(()=>{});});
  const controller={sync,async beforePayment(data){const v=view;if(v?.data===data){if(!v.ready)await v.open;if(!v.ready)throw Error('Reopen the payslip to load the saved Staff Vault figures.');await v.queue;}}};
  w.staffPayslipSharing=controller;return controller;
 }
