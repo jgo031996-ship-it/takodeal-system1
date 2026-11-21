@@ -67,7 +67,7 @@ import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,checkSavedPays
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,payrollBonusBranches,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
-import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview,invalidatePayrollLoad} from './payroll-loading.js';
+import {applyPayrollLeaveHolds,coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview,invalidatePayrollLoad} from './payroll-loading.js';
 import {createPayrollRosterResolver,buildPayrollLedgerReview} from './payroll-roster-model.js';
 import {buildPayrollRosterReview,renderPayrollBalanceReview} from './payroll-balance-review.js';
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
@@ -10407,7 +10407,7 @@ window.loadPayrollGenerator = async function() {
     };
 
     try {
-        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap,attendanceReferenceRecords=[]}=await loadPayrollPreviewInputs(window,{start:startDateRaw,end:endDateRaw,fetchStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
+        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap,approvedLeaves,attendanceReferenceRecords=[]}=await loadPayrollPreviewInputs(window,{start:startDateRaw,end:endDateRaw,fetchStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
         const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData,{start:startDateRaw,end:endDateRaw});
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
@@ -10749,6 +10749,7 @@ window.loadPayrollGenerator = async function() {
         let html = '';
         const paidStaffIds=new Set(prSnap.docs.map(row=>{const saved=row.data();return saved.staffId||saved.frozenData?.staffId||saved.frozenData?.profile?.staffId||saved.frozenData?.profile?.id;}).filter(Boolean));
         for(const name of Object.keys(staffData)){if(!paidRecords[name]&&paidStaffIds.has(staffDict[name]?.staffId))identityProblems.set(name,{status:'conflict',name,reason:'A paid payslip already exists for this employee and cutoff under a saved name. Confirm the saved identity before another payment.'});}
+        applyPayrollLeaveHolds(staffData,approvedLeaves,rosterResolver);
         const roster=buildPayrollRosterReview({staffData,paidRecords,staffDict,resolver:rosterResolver,sources:balanceSources,unmatched:unmatchedBalanceRows,identities:identityProblems});
         for(const hold of roster.holds){const row=staffData[hold.name];if(row){row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...(row.attendanceReviewReasons||[]),hold.reason];}}
         let allStaffNames = new Set(roster.names);
@@ -11111,10 +11112,10 @@ window.finalizePayslip = async function() {
         let allowNegativeBalance=false;
         if(Number(account.balance)<finalNetPay){const answer=await Swal.fire({title:'Insufficient Funds',html:escapeHtml(account.name)+' has ₱'+Number(account.balance).toLocaleString()+'. Paying ₱'+finalNetPay.toLocaleString()+' will make its balance negative. Continue?',icon:'warning',showCancelButton:true,confirmButtonText:'Yes, Proceed',confirmButtonColor:'#dc2626'});if(!answer.isConfirmed)return;allowNegativeBalance=true;}
         currentIntent();if(btn&&owns())btn.innerText='Saving payment…';
-        await Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)]);currentIntent();
+        const [scheduleMonths]=await Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)]);currentIntent();
         const result=(snapshot.onlineRefundRows||[]).length
-            ?await finalizeRefundPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance})
-            :await finalizeOrdinaryPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance});
+            ?await finalizeRefundPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,scheduleMonths,assertCurrent:currentIntent,allowNegativeBalance})
+            :await finalizeOrdinaryPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,scheduleMonths,assertCurrent:currentIntent,allowNegativeBalance});
         confirmed=true;
         const saved={...result,accountId:result.accountId??account.id,finalNetPay:result.finalNetPay??finalNetPay,frozenData:result.frozenData||{...snapshot,isPaid:true,finalNetPay}};
         const active=applyConfirmedPayroll(window,document,data,saved,{actorKey});
@@ -11584,7 +11585,7 @@ window.generateAutoPayslips = async function() {
     };
 
     try {
-        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap,attendanceReferenceRecords=[]}=await loadPayrollPreviewInputs(window,{start:startInput,end:endInput,fetchStartDate:trueStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
+        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap,approvedLeaves,attendanceReferenceRecords=[]}=await loadPayrollPreviewInputs(window,{start:startInput,end:endInput,fetchStartDate:trueStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
         const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData,{start:startInput,end:endInput});
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
@@ -11637,7 +11638,7 @@ window.generateAutoPayslips = async function() {
             if(paidRecords[name])return;
             
             if (!staffData[name]) {
-                staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
+                staffData[name] = { branch: staffDict[name]?.branch || "Unknown", totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
 
             let manualPenalty = parseFloat(log.penaltyAmount) || 0;
@@ -11892,6 +11893,7 @@ window.generateAutoPayslips = async function() {
         let html = '';
         const paidStaffIds=new Set(prSnap.docs.map(row=>{const saved=row.data();return saved.staffId||saved.frozenData?.staffId||saved.frozenData?.profile?.staffId||saved.frozenData?.profile?.id;}).filter(Boolean));
         for(const name of Object.keys(staffData)){if(!paidRecords[name]&&paidStaffIds.has(staffDict[name]?.staffId))identityProblems.set(name,{status:'conflict',name,reason:'A paid payslip already exists for this employee and cutoff under a saved name. Confirm the saved identity before another payment.'});}
+        applyPayrollLeaveHolds(staffData,approvedLeaves,rosterResolver);
         const roster=buildPayrollRosterReview({staffData,paidRecords,staffDict,resolver:rosterResolver,sources:balanceSources,unmatched:unmatchedBalanceRows,identities:identityProblems});
         for(const hold of roster.holds){const row=staffData[hold.name];if(row){row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...(row.attendanceReviewReasons||[]),hold.reason];}}
         let allStaffNames = new Set(roster.names);

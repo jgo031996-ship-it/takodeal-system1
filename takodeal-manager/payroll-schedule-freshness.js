@@ -148,4 +148,5 @@ export async function assertPayrollScheduleFresh(api, data) {
     if (actor !== identity() || payrollScheduleStamp(current,{start:data.start,end:data.end},{bonusBranches}) !== data.scheduleEvidenceStamp)
         throw Error('The saved shift times changed. Regenerate this unpaid payslip and reopen it before payment.');
     await assertPayrollShiftConfirmationsFresh(api,data,stamp.payrollConfirmations,{assertCurrent:()=>{if(actor!==identity())throw Error('The payroll account changed. Generate this unpaid payroll again.');}});
+    return Object.fromEntries(Object.entries(schedule.historyMonths).map(([month,archive])=>[month,(archive.revisions||archive).map(row=>row.revisionId)]));
 }

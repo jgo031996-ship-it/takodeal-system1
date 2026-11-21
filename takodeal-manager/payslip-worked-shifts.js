@@ -17,7 +17,7 @@ export function openPayslipWorkedShifts(w,d,data,initial,chooser){
   const hint=workedShiftActionHint(w,data,log);
   if(hint&&!rows.has(log.attendanceLogId))rows.set(log.attendanceLogId,{log,context:hint.context,saved:false});
  }
- if(rows.size<2||!rows.has(initial.attendanceLogId))return null;
+ if((rows.size<2&&!initial.workedLeaveReview)||!rows.has(initial.attendanceLogId))return null;
  const actor=payrollActorKey(w),user=w.auth.currentUser,session=w.sessionUser;
  const edits=capturePayslipEdits(data,d),node=d.createElement('dialog');
  node.className='owner-time-out-correction';node.setAttribute('aria-labelledby','workedShiftBatchTitle');
@@ -49,12 +49,13 @@ export function openPayslipWorkedShifts(w,d,data,initial,chooser){
   if(active||finishing||row.saved)return;
   try{
    scope();active=row;controls();
-   const child=await chooser.open(row.context,{assertCurrent:scope,refreshCutoff:false,onApplied:()=>{
+   const child=await chooser.open(row.context,{assertCurrent:scope,refreshCutoff:false,onApplied:async()=>{
     if(row.saved)return;
     row.saved=true;savedCount++;
     w.invalidateCache?.('attendance_logs');invalidatePayrollLoad(w);
     w.getPayrollPreviewGuard().invalidate('Worked shifts saved. Finish the shift review to refresh payroll.');
     progress();controls();
+    if(rows.size===1){active=null;await complete();}
    }});
    if(child?.open){
     child.addEventListener('close',()=>{active=null;controls();},{once:true});

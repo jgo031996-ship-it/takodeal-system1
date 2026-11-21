@@ -151,3 +151,16 @@ test('a new paid cutoff while the owner fills the form preserves the draft and p
  await f.node('[data-apply]').onclick();assert.equal(f.node('dialog'),node);assert.equal(f.node('[data-manual-start]').value,'17:30');
  assert.match(f.node('[data-status]').textContent,/paid payslip/);assert.equal(revisions(f).length,0);assert.equal(f.applied.length,0);
 });
+test('a dated leave stays active until the Owner expressly confirms full work for that one date',async()=>{
+ const f=uiFixture(),date='2026-10-17',leave={staffId,staffName:name,type:'Leave',status:'Approved',startDate:date,endDate:'2026-10-18'};
+ f.put('staff_requests/qa-approved',leave);
+ const open=async()=>{const dialog=await f.ui.open(f.context,{onApplied:f.onApplied});dialog.querySelectorAll('[data-choice]').at(-1).onchange();return dialog;};
+ let dialog=await open();await f.node('[data-apply]').onclick();
+ assert.match(f.node('[data-status]').textContent,/qa-approved/);
+ assert.match(f.node('[data-status]').textContent,/partial leave/i);assert.equal(revisions(f).length,0);
+ dialog.querySelector('[data-close]').click();assert.deepEqual(f.get('staff_requests/qa-approved'),leave);
+ dialog=await open();const confirm=f.node('[data-apply]');await confirm.onclick();
+ assert.match(confirm.textContent,/remove this leave date/i);await Promise.all([confirm.onclick(),confirm.onclick()]);
+ assert.equal(revisions(f).length,1);assert.deepEqual(f.get('staff_requests/qa-approved').activeLeaveDates,['2026-10-18']);
+ assert.equal(f.get('staff_requests/qa-approved').leaveActions.length,1);
+});

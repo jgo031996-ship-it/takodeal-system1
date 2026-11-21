@@ -1,3 +1,4 @@
+import {prepareWorkedDateCheck,checkWorkedDatesInPayment} from './payroll-worked-dates.js';
 import {resolveHQAccount} from './hq-account-model.js';
 import {createWorkspaceSession,canOpenHrTab,OWNER_EMAIL} from './workspace-access-model.js';
 import {dailyStaffRate,validRateDate,validateSalaryTimeline} from './staff-rate-model.js';
@@ -131,16 +132,21 @@ export async function checkSavedPayrollPayment(api,{data,assertCurrent=()=>{}}={
  const jobs=[()=>read(query('hq_managers',[['email',identity.email]])),()=>read(query('payroll_records',[['startDate',personData.start],['endDate',personData.end],...selectedBranch])),()=>read(query('payroll_records',[['staffId',personData.staffId],...selectedBranch])),()=>read(query('payroll_records',[['staffName',personData.name],...selectedBranch])),()=>read(query('cashiers',[['cashierName',personData.name],...selectedBranch]))];
  jobs.push(identity.email!==OWNER_EMAIL?async()=>{const snap=await api.getDocFromServer(ref('hq_email_access',identity.email));guard();if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('HQ access could not be confirmed.');return snap.exists()?snap.data():null;}:async()=>null);
  const [hq,cutoff,byId,byName,directory,grant]=await parallel(jobs,guard);authorized(api,identity,hq,grant,[personData.branch]);
- if(directory.length!==1||directory[0].id!==personData.staffId)throw Error('This payroll name does not identify one saved employee. Ask HR to separate the profiles.');
  const history=[...new Map([...cutoff,...byId,...byName].filter(row=>belongs(row,personData)).map(row=>[row.id,row])).values()];
  if(history.length>PAYROLL_SETTLEMENT_LIMITS.rows)throw Error('This payroll has too many saved records for one safe check. Ask HQ to reconcile it.');
  const references=[ref('cashiers',personData.staffId),ref('payroll_records',recordId),ref('payroll_records',refundId(personData.staffId,personData.start,personData.end)),...history.map(row=>ref('payroll_records',row.id)),...hq.map(row=>ref('hq_managers',row.id)),...(identity.email!==OWNER_EMAIL?[ref('hq_email_access',identity.email)]:[])],unique=[...new Map(references.map(reference=>[reference.path||JSON.stringify(reference),reference])).values()];
  return api.runTransaction(api.db,async tx=>{
   const snapshots=await parallel(unique.map(reference=>()=>tx.get(reference)),guard),saved=new Map(unique.map((reference,index)=>[reference.path||JSON.stringify(reference),snapshots[index]])),get=(table,key)=>{const reference=ref(table,key),snap=saved.get(reference.path||JSON.stringify(reference));return snap?.exists()?snap.data():null;};
-  const person=get('cashiers',personData.staffId);if(!person||text(person.cashierName||person.fullName||person.name)!==personData.name||person.branch!==personData.branch)throw Error('The saved employee identity or branch changed. Reopen payroll.');
+  const person=get('cashiers',personData.staffId);
   const freshHQ=hq.map(row=>{const current=get('hq_managers',row.id);if(!current)throw Error('Your saved HQ authorization changed.');return {...current,id:row.id};});
   authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[personData.branch]);
   const existing=confirmedHistory(history,get,personData),selected=selectedSavedPayroll(personData,existing,get('payroll_records',recordId),get('payroll_records',refundId(personData.staffId,personData.start,personData.end)),recordId);guard();
+  // A completed, ID-linked payment can still be recovered after an HR transfer or rename.
+  // Name-only history and an unpaid draft require the current directory identity.
+  if(!selected||!selected.row.staffId||selected.row.staffId!==personData.staffId||identity.email!==OWNER_EMAIL){
+   if(directory.length!==1||directory[0].id!==personData.staffId)throw Error('This payroll name does not identify one saved employee. Ask HR to separate the profiles.');
+   if(!person||text(person.cashierName||person.fullName||person.name)!==personData.name||person.branch!==personData.branch)throw Error('The saved employee identity or branch changed. Reopen payroll.');
+  }
   if(!selected)return {status:'not-recorded',alreadyPaid:false};
   authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[personData.branch,selected.row.branch||selected.row.frozenData?.branch||personData.branch]);
   return {status:'paid',...confirmedPayrollResult(selected.row,{id:selected.id,staffId:personData.staffId,start:personData.start,end:personData.end,legacyName:selected.legacyName})};
@@ -162,13 +168,14 @@ async function settle(api,input,identity,guard){
  jobs.push(()=>readQuery(query('staff_bonuses',[['staffId',data.staffId],['type',PAYROLL_ADJUSTMENT_TYPE],['status','Unpaid']])));
  const [hq,cutoff,byId,byName,directory,expenses,grant,deductions,bonuses,loans,cashById,ownerById,adjustmentsById]=await parallel(jobs,guard);
  authorized(api,identity,hq,grant,[data.branch],{completeHistory:true});
- if(directory.length!==1||directory[0].id!==data.staffId)throw Error('This payroll name does not identify one saved employee. Ask HR to separate the profiles.');
  const history=[...new Map([...cutoff,...byId,...byName].filter(row=>belongs(row,data)).map(row=>[row.id,row])).values()];
  // New or changed obligations must not prevent recovery of this cutoff's
  // already-confirmed immutable payment. The read-only check reauthorizes HQ.
  if(history.some(row=>row.startDate===data.start&&row.endDate===data.end)){
   const confirmed=await checkSavedPayrollPayment(api,{data,assertCurrent:guard});guard();if(confirmed.status==='paid'){const {status,...paid}=confirmed;return paid;}
  }
+ if(directory.length!==1||directory[0].id!==data.staffId)throw Error('This payroll name does not identify one saved employee. Ask HR to separate the profiles.');
+ const workedDates=await prepareWorkedDateCheck(api,data,guard);
  const overtimeSources=await readPayrollOvertimeSources(api,data,{readRows:readQuery,assertCurrent:guard});
  const overtimeIds=new Set(payrollOvertimePreview(overtimeSources,data).manualOvertimeRows.map(row=>row.id)),overtimeCandidates=overtimeSources.filter(row=>overtimeIds.has(row.id));
  const end=Date.parse(data.end+'T23:59:59.999+08:00'),start=Date.parse(data.start+'T00:00:00+08:00');
@@ -203,6 +210,7 @@ async function settle(api,input,identity,guard){
   const exact=existing.filter(row=>row.startDate===data.start&&row.endDate===data.end);
   if(exact.length>1)throw Error('Duplicate saved payroll records need HQ review. No new payment was made.');
   if(exact.length){const row=exact[0];authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[data.branch,row.branch||row.frozenData?.branch||data.branch]);return confirmedPayrollResult(row,{id:row.id,staffId:data.staffId,start:data.start,end:data.end,legacyName:data.name});}
+  await checkWorkedDatesInPayment(tx,ref,data.staffId,workedDates,input.scheduleMonths);guard();
   if(data.isPaid)throw Error('This saved payslip is read-only. Refresh payroll to confirm its payment record.');
   if(adjustmentCandidates.length&&(identity.email!==OWNER_EMAIL||api.sessionUser?.isOwner!==true))throw Error('The verified Owner must confirm this payslip because it includes a previous payroll credit.');
   if((cashCandidates.length||amount(data.cashShortages)||(data.cashShortageRows||[]).length)&&identity.email!==OWNER_EMAIL)throw Error('The verified Owner must finalize cash shortage deductions.');
@@ -252,7 +260,7 @@ async function settle(api,input,identity,guard){
  });return result;
 }
 
-export function finalizeOrdinaryPayroll(api,{data,accountId,finalNetPay,sourcePerfBonus,allowNegativeBalance=false,assertCurrent=()=>{}}={}){
+export function finalizeOrdinaryPayroll(api,{data,accountId,finalNetPay,sourcePerfBonus,scheduleMonths,allowNegativeBalance=false,assertCurrent=()=>{}}={}){
  try{
   if(typeof api.getDocsFromServer!=='function'||typeof api.getDocFromServer!=='function'||typeof api.runTransaction!=='function')throw Error('Reconnect to HQ before paying payroll.');
   if(typeof allowNegativeBalance!=='boolean')throw Error('Confirm the payment account balance before continuing.');const identity=actor(api),copied=json(data),recordId=ordinaryPayrollId(copied.staffId,copied.start,copied.end);id(accountId);copied.name=text(copied.name);copied.branch=text(copied.branch);
@@ -261,7 +269,7 @@ export function finalizeOrdinaryPayroll(api,{data,accountId,finalNetPay,sourcePe
   if(identity.email!==OWNER_EMAIL&&!api.sessionUser.permissions?.some(value=>accountKeys.includes(value)))throw accountHold();
   const intent=JSON.stringify([accountId,amount(finalNetPay),sourcePerfBonus,allowNegativeBalance,copied]),map=pending.get(api)||new Map();pending.set(api,map);const key=identity.uid+'|'+recordId;
   let entry=map.get(key);if(entry&&entry.intent!==intent)throw Error('This payslip payment is already being checked with different edits. Wait for its result before retrying.');
-  if(!entry){entry={intent};entry.physical=settle(api,{data:copied,accountId,finalNetPay,sourcePerfBonus,allowNegativeBalance},identity,guard);map.set(key,entry);entry.physical.finally(()=>{if(map.get(key)===entry)map.delete(key);}).catch(()=>{});}
+  if(!entry){entry={intent};entry.physical=settle(api,{data:copied,accountId,finalNetPay,sourcePerfBonus,scheduleMonths,allowNegativeBalance},identity,guard);map.set(key,entry);entry.physical.finally(()=>{if(map.get(key)===entry)map.delete(key);}).catch(()=>{});}
   let timer;return Promise.race([entry.physical,new Promise((_,reject)=>{timer=setTimeout(()=>{const error=Error('HQ has not confirmed this payment yet. Refresh saved payroll before retrying; do not make another payment.');error.code='payroll-settlement-unconfirmed';reject(error);},PAYROLL_SETTLEMENT_LIMITS.timeoutMs);})]).finally(()=>clearTimeout(timer));
  }catch(error){return Promise.reject(error);}
 }

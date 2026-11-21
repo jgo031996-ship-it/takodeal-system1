@@ -8,6 +8,9 @@ export function leaveRequestSummaryHTML(row,today=leaveToday()){
  let html='<strong>'+escape(row.leaveType||'Leave')+'</strong><br><span>'+escape(row.startDate)+' to '+escape(row.endDate)+'</span><br><small>'+escape(row.reason||'')+'</small>';
  if(row.status==='Approved'){
   html+='<p class="leave-history-note">'+escape(row.leaveState||'Approved')+' · Active dates: '+escape(describeLeaveDates(dates))+'</p>';
+  for(const action of row.leaveActions||[]){
+   if(action.kind==='Worked shift')html+='<p class="leave-history-note">Owner confirmed work at '+escape(action.branch)+' on '+escape(describeLeaveDates(action.dateChanges?.removed||[]))+'.</p>';
+  }
   const skipped=Array.isArray(row.leaveScheduleSync?.skippedHistoricalDates)?row.leaveScheduleSync.skippedHistoricalDates.filter(date=>dates.includes(date)&&date<today):[];
   const preserved=Array.isArray(row.leaveScheduleSync?.preservedConflictDates)?row.leaveScheduleSync.preservedConflictDates:[];
   html+=row.leaveScheduleSync?.version!==1?'<small>Schedule sync has not been verified. Earlier dates can be reviewed explicitly.</small>':skipped.length?'<small>Earlier leave dates were not synced. Review them before updating the saved schedule.</small>':preserved.length?'<small>Approved request. Conflicting roster dates were preserved: '+escape(describeLeaveDates(preserved))+'. Attendance and paid payslips stay on file.</small>':'<small>Linked to saved schedule dates. Attendance and paid payslips stay on file.</small>';

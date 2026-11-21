@@ -45,7 +45,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=payslip-multiple-worked-shifts-20261119-r1');
+            await import('./main.js?v=reviewed-payroll-leave-20261121-r1');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();

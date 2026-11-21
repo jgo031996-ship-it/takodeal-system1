@@ -27,7 +27,9 @@ import * as bonusReview from '../takodeal-manager/payroll-bonus-review-hint.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
-import {readPayrollCashShortages} from '../takodeal-manager/payroll-settlement.js';
+import {firestoreHarness} from './helpers/firestore-harness.mjs';
+import {createWorkedShiftCorrectionService} from '../takodeal-manager/worked-shift-correction-service.js';
+import {readPayrollCashShortages,finalizeOrdinaryPayroll,checkSavedPayrollPayment} from '../takodeal-manager/payroll-settlement.js';
 import {approvedCashShortage} from './helpers/cash-shortage-fixture.mjs';
 import {isCashShortageDeduction} from '../takodeal-manager/cash-shortage-model.js';
 import {canReviewCashShortage} from '../takodeal-manager/cash-shortage-ui.js';
@@ -160,7 +162,7 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(gene
 
 for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(generator+': repeated Generate clicks share one physical query bundle and keep one current preview',async()=>{
  const gate=held();let h;h=harness({read:async(ref,{snapshot,records})=>{await gate.promise;return snapshot(records[ref.table]||[]);}});
- const pending=Array.from({length:12},()=>h.w[generator]());assert.equal(h.calls.length,7);gate.resolve();await Promise.all(pending);assert.equal(h.calls.length,7);assert.equal(h.w.globalPayrollCache['Sample Staff'].basicPay,450);assert.doesNotThrow(()=>h.w.getPayrollPreviewGuard().requireReady());assert.equal(h.writes.length,0);
+ const pending=Array.from({length:12},()=>h.w[generator]());assert.equal(h.calls.length,7);gate.resolve();await Promise.all(pending);assert.equal(h.calls.length,8);assert.equal(h.calls.filter(ref=>ref.table==='staff_requests').length,1);assert.equal(h.w.globalPayrollCache['Sample Staff'].basicPay,450);assert.doesNotThrow(()=>h.w.getPayrollPreviewGuard().requireReady());assert.equal(h.writes.length,0);
 });
 
 function addReviewedCashShortage(h,options={}){
@@ -487,4 +489,76 @@ test('a shifted reference can be corrected independently of the configured bonus
 for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(generator+': an earlier name and branch on the same employee credit do not block the cutoff',async()=>{
  const h=harness();const credit=adjustmentFor(h,{staffName:'Earlier Sample Name',branch:'Earlier Branch'});h.person.scheduleAliases=['Earlier Sample Name'];h.records.staff_bonuses=[credit];
  await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.ok(data,'payroll generated');assert.equal(data.payrollAdjustments,125);assert.equal(data.payrollAdjustmentRows[0].sourceStaffName,'Earlier Sample Name');assert.equal(data.payrollAdjustmentRows[0].sourceBranch,'Earlier Branch');assert.equal(h.writes.length,0);
+});
+test('November 3 leave and cover correction refreshes the unpaid payslip and recovers a single payment',async()=>{
+ const date='2026-11-03',start='2026-11-01',end='2026-11-15',next='2026-11-04',work='Cabantian';
+ const at=time=>new Date(date+'T'+time+':00+08:00'),db=firestoreHarness(),h=harness();
+ const staffId='fictional-cover',name='Fictional Rivera',prior='Fictional Cruz';
+ const person={cashierName:name,branch:'Maa',hourlyRate:450,active:true,scheduleAliases:[prior]};
+ const employee={staffId,staffName:prior,branch:work};
+ const punch={...employee,id:'nov3-in',type:'TIME IN',timestamp:at('08:55')};
+ const out={...employee,id:'nov3-out',type:'TIME OUT',timestamp:at('17:53'),timeInLogId:punch.id,timeInAt:punch.timestamp};
+ const leave={type:'Leave',status:'Approved',staffId,staffName:prior,branch:'Maa',startDate:date,endDate:next};
+ const claims='schedule_leave_staff_'+staffId,claim={staffId,requestId:'qa-leave'};
+ const config={currentYear:2026,currentMonth:11,branchConfig:{[work]:[{id:'morning',name:'Morning 1',shiftType:'morning',startTime:'09:00',endTime:'17:46'}]},currentSchedule:{3:{[work]:{scheduled:{morning:'UNFILLED'},rest:[],unavailable:[]}}}};
+ const revision=schedule.createScheduleRevision(config,{revisionId:'qa-november',effectiveFrom:start,effectiveTo:'2026-11-30',savedAt:new Date('2026-11-01T00:00:00+08:00')});
+ for(const [path,row] of Object.entries({
+  ['settings/'+claims]:{staffId,dates:{[date]:claim,[next]:claim}},
+  'staff_requests/qa-leave':leave,['cashiers/'+staffId]:person,
+  'hq_managers/qa-owner':{email:OWNER_EMAIL,pin:'1111',role:'Owner',permissions:['all'],allowedBranches:['All']},
+  'cash_accounts/qa-cash':{name:'Fictional account',balance:5000,branch:'Main Office'},
+  ['attendance_logs/'+punch.id]:punch,['attendance_logs/'+out.id]:out,'settings/global_schedule':config,
+  'settings/schedule_revision_qa-november':revision,'settings/schedule_month_2026_11':{revisionIds:[revision.revisionId],latestRevisionId:revision.revisionId,month:'2026-11'}
+ }))db.put(path,row);
+ const metadata={fromCache:false,hasPendingWrites:false},owner={uid:'qa-owner',email:OWNER_EMAIL,emailVerified:true,providerData:[{providerId:'google.com'}]};
+ const api={...db.api,auth:{currentUser:owner},sessionUser:{...owner,isOwner:true,permissions:['all'],allowedBranches:['All']},isBranchAllowed:()=>true,
+  where:(key,op,value)=>({key,op,value}),limit:n=>({limit:n})};
+ api.getDocFromServer=async ref=>({id:ref.id,metadata,exists:()=>db.docs.has(ref.path),data:()=>structuredClone(db.get(ref.path))});
+ function read(q,preview=false){
+  const rows=[...db.docs].filter(([path,row])=>path.startsWith(q.table+'/')&&(q.filters||[]).every(({key,op,value})=>
+   !key||(op==='=='?row[key]===value:op==='>='?row[key]>=value:op==='<'?row[key]<value:row[key]<=value)));
+  return h.snapshot(rows.map(([path,row])=>{
+   const entry=structuredClone(row);
+   if(preview)for(const key of ['timestamp','timeInAt'])if(entry[key] instanceof Date)entry[key]=stamp(entry[key]);
+   return {...entry,id:path.slice(q.table.length+1)};
+  }));
+ }
+ api.getDocsFromServer=async q=>{const snapshot=read(q);for(const doc of snapshot.docs)doc.exists=()=>true;return snapshot;};
+ api.runTransaction=(dbRef,work)=>db.api.runTransaction(dbRef,tx=>work({...tx,get:async ref=>({...await tx.get(ref),metadata})}));
+ const history=schedule.createScheduleHistoryStore(api);
+ Object.assign(h.w,api,{getDocsFromServer:async q=>read(q,true),loadPayrollScheduleHistory:()=>history.loadRange(start,end)});
+ h.node('payrollStart').value=start;h.node('payrollEnd').value=end;
+ const generate=async()=>{await h.w.generateAutoPayslips();return h.w.globalPayrollCache[name];};
+ const held=await generate();assert.ok(held?.attendanceReviewRequired,JSON.stringify(h.events));
+ assert.equal(held.branch,'Maa');assert.equal(held.logs[0].branch,work);
+ assert.equal(workedShiftActionHint(h.w,held,held.logs[0]).label,'Review leave and worked shift');
+ const service=createWorkedShiftCorrectionService(api,{now:()=>new Date('2026-11-21T04:00:00Z'),readAttendance:async()=>[punch,out]});
+ const context={staffId,branch:work,attendanceLogId:punch.id,workDate:date,from:start,to:end,manualDuty:{name:'Morning 1',shiftType:'morning',startTime:'09:00',endTime:'17:46'}};
+ const view=await service.inspect(context),slot=view.choices.find(row=>row.ownerEntered);
+ assert.deepEqual(slot.blockers,[]);assert.equal(slot.leave.requestId,'qa-leave');
+ const proposal=service.propose(view,slot.key,{workedLeaveRequestId:slot.leave.requestId});
+ const original=structuredClone([...db.docs]);db.failNextCommit();
+ await assert.rejects(service.apply(proposal),/Commit rejected/);assert.deepEqual([...db.docs],original);
+ db.loseNextAck();await assert.rejects(service.apply(proposal),/Connection lost/);
+ const [a,b]=await Promise.all([service.apply(proposal),service.apply(proposal)]);
+ assert.ok(a.alreadySaved);assert.equal(a.revisionId,b.revisionId);
+ const reviewed=db.get('staff_requests/qa-leave');
+ assert.deepEqual(reviewed.activeLeaveDates,[next]);assert.equal(reviewed.startDate,date);
+ assert.equal(reviewed.leaveState,'Completed');assert.equal(reviewed.leaveActions.length,1);assert.equal(reviewed.leaveActions[0].id,a.revisionId);
+ assert.deepEqual(db.get('settings/'+claims).dates,{[next]:claim});
+ assert.deepEqual(db.get('attendance_logs/'+punch.id),punch);assert.deepEqual(db.get('attendance_logs/'+out.id),out);
+ assert.deepEqual(db.get('settings/schedule_revision_qa-november'),revision);
+ const data=await generate();assert.equal(data.attendanceReviewRequired,false);assert.equal(data.logs.length,1);
+ assert.equal(data.logs[0].workedShiftCorrectionId,a.revisionId);assert.equal(data.logs[0].branch,work);
+ assert.equal(data.logs[0].expectedEndAt,at('17:46').toISOString());assert.equal(data.logs[0].hrs,'8.97');
+ assert.equal(data.basicPay,450);assert.equal(data.branch,person.branch);
+ const scheduleMonths=await freshness.assertPayrollScheduleFresh(h.w,data);
+ const input={data:{...data,perfBonus:25},sourcePerfBonus:0,finalNetPay:475,accountId:'qa-cash',scheduleMonths};
+ db.loseNextAck();await assert.rejects(finalizeOrdinaryPayroll(api,input),/Connection lost/);
+ const saved=await checkSavedPayrollPayment(api,{data});assert.equal(saved.status,'paid');assert.equal(saved.finalNetPay,475);
+ const again=await Promise.all([finalizeOrdinaryPayroll(api,input),finalizeOrdinaryPayroll(api,input)]);
+ assert.ok(again.every(row=>row.alreadyPaid&&row.id===saved.id));assert.equal(db.get('cash_accounts/qa-cash').balance,4525);
+ assert.equal([...db.docs.keys()].filter(path=>path.startsWith('expenses/')).length,1);
+ const frozen=structuredClone(db.get('payroll_records/'+saved.id)),paidView=await service.inspect(context);
+ assert.match(paidView.choices[0].blockers.join(' '),/paid payslip/i);assert.deepEqual(db.get('payroll_records/'+saved.id),frozen);
 });
