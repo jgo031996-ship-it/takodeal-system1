@@ -228,11 +228,26 @@
       });
     }
     let scheduled = false;
-    new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => { scheduled = false; updateDock(); });
-    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+    const dockSelector='#loginOverlay,.overlay,[id$="Modal"],.nav-item,#mainSidebar';
+    const updateSoon=()=>{
+      if(scheduled)return;scheduled=true;
+      requestAnimationFrame(()=>{scheduled=false;updateDock();});
+    };
+    const visibilityObserver=new MutationObserver(updateSoon);
+    const observeControls=()=>{
+      visibilityObserver.disconnect();
+      const targets=new Set([document.body]);
+      for(const control of document.querySelectorAll(dockSelector)){
+        for(let node=control;node && !targets.has(node);node=node.parentElement)targets.add(node);
+      }
+      for(const node of targets)visibilityObserver.observe(node,{attributes:true,attributeFilter:['style','class','hidden']});
+    };
+    observeControls();
+    new MutationObserver(records=>{
+      if(records.some(r=>!r.target.closest?.('#menuGrid,#tkCategoryPills,#menuCategoryDropdown') && [...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1 && (n.matches(dockSelector)||n.querySelector(dockSelector))))){
+        observeControls();updateSoon();
+      }
+    }).observe(document.body,{childList:true,subtree:true});
     window.addEventListener('resize', updateDock);
     updateDock();
   }
@@ -243,20 +258,24 @@
     grid = document.getElementById('menuGrid');
     const originalMenu = window.renderMenuItems;
     const originalCart = window.renderCart;
-    const originalFilter = window.filterMenu;
     if (!shell || !grid || typeof originalMenu !== 'function' || typeof originalCart !== 'function') return;
     document.body.classList.add('tk-ui-v2');
     shell.classList.add('tk-pos-shell');
     shell.children[0]?.classList.add('tk-menu-shell');
     shell.children[1]?.classList.add('tk-cart-shell');
     installToolbar();
+    window.cashierMenuDecorated=true;
     window.filterMenu = function(category = 'All', icon = categoryIcon(category)) {
-      if (typeof originalFilter === 'function') originalFilter(category, icon);
+      const iconNode=document.getElementById('currentCategoryIcon'),label=document.getElementById('currentCategoryText');
+      if(iconNode)iconNode.textContent=icon;
+      if(label)label.textContent=category==='All'?'All Items (Main Menu)':category;
+      window.closeCategoryModal?.();
       select.value = category;
       let visible = 0;
       grid.querySelectorAll('.ultra-card').forEach(card => {
         const show = (category === 'All' || card.dataset.category === category) && (!query || (card.dataset.name || '').includes(query));
-        card.style.setProperty('display', show ? 'flex' : 'none', 'important');
+        const display=show?'flex':'none';
+        if(card.style.display!==display || card.style.getPropertyPriority('display')!=='important')card.style.setProperty('display',display,'important');
         if (show) visible++;
       });
       document.querySelectorAll('.tk-category-pill, .tk-category-option').forEach(button => {
@@ -279,7 +298,6 @@
       return result;
     };
     window.buildCategories = function() {
-      syncCategories();
       window.renderMenuItems();
     };
     window.renderCart = function(...args) {
@@ -290,9 +308,7 @@
     installDock();
     window.buildCategories();
     window.renderCart();
-    window.setInterval(() => {
-      if (document.visibilityState !== 'hidden' && syncCategories()) window.filterMenu(select.value || 'All');
-    }, 1000);
+    window.refreshCashierCategories=()=>{if(syncCategories())window.filterMenu(select.value || 'All');};
   }
   if (document.readyState === 'complete') install();
   else window.addEventListener('load', install, { once: true });
@@ -362,6 +378,9 @@
       return category === 'All' ? '🍽️' : '🍴';
     }
 
+    const photoState=new WeakMap();
+    let photoFrame=false;
+    function queueCategories(){if(!photoFrame){photoFrame=true;requestAnimationFrame(()=>{photoFrame=false;paintCategories();});}}
     function paintCategories() {
       const items = Array.isArray(window.masterPOSData?.items)
         ? window.masterPOSData.items : [];
@@ -388,9 +407,9 @@
           ? firstPhoto : (photos.get(category) || '');
         const count = category === 'All'
           ? items.length : (counts.get(category) || 0);
-        const signature = JSON.stringify([category, photo, count]);
+        const old=photoState.get(button);
 
-        if (button.dataset.tkPhoto !== signature) {
+        if (!old || old.category!==category || old.photo!==photo || old.count!==count) {
           const media = document.createElement('span');
           media.className = 'tk-category-photo';
           media.setAttribute('aria-hidden', 'true');
@@ -421,7 +440,7 @@
           total.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
 
           button.replaceChildren(media, label, total);
-          button.dataset.tkPhoto = signature;
+          photoState.set(button,{category,photo,count});
         }
 
         const active = category === (select.value || 'All');
@@ -459,7 +478,7 @@
       };
     }
 
-    wrap('renderMenuItems', paintCategories);
+    wrap('renderMenuItems', queueCategories);
     wrap('renderCart', paintOrder);
 
     const originalFilter = window.filterMenu;
@@ -467,7 +486,7 @@
       window.filterMenu = function (...args) {
         const previous = select.value;
         const result = originalFilter.apply(this, args);
-        paintCategories();
+        queueCategories();
 
         if (select.value !== previous) {
           document.getElementById('menuGrid').scrollTop = 0;
@@ -507,15 +526,7 @@
       }
     });
 
-    let scheduled = false;
-    new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        paintCategories();
-      });
-    }).observe(select, { childList: true });
+    new MutationObserver(queueCategories).observe(select,{childList:true});
 
     paintCategories();
     paintOrder();

@@ -27,6 +27,7 @@ import {installCashierLowIngredients} from './low-ingredient-ui.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
 import {installPOSLeaveRequests} from './leave-request-ui.js';
+import {createPendingPaymentTally} from './pending-payment-tally.js';
 import { imageFor } from './cashier-data.js';
 import { installAttendanceCamera, createAttendanceStreamSession } from './attendance-camera.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift,attendanceReadRecovery} from './attendance-reconcile.js';
@@ -593,6 +594,7 @@ window.loadPOSData = async function() {
             if(window.isCashierOwnerToolsMode?.())return;
             if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
                 window.masterPOSData.categories = catLayoutSnap.data().categories;
+                window.refreshCashierCategories?.();
                 localStorage.setItem('takodeal_cached_categories', JSON.stringify(window.masterPOSData.categories));
             }
 
@@ -2824,15 +2826,18 @@ function startLiveClock() {
   const clockEl = document.getElementById('liveClock');
   if (!clockEl) return;
 
-  setInterval(() => {
-    const now = new Date();
-    // Creates format: "10:17 PM"
-    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    // Creates format: "Thu, Apr 16"
-    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    
-    clockEl.innerHTML = `${timeStr} &nbsp;&nbsp; ${dateStr}`;
-  }, 1000);
+  const timeFormat=new Intl.DateTimeFormat('en-US',{hour:'2-digit',minute:'2-digit'});
+  const dayFormat=new Intl.DateTimeFormat('en-US',{weekday:'short',month:'short',day:'numeric'});
+  let timer;
+  function paint(){
+    clearTimeout(timer);
+    if(document.hidden)return;
+    const now=new Date();
+    clockEl.textContent=timeFormat.format(now)+'   '+dayFormat.format(now);
+    timer=setTimeout(paint,60000-now.getTime()%60000);
+  }
+  document.addEventListener('visibilitychange',paint);
+  paint();
 }
 startLiveClock();
 
@@ -7547,51 +7552,15 @@ window.startUnverifiedListener = function() {
         window.where("paymentMethod", "in", ["GCash", "Grab", "Foodpanda", "Bank"])
     );
 
-    // 🔥 onSnapshot listens in real-time. Zero repeated read costs!
+    const tally=createPendingPaymentTally();
     window.unverifiedTxUnsubscribe = window.onSnapshot(txQ, (snapshot) => {
+        if(localStorage.getItem('takodeal_device_branch')!==branch)return;
+        const currentShiftId=localStorage.getItem('currentShiftId');
+        const {total:unverifiedCount,shift:currentShiftUnverified}=tally(snapshot,currentShiftId);
         if(window.isCashierOwnerToolsMode?.())return;
-        let currentShiftId = localStorage.getItem('currentShiftId');
         let salesTab = document.getElementById('nav-sales'); 
         let existingBanner = document.getElementById('globalUnverifiedBanner');
 
-        let unverifiedCount = 0;
-        let currentShiftUnverified = 0;
-        let gcashTotal = 0;
-        let grabTotal = 0;
-
-        snapshot.forEach(doc => {
-            let tx = doc.data();
-            if (tx.status !== 'Voided') {
-                let method = (tx.paymentMethod || '').toLowerCase();
-                let amount = parseFloat(tx.netTotal) || 0;
-
-                // Sum GCash and Grab for the active shift
-                if (tx.shiftId === currentShiftId) {
-                    if (method === 'gcash') gcashTotal += amount;
-                    if (method === 'grab') grabTotal += amount;
-                }
-
-                // Count unverified digital orders
-                if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
-                    unverifiedCount++;
-                    if (tx.shiftId === currentShiftId) currentShiftUnverified++;
-                }
-            }
-        });
-
-        // Update sidebar shift totals
-        if (currentShiftId) {
-            document.querySelectorAll('*').forEach(el => {
-                if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { 
-                    if (el.innerText.includes('Grab: ₱')) {
-                        el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    }
-                    if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
-                        el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    }
-                }
-            });
-        }
 
         // Update sales tab badge
         if (currentShiftUnverified > 0 && currentShiftId) {
