@@ -544,7 +544,7 @@ test('November 3 leave and cover correction refreshes the unpaid payslip and rec
  assert.ok(a.alreadySaved);assert.equal(a.revisionId,b.revisionId);
  const reviewed=db.get('staff_requests/qa-leave');
  assert.deepEqual(reviewed.activeLeaveDates,[next]);assert.equal(reviewed.startDate,date);
- assert.equal(reviewed.leaveActions.length,1);assert.equal(reviewed.leaveActions[0].id,a.revisionId);
+ assert.equal(reviewed.leaveState,'Completed');assert.equal(reviewed.leaveActions.length,1);assert.equal(reviewed.leaveActions[0].id,a.revisionId);
  assert.deepEqual(db.get('settings/'+claims).dates,{[next]:claim});
  assert.deepEqual(db.get('attendance_logs/'+punch.id),punch);assert.deepEqual(db.get('attendance_logs/'+out.id),out);
  assert.deepEqual(db.get('settings/schedule_revision_qa-november'),revision);

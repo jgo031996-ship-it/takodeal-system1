@@ -15,7 +15,8 @@ export function leaveOnWorkDate(row, date) {
     }
 }
 
-export function reviewWorkedLeave(rows, claims, date, staffId, legacyOwners) {
+export function reviewWorkedLeave(rows, claims, date, person, legacyOwners) {
+    const {staffId} = person;
     const active = rows.filter(row => leaveOnWorkDate(row, date) === true);
     const claim = claims?.dates?.[date];
     if (!active.length && !claim) return {};
@@ -23,7 +24,7 @@ export function reviewWorkedLeave(rows, claims, date, staffId, legacyOwners) {
     if (active.length !== 1 || claim && (claim.requestId !== row.id || claim.staffId && claim.staffId !== staffId) ||
         claims?.staffId && claims.staffId !== staffId)
         return {blocker:'The leave claim and approved letters for this date need HR review.'};
-    if (row.pendingLeaveChangeId || (!row.staffId && legacyOwners.get(row.staffName) !== staffId))
+    if (row.pendingLeaveChangeId || (!row.staffId && (legacyOwners.get(row.staffName) !== staffId || row.branch && row.branch !== person.branch)))
         return {blocker:'An approved leave covers this date. Confirm its employee identity or pending leave change in HR.'};
     try {
         const dates = activeLeaveDates(row);
@@ -48,8 +49,10 @@ export function workedLeaveUpdates(parent, claims, marker, leave) {
         timeInLogId:marker.timeInLogId, timeOutLogId:marker.timeOutLogId,
         branch:marker.branch, dateChanges:{before,after,added:[],removed:[date]}
     };
+    const today = new Date(Date.parse(at) + 8*3600000).toISOString().slice(0,10);
     const update = {
-        activeLeaveDates:after, leaveState:after.length ? 'Partially cancelled' : 'Cancelled',
+        staffId:marker.staffId, activeLeaveDates:after,
+        leaveState:after.length ? (after.some(day => day >= today) ? 'Partially cancelled' : 'Completed') : 'Cancelled',
         leaveVersion:(parent.leaveVersion || 0) + 1,
         leaveActions:[...(parent.leaveActions || []),decision], staffAcknowledged:false
     };

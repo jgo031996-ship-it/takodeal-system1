@@ -105,7 +105,7 @@ export function planWorkedShiftCorrection({start,out,profile,history,attendance=
             const occupied=!empty(occupant)&&!person.matches(occupant);
             const letters=leaves.filter(row=>samePerson(row)&&row.type==='Leave'&&row.status==='Approved');
             const undatedLeaveIds=letters.filter(row=>leaveOnWorkDate(row,workDate)===null).map(row=>row.id);
-            const review=reviewWorkedLeave(letters,claims,workDate,person.staffId,legacyOwners);
+            const review=reviewWorkedLeave(letters,claims,workDate,person,legacyOwners);
             if(review.blocker)issues.push(review.blocker);
             const attendanceOnly=standalone||occupied||undatedLeaveIds.length>0||context.coverReview===true||!!rosterContext.exception||!!review.leave;
             for(const row of sanctions.filter(samePerson)){try{if(suspensionDates(row).includes(workDate))issues.push('A reviewed suspension covers this date.');}catch{issues.push('A saved suspension needs review.');}}
