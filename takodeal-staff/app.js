@@ -1864,17 +1864,19 @@ window.switchPayslipTab = function(tabName) {
     }
 };
 
-let vaultLoad=null;
+let vaultLoad=null,refreshSavedVault=null,refreshingSaved=null;
 window.loadPayslipVault = function(){
  const id=localStorage.getItem('takodeal_staff_id'),epoch=window.staffVaultSession?.epoch;
  if(!id||!window.staffVaultSession?.allows(id,epoch))return Promise.resolve();
  if(vaultLoad?.id===id&&vaultLoad.epoch===epoch)return vaultLoad.promise;
- const pending={id,epoch};vaultLoad=pending;
+ const pending={id,epoch};vaultLoad=pending;refreshSavedVault=null;
  pending.promise=loadOpenPayroll().finally(()=>{if(vaultLoad===pending)vaultLoad=null;});return pending.promise;
 };
 const refreshVisiblePayroll=()=>{
  if(!document.hidden&&navigator.onLine!==false&&document.getElementById('view-payslip')?.classList.contains('active')&&
-    window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id')))void window.loadPayslipVault().catch(()=>{});
+    window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))&&!vaultLoad&&!refreshingSaved&&refreshSavedVault){
+  const refresh=refreshSavedVault;refreshingSaved=Promise.resolve().then(refresh).catch(()=>{}).finally(()=>{refreshingSaved=null;});
+ }
 };
 window.setInterval(refreshVisiblePayroll,30000);
 window.addEventListener('online',refreshVisiblePayroll);
@@ -1887,7 +1889,8 @@ const loadOpenPayroll = async function() {
     const stillOpen = () => window.staffVaultSession.allows(staffId, vaultEpoch) && localStorage.getItem('takodeal_staff_id') === staffId;
     const savedViews=installStaffSavedPayslipViews(window,document);savedViews.restoreLive();
     let savedPayslips={paid:[],shared:[],held:[],errors:[]};
-    const renderSaved=(processingHTML='',processingCount=0)=>{if(stillOpen())savedViews.render(savedPayslips,{staffId,epoch:vaultEpoch,start:startDateStr,end:endDateStr,processingHTML,processingCount});};
+    let lastProcessingHTML='',lastProcessingCount=0;
+    const renderSaved=(processingHTML='',processingCount=0)=>{if(stillOpen()){lastProcessingHTML=processingHTML;lastProcessingCount=processingCount;savedViews.render(savedPayslips,{staffId,epoch:vaultEpoch,start:startDateStr,end:endDateStr,processingHTML,processingCount});}};
 
     const safeDate = (fbDate) => {
         if (!fbDate) return new Date();
@@ -1937,7 +1940,9 @@ const loadOpenPayroll = async function() {
         if (!stillOpen()) return;
         if(staffProfile.salaryRateVersion===1){try{staffProfile=await window.loadPrivateStaffSalaryProfile(staffProfile);}catch{salaryHistoryUnavailable=true;}}
         if(!stillOpen())return;
-        savedPayslips=await readStaffSavedPayslips(window,{staffId,staffName,profile:staffProfile,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
+        const readSaved=()=>readStaffSavedPayslips(window,{staffId,staffName,profile:staffProfile,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
+        savedPayslips=await readSaved();
+        if(stillOpen()){const refresh=async()=>{if(!stillOpen()||refreshSavedVault!==refresh)return;const next=await readSaved();if(stillOpen()&&refreshSavedVault===refresh){savedPayslips=next;renderSaved(lastProcessingHTML,lastProcessingCount);}};refreshSavedVault=refresh;}
         if(!stillOpen())return;renderSaved();
         let dailyRate = salaryHistoryUnavailable?0:staffRateForDate(staffProfile) ?? 0;
         let ratePerHour = dailyRate / 8;
